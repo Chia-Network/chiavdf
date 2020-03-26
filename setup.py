@@ -61,7 +61,6 @@ class CMakeBuild(build_ext):
 
 setup(
     name='chiavdf',
-    version='0.1',
     author='Florin Chirica',
     author_email='florin@chia.net',
     description='Chia vdf verification (wraps C++)',

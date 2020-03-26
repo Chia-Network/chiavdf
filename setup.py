@@ -1,5 +1,73 @@
+from distutils.command.install import install
+from distutils.command.build import build
+
+from setuptools import Command
+
+
+BUILD_HOOKS = []
+INSTALL_HOOKS = []
+
+
+def add_install_hook(hook):
+    INSTALL_HOOKS.append(hook)
+
+
+def add_build_hook(hook):
+    BUILD_HOOKS.append(hook)
+
+
+class build_hook(Command):
+    def __init__(self, dist):
+        self.dist = dist
+        Command.__init__(self, dist)
+
+    def initialize_options(self, *args):
+        self.install_dir = None
+        self.build_dir = None
+
+    def finalize_options(self):
+        self.set_undefined_options('build', ('build_scripts', 'build_dir'))
+        self.set_undefined_options('install',
+                                   ('install_platlib', 'install_dir'),
+                                   )
+
+    def run(self):
+        for _ in BUILD_HOOKS:
+            _(install_dir=self.install_dir, build_dir=self.build_dir)
+
+
+build.sub_commands.append(("build_hook", lambda x: True))
+
+
+class install_hook(Command):
+    def __init__(self, dist):
+        self.dist = dist
+        Command.__init__(self, dist)
+
+    def initialize_options(self, *args):
+        self.install_dir = None
+        self.build_dir = None
+
+    def finalize_options(self):
+        self.set_undefined_options('build', ('build_scripts', 'build_dir'))
+        self.set_undefined_options('install',
+                                   ('install_platlib', 'install_dir'),
+                                   )
+
+    def run(self):
+        for _ in INSTALL_HOOKS:
+            _(install_dir=self.install_dir, build_dir=self.build_dir)
+
+
+install.sub_commands.append(("install_hook", lambda x: True))
+
+
+############################################
+
+
 import os
 import re
+import shutil
 import sys
 import platform
 import subprocess
@@ -13,6 +81,20 @@ class CMakeExtension(Extension):
     def __init__(self, name, sourcedir=''):
         Extension.__init__(self, name, sources=['./'])
         self.sourcedir = os.path.abspath(sourcedir)
+
+
+
+def copy_vdf_client(build_dir, install_dir):
+    shutil.copy("vdf_client", install_dir)
+
+
+def invoke_make(**kwargs):
+    subprocess.check_output('make -f Makefile.vdf-client', shell=True)
+
+
+if os.getenv("BUILD_VDF_CLIENT", "Y") == "Y":
+    add_install_hook(copy_vdf_client)
+    add_build_hook(invoke_make)
 
 
 class CMakeBuild(build_ext):
@@ -68,6 +150,6 @@ setup(
     python_requires='>=3.5',
     long_description=open('README.md').read(),
     ext_modules=[CMakeExtension('chiavdf', '.')],
-    cmdclass=dict(build_ext=CMakeBuild),
+    cmdclass=dict(build_ext=CMakeBuild, install_hook=install_hook, build_hook=build_hook),
     zip_safe=False,
 )

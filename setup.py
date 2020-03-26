@@ -16,7 +16,7 @@ def add_build_hook(hook):
     BUILD_HOOKS.append(hook)
 
 
-class build_hook(Command):
+class HookCommand(Command):
     def __init__(self, dist):
         self.dist = dist
         Command.__init__(self, dist)
@@ -32,33 +32,18 @@ class build_hook(Command):
                                    )
 
     def run(self):
-        for _ in BUILD_HOOKS:
+        for _ in self.hooks:
             _(install_dir=self.install_dir, build_dir=self.build_dir)
+
+
+class build_hook(HookCommand):
+    hooks = BUILD_HOOKS
+
+class install_hook(HookCommand):
+    hooks = INSTALL_HOOKS
 
 
 build.sub_commands.append(("build_hook", lambda x: True))
-
-
-class install_hook(Command):
-    def __init__(self, dist):
-        self.dist = dist
-        Command.__init__(self, dist)
-
-    def initialize_options(self, *args):
-        self.install_dir = None
-        self.build_dir = None
-
-    def finalize_options(self):
-        self.set_undefined_options('build', ('build_scripts', 'build_dir'))
-        self.set_undefined_options('install',
-                                   ('install_platlib', 'install_dir'),
-                                   )
-
-    def run(self):
-        for _ in INSTALL_HOOKS:
-            _(install_dir=self.install_dir, build_dir=self.build_dir)
-
-
 install.sub_commands.append(("install_hook", lambda x: True))
 
 

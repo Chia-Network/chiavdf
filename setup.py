@@ -1,4 +1,3 @@
-#!/usr/bin/python3
 import os
 import re
 import sys
@@ -56,25 +55,20 @@ class CMakeBuild(build_ext):
         env['CXXFLAGS'] = '{} -DVERSION_INFO=\\"{}\\"'.format(
                 env.get('CXXFLAGS', ''),
                 self.distribution.get_version())
-        if not os.path.exists(self.build_temp):
-            os.makedirs(self.build_temp)
-        subprocess.check_call(['cmake', ext.sourcedir] +
-                              cmake_args, cwd=self.build_temp, env=env)
-        subprocess.check_call(['cmake', '--build', '.'] +
-                              build_args, cwd=self.build_temp)
+        subprocess.check_call(['cmake', ext.sourcedir] + cmake_args, env=env)
+        subprocess.check_call(['cmake', '--build', '.'] + build_args)
 
 
 setup(
-    name='fastvdf',
+    name='chiavdf',
     version='0.1',
     author='Florin Chirica',
     author_email='florin@chia.net',
     description='Chia vdf verification (wraps C++)',
     license='Apache License',
     python_requires='>=3.5',
-    install_requires=['pytest', 'cppimport', 'bitstring', 'flake8'],
     long_description=open('README.md').read(),
-    ext_modules=[CMakeExtension('fastvdf', '.')],
+    ext_modules=[CMakeExtension('chiavdf', '.')],
     cmdclass=dict(build_ext=CMakeBuild),
     zip_safe=False,
 )

@@ -4,7 +4,7 @@
 
 namespace py = pybind11;
 
-PYBIND11_MODULE(fastvdf, m) {
+PYBIND11_MODULE(chiavdf, m) {
     m.doc() = "Chia proof of time";
 
     // Checks a ProofOFTime type by pybinding everything to C++. Currently deprecated.

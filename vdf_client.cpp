@@ -1,30 +1,37 @@
 #include <boost/asio.hpp>
 #include "vdf.h"
+
 using boost::asio::ip::tcp;
 
 const int max_length = 2048;
-const int kMaxProcessesAllowed = 3;
 std::mutex socket_mutex;
 
 int process_number;
+int segments = 7;
+int thread_count = 3;
 
 void PrintInfo(std::string input) {
     std::cout << "VDF Client: " << input << "\n";
 }
 
-void CreateAndWriteProof(integer D, form x, int64_t num_iterations, WesolowskiCallback& weso, bool& stop_signal, tcp::socket& sock) {
-    Proof result = CreateProofOfTimeNWesolowski(D, x, num_iterations, 0, weso, 2, 0, stop_signal);
+void CreateAndWriteProof(ProverManager& pm, uint64_t iteration, bool& stop_signal, tcp::socket& sock) {
+    Proof result = pm.Prove(iteration);
     if (stop_signal == true) {
         PrintInfo("Got stop signal before completing the proof!");
         return ;
     }
 
-    std::vector<unsigned char> bytes = ConvertIntegerToBytes(integer(num_iterations), 8);
+    // Writes the number of iterations
+    std::vector<unsigned char> bytes = ConvertIntegerToBytes(integer(iteration), 8);
 
     // Writes the y, with prepended size
     std::vector<unsigned char> y_size = ConvertIntegerToBytes(integer(result.y.size()), 8);
     bytes.insert(bytes.end(), y_size.begin(), y_size.end());
     bytes.insert(bytes.end(), result.y.begin(), result.y.end());
+    
+    // Writes the witness type.
+    std::vector<unsigned char> witness_type = ConvertIntegerToBytes(integer(result.witness_type), 1);
+    bytes.insert(bytes.end(), witness_type.begin(), witness_type.end());
 
     bytes.insert(bytes.end(), result.proof.begin(), result.proof.end());
     std::string str_result = BytesToStr(bytes);
@@ -59,11 +66,6 @@ void session(tcp::socket& sock) {
         integer D(disc);
         PrintInfo("Discriminant = " + to_string(D.impl));
 
-        int space_needed = kSwitchIters / 10 + (kMaxItersAllowed - kSwitchIters) / 100;
-        forms = (form*) calloc(space_needed, sizeof(form));
-
-        PrintInfo("Calloc'd " + to_string(space_needed * sizeof(form)) + " bytes");
-
         // Init VDF the discriminant...
 
         if (error == boost::asio::error::eof)
@@ -88,26 +90,12 @@ void session(tcp::socket& sock) {
         integer L=root(-D, 4);
         form f=form::generator(D);
 
-        bool stop_signal = false;
-        // (iteration, thread_id)
-        std::set<std::pair<uint64_t, uint64_t> > seen_iterations;
-        bool stop_vector[100];
-
         std::vector<std::thread> threads;
-        WesolowskiCallback weso(1000000);
-
-        //mpz_init(weso.forms[0].a.impl);
-        //mpz_init(weso.forms[0].b.impl);
-        //mpz_init(weso.forms[0].c.impl);
-
-        forms[0]=f;
-        weso.D = D;
-        weso.L = L;
-        weso.kl = 10;
-
+        WesolowskiCallback weso(segments, D);
         bool stopped = false;
-        bool got_iters = false;
         std::thread vdf_worker(repeated_square, f, D, L, std::ref(weso), std::ref(stopped));
+        ProverManager pm(D, &weso, segments, thread_count);        
+        pm.start();
 
         // Tell client that I'm ready to get the challenges.
         boost::asio::write(sock, boost::asio::buffer("OK", 2));
@@ -119,53 +107,20 @@ void session(tcp::socket& sock) {
             int size = (data[0] - '0') * 10 + (data[1] - '0');
             memset(data, 0, sizeof(data));
             boost::asio::read(sock, boost::asio::buffer(data, size), error);
-            int iters = atoi(data);
-            got_iters = true;
-
+            int iters = atoi(data);        
             if (iters == 0) {
                 PrintInfo("Got stop signal!");
                 stopped = true;
-                for (int i = 0; i < threads.size(); i++)
-                    stop_vector[i] = true;
+                pm.stop();
+                vdf_worker.join();
                 for (int t = 0; t < threads.size(); t++) {
                     threads[t].join();
                 }
-                vdf_worker.join();
                 free(forms);
+                free(weso.checkpoints);
             } else {
-                int max_iter = 0;
-                int max_iter_thread_id = -1;
-                int min_iter = std::numeric_limits<int> :: max();
-                bool unique = true;
-                for (auto active_iter: seen_iterations) {
-                    if (active_iter.first > max_iter) {
-                        max_iter = active_iter.first;
-                        max_iter_thread_id = active_iter.second;
-                    }
-                    if (active_iter.first < min_iter) {
-                        min_iter = active_iter.first;
-                    }
-                    if (active_iter.first == iters) {
-                        unique = false;
-                        break;
-                    }
-                }
-                if (!unique) {
-                    PrintInfo("Duplicate iteration " + to_string(iters) + "... Ignoring.");
-                    continue;
-                }
-                if (threads.size() < kMaxProcessesAllowed || iters < min_iter) {
-                    seen_iterations.insert({iters, threads.size()});
-                    PrintInfo("Running proving for iter: " + to_string(iters));
-                    stop_vector[threads.size()] = false;
-                    threads.push_back(std::thread(CreateAndWriteProof, D, f, iters, std::ref(weso),
-                                      std::ref(stop_vector[threads.size()]), std::ref(sock)));
-                    if (threads.size() > kMaxProcessesAllowed) {
-                        PrintInfo("Stopping proving for iter: " + to_string(max_iter));
-                        stop_vector[max_iter_thread_id] = true;
-                        seen_iterations.erase({max_iter, max_iter_thread_id});
-                    }
-                }
+                PrintInfo("Received iteration: " + to_string(iters));
+                threads.push_back(std::thread(CreateAndWriteProof, std::ref(pm), iters, std::ref(stopped), std::ref(sock)));
             }
         }
     } catch (std::exception& e) {
@@ -192,7 +147,8 @@ void session(tcp::socket& sock) {
 
 int main(int argc, char* argv[])
 {
-  try {
+  try
+  {
     if (argc != 4)
     {
       std::cerr << "Usage: ./vdf_client <host> <port> <process_number>\n";
@@ -211,6 +167,6 @@ int main(int argc, char* argv[])
     session(s);
   } catch (std::exception& e) {
     std::cerr << "Exception: " << e.what() << "\n";
-  }
+  } 
   return 0;
 }

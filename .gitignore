@@ -10,4 +10,6 @@
 /vdf_client
 /verifier
 /verifier_test
+/prover_test
+/*.o
 /build/*

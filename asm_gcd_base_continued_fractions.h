@@ -84,7 +84,7 @@ void gcd_base_continued_fraction(
         APPEND_M(str( ".text 1" ));
 #endif
         APPEND_M(str( ".balign 64" ));
-        APPEND_M(str( "gcd_base_table:" ));
+        APPEND_M(asmprefix+str( "gcd_base_table:" ));
 
         string table_data;
         auto out_double=[&](double v) {
@@ -186,12 +186,12 @@ void gcd_base_continued_fraction(
         //m_0: column 0
         //m_1: column 1
 #ifdef CHIAOSX
-        APPEND_M(str( "LEA RSI,[RIP+gcd_base_table]"));
+        APPEND_M(str( "LEA RSI,[RIP+")+asmprefix+str("gcd_base_table]"));
         APPEND_M(str( "MOVAPD `m_0, [`q_scalar+RSI]" ));
         APPEND_M(str( "MOVAPD `m_1, [16+`q_scalar+RSI]" ));
 #else
-        APPEND_M(str( "MOVAPD `m_0, [gcd_base_table+`q_scalar]" ));
-        APPEND_M(str( "MOVAPD `m_1, [gcd_base_table+16+`q_scalar]" ));
+        APPEND_M(str( "MOVAPD `m_0, [")+asmprefix+str("gcd_base_table+`q_scalar]" ));
+        APPEND_M(str( "MOVAPD `m_1, [")+asmprefix+str("gcd_base_table+16+`q_scalar]" ));
 #endif
 
         //if (ab[1]<=ab_threshold) goto exit_label

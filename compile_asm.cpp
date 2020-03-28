@@ -2,6 +2,12 @@
 
 #include "include.h"
 
+bool use_divide_table=false;
+int gcd_base_bits=50;
+int gcd_128_max_iter=3;
+std::string asmprefix="cel_";
+bool enable_all_instructions=false;
+
 #include "parameters.h"
 
 #define COMPILE_ASM
@@ -36,5 +42,17 @@
 int main(int argc, char** argv) {
     set_rounding_mode();
 
-    asm_code::compile_asm();
+    string filename="asm_compiled.s";
+    
+    if((argc==2)&&(strcmp(argv[1],"avx2")==0))
+    {
+       use_divide_table=true;
+       gcd_base_bits=63;
+       gcd_128_max_iter=2;
+       asmprefix="avx2_";
+       enable_all_instructions=true;
+       filename="avx2_asm_compiled.s";
+    }
+
+    asm_code::compile_asm(filename);
 }

@@ -32,7 +32,7 @@ bool dot_product_exact(vector2 a, vector2 b, double& v, bool result_always_in_ra
         return false;
     }
 
-    if (enable_fma_in_c_code) {
+    if (hasAVX2()) {
         v=fma(a[1], b[1], v);
     } else {
         double v2=a[1]*b[1];
@@ -659,7 +659,9 @@ bool gcd_base_continued_fraction(vector2& ab, matrix2& uv, bool is_lehmer, doubl
         uint64 asm_is_lehmer[2]={(is_lehmer)? ~0ull : 0ull, (is_lehmer)? ~0ull : 0ull};
         double asm_ab_threshold[2]={ab_threshold, ab_threshold};
         uint64 asm_no_progress;
-        int error_code=asm_code::asm_func_gcd_base(asm_ab, asm_u, asm_v, asm_is_lehmer, asm_ab_threshold, &asm_no_progress);
+        int error_code=hasAVX2()?
+		asm_code::asm_avx2_func_gcd_base(asm_ab, asm_u, asm_v, asm_is_lehmer, asm_ab_threshold, &asm_no_progress):
+                asm_code::asm_cel_func_gcd_base(asm_ab, asm_u, asm_v, asm_is_lehmer, asm_ab_threshold, &asm_no_progress);
 
         assert(error_code==0);
         assert(asm_ab[0]==ab[0]);

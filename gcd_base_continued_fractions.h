@@ -661,7 +661,7 @@ bool gcd_base_continued_fraction(vector2& ab, matrix2& uv, bool is_lehmer, doubl
         uint64 asm_no_progress;
         int error_code=hasAVX2()?
 		asm_code::asm_avx2_func_gcd_base(asm_ab, asm_u, asm_v, asm_is_lehmer, asm_ab_threshold, &asm_no_progress):
-                asm_code::asm_func_gcd_base(asm_ab, asm_u, asm_v, asm_is_lehmer, asm_ab_threshold, &asm_no_progress);
+                asm_code::asm_cel_func_gcd_base(asm_ab, asm_u, asm_v, asm_is_lehmer, asm_ab_threshold, &asm_no_progress);
 
         assert(error_code==0);
         assert(asm_ab[0]==ab[0]);

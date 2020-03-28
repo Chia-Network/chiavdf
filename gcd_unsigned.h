@@ -288,7 +288,7 @@ template<int size> void gcd_unsigned(
 
         int error_code=hasAVX2()?
 		asm_code::asm_avx2_func_gcd_unsigned(&asm_data):
-	        asm_code::asm_func_gcd_unsigned(&asm_data);
+	        asm_code::asm_cel_func_gcd_unsigned(&asm_data);
 
         auto asm_get_uv=[&](int i) {
             array<array<uint64, 2>, 2> res;

@@ -869,7 +869,7 @@ template<class mpz_type> bool gcd_unsigned(
     memory_barrier();
     int error_code=hasAVX2()?
 	    asm_code::asm_avx2_func_gcd_unsigned(&data):
-	    asm_code::asm_func_gcd_unsigned(&data);
+	    asm_code::asm_cel_func_gcd_unsigned(&data);
 
     memory_barrier();
 

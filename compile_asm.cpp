@@ -5,7 +5,7 @@
 bool use_divide_table=false;
 int gcd_base_bits=50;
 int gcd_128_max_iter=3;
-std::string asmprefix="";
+std::string asmprefix="cel_";
 bool enable_all_instructions=false;
 
 #include "parameters.h"

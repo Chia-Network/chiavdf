@@ -145,6 +145,9 @@ void session(tcp::socket& sock) {
     }
 }
 
+int gcd_base_bits=50;
+int gcd_128_max_iter=3;
+
 int main(int argc, char* argv[])
 {
   try
@@ -153,6 +156,12 @@ int main(int argc, char* argv[])
     {
       std::cerr << "Usage: ./vdf_client <host> <port> <process_number>\n";
       return 1;
+    }
+
+    if(hasAVX2())
+    {
+      gcd_base_bits=63;
+      gcd_128_max_iter=2;
     }
 
     boost::asio::io_service io_service;

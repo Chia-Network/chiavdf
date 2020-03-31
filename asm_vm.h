@@ -61,11 +61,11 @@ struct asm_function {
         name=t_name;
 
 #ifdef CHIAOSX
-        APPEND_M(str( ".global _asm_func_#", t_name ));
-        APPEND_M(str( "_asm_func_#:", t_name ));
+        APPEND_M(str( ".global _asm_")+asmprefix+str("func_#", t_name ));
+        APPEND_M(str( "_asm_")+asmprefix+str("func_#:", t_name ));
 #else
-        APPEND_M(str( ".global asm_func_#", t_name ));
-        APPEND_M(str( "asm_func_#:", t_name ));
+        APPEND_M(str( ".global asm_")+asmprefix+str("func_#", t_name ));
+        APPEND_M(str( "asm_")+asmprefix+str("func_#:", t_name ));
 #endif
 
         assert(num_regs<=15);
@@ -116,7 +116,7 @@ struct asm_function {
         APPEND_M(str( "RET" ));
 
         while (m.next_output_error_label_id<m.next_error_label_id) {
-            APPEND_M(str( "label_error_#:", m.next_output_error_label_id ));
+            APPEND_M(asmprefix+str( "label_error_#:", m.next_output_error_label_id ));
 
             assert(m.next_output_error_label_id!=0);
             APPEND_M(str( "MOV RAX, #", to_hex(m.next_output_error_label_id) ));

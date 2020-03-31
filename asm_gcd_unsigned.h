@@ -464,7 +464,8 @@ void gcd_unsigned(
             }
 
             APPEND_M(str( "CMP `tmp, #", size ));
-            APPEND_M(str( "JE multiply_uv_size_#", mapped_size ));
+
+            APPEND_M(str( "JE ")+asmprefix+str("multiply_uv_size_#", mapped_size ));
         }
 #else
         for (int end_index=0;end_index<int_size;++end_index) {
@@ -475,7 +476,7 @@ void gcd_unsigned(
                 ++mapped_size;
             }
 
-            APPEND_M(str( ".quad multiply_uv_size_#", mapped_size ));
+            APPEND_M(str( ".quad ")+asmprefix+str("multiply_uv_size_#", mapped_size ));
         }
         APPEND_M(str( ".text" ));
 
@@ -487,7 +488,8 @@ void gcd_unsigned(
         EXPAND_MACROS_SCOPE;
         reg_alloc regs=regs_parent;
 
-        APPEND_M(str( "multiply_uv_size_#:", size ));
+        APPEND_M(asmprefix+str( "multiply_uv_size_#:", size ));
+
         track_asm(str( "gcd_unsigned multiply uv size #", size ));
 
         //reg_scalar t=regs.bind_scalar(m, "t");

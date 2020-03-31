@@ -228,7 +228,9 @@ bool gcd_128(
         asm_data.ab_threshold_0=uint64(ab_threshold);
         asm_data.ab_threshold_8=uint64(ab_threshold>>64);
 
-        int error_code=asm_code::asm_func_gcd_128(&asm_data);
+        int error_code=hasAVX2()?
+		asm_code::asm_avx2_func_gcd_128(&asm_data):
+	        asm_code::asm_cel_func_gcd_128(&asm_data);
 
         assert(error_code==0);
         assert(asm_data.u_0==uv_uint64[0][0]);

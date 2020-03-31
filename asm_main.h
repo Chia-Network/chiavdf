@@ -14,7 +14,8 @@ namespace asm_code {
 //all doubles are arrays with 2 entries. the high entry is first followed by the low entry
 //so: b, a; u1, u0; v1, v0
 //is_lehmer is all 1s or all 0s. ab_threshold is duplicated twice
-extern "C" int asm_func_gcd_base(double* ab, double* u, double* v, uint64* is_lehmer, double* ab_threshold, uint64* no_progress);
+extern "C" int asm_avx2_func_gcd_base(double* ab, double* u, double* v, uint64* is_lehmer, double* ab_threshold, uint64* no_progress);
+extern "C" int asm_cel_func_gcd_base(double* ab, double* u, double* v, uint64* is_lehmer, double* ab_threshold, uint64* no_progress);
 #ifdef COMPILE_ASM
 void compile_asm_gcd_base() {
     EXPAND_MACROS_SCOPE;
@@ -88,7 +89,8 @@ struct asm_func_gcd_128_data {
     uint64 no_progress;
 };
 
-extern "C" int asm_func_gcd_128(asm_func_gcd_128_data* data);
+extern "C" int asm_avx2_func_gcd_128(asm_func_gcd_128_data* data);
+extern "C" int asm_cel_func_gcd_128(asm_func_gcd_128_data* data);
 #ifdef COMPILE_ASM
 void compile_asm_gcd_128() {
     EXPAND_MACROS_SCOPE_PUBLIC;
@@ -175,7 +177,8 @@ struct asm_func_gcd_unsigned_data {
     uint64 a_end_index;
 };
 
-extern "C" int asm_func_gcd_unsigned(asm_func_gcd_unsigned_data* data);
+extern "C" int asm_avx2_func_gcd_unsigned(asm_func_gcd_unsigned_data* data);
+extern "C" int asm_cel_func_gcd_unsigned(asm_func_gcd_unsigned_data* data);
 #ifdef COMPILE_ASM
 void compile_asm_gcd_unsigned() {
     EXPAND_MACROS_SCOPE_PUBLIC;
@@ -236,12 +239,12 @@ void compile_asm_gcd_unsigned() {
 #endif
 
 #ifdef COMPILE_ASM
-void compile_asm() {
+void compile_asm(std::string filename) {
     compile_asm_gcd_base();
     compile_asm_gcd_128();
     compile_asm_gcd_unsigned();
 
-    ofstream out( "asm_compiled.s" );
+    ofstream out( filename );
     out << m.format_res_text();
 }
 #endif

@@ -8,8 +8,16 @@ Proof CreateProof(ProverManager& pm, uint64_t iteration) {
     return pm.Prove(iteration);
 }
 
+int gcd_base_bits=50;
+int gcd_128_max_iter=3;
+
 int main() {
     debug_mode = true;
+    if(hasAVX2())
+    {
+      gcd_base_bits=63;
+      gcd_128_max_iter=2;
+    }
     std::vector<uint8_t> challenge_hash({0, 0, 1, 2, 3, 3, 4, 4});
     integer D = CreateDiscriminant(challenge_hash, 1024);
 

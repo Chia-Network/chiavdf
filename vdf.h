@@ -67,7 +67,7 @@ const int64_t EXP_THRESH = 31;
 // For machines with small numbers of CPU, setting this to 1 will slow
 // down everything, possible even stall.
 
-#define FAST_MACHINE 0
+//#define FAST_MACHINE 0
 
 bool* intermediates_stored;
 bool intermediates_allocated = false;

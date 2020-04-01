@@ -60,14 +60,14 @@ const int64_t THRESH = 1UL<<31;
 const int64_t EXP_THRESH = 31;
 
 // If 'FAST_MACHINE' is set to 1, the machine needs to have a high number 
-// of CPUs (preferably 8-10+). This will optimize the runtime,
+// of CPUs. This will optimize the runtime,
 // by not storing any intermediate values in main VDF worker loop.
 // Other threads will come back and redo the work, this
 // time storing the intermediates as well.
 // For machines with small numbers of CPU, setting this to 1 will slow
 // down everything, possible even stall.
 
-//#define FAST_MACHINE 0
+const bool fast_machine = (std::thread::hardware_concurrency() >= 16) ? true : false;
 
 bool* intermediates_stored;
 bool intermediates_allocated = false;
@@ -231,11 +231,11 @@ public:
     {
         iteration++;
 
-        #if FAST_MACHINE
+        if (fast_machine) {
             if (iteration % (1 << 15) == 0) {
                 SetForm(type, data, &y_ret, /*reduced=*/true);
             }
-        #else
+        } else {
             // If 'FAST_MACHINE' is 0, we store the intermediates
             // right away.
             for (int i = 0; i < segments; i++) {
@@ -246,7 +246,7 @@ public:
                     SetForm(type, data, mulf, /*reduced=*/true);
                 }
             }
-        #endif
+        }
 
         if (iteration % (1 << 16) == 0) {
             form* mulf = (&checkpoints[(iteration / (1 << 16))]);
@@ -330,18 +330,17 @@ void repeated_square(form f, const integer& D, const integer& L, WesolowskiCallb
     uint64_t num_iterations = 0;
     uint64_t last_checkpoint = 0;
 
-    #if FAST_MACHINE
+    std::vector<std::thread> threads;
+    if (fast_machine) {
         intermediates_stored = new bool[(1 << 17)];
         for (int i = 0; i < (1 << 17); i++)
             intermediates_stored[i] = 0;
         intermediates_allocated = true;
 
-        std::vector<std::thread> threads;
         for (int i = 0; i < intermediates_threads; i++) {
             threads.push_back(std::thread(CalculateIntermediatesThread, std::ref(weso), std::ref(stopped)));
         }
-    #endif
-
+    }
 
     while (!stopped) {
         uint64 c_checkpoint_interval=checkpoint_interval;
@@ -415,23 +414,20 @@ void repeated_square(form f, const integer& D, const integer& L, WesolowskiCallb
 
         num_iterations+=actual_iterations;
         if (num_iterations >= last_checkpoint) {
-            #if FAST_MACHINE
+            if (fast_machine) {
                 if (last_checkpoint % (1 << 16) == 0) {
                     weso.iterations = num_iterations;
                 }
                 // Since checkpoint_interval is at most 10000, we'll have 
                 // at most 1 intermediate checkpoint.
                 // This needs readjustment if that constant is changed.
-                auto y_ret = weso.y_ret;
-                std::thread t([y_ret, last_checkpoint] ()
                 {
                     std::lock_guard<std::mutex> lk(intermediates_mutex);
-                    pending_intermediates[last_checkpoint] = y_ret;
-                    intermediates_cv.notify_all();
-                });
-                t.detach();
+                    pending_intermediates[last_checkpoint] = weso.y_ret;
+                }
+                intermediates_cv.notify_all();
                 last_checkpoint += (1 << 15);
-            #else
+            } else {
                 weso.iterations = num_iterations;
                 // Notify prover event loop, we have a new segment with intermediates stored.
                 {
@@ -440,7 +436,7 @@ void repeated_square(form f, const integer& D, const integer& L, WesolowskiCallb
                 }
                 new_event_cv.notify_all();
                 last_checkpoint += (1 << 16);
-            #endif
+            }
         }
 
         #ifdef VDF_TEST
@@ -456,13 +452,13 @@ void repeated_square(form f, const integer& D, const integer& L, WesolowskiCallb
 
     std::cout << "Final number of iterations: " << num_iterations << "\n";
     
-    #if FAST_MACHINE
+    if (fast_machine) {
         intermediates_cv.notify_all();
         for (int i = 0; i < threads.size(); i++) {
             threads[i].join();
         }
         delete[] intermediates_stored;
-    #endif
+    }
 
     #ifdef VDF_TEST
         print( "fast average batch size", double(num_iterations_fast)/double(num_calls_fast) );
@@ -881,6 +877,7 @@ class ProverManager {
     }
 
     void RunEventLoop() {
+        const bool c_fast_machine = (std::thread::hardware_concurrency() >= 16) ? true : false;
         while (!stopped) {
             // Wait for some event to happen.
             {
@@ -970,16 +967,16 @@ class ProverManager {
                 proof_cv.notify_all();
             }
 
-            #if FAST_MACHINE
+            if (c_fast_machine) {
                 if (intermediates_allocated) {
                     while (intermediates_stored[2 * (intermediates_iter / (1 << 16))] == true &&
                            intermediates_stored[2 * (intermediates_iter / (1 << 16)) + 1] == true) {
                                 intermediates_iter += (1 << 16);
                     }
                 }
-            #else
+            } else {
                 intermediates_iter = vdf_iteration;
-            #endif
+            }
 
             // Check if new segments have arrived, and add them as pending proof.
             for (int i = 0; i < segment_count; i++) {

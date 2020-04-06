@@ -58,6 +58,7 @@ struct akashnil_form {
 
 const int64_t THRESH = 1UL<<31;
 const int64_t EXP_THRESH = 31;
+const int kWindowSize = 20;
 
 // If 'FAST_MACHINE' is set to 1, the machine needs to have a high number 
 // of CPUs. This will optimize the runtime,
@@ -115,7 +116,7 @@ public:
     // The intermediate values size of a >= 2^18 segment.
     const int bucket_size2 = 21846;
     // Assume provers won't be left behind by more than this # of segments.
-    const int window_size = 20;
+    const int window_size = kWindowSize;
 
     integer D;
     integer L;
@@ -767,12 +768,14 @@ class ProverManager {
     }
 
     Proof Prove(uint64_t iteration) {
-        proof_mutex.lock();
-        pending_iters.insert(iteration);
-        proof_mutex.unlock();
-        last_segment_mutex.lock();
-        pending_iters_last_sg.insert(iteration - iteration % (1 << 16));
-        last_segment_mutex.unlock();
+        {
+            std::lock_guard<std::mutex> lkg(proof_mutex);
+            pending_iters.insert(iteration);
+        }
+        {
+            std::lock_guard<std::mutex> lkg(last_segment_mutex);
+            pending_iters_last_sg.insert(iteration - iteration % (1 << 16));
+        }
         std::vector<Segment> proof_segments;
         // Wait for weso.iteration to reach the last segment.
         {
@@ -823,7 +826,8 @@ class ProverManager {
             last_segment = sg;
         }
         uint64_t proved_iters = 0;
-        {
+        bool valid_proof = false;
+        while (!valid_proof && !stopped) {
             std::unique_lock<std::mutex> lk(proof_mutex);
             proof_cv.wait(lk, [this, iteration] {
                 if (max_proving_iteration >= iteration - iteration % (1 << 16)) 
@@ -832,6 +836,7 @@ class ProverManager {
             });
             if (stopped)    
                 return Proof();
+            int blobs = 0;
             for (int i = segment_count - 1; i >= 0; i--) {
                 int segment_size = (1 << (16 + 2 * i));
                 int position = proved_iters / segment_size;
@@ -839,10 +844,23 @@ class ProverManager {
                     proof_segments.emplace_back(done_segments[i][position]);
                     position++;
                     proved_iters += segment_size;
+                    blobs++;
                 }
             }
             pending_iters.erase(iteration);
             lk.unlock();
+            if (blobs > 63 || proved_iters < iteration - iteration % (1 << 16)) {
+                std::cout << "Warning: Insufficient segments yet. Retrying in 1 minute\n";
+                proof_segments.clear();
+                proved_iters = 0;
+                this_thread::sleep_for(60s);
+                {
+                    std::lock_guard<std::mutex> lkg(proof_mutex);
+                    pending_iters.insert(iteration);
+                }
+            } else {
+                valid_proof = true;
+            }
         }
         if (!last_segment.is_empty) {
             proof_segments.emplace_back(last_segment);
@@ -878,6 +896,8 @@ class ProverManager {
 
     void RunEventLoop() {
         const bool c_fast_machine = (std::thread::hardware_concurrency() >= 16) ? true : false;
+        bool warned = false;
+        bool increased_proving = false;
         while (!stopped) {
             // Wait for some event to happen.
             {
@@ -890,6 +910,14 @@ class ProverManager {
                 return; 
             // Check if we can prove the last segment for some iteration.
             vdf_iteration = weso->iterations;
+            // VDF running longer than expected, increase proving threads count.
+            if (vdf_iteration >= 5e8) {
+                if (!increased_proving && c_fast_machine) {
+                    std::cout << "Warning: VDF running longer than (expected) 5 minutes. Adding 3 more proving threads.\n";
+                    max_proving_threads += 4;
+                    increased_proving = true;
+                }
+            }
             bool new_last_segment = false;
             {
                 std::lock_guard<std::mutex> lk(last_segment_mutex);
@@ -990,6 +1018,11 @@ class ProverManager {
                         /*y=*/weso->checkpoints[(last_appended[i] + sg_length) / (1 << 16)]
                     );
                     pending_segments[i].emplace_back(sg);
+                    if (!warned && pending_segments[i].size() >= kWindowSize - 2) {
+                        warned = true;
+                        std::cout << "Warning: VDF loop way ahead of proving loop. "
+                                  << "Possible proof corruption. Please increase kWindowSize.\n";
+                    }
                     last_appended[i] += sg_length;
                 }
             }

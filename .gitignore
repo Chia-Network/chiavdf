@@ -1,5 +1,6 @@
 # Generated assembly file
 /asm_compiled.s
+/avx2_asm_compiled.s
 
 # Binary files
 /compile_asm

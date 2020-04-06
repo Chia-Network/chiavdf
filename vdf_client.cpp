@@ -7,7 +7,9 @@ const int max_length = 2048;
 std::mutex socket_mutex;
 
 int process_number;
-int segments = 7;
+// Segments are 2^16, 2^18, ..., 2^30
+// Best case it'll be able to proof for up to 2^36 due to 64-wesolowski restriction.
+int segments = 8;
 int thread_count = 3;
 
 void PrintInfo(std::string input) {

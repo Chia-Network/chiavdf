@@ -13,9 +13,13 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
-=== Summary ===
+Our VDF construction is described in classgroup.pdf. The implementation details about squaring and proving phrases are described below.
 
-The NUDUPL algorithm is used. The equations are based on cryptoslava's equations from the previous contest. They were modified slightly to increase the level of parallelism.
+# Main VDF Loop #
+
+The main VDF loop produces repeated squarings of the generator form (i.e. calculates y(n) = g^(2^n)) as fast as possible, until the program is interrupted. Sundersoft's entry from [Chia's 2nd VDF contest](https://github.com/Chia-Network/vdfcontest2results) is used, together with the fast reducer used in Pulmark's entry. Below is described the approach:
+
+The NUDUPL algorithm is used. The equations are based on cryptoslava's equations from the 1st contest. They were modified slightly to increase the level of parallelism.
 
 The GCD is a custom implementation with scalar integers. There are two base cases: one uses a lookup table with continued fractions and the other uses the euclidean algorithm with a division table. The division table algorithm is slightly faster even though it has about 2x as many iterations.
 
@@ -33,7 +37,7 @@ The VDF implementation from the first contest is still used as a fallback and is
 
 There is also corruption detection by calculating C with a non-exact division and making sure the remainder is 0. This detected all injected random corruptions that I tested. No corruptions caused by bugs were observed during testing. This cannot correct for the sign of B being wrong.
 
-=== GCD continued fraction lookup table ===
+### GCD continued fraction lookup table ###
 
 The is implemented in gcd_base_continued_fractions.h and asm_gcd_base_continued_fractions.h. The division table implementation is the same as the previous entry and was discussed there. Currently the division table is only used if AVX2 is enabled but it could be ported to SSE or scalar code easily. Both implementations have about the same performance.
 
@@ -47,13 +51,13 @@ The resulting code seems to have too many instructions so it doesn't perform ver
 
 This might work better on an FPGA possibly with low latency DRAM or SRAM (compared to the euclidean algorithm with a division table). There is no limit to the size of the table but doubling the latency would require the number of bits in the table to also be doubled to have the same performance.
 
-=== Other GCD code ===
+### Other GCD code ###
 
 The gcd_128 function calculates a 128 bit GCD using Lehmer's algorithm. It is pretty straightforward and uses only unsigned arithmetic. Each cofactor matrix can only have two possible signs: [+ -; - +] or [- +; + -]. The gcd_unsigned function uses unsigned arithmetic and a jump table to apply the 64-bit cofactor matricies to the A and B values. It uses ADOX/ADCX/MULX if they are available and falls back to ADC/MUL otherwise. It will track the last known size of A to speed up the bit shifts required to get the top 128 bits of A.
 
 No attempt was made to try to do the A and B long integer multiplications on a separate thread; I wouldn't expect any performance improvement from this.
 
-=== Threads ===
+### Threads ###
 
 There is a master thread and a slave thread. The slave thread only exists for each batch of 5000 or so squarings and is then destroyed and recreated for the next batch (this has no measurable overhead). If the original VDF is used as a fallback, the batch ends and the slave thread is destroyed.
 
@@ -66,3 +70,58 @@ The GCD master thread will increment the counter when a new cofactor matrix has 
 It was attempted to use modular arithmetic to calculate k directly but this slowed down the program due to GMP's modulo or integer multiply operations not having enough performance. This also makes the integer multiplications bigger.
 
 The speedup isn't very high since most of the time is spent in the GCD base case and these can't be parallelized.
+
+# Generating proofs #
+
+The nested wesolowski proofs (n-wesolowski) are used to check the correctness of a VDF result. (Simple) Wesolowski proofs are described in [A Survey of Two Verifiable Delay Functions](https://theory.stanford.edu/~dabo/papers/VDFsurvey.pdf). In order to prove h = g^(2^T), a n-wesolowski proof uses n intermediate simple wesolowski proofs. Given h, g, T, t1, t2, ..., tn, h1, h2, ..., hn, a correct n-wesolowski proof will verify the following:
+
+```
+h1 = g^(2^t1)
+h2 = h1^(2^t2)
+h3 = h2^(2^t3)
+...
+hn = h(n-1)^(2^tn)
+```
+
+Additionally, we must have:
+
+```
+t1 + t2 + ... + tn = T
+hn = h
+```
+
+The algorithm will generate at most 64-wesolowski proofs. Some intermediates wesolowski proofs are stored in parallel with the main VDF loop. The goal is to have a n-wesolowski proof almost ready as soon as the main VDF loop finishes computing h = g^(2^T), for a T that we're interested in. We'll call a segment a tuple (y, x, T) for which we're interested in a simple wesolowski proof that y = x^(2^T). We'll call a segment finished when we've finished computing its proof.
+
+### Segmenets stored ###
+
+We'll store finished segments of length 2^x for x being multiples of 2 greater than or equal to 16. The current implementation limits the maximum segment size to 2^30, but this can be increased if needed. Let P = 16+2&ast;l. After each 2^P steps calculated by the main VDF loop, we'll store a segment proving that we've correctly done the 2^P steps. Formally, let x be the form after k&ast;2^P steps, y be the form after (k+1)&ast;2^P steps, for each k >= 0, for each P = 16+2&ast;l. Then, we'll store a segment (y, x, 2^P), together with a simple wesolowski proof.
+
+### Segment threads ###
+
+In order to finish a segment of length T=2^P, the number of iterations to run for is T/k + l&ast;2^(k+1) and the intermediate storage required is T/(k&ast;l), for some parameters k and l, as described in the paper. The squarings used to finish a segment are about 2 times as slow as the ones used by the main VDF loop. Even so, finishing a segment is much faster than producing its y value by the main VDF loop. This allows, by the time the main VDF loop finishes 2^16 more steps, to perform work on finishing multiple segments.
+
+The parameters used in finishing segments, for T=2^16, are k=10 and l=1. Above that, parameters are k=12 and l=2^(P-18). Note that, for P >= 18, the intermediate storage needed for a segment is constant (i.e. 2^18/12 forms stored in memory).
+
+Prover class is responsible to finish a segment. It implements pause/resume functionality, so its work can be paused, and later resumed from the point it stopped. For each unfinished segment generated by the main VDF loop, a Prover instance is created, which will eventually finish the segment.
+
+Segment threads are responsible for deciding which Prover instance is currently running. In the current implementation, there are 3 segment threads (however the number is configurable), so at most 3 Prover instances will run at once, at different threads (other Provers will be paused). The segment threads will always pick the segments with the shortest length to run. In case of a tie, the segments received the earliest will have priority. Every time a new segment arrives, or a segment gets finished, some pausing/resuming of Provers is done, if needed. Pausing is done to have at most 3 Provers running at any time, whilst resuming is done if less than 3 Provers are working, but some Provers are paused.
+
+All the segments of lengths 2^16, 2^18 and 2^20 will be finished relatively soon after the main VDF worker produced them, while the segments of length 2^22 and upwards will lag behind the main VDF worker a little. Eventually, all the higher size segments will be finished, the work on them being done repeatedly via pausing (when a smaller size segment arrives) and resuming (when all smaller size segments are finished).
+
+Currently, 4 more segment threads are added after the main VDF loop finishes 500 million iterations (after about 1 hour of running). This is done to be completely sure even the very big sized segments will be finished. This optimisation is only allowed on machines supporting at least 16 concurrent threads.
+
+### Generating n-wesolowski proof ###
+
+Let T an iteration we are interested in. Firstly, the main VDF Loop will need to calculate at least T iterations. Then, in order to get fast a n-wesolowski proof, we'll concatenate finished segments. We want the proof to be as short as possible, so we'll always pick finished segments of the maximum length possible. If such segments aren't finished, we'll choose lower length segments. A segment of length 2^(16 + 2&ast;p) can always be replaced with 4 segments of length 2^(16 + 2&ast;p - 2). The proof will be created shortly after the main VDF loop produced the result, as the 2^16 length segments will always be up to date with the main VDF loop (and, at worst case, we can always concatenate 2^16 length segments, if bigger sizes are not finished yet). It's possible after the concatenation that we'll still need to prove up to 2^16 iterations (no segment is able to cover anything less than 2^16). This last work is done in parallel with the main VDF loop, as an optimisation.
+
+The program limits the proof size to 64-wesolowski. If number of iterations is very large, it's possible the concatenation won't fit into this. In this case, the program will attempt again to prove every minute, until there are enough large segments to fit the 64-wesolowski limit. However, almost in all cases, the concatenation will fit the 64-wesolowski limit in the first try.
+
+Since the maximum segment size is 2^30 and we can use at most 64 segments in a concatenation, the program will prove at most 2^36 iterations. This can be increased if needed.
+
+### Intermediates storage ###
+
+In order to finish segments, some intermediate values need to be stored for each segment. For each different possible segment length, we use a sliding window of length 20 to store those. Hence, for each segment length, we'll store only the intermediates values needed for the last 20 segments produced by the main VDF loop. Since finishing segments is faster than producing them by the main VDF loop, we assume the segment threads won't be behind by more than 20 segments from the main VDF loop, for each segment length. Thanks to the sliding window technique, the memory used will always be constant.
+
+Generally, the main VDF loop performs all the storing, after computing a form we're interested in. However, since storing is very frequent and expensive (GMP operations), this will slow down the main VDF loop. 
+
+For the machines having at least 16 concurrent threads, an optimisation is provided: the main VDF loop does only repeated squaring, without storing any form. After each 2^15 steps are performed, a new thread starts redoing the work for 2^15 more steps, this time storing the intermediate values as well. All the intermediates threads and the main VDF loop will work in parallel. The only purpose of the main VDF loop becomes now to produce the starting values for the intermediate threads, as fast as possible. The squarings used in the intermediates threads will be 2 times slower than the ones used in the main VDF loop. It's expected the intermediates will only lag behind the main VDF loop by 2^15 iterations, at any point: after 2^16 iterations are done by the main VDF loop, the first thread doing the first 2^15 intermediate values is already finished. Also, at that point, half of the work of the second thread doing the last 2^15 intermediates values should be already done.

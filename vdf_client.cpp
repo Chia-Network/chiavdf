@@ -109,7 +109,9 @@ void session(tcp::socket& sock) {
             int size = (data[0] - '0') * 10 + (data[1] - '0');
             memset(data, 0, sizeof(data));
             boost::asio::read(sock, boost::asio::buffer(data, size), error);
-            int iters = atoi(data);        
+            uint64_t iters = 0;
+            for (int i = 0; i < size; i++)
+                iters = iters * 10 + data[i] - '0';       
             if (iters == 0) {
                 PrintInfo("Got stop signal!");
                 stopped = true;

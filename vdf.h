@@ -143,7 +143,7 @@ public:
         
         int space_needed = window_size * (bucket_size1 + bucket_size2 * (segments - 1));
         forms = (form*) calloc(space_needed, sizeof(form));
-        checkpoints = (form*) calloc((1 << 17), sizeof(form));
+        checkpoints = (form*) calloc((1 << 18), sizeof(form));
         std::cout << "Calloc'd " << to_string((space_needed + (1 << 17)) * sizeof(form)) << " bytes\n";
         this->D = D;
         this->L = root(-D, 4);
@@ -178,8 +178,8 @@ public:
 #endif
     }
 
-    int GetPosition(int exponent, int bucket) {
-        int power_2 = 1 << (16 + 2 * bucket);
+    int GetPosition(uint64_t exponent, int bucket) {
+        uint64_t power_2 = 1LL << (16 + 2 * bucket);
         int position = buckets_begin[bucket];
         int size = (bucket == 0) ? bucket_size1 : bucket_size2;
         int kl = (bucket == 0) ? 10 : (12 * (power_2 >> 18));
@@ -188,7 +188,7 @@ public:
         return position;
     }
 
-    form *GetForm(int exponent, int bucket) {
+    form *GetForm(uint64_t exponent, int bucket) {
         return &(forms[GetPosition(exponent, bucket)]);
     }
 
@@ -240,7 +240,7 @@ public:
             // If 'FAST_MACHINE' is 0, we store the intermediates
             // right away.
             for (int i = 0; i < segments; i++) {
-                int power_2 = 1 << (16 + 2 * i);
+                uint64_t power_2 = 1LL << (16 + 2LL * i);
                 int kl = (i == 0) ? 10 : (12 * (power_2 >> 18));
                 if ((iteration % power_2) % kl == 0) {
                     form* mulf = GetForm(iteration, i);
@@ -288,7 +288,7 @@ void CalculateIntermediatesInner(form& y, uint64_t iter_begin, WesolowskiCallbac
     int segments = weso.segments;
     for (uint64_t iteration = iter_begin; iteration < iter_begin + (1 << 15); iteration++) {
         for (int i = 0; i < segments; i++) {
-            int power_2 = 1 << (16 + 2 * i);
+            uint64_t power_2 = 1LL << (16 + 2 * i);
             int kl = (i == 0) ? 10 : (12 * (power_2 >> 18));
             if ((iteration % power_2) % kl == 0) {
                 if (stopped) return;
@@ -333,8 +333,8 @@ void repeated_square(form f, const integer& D, const integer& L, WesolowskiCallb
 
     std::vector<std::thread> threads;
     if (fast_machine) {
-        intermediates_stored = new bool[(1 << 17)];
-        for (int i = 0; i < (1 << 17); i++)
+        intermediates_stored = new bool[(1 << 19)];
+        for (int i = 0; i < (1 << 19); i++)
             intermediates_stored[i] = 0;
         intermediates_allocated = true;
 
@@ -540,7 +540,7 @@ struct Segment {
     }
 
     int GetSegmentBucket() {
-        int c_length = length;
+        uint64_t c_length = length;
         length >>= 16;
         int index = 0;
         while (length > 1) {
@@ -838,8 +838,8 @@ class ProverManager {
                 return Proof();
             int blobs = 0;
             for (int i = segment_count - 1; i >= 0; i--) {
-                int segment_size = (1 << (16 + 2 * i));
-                int position = proved_iters / segment_size;
+                uint64_t segment_size = (1LL << (16 + 2 * i));
+                uint64_t position = proved_iters / segment_size;
                 while (position < done_segments[i].size() && proved_iters + segment_size <= iteration) {
                     proof_segments.emplace_back(done_segments[i][position]);
                     position++;
@@ -973,7 +973,7 @@ class ProverManager {
                         max_proving_iteration = 0;
                         int proof_blobs = 0;
                         for (int i = segment_count - 1; i >= 0 && proof_blobs < 63; i--) {
-                            int segment_size = (1 << (16 + 2 * i));
+                            uint64_t segment_size = (1LL << (16 + 2 * i));
                             if (max_proving_iteration % segment_size != 0) {
                                 std::cout << "Warning: segments don't have the proper sizes.\n";
                             } else {
@@ -1008,7 +1008,7 @@ class ProverManager {
 
             // Check if new segments have arrived, and add them as pending proof.
             for (int i = 0; i < segment_count; i++) {
-                int sg_length = 1 << (16 + 2 * i); 
+                uint64_t sg_length = 1LL << (16 + 2 * i); 
                 while (last_appended[i] + sg_length <= intermediates_iter) {
                     if (stopped) return ;
                     Segment sg(

@@ -73,13 +73,27 @@ def copy_vdf_client(build_dir, install_dir):
     shutil.copy("vdf_client", install_dir)
 
 
+def copy_vdf_bench(build_dir, install_dir):
+    shutil.copy("vdf_bench", install_dir)
+
+
 def invoke_make(**kwargs):
     subprocess.check_output('make -f Makefile.vdf-client', shell=True)
 
 
-if os.getenv("BUILD_VDF_CLIENT", "Y") == "Y":
-    add_install_hook(copy_vdf_client)
+BUILD_VDF_CLIENT = (os.getenv("BUILD_VDF_CLIENT", "Y") == "Y")
+BUILD_VDF_BENCH = (os.getenv("BUILD_VDF_BENCH", "N") == "Y")
+
+
+if BUILD_VDF_CLIENT or BUILD_VDF_BENCH:
     add_build_hook(invoke_make)
+
+if BUILD_VDF_CLIENT:
+    add_install_hook(copy_vdf_client)
+
+
+if BUILD_VDF_BENCH:
+    add_install_hook(copy_vdf_bench)
 
 
 class CMakeBuild(build_ext):

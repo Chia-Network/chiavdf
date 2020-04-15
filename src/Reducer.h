@@ -23,6 +23,10 @@ limitations under the License.
 
 #include "ClassGroup.h"
 
+#ifdef _WIN32
+#include <intrin.h>
+#endif
+
 /** constants utilized in reduction algorithm */
 namespace {
 const int_fast64_t THRESH{1ul << 31};
@@ -113,7 +117,11 @@ private:
     // approximately.
     int_fast64_t size(static_cast<long>(mpz_size(op)));
     uint_fast64_t last(mpz_getlimbn(op, (size - 1)));
+#ifdef _WIN32
+    int_fast64_t lg2 = exp = ((63 - __lzcnt64(last)) + 1);
+#else
     int_fast64_t lg2 = exp = ((63 - __builtin_clzll(last)) + 1);
+#endif
     signed_shift(last, (63 - exp), r);
     if (size > 1) {
       exp += (size - 1) * 64;

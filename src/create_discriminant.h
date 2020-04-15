@@ -126,7 +126,7 @@ integer CreateDiscriminant(std::vector<uint8_t>& seed, int length = 1024) {
             minus_n %= integer(p);
             auto tmp = minus_n.to_vector();
             auto index = tmp[0];
-            index = -index + p;
+            index = -(int64_t)index + p; // TODO check this cast
             index = index * q % p;
             while (index < (1 << 16)) {
                 sieve[index] = true;

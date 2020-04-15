@@ -70,16 +70,30 @@ class CMakeExtension(Extension):
 
 
 def copy_vdf_client(build_dir, install_dir):
-    shutil.copy("vdf_client", install_dir)
+    shutil.copy("src/vdf_client", install_dir)
+
+
+def copy_vdf_bench(build_dir, install_dir):
+    shutil.copy("src/vdf_bench", install_dir)
 
 
 def invoke_make(**kwargs):
-    subprocess.check_output('make -f Makefile.vdf-client', shell=True)
+    subprocess.check_output('make -C src -f Makefile.vdf-client', shell=True)
 
 
-if os.getenv("BUILD_VDF_CLIENT", "Y") == "Y":
-    add_install_hook(copy_vdf_client)
+BUILD_VDF_CLIENT = (os.getenv("BUILD_VDF_CLIENT", "Y") == "Y")
+BUILD_VDF_BENCH = (os.getenv("BUILD_VDF_BENCH", "N") == "Y")
+
+
+if BUILD_VDF_CLIENT or BUILD_VDF_BENCH:
     add_build_hook(invoke_make)
+
+if BUILD_VDF_CLIENT:
+    add_install_hook(copy_vdf_client)
+
+
+if BUILD_VDF_BENCH:
+    add_install_hook(copy_vdf_bench)
 
 
 class CMakeBuild(build_ext):
@@ -134,7 +148,7 @@ setup(
     license='Apache License',
     python_requires='>=3.5',
     long_description=open('README.md').read(),
-    ext_modules=[CMakeExtension('chiavdf', '.')],
+    ext_modules=[CMakeExtension('chiavdf', 'src')],
     cmdclass=dict(build_ext=CMakeBuild, install_hook=install_hook, build_hook=build_hook),
     zip_safe=False,
 )

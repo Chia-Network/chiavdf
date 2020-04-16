@@ -631,18 +631,23 @@ class Prover {
 
         integer B = GetB(D, x_init, y);
         integer L=root(-D, 4);
-
+        form id;
+        try {
+            id = form::identity(D);
+        } catch(std::exception& e) {
+            std::cout << "Warning: Could not create identity: " << e.what() << "\n";
+        }
         uint64_t k1 = k / 2;
         uint64_t k0 = k - k1;
 
-        form x = form::identity(D);
+        form x = id;
 
         for (int64_t j = l - 1; j >= 0; j--) {
             x = FastPowFormNucomp(x, D, integer(1 << k), L, reducer);
 
             std::vector<form> ys((1 << k));
             for (uint64_t i = 0; i < (1 << k); i++)
-                ys[i] = form::identity(D);
+                ys[i] = id;
 
             form *tmp;
             for (uint64_t i = 0; i < ceil(1.0 * num_iterations / (k * l)); i++) {
@@ -667,7 +672,7 @@ class Prover {
             }
 
             for (uint64_t b1 = 0; b1 < (1 << k1); b1++) {
-                form z = form::identity(D);
+                form z = id;
                 for (uint64_t b0 = 0; b0 < (1 << k0); b0++) {
                     nucomp_form(z, z, ys[b1 * (1 << k0) + b0], D, L);
                     if (is_finished) {
@@ -684,7 +689,7 @@ class Prover {
             }
 
             for (uint64_t b0 = 0; b0 < (1 << k0); b0++) {
-                form z = form::identity(D);
+                form z = id;
                 for (uint64_t b1 = 0; b1 < (1 << k1); b1++) {
                     nucomp_form(z, z, ys[b1 * (1 << k0) + b0], D, L);
                     if (is_finished) {

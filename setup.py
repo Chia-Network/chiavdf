@@ -43,8 +43,6 @@ class install_hook(HookCommand):
     hooks = INSTALL_HOOKS
 
 
-build.sub_commands.append(("build_hook", lambda x: True))
-install.sub_commands.append(("install_hook", lambda x: True))
 
 
 ############################################
@@ -254,6 +252,9 @@ if platform.system()=="Windows":
         zip_safe=False,
     )
 else:
+    build.sub_commands.append(("build_hook", lambda x: True))
+    install.sub_commands.append(("install_hook", lambda x: True))
+
     setup(
         name='chiavdf',
         author='Florin Chirica',

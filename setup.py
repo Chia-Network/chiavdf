@@ -158,6 +158,7 @@ ext_modules = [
         'chiavdf',
         [
             "src/python_bindings/fastvdf.cpp",
+            "src/refcode/lzcnt.c",
         ],
         include_dirs=[
             # Path to pybind11 headers

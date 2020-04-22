@@ -23,6 +23,12 @@ limitations under the License.
 
 #include "ClassGroup.h"
 
+extern "C" {
+int has_lzcnt_hard();
+unsigned int lzcnt64_soft(unsigned long long x);
+unsigned int lzcnt64_hard(unsigned long long x);
+}
+
 /** constants utilized in reduction algorithm */
 namespace {
 const int_fast64_t THRESH{1ul << 31};
@@ -106,6 +112,9 @@ private:
       r = static_cast<int64_t>(op >> (-shift));
   }
 
+bool bLZCChecked=false;
+bool bLZCHasHW=false;
+
   inline void mpz_get_si_2exp(int_fast64_t &r, int_fast64_t &exp,
                               const mpz_t op) {
     // Return an approximation x of the large mpz_t op by an int64_t and the
@@ -113,7 +122,20 @@ private:
     // approximately.
     int_fast64_t size(static_cast<long>(mpz_size(op)));
     uint_fast64_t last(mpz_getlimbn(op, (size - 1)));
-    int_fast64_t lg2 = exp = ((63 - __builtin_clzll(last)) + 1);
+
+    if(!bLZCChecked)
+    {
+        bLZCHasHW=has_lzcnt_hard();
+        bLZCChecked=true;
+    }
+    
+    int_fast64_t lg2;
+
+    if(bLZCHasHW)
+        lg2 = exp = ((63 - lzcnt64_hard(last)) + 1);
+    else
+        lg2 = exp = ((63 - lzcnt64_soft(last)) + 1);
+
     signed_shift(last, (63 - exp), r);
     if (size > 1) {
       exp += (size - 1) * 64;

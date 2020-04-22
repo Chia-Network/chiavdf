@@ -20,7 +20,15 @@
 #include <array>
 #include <sstream>
 #include <fstream>
+#ifndef _WIN32
 #include <unistd.h>
+typedef unsigned __int128 uint128;
+typedef __int128 int128;
+#define USED __attribute__((used))
+#else
+#include "uint128_t/uint128_t.h"
+#define USED
+#endif
 #include <cassert>
 #include <iomanip>
 #include <set>
@@ -49,10 +57,7 @@ typedef int8_t int8;
 typedef int16_t int16;
 typedef int32_t int32;
 typedef int64_t int64;
-typedef unsigned __int128 uint128;
-typedef __int128 int128;
 
 #define todo
-#define USED __attribute__((used))
 
 #endif // INCLUDE_H

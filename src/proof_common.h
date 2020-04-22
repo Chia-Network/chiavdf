@@ -21,26 +21,37 @@ std::vector<unsigned char> ConvertIntegerToBytes(integer x, uint64_t num_bytes) 
     return bytes;
 }
 
-integer HashPrime(std::vector<unsigned char> s) {
-    std::string prime = "prime";
-    uint32_t j = 0;
-    while (true) {
-        std::vector<unsigned char> input(prime.begin(), prime.end());
-        std::vector<unsigned char> j_to_bytes = ConvertIntegerToBytes(integer(j), 8);
-        input.insert(input.end(), j_to_bytes.begin(), j_to_bytes.end());
-        input.insert(input.end(), s.begin(), s.end());
-        std::vector<unsigned char> hash(picosha2::k_digest_size);
-        picosha2::hash256(input.begin(), input.end(), hash.begin(), hash.end());
 
-        integer prime_integer;
-        for (int i = 0; i < 16; i++) {
-            prime_integer *= integer(256);
-            prime_integer += integer(hash[i]);
+// Generates a random psuedoprime using the hash and check method:
+// Randomly chooses x with bit-length `length`, then applies a mask
+//   (for b in bitmask) { x |= (1 << b) }.
+// Then return x if it is a psuedoprime, otherwise repeat.
+integer HashPrime(std::vector<uint8_t> seed, int length, vector<int> bitmask) {
+    assert (length % 8 == 0);
+    std::vector<uint8_t> hash(picosha2::k_digest_size);  // output of sha256
+    std::vector<uint8_t> blob;  // output of 1024 bit hash expansions
+    std::vector<uint8_t> sprout = seed;  // seed plus nonce
+
+    while (true) {  // While prime is not found
+        blob.resize(0);
+        while ((int) blob.size() * 8 < length) {
+            // Increment sprout by 1
+            for (int i = (int) sprout.size() - 1; i >= 0; --i) {
+                sprout[i]++;
+                if (!sprout[i])
+                    break;
+            }
+            picosha2::hash256(sprout.begin(), sprout.end(), hash.begin(), hash.end());
+            blob.insert(blob.end(), hash.begin(),
+                std::min(hash.end(), hash.begin() + length / 8 - blob.size()));
         }
-        if (prime_integer.prime()) {
-            return prime_integer;
-        }
-        j++;
+
+        assert ((int) blob.size() * 8 == length);
+        integer p(blob);  // p = 7 (mod 8), 2^1023 <= p < 2^1024
+        for (int b: bitmask)
+            p.set_bit(b, true);
+        if (p.prime())
+            return p;
     }
 }
 
@@ -63,7 +74,7 @@ integer GetB(const integer& D, form &x, form& y) {
     std::vector<unsigned char> serialization = SerializeForm(x, int_size);
     std::vector<unsigned char> serialization_y = SerializeForm(y, int_size);
     serialization.insert(serialization.end(), serialization_y.begin(), serialization_y.end());
-    return HashPrime(serialization);
+    return HashPrime(serialization, 264, {263});
 }
 
 class PulmarkReducer {

@@ -154,6 +154,11 @@ struct integer {
         assert(res==0);
     }
 
+    explicit integer(const std::vector<uint8_t> v) {
+        mpz_init(impl);
+        mpz_import(impl, v.size(), 1, sizeof(v[0]), 1, 0, &v[0]);
+    }
+
     //lsb first
     explicit integer(const vector<uint64>& data) {
         mpz_init(impl);

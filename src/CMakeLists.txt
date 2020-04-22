@@ -27,10 +27,14 @@ include_directories(
 set (CMAKE_CXX_FLAGS "-std=c++1z")
 
 add_subdirectory(lib/pybind11)
-pybind11_add_module(chiavdf ${CMAKE_CURRENT_SOURCE_DIR}/python_bindings/fastvdf.cpp)
+pybind11_add_module(chiavdf 
+  ${CMAKE_CURRENT_SOURCE_DIR}/python_bindings/fastvdf.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
+)
 
 add_executable(verifier_test
-    verifier_test.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/verifier_test.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
 )
 
 target_link_libraries(chiavdf PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} -pthread)

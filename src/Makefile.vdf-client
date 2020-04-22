@@ -16,10 +16,13 @@ all: vdf_client vdf_bench
 clean:
 	rm -f *.o vdf_client vdf_bench compile_asm
 
-vdf_client vdf_bench: %: %.o asm_compiled.o avx2_asm_compiled.o
+vdf_client vdf_bench: %: %.o lzcnt.o asm_compiled.o avx2_asm_compiled.o
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 vdf_client.o vdf_bench.o: CXXFLAGS += $(OPT_CFLAGS)
+
+lzcnt.o: refcode/lzcnt.c
+	$(CC) -c refcode/lzcnt.c
 
 asm_compiled.s: compile_asm
 	./compile_asm

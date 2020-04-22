@@ -156,7 +156,7 @@ struct integer {
 
     explicit integer(const std::vector<uint8_t> v) {
         mpz_init(impl);
-        mpz_import(impl, v.size(), 1, sizeof(v[0]), 0, 0, &v[0]);
+        mpz_import(impl, v.size(), 1, sizeof(v[0]), 1, 0, &v[0]);
     }
 
     //lsb first

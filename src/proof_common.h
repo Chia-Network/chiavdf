@@ -74,7 +74,7 @@ integer GetB(const integer& D, form &x, form& y) {
     std::vector<unsigned char> serialization = SerializeForm(x, int_size);
     std::vector<unsigned char> serialization_y = SerializeForm(y, int_size);
     serialization.insert(serialization.end(), serialization_y.begin(), serialization_y.end());
-    return HashPrime(serialization, 264, {});
+    return HashPrime(serialization, 264, {263});
 }
 
 class PulmarkReducer {

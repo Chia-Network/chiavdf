@@ -85,6 +85,18 @@ std::condition_variable new_event_cv;
 std::mutex new_event_mutex;
 
 bool debug_mode = false;
+bool one_weso = false;
+
+void ApproximateParameters(uint64_t T, uint64_t& l, uint64_t& k) {
+    double log_memory = 23.25349666;
+    double log_T = log2(T);
+    l = 1;
+    if (log_T - log_memory > 0.000001) {
+        l = ceil(pow(2, log_memory - 20));
+    }
+    double intermediate = T * (double)0.6931471 / (2.0 * l);
+    k = std::max(std::round(log(intermediate) - log(log(intermediate)) + 0.25), 1.0);
+}
 
 //always works
 void repeated_square_original(vdf_original &vdfo, form& f, const integer& D, const integer& L, uint64 base, uint64 iterations, INUDUPLListener *nuduplListener) {
@@ -110,6 +122,9 @@ class WesolowskiCallback :public INUDUPLListener {
 public:
     //std::atomic<int64_t> iterations = 0; // This must be intialized to zero at start
     int64_t iterations = 0;
+    uint64_t kl;
+    uint64_t wanted_iter;
+    form result;
     int segments;
     // The intermediate values size of a 2^16 segment.
     const int bucket_size1 = 6554;
@@ -134,24 +149,27 @@ public:
         vdfo = new vdf_original();
         t=new ClassGroupContext(4096);
         reducer=new Reducer(*t);
-        buckets_begin.push_back(0);
-        buckets_begin.push_back(bucket_size1 * window_size);
-        this->segments = segments;
-        for (int i = 0; i < segments - 2; i++) {
-            buckets_begin.push_back(buckets_begin[buckets_begin.size() - 1] + bucket_size2 * window_size);
-        }
-        
-        int space_needed = window_size * (bucket_size1 + bucket_size2 * (segments - 1));
-        forms = (form*) calloc(space_needed, sizeof(form));
-        checkpoints = (form*) calloc((1 << 18), sizeof(form));
-        std::cout << "Calloc'd " << to_string((space_needed + (1 << 17)) * sizeof(form)) << " bytes\n";
         this->D = D;
         this->L = root(-D, 4);
         form f = form::generator(D);
-        y_ret = form::generator(D);
-        for (int i = 0; i < segments; i++)
-            forms[buckets_begin[i]] = f;
-        checkpoints[0] = f;
+        if (!one_weso) {
+            buckets_begin.push_back(0);
+            buckets_begin.push_back(bucket_size1 * window_size);
+            this->segments = segments;
+            for (int i = 0; i < segments - 2; i++) {
+                buckets_begin.push_back(buckets_begin[buckets_begin.size() - 1] + bucket_size2 * window_size);
+            }
+            
+            int space_needed = window_size * (bucket_size1 + bucket_size2 * (segments - 1));
+            forms = (form*) calloc(space_needed, sizeof(form));
+            checkpoints = (form*) calloc((1 << 18), sizeof(form));
+            std::cout << "Calloc'd " << to_string((space_needed + (1 << 17)) * sizeof(form)) << " bytes\n";
+
+            y_ret = form::generator(D);
+            for (int i = 0; i < segments; i++)
+                forms[buckets_begin[i]] = f;
+            checkpoints[0] = f;
+        }
     }
 
     ~WesolowskiCallback() {
@@ -232,26 +250,39 @@ public:
     {
         iteration++;
 
-        if (fast_machine) {
-            if (iteration % (1 << 15) == 0) {
-                SetForm(type, data, &y_ret, /*reduced=*/true);
-            }
-        } else {
-            // If 'FAST_MACHINE' is 0, we store the intermediates
-            // right away.
-            for (int i = 0; i < segments; i++) {
-                uint64_t power_2 = 1LL << (16 + 2LL * i);
-                int kl = (i == 0) ? 10 : (12 * (power_2 >> 18));
-                if ((iteration % power_2) % kl == 0) {
-                    form* mulf = GetForm(iteration, i);
-                    SetForm(type, data, mulf, /*reduced=*/true);
+        if (!one_weso) {
+            if (fast_machine) {
+                if (iteration % (1 << 15) == 0) {
+                    SetForm(type, data, &y_ret, /*reduced=*/true);
+                }
+            } else {
+                // If 'FAST_MACHINE' is 0, we store the intermediates
+                // right away.
+                for (int i = 0; i < segments; i++) {
+                    uint64_t power_2 = 1LL << (16 + 2LL * i);
+                    int kl = (i == 0) ? 10 : (12 * (power_2 >> 18));
+                    if ((iteration % power_2) % kl == 0) {
+                        form* mulf = GetForm(iteration, i);
+                        SetForm(type, data, mulf, /*reduced=*/true);
+                    }
                 }
             }
-        }
 
-        if (iteration % (1 << 16) == 0) {
-            form* mulf = (&checkpoints[(iteration / (1 << 16))]);
-            SetForm(type, data, mulf, /*reduced=*/true);
+            if (iteration % (1 << 16) == 0) {
+                form* mulf = (&checkpoints[(iteration / (1 << 16))]);
+                SetForm(type, data, mulf, /*reduced=*/true);
+            }
+        } else {
+            if (iteration <= wanted_iter) {
+                if (iteration % kl == 0) {
+                    uint64_t pos = iteration / kl;
+                    form* mulf = &forms[pos];
+                    SetForm(type, data, mulf, /*reduced=*/true);
+                }
+                if (iteration == wanted_iter) {
+                    SetForm(type, data, &result, /*reduced=*/true);
+                }
+            }
         }
     }
 };
@@ -332,7 +363,7 @@ void repeated_square(form f, const integer& D, const integer& L, WesolowskiCallb
     uint64_t last_checkpoint = 0;
 
     std::vector<std::thread> threads;
-    if (fast_machine) {
+    if (!one_weso && fast_machine) {
         intermediates_stored = new bool[(1 << 19)];
         for (int i = 0; i < (1 << 19); i++)
             intermediates_stored[i] = 0;
@@ -414,30 +445,36 @@ void repeated_square(form f, const integer& D, const integer& L, WesolowskiCallb
         }
 
         num_iterations+=actual_iterations;
-        if (num_iterations >= last_checkpoint) {
-            if (fast_machine) {
-                if (last_checkpoint % (1 << 16) == 0) {
+        if (!one_weso) {
+            if (num_iterations >= last_checkpoint) {
+                if (fast_machine) {
+                    if (last_checkpoint % (1 << 16) == 0) {
+                        weso.iterations = num_iterations;
+                    }
+                    // Since checkpoint_interval is at most 10000, we'll have 
+                    // at most 1 intermediate checkpoint.
+                    // This needs readjustment if that constant is changed.
+                    {
+                        std::lock_guard<std::mutex> lk(intermediates_mutex);
+                        pending_intermediates[last_checkpoint] = weso.y_ret;
+                    }
+                    intermediates_cv.notify_all();
+                    last_checkpoint += (1 << 15);
+                } else {
                     weso.iterations = num_iterations;
+                    // Notify prover event loop, we have a new segment with intermediates stored.
+                    {
+                        std::lock_guard<std::mutex> lk(new_event_mutex);
+                        new_event = true;
+                    }
+                    new_event_cv.notify_all();
+                    last_checkpoint += (1 << 16);
                 }
-                // Since checkpoint_interval is at most 10000, we'll have 
-                // at most 1 intermediate checkpoint.
-                // This needs readjustment if that constant is changed.
-                {
-                    std::lock_guard<std::mutex> lk(intermediates_mutex);
-                    pending_intermediates[last_checkpoint] = weso.y_ret;
-                }
-                intermediates_cv.notify_all();
-                last_checkpoint += (1 << 15);
-            } else {
-                weso.iterations = num_iterations;
-                // Notify prover event loop, we have a new segment with intermediates stored.
-                {
-                    std::lock_guard<std::mutex> lk(new_event_mutex);
-                    new_event = true;
-                }
-                new_event_cv.notify_all();
-                last_checkpoint += (1 << 16);
             }
+        } else {
+            weso.iterations = num_iterations;
+            if (num_iterations >= weso.wanted_iter)
+                break;
         }
 
         #ifdef VDF_TEST
@@ -453,7 +490,7 @@ void repeated_square(form f, const integer& D, const integer& L, WesolowskiCallb
 
     std::cout << "Final number of iterations: " << num_iterations << "\n";
     
-    if (fast_machine) {
+    if (!one_weso && fast_machine) {
         intermediates_cv.notify_all();
         for (int i = 0; i < threads.size(); i++) {
             threads[i].join();
@@ -561,17 +598,21 @@ class Prover {
         this->y = segm.y;
         this->x_init = segm.x;
         this->D = D;
-        this->bucket = segm.GetSegmentBucket();
         this->done_iterations = segm.start;
         this->num_iterations = segm.length;
-        if (segm.length <= (1 << 16))
-            this->k = 10;
-        else
-            this->k = 12;
-        if (segm.length <= (1 << 18)) {
-            this->l = 1;
+        if (!one_weso) {
+            this->bucket = segm.GetSegmentBucket();
+            if (segm.length <= (1 << 16))
+                this->k = 10;
+            else
+                this->k = 12;
+            if (segm.length <= (1 << 18)) {
+                this->l = 1;
+            } else {
+                this->l = (segm.length >> 18);
+            }
         } else {
-            this->l = (segm.length >> 18);
+            ApproximateParameters(weso->wanted_iter, this->k, this->l);
         }
         this->weso = weso;
         is_paused = false;
@@ -653,11 +694,15 @@ class Prover {
             for (uint64_t i = 0; i < ceil(1.0 * num_iterations / (k * l)); i++) {
                 if (num_iterations >= k * (i * l + j + 1)) {
                     uint64_t b = GetBlock(i*l + j, k, num_iterations, B);
-                    if (!have_intermediates) {
-                        if (is_finished) return ;
-                        tmp = weso->GetForm(done_iterations + i * k * l, bucket);
+                    if (is_finished) return ;
+                    if (!one_weso) {
+                        if (!have_intermediates) {
+                            tmp = weso->GetForm(done_iterations + i * k * l, bucket);
+                        } else {
+                            tmp = &(intermediates->at(i));
+                        }
                     } else {
-                        tmp = &(intermediates->at(i));
+                        tmp = &forms[i];
                     } 
                     nucomp_form(ys[b], ys[b], *tmp, D, L);
                 }
@@ -712,12 +757,14 @@ class Prover {
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
         proof = x;
         is_finished = true;
-        // Notify event loop a proving thread is free.
-        {
-            std::lock_guard<std::mutex> lk(new_event_mutex);
-            new_event = true;
+        if (!one_weso) {
+            // Notify event loop a proving thread is free.
+            {
+                std::lock_guard<std::mutex> lk(new_event_mutex);
+                new_event = true;
+            }
+            new_event_cv.notify_one();
         }
-        new_event_cv.notify_one();
     }
 
   private:
@@ -738,6 +785,34 @@ class Prover {
     std::vector<form>* intermediates;
     bool have_intermediates = false;
 };
+
+Proof ProveOneWesolowski(uint64_t iters, integer& D, WesolowskiCallback* weso) {
+    while (weso->iterations < iters) {
+        this_thread::sleep_for(3s);
+    }
+    form f = form::generator(D);
+    Segment sg(
+        /*start=*/0,
+        /*length=*/iters,
+        /*x=*/f,
+        /*y=*/weso->result
+    );
+    Prover prover(sg, D, weso);
+    prover.start();
+    while (!prover.IsFinished()) {
+        this_thread::sleep_for(3s);
+    }
+    int int_size = (D.num_bits() + 16) >> 4;
+    std::vector<unsigned char> y_serialized;
+    std::vector<unsigned char> proof_serialized;
+    y_serialized = SerializeForm(weso->result, 129);
+    form proof_form = prover.GetProof();
+    proof_serialized = SerializeForm(proof_form, int_size);
+    Proof proof(y_serialized, proof_serialized);
+    proof.witness_type = 0;
+    std::cout << "Got simple weso proof: " << proof.hex() << "\n";
+    return proof;
+}
 
 class ProverManager {
   public:

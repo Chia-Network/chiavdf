@@ -16,13 +16,11 @@ void PrintInfo(std::string input) {
     std::cout << "VDF Client: " << input << "\n";
 }
 
-void CreateAndWriteProof(ProverManager& pm, uint64_t iteration, bool& stop_signal, tcp::socket& sock) {
-    Proof result = pm.Prove(iteration);
-    if (stop_signal == true) {
-        PrintInfo("Got stop signal before completing the proof!");
-        return ;
-    }
+char disc[350];
+char disc_size[5];
+int disc_int_size = atoi(disc_size);
 
+void WriteProof(uint64_t iteration, Proof& result, tcp::socket& sock) {
     // Writes the number of iterations
     std::vector<unsigned char> bytes = ConvertIntegerToBytes(integer(iteration), 8);
 
@@ -42,95 +40,54 @@ void CreateAndWriteProof(ProverManager& pm, uint64_t iteration, bool& stop_signa
     std::vector<unsigned char> prefix_bytes = ConvertIntegerToBytes(integer(length), 4);
     std::string prefix = BytesToStr(prefix_bytes);
 
-    std::lock_guard<std::mutex> lock(socket_mutex);
-
-    PrintInfo("Sending length = " + to_string(length));
-    PrintInfo("Generated proof = " + str_result);
-
-    boost::asio::write(sock, boost::asio::buffer(prefix_bytes, 4));
-    boost::asio::write(sock, boost::asio::buffer(str_result.c_str(), str_result.size()));
+    PrintInfo("Sending proof");
+    {
+        std::lock_guard<std::mutex> lock(socket_mutex);
+        boost::asio::write(sock, boost::asio::buffer(prefix_bytes, 4));
+        boost::asio::write(sock, boost::asio::buffer(str_result.c_str(), str_result.size()));
+    }
+    PrintInfo("Sended proof");
 }
 
-void session(tcp::socket& sock) {
-    try {
-        char disc[350];
-        char disc_size[5];
-        boost::system::error_code error;
-
-        memset(disc,0x00,sizeof(disc)); // For null termination
-        memset(disc_size,0x00,sizeof(disc_size)); // For null termination
-
-        boost::asio::read(sock, boost::asio::buffer(disc_size, 3), error);
-        int disc_int_size = atoi(disc_size);
-
-        boost::asio::read(sock, boost::asio::buffer(disc, disc_int_size), error);
-
-        integer D(disc);
-        PrintInfo("Discriminant = " + to_string(D.impl));
-
-        // Init VDF the discriminant...
-
-        if (error == boost::asio::error::eof)
-            return ; // Connection closed cleanly by peer.
-        else if (error)
-            throw boost::system::system_error(error); // Some other error.
-
-        if (getenv( "warn_on_corruption_in_production" )!=nullptr) {
-            warn_on_corruption_in_production=true;
-        }
-        if (is_vdf_test) {
-            PrintInfo( "=== Test mode ===" );
-        }
-        if (warn_on_corruption_in_production) {
-            PrintInfo( "=== Warn on corruption enabled ===" );
-        }
-        assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
-        init_gmp();
-        allow_integer_constructor=true; //make sure the old gmp allocator isn't used
-        set_rounding_mode();
-
-        integer L=root(-D, 4);
-        form f=form::generator(D);
-
-        std::vector<std::thread> threads;
-        WesolowskiCallback weso(segments, D);
-        bool stopped = false;
-        std::thread vdf_worker(repeated_square, f, D, L, std::ref(weso), std::ref(stopped));
-        ProverManager pm(D, &weso, segments, thread_count);        
-        pm.start();
-
-        // Tell client that I'm ready to get the challenges.
-        boost::asio::write(sock, boost::asio::buffer("OK", 2));
-        char data[20];
-
-        while (!stopped) {
-            memset(data, 0, sizeof(data));
-            boost::asio::read(sock, boost::asio::buffer(data, 2), error);
-            int size = (data[0] - '0') * 10 + (data[1] - '0');
-            memset(data, 0, sizeof(data));
-            boost::asio::read(sock, boost::asio::buffer(data, size), error);
-            uint64_t iters = 0;
-            for (int i = 0; i < size; i++)
-                iters = iters * 10 + data[i] - '0';       
-            if (iters == 0) {
-                PrintInfo("Got stop signal!");
-                stopped = true;
-                pm.stop();
-                vdf_worker.join();
-                for (int t = 0; t < threads.size(); t++) {
-                    threads[t].join();
-                }
-                free(forms);
-                free(weso.checkpoints);
-            } else {
-                PrintInfo("Received iteration: " + to_string(iters));
-                threads.push_back(std::thread(CreateAndWriteProof, std::ref(pm), iters, std::ref(stopped), std::ref(sock)));
-            }
-        }
-    } catch (std::exception& e) {
-        PrintInfo("Exception in thread: " + to_string(e.what()));
+void CreateAndWriteProof(ProverManager& pm, uint64_t iteration, bool& stop_signal, tcp::socket& sock) {
+    Proof result = pm.Prove(iteration);
+    if (stop_signal == true) {
+        PrintInfo("Got stop signal before completing the proof!");
+        return ;
     }
+    WriteProof(iteration, result, sock);
+}
 
+void InitSession(tcp::socket& sock) {
+    boost::system::error_code error;
+
+    memset(disc,0x00,sizeof(disc)); // For null termination
+    memset(disc_size,0x00,sizeof(disc_size)); // For null termination
+
+    boost::asio::read(sock, boost::asio::buffer(disc_size, 3), error);
+    boost::asio::read(sock, boost::asio::buffer(disc, disc_int_size), error);
+
+    if (error == boost::asio::error::eof)
+        return ; // Connection closed cleanly by peer.
+    else if (error)
+        throw boost::system::system_error(error); // Some other error.
+
+    if (getenv( "warn_on_corruption_in_production" )!=nullptr) {
+        warn_on_corruption_in_production=true;
+    }
+    if (is_vdf_test) {
+        PrintInfo( "=== Test mode ===" );
+    }
+    if (warn_on_corruption_in_production) {
+        PrintInfo( "=== Warn on corruption enabled ===" );
+    }
+    assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
+    init_gmp();
+    allow_integer_constructor=true; //make sure the old gmp allocator isn't used
+    set_rounding_mode();
+}
+
+void FinishSession(tcp::socket& sock) {
     try {
         // Tell client I've stopped everything, wait for ACK and close.
         boost::system::error_code error;
@@ -149,6 +106,99 @@ void session(tcp::socket& sock) {
     }
 }
 
+uint64_t ReadIteration(tcp::socket& sock) {
+    boost::system::error_code error;
+    char data[20];
+    memset(data, 0, sizeof(data));
+    boost::asio::read(sock, boost::asio::buffer(data, 2), error);
+    int size = (data[0] - '0') * 10 + (data[1] - '0');
+    memset(data, 0, sizeof(data));
+    boost::asio::read(sock, boost::asio::buffer(data, size), error);
+    uint64_t iters = 0;
+    for (int i = 0; i < size; i++)
+        iters = iters * 10 + data[i] - '0';       
+    return iters;
+}
+
+void session(tcp::socket& sock) {
+    InitSession(sock);
+    try {
+        integer D(disc);
+        integer L=root(-D, 4);
+        form f=form::generator(D);
+        PrintInfo("Discriminant = " + to_string(D.impl));
+
+        std::vector<std::thread> threads;
+        WesolowskiCallback weso(segments, D);
+        bool stopped = false;
+        std::thread vdf_worker(repeated_square, f, D, L, std::ref(weso), std::ref(stopped));
+        ProverManager pm(D, &weso, segments, thread_count);        
+        pm.start();
+
+        // Tell client that I'm ready to get the challenges.
+        boost::asio::write(sock, boost::asio::buffer("OK", 2));
+
+        while (!stopped) {
+            uint64_t iters = ReadIteration(sock);
+            if (iters == 0) {
+                PrintInfo("Got stop signal!");
+                stopped = true;
+                pm.stop();
+                vdf_worker.join();
+                for (int t = 0; t < threads.size(); t++) {
+                    threads[t].join();
+                }
+                free(forms);
+                free(weso.checkpoints);
+            } else {
+                PrintInfo("Received iteration: " + to_string(iters));
+                threads.push_back(std::thread(CreateAndWriteProof, std::ref(pm), iters, std::ref(stopped), std::ref(sock)));
+            }
+        }
+    } catch (std::exception& e) {
+        PrintInfo("Exception in thread: " + to_string(e.what()));
+    }
+    FinishSession(sock);
+}
+
+void SessionOneWeso(tcp::socket& sock) {
+    InitSession(sock);
+    try {
+        integer D(disc);
+        integer L=root(-D, 4);
+        form f=form::generator(D);
+        WesolowskiCallback weso(0, D);
+        PrintInfo("Discriminant = " + to_string(D.impl));
+
+        uint64_t iter = ReadIteration(sock);
+        weso.wanted_iter = iter;
+        uint64_t k, l;
+        ApproximateParameters(iter, k, l);
+        weso.kl = k * l;
+
+        bool stopped = false;
+        uint64_t space_needed = iter / (k * l) + 100;
+        forms = (form*) calloc(space_needed, sizeof(form));
+        forms[0] = f;
+
+        std::thread vdf_worker(repeated_square, f, D, L, std::ref(weso), std::ref(stopped));
+
+        Proof proof = ProveOneWesolowski(iter, D, &weso);
+        WriteProof(iter, proof, sock);
+
+        iter = ReadIteration(sock);
+        if (iter != 0) {
+            std::cout << "Warning: did not receive stop signal\n";
+        }
+        stopped = true;
+        vdf_worker.join();
+        free(forms);
+    } catch (std::exception& e) {
+        PrintInfo("Exception in thread: " + to_string(e.what()));
+    }
+    FinishSession(sock);
+}
+
 int gcd_base_bits=50;
 int gcd_128_max_iter=3;
 
@@ -158,7 +208,7 @@ int main(int argc, char* argv[])
   {
     if (argc != 4)
     {
-      std::cerr << "Usage: ./vdf_client <host> <port> <process_number>\n";
+      std::cerr << "Usage: ./vdf_client <host> <port> <one_weso>\n";
       return 1;
     }
 
@@ -176,8 +226,12 @@ int main(int argc, char* argv[])
 
     tcp::socket s(io_service);
     boost::asio::connect(s, iterator);
-    process_number = atoi(argv[3]);
-    session(s);
+    one_weso = (atoi(argv[3]) == 0) ? false : true;
+    if (!one_weso) {
+        session(s);
+    } else {
+        SessionOneWeso(s);
+    }
   } catch (std::exception& e) {
     std::cerr << "Exception: " << e.what() << "\n";
   } 

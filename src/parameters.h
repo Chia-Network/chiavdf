@@ -56,8 +56,6 @@ inline bool hasAVX2()
     const int ADX = 1<<19;
 
     bAVX2 = (cpuinfo[2] & AVX2) && (cpuinfo[2] & ADX);
-
-    bAVX2 = (info[2] & (1 << 5)) != 0;
 #elif defined(ARCH_ARM)
     bAVX2 = false;
 #else

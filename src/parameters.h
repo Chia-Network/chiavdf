@@ -34,10 +34,37 @@ inline bool hasAVX2()
   if(!bChecked)
   {
     bChecked=true;
-#if defined(__x86_64__)
-    bAVX2=__builtin_cpu_supports("avx2");
+#if defined(ARCH_X86) || defined(ARCH_X64)
+    int info[4] = {0};
+#if defined(_MSC_VER)
+    __cpuid(info, 0x80000001);
+#elif defined(__GNUC__) || defined(__clang__)
+#if defined(ARCH_X86) && defined(__PIC__)
+    __asm__ __volatile__ (
+                "xchg{l} {%%}ebx, %k1;"
+                "cpuid;"
+                "xchg{l} {%%}ebx, %k1;"
+                : "=a"(info[0]), "=&r"(info[1]), "=c"(info[2]), "=d"(info[3]) : "a"(0x80000001), "c"(0)
+    );
+#else
+    __asm__ __volatile__ (
+                "cpuid" : "=a"(info[0]), "=b"(info[1]), "=c"(info[2]), "=d"(info[3]) : "a"(0x80000001), "c"(0)
+    );
+#endif
+#endif
+    const int AVX2 = 1<<5;
+    const int ADX = 1<<19;
+
+    bAVX2 = (cpuinfo[2] & AVX2) && (cpuinfo[2] & ADX);
+
+    bAVX2 = (info[2] & (1 << 5)) != 0;
+#elif defined(ARCH_ARM)
+    bAVX2 = false;
+#else
+    bAVX2 = false;
 #endif
   }
+
   return bAVX2;
 }
 

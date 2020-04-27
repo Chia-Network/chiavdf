@@ -208,7 +208,7 @@ int main(int argc, char* argv[])
   {
     if (argc != 4)
     {
-      std::cerr << "Usage: ./vdf_client <host> <port> <one_weso>\n";
+      std::cerr << "Usage: ./vdf_client <host> <port>\n";
       return 1;
     }
 
@@ -226,11 +226,16 @@ int main(int argc, char* argv[])
 
     tcp::socket s(io_service);
     boost::asio::connect(s, iterator);
-    one_weso = (atoi(argv[3]) == 0) ? false : true;
-    if (!one_weso) {
-        session(s);
-    } else {
+    one_weso = false;
+    boost::system::error_code error;
+    char one_weso_buf[10];
+    boost::asio::read(sock, boost::asio::buffer(one_weso_buf, 6), error)
+    // Check for "SIMPLE" (1weso) or "NORMAL" (nweso)
+    if (one_weso_buf[0] == 'S') {
+        one_weso = true;
         SessionOneWeso(s);
+    } else {
+        session(s);
     }
   } catch (std::exception& e) {
     std::cerr << "Exception: " << e.what() << "\n";

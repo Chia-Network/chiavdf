@@ -229,7 +229,7 @@ int main(int argc, char* argv[])
     one_weso = false;
     boost::system::error_code error;
     char one_weso_buf[10];
-    boost::asio::read(sock, boost::asio::buffer(one_weso_buf, 6), error)
+    boost::asio::read(s, boost::asio::buffer(one_weso_buf, 6), error);
     // Check for "SIMPLE" (1weso) or "NORMAL" (nweso)
     if (one_weso_buf[0] == 'S') {
         one_weso = true;

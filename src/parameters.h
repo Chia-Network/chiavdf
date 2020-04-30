@@ -29,15 +29,56 @@ extern bool enable_all_instructions;
 bool bChecked=false;
 bool bAVX2=false;
 
+#if defined(__i386) || defined(_M_IX86)
+    #define ARCH_X86
+#elif defined(__x86_64__) || defined(_M_X64)
+    #define ARCH_X64
+#elif (defined(__arm__) && defined(__ARM_ARCH) && __ARM_ARCH >= 5) || (defined(_M_ARM) && _M_ARM >= 5) || defined(__ARM_FEATURE_CLZ) /* ARM (Architecture Version 5) */
+    #define ARCH_ARM
+#endif
+
+#if defined(_WIN64) || defined(_LP64) || defined(__LP64__)
+    #define ARCH_64BIT
+#else
+    #define ARCH_32BIT
+#endif
+
 inline bool hasAVX2()
 {
   if(!bChecked)
   {
     bChecked=true;
-#if defined(__x86_64__)
-    bAVX2=__builtin_cpu_supports("avx2");
+#if defined(ARCH_X86) || defined(ARCH_X64)
+    int info[4] = {0};
+#if defined(_MSC_VER)
+    __cpuid(info, 0x7);
+#elif defined(__GNUC__) || defined(__clang__)
+#if defined(ARCH_X86) && defined(__PIC__)
+    __asm__ __volatile__ (
+                "xchg{l} {%%}ebx, %k1;"
+                "cpuid;"
+                "xchg{l} {%%}ebx, %k1;"
+                : "=a"(info[0]), "=&r"(info[1]), "=c"(info[2]), "=d"(info[3]) : "a"(0x7), "c"(0)
+    );
+#else
+    __asm__ __volatile__ (
+                "cpuid" : "=a"(info[0]), "=b"(info[1]), "=c"(info[2]), "=d"(info[3]) : "a"(0x7), "c"(0)
+    );
+#endif
+#endif
+    const int AVX2 = 1<<5;
+    const int ADX = 1<<19;
+
+    bool avx2bit = ((info[1] & AVX2) == AVX2);
+    bool adxbit = ((info[1] & ADX) == ADX);
+    bAVX2 = avx2bit && adxbit;
+#elif defined(ARCH_ARM)
+    bAVX2 = false;
+#else
+    bAVX2 = false;
 #endif
   }
+
   return bAVX2;
 }
 

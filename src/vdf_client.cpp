@@ -187,8 +187,9 @@ void SessionOneWeso(tcp::socket& sock) {
         WriteProof(iter, proof, sock);
 
         iter = ReadIteration(sock);
-        if (iter != 0) {
+        while (iter != 0) {
             std::cout << "Warning: did not receive stop signal\n";
+            iter = ReadIteration(sock);
         }
         stopped = true;
         vdf_worker.join();

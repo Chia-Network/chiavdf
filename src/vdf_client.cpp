@@ -111,7 +111,7 @@ void session(tcp::socket& sock) {
 
         // Tell client that I'm ready to get the challenges.
         boost::asio::write(sock, boost::asio::buffer("OK", 2));
-        char data[20];
+        char data[30];
 
         while (!stopped) {
             memset(data, 0, sizeof(data));
@@ -119,7 +119,10 @@ void session(tcp::socket& sock) {
             int size = (data[0] - '0') * 10 + (data[1] - '0');
             memset(data, 0, sizeof(data));
             boost::asio::read(sock, boost::asio::buffer(data, size), error);
-            int iters = atoi(data);
+            uint64_t iters = 0;
+            for (int i = 0; i < size; i++) {
+                iters = iters * 10 + data[i] - '0';
+            }
             got_iters = true;
 
             if (iters == 0) {
@@ -133,9 +136,9 @@ void session(tcp::socket& sock) {
                 vdf_worker.join();
                 free(forms);
             } else {
-                int max_iter = 0;
-                int max_iter_thread_id = -1;
-                int min_iter = std::numeric_limits<int> :: max();
+                uint64_t max_iter = 0;
+                uint64_t max_iter_thread_id = -1;
+                uint64_t min_iter = 1ULL << 62;
                 bool unique = true;
                 for (auto active_iter: seen_iterations) {
                     if (active_iter.first > max_iter) {

@@ -14,11 +14,12 @@ int thread_count = 3;
 
 void PrintInfo(std::string input) {
     std::cout << "VDF Client: " << input << "\n";
+    std::cout << std::flush;
 }
 
 char disc[350];
 char disc_size[5];
-int disc_int_size = atoi(disc_size);
+int disc_int_size;
 
 void WriteProof(uint64_t iteration, Proof& result, tcp::socket& sock) {
     // Writes the number of iterations
@@ -65,6 +66,7 @@ void InitSession(tcp::socket& sock) {
     memset(disc_size,0x00,sizeof(disc_size)); // For null termination
 
     boost::asio::read(sock, boost::asio::buffer(disc_size, 3), error);
+    disc_int_size = atoi(disc_size);
     boost::asio::read(sock, boost::asio::buffer(disc, disc_int_size), error);
 
     if (error == boost::asio::error::eof)
@@ -169,6 +171,9 @@ void SessionOneWeso(tcp::socket& sock) {
         form f=form::generator(D);
         WesolowskiCallback weso(0, D);
         PrintInfo("Discriminant = " + to_string(D.impl));
+
+        // Tell client that I'm ready to get the challenges.
+        boost::asio::write(sock, boost::asio::buffer("OK", 2));
 
         uint64_t iter = ReadIteration(sock);
         weso.wanted_iter = iter;

@@ -247,6 +247,7 @@ if platform.system()=="Windows":
         license='Apache License',
         python_requires='>=3.7',
         long_description=open('README.md').read(),
+        long_description_content_type="text/markdown",
         build_requires=["pybind11"],
         ext_modules=ext_modules,
         cmdclass={'build_ext': BuildExt},

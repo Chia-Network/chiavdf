@@ -1,12 +1,12 @@
 # Chia VDF
 ![Build](https://github.com/Chia-Network/chiavdf/workflows/Build/badge.svg)
-![PyPI](https://img.shields.io/pypi/v/chiapos?logo=pypi)
-![PyPI - Wheel](https://img.shields.io/pypi/wheel/chiapos?logo=pypi)
-![GitHub](https://img.shields.io/github/license/Chia-Network/chiapos?logo=Github)
+![PyPI](https://img.shields.io/pypi/v/chiavdf?logo=pypi)
+![PyPI - Format](https://img.shields.io/pypi/format/chiavdf?logo=pypi)
+![GitHub](https://img.shields.io/github/license/Chia-Network/chiavdf?logo=Github)
 
-[![Total alerts](https://img.shields.io/lgtm/alerts/g/Chia-Network/chiapos.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/Chia-Network/chiapos/alerts/)
-[![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/Chia-Network/chiapos.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/Chia-Network/chiapos/context:python)
-[![Language grade: C/C++](https://img.shields.io/lgtm/grade/cpp/g/Chia-Network/chiapos.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/Chia-Network/chiapos/context:cpp)
+[![Total alerts](https://img.shields.io/lgtm/alerts/g/Chia-Network/chiavdf.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/Chia-Network/chiavdf/alerts/)
+[![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/Chia-Network/chiavdf.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/Chia-Network/chiavdf/context:python)
+[![Language grade: C/C++](https://img.shields.io/lgtm/grade/cpp/g/Chia-Network/chiavdf.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/Chia-Network/chiavdf/context:cpp)
 
 ## Building
 ```
@@ -19,11 +19,11 @@ build binary wheels for MacOS, Linux, and Windows and publish them with
 a source wheel on PyPi. See `.github/workflows/build.yml`. setup.py adds
 a dependency on [pybind11](https://github.com/pybind/pybind11) that is then
 managed by [cibuildwheel](https://github.com/joerick/cibuildwheel). Further
-installation is then available via `pip install chiapos` e.g.
+installation is then available via `pip install chiavdf` e.g.
 
 ## Building Timelord and related binaries
 In addition to building the required binary and source wheels for Windows,
-MacOS and Linux, chiapos can be used to compile vdf_client and vdf_bench.
+MacOS and Linux, chiavdf can be used to compile vdf_client and vdf_bench.
 vdf_client is the core VDF process that completes the Proof of Time submitted
 to it by the Timelord. This also includes a benchmarking tool to get a sense
 of the iterations per second of a given CPU called vdf_bench. Try
@@ -45,17 +45,17 @@ Contributions are welcome and more details are available in chia-blockchain's
 [CONTRIBUTING.md](https://github.com/Chia-Network/chia-blockchain/blob/master/CONTRIBUTING.md).
 
 The master branch is the currently released latest version on PyPI. Note that
-at times chiapos will be ahead of the release version that chia-blockchain
+at times chiavdf will be ahead of the release version that chia-blockchain
 requires in it's master/release version in preparation for a new chia-blockchain
 release. Please branch or fork master and then create a pull request to the
 master branch. Linear merging is enforced on master and merging requires a
-completed review. PRs will kick off a ci build and analysis of chiapos at
-[lgtm.com](https://lgtm.com/projects/g/Chia-Network/chiapos/?mode=list). Please
+completed review. PRs will kick off a ci build and analysis of chiavdf at
+[lgtm.com](https://lgtm.com/projects/g/Chia-Network/chiavdf/?mode=list). Please
 make sure your build is passing and that it does not increase alerts at lgtm.
 
 ## Background from prior VDF competitions
 
-Copyright 2018 Ilya Gorodetskov
+Copyright 2018 [Ilya Gorodetskov](http://www.sundersoft.com/)
 generic@sundersoft.com
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -70,11 +70,11 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
-=== Summary ===
+### Summary
 
-The NUDUPL algorithm is used. The equations are based on cryptoslava's
-equations from the previous contest. They were modified slightly to increase
-the level of parallelism.
+The NUDUPL algorithm is used. The equations are based on
+[cryptoslava's](https://github.com/rostislav) equations from the previous
+contest. They were modified slightly to increase the level of parallelism.
 
 The GCD is a custom implementation with scalar integers. There are two base
 cases: one uses a lookup table with continued fractions and the other uses the
@@ -124,7 +124,7 @@ and making sure the remainder is 0. This detected all injected random
 corruptions that I tested. No corruptions caused by bugs were observed during
 testing. This cannot correct for the sign of B being wrong.
 
-=== GCD continued fraction lookup table ===
+### GCD continued fraction lookup table
 
 The is implemented in gcd_base_continued_fractions.h and
 asm_gcd_base_continued_fractions.h. The division table implementation is the
@@ -162,7 +162,7 @@ This might work better on an FPGA possibly with low latency DRAM or SRAM
 to the size of the table but doubling the latency would require the number of
 bits in the table to also be doubled to have the same performance.
 
-=== Other GCD code ===
+### Other GCD code
 
 The gcd_128 function calculates a 128 bit GCD using Lehmer's algorithm. It is
 pretty straightforward and uses only unsigned arithmetic. Each cofactor matrix
@@ -175,7 +175,7 @@ speed up the bit shifts required to get the top 128 bits of A.
 No attempt was made to try to do the A and B long integer multiplications on a
 separate thread; I wouldn't expect any performance improvement from this.
 
-=== Threads ===
+### Threads
 
 There is a master thread and a slave thread. The slave thread only exists for
 each batch of 5000 or so squarings and is then destroyed and recreated for the

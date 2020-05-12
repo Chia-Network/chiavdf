@@ -11,3 +11,6 @@
 /verifier
 /verifier_test
 /build/*
+
+# Tests cache
+.mypy_cache

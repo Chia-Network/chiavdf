@@ -1,3 +1,6 @@
+#ifndef ASM_TYPES_H
+#define ASM_TYPES_H
+
 /*
 0   rax
 1   rbx
@@ -662,3 +665,6 @@ namespace asm_code {
     expand_macros m;
     #define APPEND_M(data) m.append(data, __LINE__, __FILE__, __func__)
 }
+
+// end Headerguard ASM_TYPES_H
+#endif

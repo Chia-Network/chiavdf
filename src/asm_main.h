@@ -1,3 +1,6 @@
+#ifndef ASM_MAIN_H
+#define ASM_MAIN_H
+
 #ifdef GENERATE_ASM_TRACKING_DATA
     #ifndef COMPILE_ASM
         extern "C" uint64 asm_tracking_data[num_asm_tracking_data];
@@ -251,3 +254,6 @@ void compile_asm(std::string filename) {
 
 
 }
+
+// end Headerguard ASM_MAIN_H
+#endif

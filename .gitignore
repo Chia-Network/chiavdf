@@ -1,6 +1,17 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
 # Generated assembly file
 /asm_compiled.s
 /avx2_asm_compiled.s
+
+# Makefiles
+CMakeFiles/
+Makefile
+CMakeCache.txt
+cmake_install.cmake
 
 # Binary files
 /compile_asm
@@ -14,3 +25,18 @@
 /prover_test
 /*.o
 /build/*
+*.whl
+*.egg-info
+*.o
+*.s
+
+# pyenv
+.python-version
+.eggs
+.venv
+venv
+activate
+
+# Tests cache
+.mypy_cache
+.pytest_cache

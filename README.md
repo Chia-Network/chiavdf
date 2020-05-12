@@ -1,4 +1,63 @@
-Copyright 2018 Ilya Gorodetskov
+# Chia VDF
+![Build](https://github.com/Chia-Network/chiavdf/workflows/Build/badge.svg)
+![PyPI](https://img.shields.io/pypi/v/chiavdf?logo=pypi)
+![PyPI - Format](https://img.shields.io/pypi/format/chiavdf?logo=pypi)
+![GitHub](https://img.shields.io/github/license/Chia-Network/chiavdf?logo=Github)
+
+[![Total alerts](https://img.shields.io/lgtm/alerts/g/Chia-Network/chiavdf.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/Chia-Network/chiavdf/alerts/)
+[![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/Chia-Network/chiavdf.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/Chia-Network/chiavdf/context:python)
+[![Language grade: C/C++](https://img.shields.io/lgtm/grade/cpp/g/Chia-Network/chiavdf.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/Chia-Network/chiavdf/context:cpp)
+
+## Building
+This component requires cmake, boost and GMP.
+```
+git submodule update --init --recursive
+pip install wheel setuptools_scm
+pip wheel .
+```
+
+The primary build process for this repository is to use GitHub Actions to
+build binary wheels for MacOS, Linux, and Windows and publish them with
+a source wheel on PyPi. See `.github/workflows/build.yml`. setup.py adds
+a dependency on [pybind11](https://github.com/pybind/pybind11) that is then
+managed by [cibuildwheel](https://github.com/joerick/cibuildwheel). Further
+installation is then available via `pip install chiavdf` e.g.
+
+## Building Timelord and related binaries
+In addition to building the required binary and source wheels for Windows,
+MacOS and Linux, chiavdf can be used to compile vdf_client and vdf_bench.
+vdf_client is the core VDF process that completes the Proof of Time submitted
+to it by the Timelord. This also includes a benchmarking tool to get a sense
+of the iterations per second of a given CPU called vdf_bench. Try
+`./vdf_bench square_asm 250000` for an ips estimate.
+
+To build vdf_client set the environment variable BUILD_VDF_CLIENT to "Y".
+`export BUILD_VDF_CLIENT=Y`.
+
+Similarly, to build vdf_bench set the environment variable BUILD_VDF_BENCH to
+"Y". `export BUILD_VDF_BENCH=Y`.
+
+This is currently automated in the
+[install-timelord.sh](https://github.com/Chia-Network/chia-blockchain/blob/master/install-timelord.sh)
+script in the [chia-blockchain repository](https://github.com/Chia-Network/chia-blockchain)
+which depends on this repository.
+
+## Contributing and workflow
+Contributions are welcome and more details are available in chia-blockchain's
+[CONTRIBUTING.md](https://github.com/Chia-Network/chia-blockchain/blob/master/CONTRIBUTING.md).
+
+The master branch is the currently released latest version on PyPI. Note that
+at times chiavdf will be ahead of the release version that chia-blockchain
+requires in it's master/release version in preparation for a new chia-blockchain
+release. Please branch or fork master and then create a pull request to the
+master branch. Linear merging is enforced on master and merging requires a
+completed review. PRs will kick off a ci build and analysis of chiavdf at
+[lgtm.com](https://lgtm.com/projects/g/Chia-Network/chiavdf/?mode=list). Please
+make sure your build is passing and that it does not increase alerts at lgtm.
+
+## Background from prior VDF competitions
+
+Copyright 2018 [Ilya Gorodetskov](http://www.sundersoft.com/)
 generic@sundersoft.com
 
 Licensed under the Apache License, Version 2.0 (the "License");

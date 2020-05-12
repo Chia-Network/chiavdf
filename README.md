@@ -4,6 +4,11 @@
 [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/Chia-Network/chiapos.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/Chia-Network/chiapos/context:python)
 [![Language grade: C/C++](https://img.shields.io/lgtm/grade/cpp/g/Chia-Network/chiapos.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/Chia-Network/chiapos/context:cpp)
 
+![PyPI](https://img.shields.io/pypi/v/chiapos?logo=pypi)
+![PyPI - Implementation](https://img.shields.io/pypi/implementation/chiapos?logo=pypi)
+![PyPI - Wheel](https://img.shields.io/pypi/wheel/chiapos?logo=pypi)
+![GitHub](https://img.shields.io/github/license/Chia-Network/chiapos?logo=Github)
+
 ## Building
 ```
 pip install wheel setuptools_scm

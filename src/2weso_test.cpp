@@ -1,29 +1,27 @@
 #include "vdf.h"
-#include "verifier.h"
 #include "create_discriminant.h"
+#include "verifier.h"
 
 int segments = 7;
 int thread_count = 3;
 
-Proof CreateProof(integer D, ProverManager& pm, uint64_t iteration) {
-    Proof proof = pm.Prove(iteration);
+int gcd_base_bits=50;
+int gcd_128_max_iter=3;
+
+void CheckProof(integer& D, Proof& proof, uint64_t iteration) {
     form x = form::generator(D);
     std::vector<unsigned char> bytes;
     bytes.insert(bytes.end(), proof.y.begin(), proof.y.end());
     bytes.insert(bytes.end(), proof.proof.begin(), proof.proof.end());
     if (CheckProofOfTimeNWesolowski(D, x, bytes.data(), bytes.size(), iteration, proof.witness_type)) {
-        std::cout << "Correct proof";
+        std::cout << "Correct proof\n";
     } else {
-        std::cout << "Incorrect proof";
+        std::cout << "Incorrect proof\n";
     }
-    std::cout << " (iteration: " << iteration << ").\n";
-    return proof;
 }
 
-int gcd_base_bits=50;
-int gcd_128_max_iter=3;
-
 int main() {
+    debug_mode = true;
     if(hasAVX2())
     {
       gcd_base_bits=63;
@@ -43,21 +41,25 @@ int main() {
     integer L=root(-D, 4);
     form f=form::generator(D);
     
-    WesolowskiCallback* weso = new FastAlgorithmCallback(segments, D, false);
-    std::cout << "Discriminant: " << D.impl << "\n";
     bool stopped = false;
-    fast_algorithm = true;
+    fast_algorithm = false;
+    two_weso = true;
+    TwoWesolowskiCallback* weso = new TwoWesolowskiCallback(D);
     FastStorage* fast_storage = NULL;
     std::thread vdf_worker(repeated_square, f, D, L, weso, fast_storage, std::ref(stopped));
-    ProverManager pm(D, (FastAlgorithmCallback*)weso, fast_storage, segments, thread_count); 
-    pm.start();
-    for (int i = 0; i <= 30; i++) {
-        std::thread t(CreateProof, D, std::ref(pm), (1 << 21) * i + 60000);
-        t.detach();
-    } 
-    std::this_thread::sleep_for (std::chrono::seconds(300));
-    std::cout << "Stopping everything.\n";
-    pm.stop();
+    // Test 1 - 1 million iters.
+    uint64_t iteration = 1000000;
+    Proof proof = ProveTwoWeso(D, f, 1000000, 0, weso, 0, stopped);
+    CheckProof(D, proof, iteration);
+    // Test 2 - 15 million iters.
+    iteration = 15000000;
+    proof = ProveTwoWeso(D, f, iteration, 0, weso, 0, stopped);
+    CheckProof(D, proof, iteration);
+    // Test 3 - 100 million iters.
+    iteration = 100000000;
+    proof = ProveTwoWeso(D, f, iteration, 0, weso, 0, stopped);
+    CheckProof(D, proof, iteration);
+    // Test stopping gracefully.
     stopped = true;
     vdf_worker.join();
     free(weso);

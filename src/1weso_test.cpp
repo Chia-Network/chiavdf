@@ -14,7 +14,6 @@ int gcd_128_max_iter=3;
 
 int main() {
     debug_mode = true;
-    one_weso = true;
     if(hasAVX2())
     {
       gcd_base_bits=63;
@@ -34,23 +33,17 @@ int main() {
     integer L=root(-D, 4);
     form f=form::generator(D);
     
-    WesolowskiCallback weso(segments, D);
-
     bool stopped = false;
+    fast_algorithm = false;
 
-    uint64_t iter = 15000000;
-    weso.wanted_iter = iter;
-    uint64_t k, l;
-    ApproximateParameters(iter, k, l);
-    weso.kl = k * l;
-    uint64_t space_needed = iter / (k * l) + 100;
-    forms = (form*) calloc(space_needed, sizeof(form));
-    forms[0] = form::generator(D);
-
-    std::thread vdf_worker(repeated_square, f, D, L, std::ref(weso), std::ref(stopped));
-    Proof proof = ProveOneWesolowski(iter, D, &weso);
+    uint64_t iter = 1000000;
+    OneWesolowskiCallback* weso = new OneWesolowskiCallback(D, iter);
+    FastStorage* fast_storage = NULL;
+    std::thread vdf_worker(repeated_square, f, D, L, weso, fast_storage, std::ref(stopped));
+    Proof proof = ProveOneWesolowski(iter, D, (OneWesolowskiCallback*)weso, stopped);
     stopped = true;
     vdf_worker.join();
+    free(weso);
 
     bool is_valid;
     form x_init = form::generator(D);

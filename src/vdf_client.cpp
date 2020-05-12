@@ -59,6 +59,15 @@ void CreateAndWriteProof(ProverManager& pm, uint64_t iteration, bool& stop_signa
     WriteProof(iteration, result, sock);
 }
 
+void CreateAndWriteProofTwoWeso(integer& D, form f, uint64_t iters, TwoWesolowskiCallback* weso, bool& stop_signal, tcp::socket& sock) {
+    Proof result = ProveTwoWeso(D, f, iters, 0, weso, 2, stop_signal);
+    if (!stop_signal) {
+        PrintInfo("Got stop signal before completing the proof!");
+        return ;
+    }
+    WriteProof(iters, result, sock);
+}
+
 void InitSession(tcp::socket& sock) {
     boost::system::error_code error;
 
@@ -122,7 +131,7 @@ uint64_t ReadIteration(tcp::socket& sock) {
     return iters;
 }
 
-void session(tcp::socket& sock) {
+void SessionFastAlgorithm(tcp::socket& sock) {
     InitSession(sock);
     try {
         integer D(disc);
@@ -131,10 +140,15 @@ void session(tcp::socket& sock) {
         PrintInfo("Discriminant = " + to_string(D.impl));
 
         std::vector<std::thread> threads;
-        WesolowskiCallback weso(segments, D);
+        const bool fast_machine = (std::thread::hardware_concurrency() >= 16) ? true : false;
+        WesolowskiCallback* weso = new FastAlgorithmCallback(segments, D, fast_machine);
+        FastStorage* fast_storage = NULL;
+        if (fast_machine) {
+            fast_storage = new FastStorage((FastAlgorithmCallback*)weso);   
+        }
         bool stopped = false;
-        std::thread vdf_worker(repeated_square, f, D, L, std::ref(weso), std::ref(stopped));
-        ProverManager pm(D, &weso, segments, thread_count);        
+        std::thread vdf_worker(repeated_square, f, std::ref(D), std::ref(L), weso, fast_storage, std::ref(stopped));
+        ProverManager pm(D, (FastAlgorithmCallback*)weso, fast_storage, segments, thread_count);        
         pm.start();
 
         // Tell client that I'm ready to get the challenges.
@@ -150,8 +164,10 @@ void session(tcp::socket& sock) {
                 for (int t = 0; t < threads.size(); t++) {
                     threads[t].join();
                 }
-                free(forms);
-                free(weso.checkpoints);
+                if (fast_storage != NULL) {
+                    delete(fast_storage);
+                }
+                delete(weso);
             } else {
                 PrintInfo("Received iteration: " + to_string(iters));
                 threads.push_back(std::thread(CreateAndWriteProof, std::ref(pm), iters, std::ref(stopped), std::ref(sock)));
@@ -169,26 +185,18 @@ void SessionOneWeso(tcp::socket& sock) {
         integer D(disc);
         integer L=root(-D, 4);
         form f=form::generator(D);
-        WesolowskiCallback weso(0, D);
         PrintInfo("Discriminant = " + to_string(D.impl));
 
         // Tell client that I'm ready to get the challenges.
         boost::asio::write(sock, boost::asio::buffer("OK", 2));
 
         uint64_t iter = ReadIteration(sock);
-        weso.wanted_iter = iter;
-        uint64_t k, l;
-        ApproximateParameters(iter, k, l);
-        weso.kl = k * l;
-
         bool stopped = false;
-        uint64_t space_needed = iter / (k * l) + 100;
-        forms = (form*) calloc(space_needed, sizeof(form));
-        forms[0] = f;
+        WesolowskiCallback* weso = new OneWesolowskiCallback(D, iter);
+        FastStorage* fast_storage = NULL;
+        std::thread vdf_worker(repeated_square, f, std::ref(D), std::ref(L), weso, fast_storage, std::ref(stopped));
 
-        std::thread vdf_worker(repeated_square, f, D, L, std::ref(weso), std::ref(stopped));
-
-        Proof proof = ProveOneWesolowski(iter, D, &weso);
+        Proof proof = ProveOneWesolowski(iter, D, (OneWesolowskiCallback*)weso, stopped);
         WriteProof(iter, proof, sock);
 
         iter = ReadIteration(sock);
@@ -198,7 +206,87 @@ void SessionOneWeso(tcp::socket& sock) {
         }
         stopped = true;
         vdf_worker.join();
-        free(forms);
+        delete(weso);
+    } catch (std::exception& e) {
+        PrintInfo("Exception in thread: " + to_string(e.what()));
+    }
+    FinishSession(sock);
+}
+
+void SessionTwoWeso(tcp::socket& sock) {
+    const int kMaxProcessesAllowed = 3;
+    InitSession(sock);
+    try {
+        integer D(disc);
+        integer L=root(-D, 4);
+        form f = form::generator(D);
+        PrintInfo("Discriminant = " + to_string(D.impl));
+
+        // Tell client that I'm ready to get the challenges.
+        boost::asio::write(sock, boost::asio::buffer("OK", 2));
+
+        bool stopped = false;
+        bool stop_vector[100];
+        std::vector<std::thread> threads;
+        // (iteration, thread_id)
+        std::set<std::pair<uint64_t, uint64_t> > seen_iterations;
+        WesolowskiCallback* weso = new TwoWesolowskiCallback(D);
+        FastStorage* fast_storage = NULL;
+        std::thread vdf_worker(repeated_square, f, std::ref(D), std::ref(L), weso, fast_storage, std::ref(stopped));
+
+        while (!stopped) {
+            uint64_t iters = ReadIteration(sock);
+            if (iters == 0) {
+                PrintInfo("Got stop signal!");
+                stopped = true;
+                for (int i = 0; i < threads.size(); i++)
+                    stop_vector[i] = true;
+                for (int t = 0; t < threads.size(); t++) {
+                    threads[t].join();
+                }
+                vdf_worker.join();
+                free(weso);
+            } else {
+                uint64_t max_iter = 0;
+                uint64_t max_iter_thread_id = -1;
+                uint64_t min_iter = 1ULL << 62;
+                bool unique = true;
+                for (auto active_iter: seen_iterations) {
+                    if (active_iter.first > max_iter) {
+                        max_iter = active_iter.first;
+                        max_iter_thread_id = active_iter.second;
+                    }
+                    if (active_iter.first < min_iter) {
+                        min_iter = active_iter.first;
+                    }
+                    if (active_iter.first == iters) {
+                        unique = false;
+                        break;
+                    }
+                }
+                if (!unique) {
+                    PrintInfo("Duplicate iteration " + to_string(iters) + "... Ignoring.");
+                    continue;
+                }
+                if (iters >= kMaxProcessesAllowed - 500000) {
+                    PrintInfo("Too big iter... ignoring");
+                    continue;
+                }
+                if (threads.size() < kMaxProcessesAllowed || iters < min_iter) {
+                    seen_iterations.insert({iters, threads.size()});
+                    PrintInfo("Running proving for iter: " + to_string(iters));
+                    stop_vector[threads.size()] = false;
+                    threads.push_back(std::thread(CreateAndWriteProofTwoWeso, std::ref(D), f, iters,
+                                      (TwoWesolowskiCallback*)weso, std::ref(stop_vector[threads.size()]), 
+                                      std::ref(sock)));
+                    if (threads.size() > kMaxProcessesAllowed) {
+                        PrintInfo("Stopping proving for iter: " + to_string(max_iter));
+                        stop_vector[max_iter_thread_id] = true;
+                        seen_iterations.erase({max_iter, max_iter_thread_id});
+                    }
+                }
+            }
+        }
     } catch (std::exception& e) {
         PrintInfo("Exception in thread: " + to_string(e.what()));
     }
@@ -232,16 +320,22 @@ int main(int argc, char* argv[])
 
     tcp::socket s(io_service);
     boost::asio::connect(s, iterator);
-    one_weso = false;
+    fast_algorithm = false;
+    two_weso = false;
     boost::system::error_code error;
     char one_weso_buf[10];
     boost::asio::read(s, boost::asio::buffer(one_weso_buf, 6), error);
-    // Check for "SIMPLE" (1weso) or "NORMAL" (nweso)
+    // Check for "SIMPLE" (0-witness), "NORMAL" (nweso), or "TWOWESO" (2-witness)
     if (one_weso_buf[0] == 'S') {
-        one_weso = true;
         SessionOneWeso(s);
-    } else {
-        session(s);
+    }
+    if (one_weso_buf[0] == 'N') {
+        fast_algorithm = true;
+        SessionFastAlgorithm(s);
+    }
+    if (one_weso_buf[0] == 'T') {
+        two_weso = true;
+        SessionTwoWeso(s);
     }
   } catch (std::exception& e) {
     std::cerr << "Exception: " << e.what() << "\n";

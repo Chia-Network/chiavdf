@@ -1,3 +1,6 @@
+#ifndef INTEGER_H
+#define INTEGER_H
+
 #include "integer_common.h"
 #include "xgcd_partial.c"
 
@@ -44,3 +47,6 @@ void inject_error(mpz_struct* i) {
         mpz_combit(i, pos);
     }
 }
+
+// end Headerguard INTEGER_H
+#endif

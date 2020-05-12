@@ -1,3 +1,6 @@
+#ifndef THREADING_H
+#define THREADING_H
+
 #include <boost/align/aligned_alloc.hpp>
 
 //mp_limb_t is an unsigned integer
@@ -899,3 +902,6 @@ template<class mpz_type> bool gcd_unsigned(
 
     return true;
 }
+
+// end Headerguard THREADING_H
+#endif

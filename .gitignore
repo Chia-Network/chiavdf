@@ -9,6 +9,8 @@ __pycache__/
 # Makefiles
 CMakeFiles/
 Makefile
+CMakeCache.txt
+cmake_install.cmake
 
 # Binary files
 /compile_asm

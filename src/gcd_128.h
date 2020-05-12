@@ -1,3 +1,6 @@
+#ifndef GCD_128_H
+#define GCD_128_H
+
 bool gcd_128(
     array<uint128, 2>& ab, array<array<uint64, 2>, 2>& uv_uint64, int& uv_uint64_parity, bool is_lehmer, uint128 ab_threshold=0
 ) {
@@ -245,3 +248,6 @@ bool gcd_128(
 
     return progress;
 }
+
+// end Headerguard GCD_128_H
+#endif

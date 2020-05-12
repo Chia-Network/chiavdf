@@ -1,3 +1,6 @@
+#ifndef GPU_INTEGER_DIVIDE_H
+#define GPU_INTEGER_DIVIDE_H
+
 //unsigned
 template<class type, int size> void normalize_divisor(fixed_integer<type, size>& b, int& shift_limbs, int& shift_bits) {
     shift_limbs=0;
@@ -376,3 +379,6 @@ fixed_integer<uint64, size_b> operator%(
     divide_integers(a_32, b_32, q_32, r_32);
     return to_uint64(r_32);
 }**/
+
+// end Headerguard GPU_INTEGER_DIVIDE_H
+#endif

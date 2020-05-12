@@ -1,3 +1,6 @@
+#ifndef PARAMETERS_H
+#define PARAMETERS_H
+
 //have to pass one of these in as a macro
 //#define VDF_MODE 0 //used for the final submission and correctness testing
 //#define VDF_MODE 1 //used for performance or other testing
@@ -253,3 +256,6 @@ void mark_vdf_test() {
         did_warning=true;
     }
 }
+
+// end Headerguard PARAMETERS_H
+#endif

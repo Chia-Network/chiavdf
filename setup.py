@@ -236,8 +236,6 @@ class BuildExt(build_ext):
         build_ext.build_extensions(self)
 
 
-import platform
-
 if platform.system()=="Windows":
     setup(
         name='chiavdf',

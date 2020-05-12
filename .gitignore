@@ -13,12 +13,12 @@ CMakeCache.txt
 cmake_install.cmake
 
 # Binary files
-/compile_asm
+src/compile_asm
 /vdf
 /server
-/vdf_bench
+src/vdf_bench
 /vdf_server
-/vdf_client
+src/vdf_client
 /verifier
 /verifier_test
 /build/*

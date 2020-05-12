@@ -1,3 +1,5 @@
+#ifndef BIT_MANIPULATION_H
+#define BIT_MANIPULATION_H
 /*uint64 funnel_shift(uint64 low, uint64 high, int start, int size) {
     assert(start>=0 && size>0 && start+size<=128);
 
@@ -50,3 +52,6 @@ void output_bits(ostream& out, uint64 bits, int size) {
 constexpr uint64 bit_sequence(int start, int size) {
     return insert_bits(0, (1ull<<size)-1, start, size);
 }
+
+// end Headerguard BIT_MANIPULATION_H
+#endif

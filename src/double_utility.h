@@ -1,3 +1,6 @@
+#ifndef DOUBLE_UTILITY_H
+#define DOUBLE_UTILITY_H
+
 struct double_bits {
     static const int exponent_num_bits=11;
     static const int fraction_num_bits=52;
@@ -113,3 +116,6 @@ uint64 make_uint64(uint32 high, uint32 low) {
 uint128 make_uint128(uint64 high, uint64 low) {
     return uint128(high)<<64 | uint128(low);
 }
+
+// end Headerguard DOUBLE_UTILITY_H
+#endif

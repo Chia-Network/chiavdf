@@ -1,3 +1,6 @@
+#ifndef VERIFIER_H
+#define VERIFIER_H
+
 #include "include.h"
 #include "integer_common.h"
 #include "vdf_new.h"
@@ -50,7 +53,7 @@ integer ConvertBytesToInt(uint8_t *bytes, int start_index, int end_index)
 form DeserializeForm(integer &d, uint8_t *bytes, int int_size)
 {
     integer a = ConvertBytesToInt(bytes, 0, int_size);
-    integer b = ConvertBytesToInt(bytes, int_size, 2 * int_size);    
+    integer b = ConvertBytesToInt(bytes, int_size, 2 * int_size);
     form f = form::from_abd(a, b, d);
     return f;
 }
@@ -137,7 +140,7 @@ bool CheckProofOfTimeNWesolowski(integer D, form x, uint8_t *proof_blob, int pro
     }
     bool is_valid = CheckProofOfTimeNWesolowskiInner(D, x, new_proof_blob, new_cnt, iters, int_size, iter_list, recursion);
     delete[] new_proof_blob;
-    return is_valid; 
+    return is_valid;
 }
 
 std::vector<uint8_t> HexToBytes(char *hex_proof)
@@ -199,3 +202,6 @@ bool CheckProofOfTimeType(ProofOfTimeType &proof)
     }
     return result;
 }
+
+// end Headerguard VERIFIER_H
+#endif

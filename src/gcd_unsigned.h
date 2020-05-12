@@ -1,3 +1,6 @@
+#ifndef GCD_UNSIGNED_H
+#define GCD_UNSIGNED_H
+
 //threshold is 0 to calculate the normal gcd
 template<int size> void gcd_unsigned_slow(
     array<fixed_integer<uint64, size>, 2>& ab,
@@ -345,3 +348,6 @@ template<int size> void gcd_unsigned(
     assert(integer(ab[0])>integer(threshold));
     assert(integer(ab[1])<=integer(threshold));
 }
+
+// end Headerguard GCD_UNSIGNED_H
+#endif

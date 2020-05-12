@@ -1,3 +1,6 @@
+#ifndef GCD_BASE_CONTINUED_FRACTIONS_H
+#define GCD_BASE_CONTINUED_FRACTIONS_H
+
 typedef array<double, 2> vector2;
 typedef array<vector2, 2> matrix2;
 
@@ -757,3 +760,6 @@ bool gcd_base_continued_fraction_2(vector2& ab_double, matrix2& uv_double, bool 
 
     return num_quotients!=0;
 }
+
+// end Headerguard GCD_BASE_CONTINUED_FRACTIONS_H
+#endif

@@ -1,3 +1,6 @@
+#ifndef GPU_INTEGER_H
+#define GPU_INTEGER_H
+
 template<class int_type> int_type add_carry(int_type a, int_type b, int carry_in, int& carry_out) {
     assert(carry_in==0 || carry_in==1);
     uint128 res=uint128(a) + uint128(b) + uint128(carry_in);
@@ -637,3 +640,6 @@ template<int size> fixed_integer<uint32, size*2> to_uint32(fixed_integer<uint64,
 
     return res;
 }
+
+// end Headerguard GPU_INTEGER_H
+#endif

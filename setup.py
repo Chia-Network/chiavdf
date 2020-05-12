@@ -264,6 +264,7 @@ else:
         license='Apache License',
         python_requires='>=3.5',
         long_description=open('README.md').read(),
+        long_description_content_type="text/markdown",
         ext_modules=[CMakeExtension('chiavdf', 'src')],
         cmdclass=dict(build_ext=CMakeBuild, install_hook=install_hook, build_hook=build_hook),
         zip_safe=False,

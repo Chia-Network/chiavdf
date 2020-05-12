@@ -70,6 +70,8 @@ class CMakeExtension(Extension):
 def copy_vdf_client(build_dir, install_dir):
     shutil.copy("src/vdf_client", install_dir)
     shutil.copy("src/prover_test", install_dir)
+    shutil.copy("src/1weso_test", install_dir)
+    shutil.copy("src/2weso_test", install_dir)
 
 
 def copy_vdf_bench(build_dir, install_dir):

@@ -144,3 +144,5 @@ bool CheckProofOfTimeNWesolowski(integer D, form x, uint8_t *proof_blob, int pro
     delete[] new_proof_blob;
     return is_valid;
 }
+
+#endif // VERIFIER_H

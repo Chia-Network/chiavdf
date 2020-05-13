@@ -364,8 +364,11 @@ class ProverManager {
 
     void stop() {        
         stopped = true;
-        for (int i = 0; i < provers.size(); i++)
-            provers[i].first->stop();
+        {
+            std::lock_guard<std::mutex> lk(proof_mutex);
+            for (int i = 0; i < provers.size(); i++)
+                provers[i].first->stop();
+        }
         proof_cv.notify_all();
         last_segment_cv.notify_all();
         {
@@ -693,14 +696,16 @@ class ProverManager {
                 if (!new_segment) {
                     provers[index].first->resume();
                 } else {
-                    provers.emplace_back(
-                        std::make_pair(
-                            std::make_unique<InterruptableProver>(best, D, weso),                            
-                            best
-                        )
-                    );
-                    provers[provers.size() - 1].first->start();
-                    pending_segments[index].erase(pending_segments[index].begin());
+                    if (!stopped) {
+                        provers.emplace_back(
+                            std::make_pair(
+                                std::make_unique<InterruptableProver>(best, D, weso),                            
+                                best
+                            )
+                        );
+                        provers[provers.size() - 1].first->start();
+                        pending_segments[index].erase(pending_segments[index].begin());
+                    }
                 }
             }
         }

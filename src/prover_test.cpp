@@ -4,19 +4,22 @@
 
 int segments = 7;
 int thread_count = 3;
+bool stop_signal = false;
 
 Proof CreateProof(integer D, ProverManager& pm, uint64_t iteration) {
     Proof proof = pm.Prove(iteration);
-    form x = form::generator(D);
-    std::vector<unsigned char> bytes;
-    bytes.insert(bytes.end(), proof.y.begin(), proof.y.end());
-    bytes.insert(bytes.end(), proof.proof.begin(), proof.proof.end());
-    if (CheckProofOfTimeNWesolowski(D, x, bytes.data(), bytes.size(), iteration, proof.witness_type)) {
-        std::cout << "Correct proof";
-    } else {
-        std::cout << "Incorrect proof";
+    if (!stop_signal) {
+        form x = form::generator(D);
+        std::vector<unsigned char> bytes;
+        bytes.insert(bytes.end(), proof.y.begin(), proof.y.end());
+        bytes.insert(bytes.end(), proof.proof.begin(), proof.proof.end());
+        if (CheckProofOfTimeNWesolowski(D, x, bytes.data(), bytes.size(), iteration, proof.witness_type)) {
+            std::cout << "Correct proof";
+        } else {
+            std::cout << "Incorrect proof";
+        }
+        std::cout << " (iteration: " << iteration << ").\n";
     }
-    std::cout << " (iteration: " << iteration << ").\n";
     return proof;
 }
 
@@ -56,6 +59,7 @@ int main() {
         t.detach();
     } 
     std::this_thread::sleep_for (std::chrono::seconds(300));
+    stop_signal = true;
     std::cout << "Stopping everything.\n";
     pm.stop();
     stopped = true;

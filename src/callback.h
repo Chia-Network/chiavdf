@@ -113,6 +113,7 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
         form f = form::generator(D);
         forms[0] = f;
         kl = 10;
+        switch_iters = -1;
     }
 
     ~TwoWesolowskiCallback() {
@@ -146,7 +147,7 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
     void OnIteration(int type, void *data, uint64_t iteration) {
         iteration++;
         if (iteration % kl == 0) {
-            uint64_t pos = iteration / kl;
+            uint64_t pos = GetPosition(iteration);
             form* mulf = &forms[pos];
             SetForm(type, data, mulf);
         }
@@ -154,7 +155,7 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
 
   private:
     uint64_t switch_index;
-    uint64_t switch_iters;
+    int64_t switch_iters;
     uint32_t kl;
 };
 

@@ -26,7 +26,7 @@ public:
         reducer->reduce(inf);
     }
 
-    void SetForm(int type, void *data, form* mulf) {
+    void SetForm(int type, void *data, form* mulf, bool reduced = true) {
         switch(type) {
             case NL_SQUARESTATE:
             {
@@ -53,7 +53,9 @@ public:
             default:
                 cout << "Unknown case" << endl;
         }
-        reduce(*mulf);
+        if (reduced) {
+            reduce(*mulf);
+        }
     }
 
     virtual void OnIteration(int type, void *data, uint64_t iteration) = 0;

@@ -60,7 +60,7 @@ class FastStorage {
         }
     }
 
-    void CalculateIntermediatesInner(form& y, uint64_t iter_begin) {
+    void CalculateIntermediatesInner(form y, uint64_t iter_begin) {
         PulmarkReducer reducer;
         integer& D = weso->D;
         integer& L = weso->L;
@@ -72,7 +72,7 @@ class FastStorage {
                 if ((iteration % power_2) % kl == 0) {
                     if (stopped) return;
                     form* mulf = weso->GetForm(iteration, i);
-                    weso->SetForm(NL_FORM, &y, mulf);
+                    weso->SetForm(NL_FORM, &y, mulf, /*reduced=*/false);
                 }
             }
             nudupl_form(y, y, D, L);
@@ -81,7 +81,7 @@ class FastStorage {
         AddIntermediates(iter_begin);
     }
 
-    void SubmitCheckpoint(form& y_ret, uint64_t iteration) {
+    void SubmitCheckpoint(form y_ret, uint64_t iteration) {
         {
             std::lock_guard<std::mutex> lk(intermediates_mutex);
             pending_intermediates[iteration] = y_ret;

@@ -156,10 +156,13 @@ class get_pybind_include(object):
 ext_modules = [
     Extension(
         'chiavdf',
-        [
-            "src/python_bindings/fastvdf.cpp",
-            "src/refcode/lzcnt.c",
-        ],
+        sorted (
+            [
+                "src/python_bindings/fastvdf.cpp",
+                "src/refcode/lzcnt.c",
+                "verfier_test.cpp"
+            ]
+        ),
         include_dirs=[
             # Path to pybind11 headers
             get_pybind_include(),
@@ -267,6 +270,7 @@ else:
         long_description_content_type="text/markdown",
         build_requires=["pybind11"],
         url="https://github.com/Chia-Network/chiavdf",
+        setup_requires=['pybind11>=2.5.0'],
         ext_modules=[CMakeExtension('chiavdf', 'src')],
         cmdclass=dict(build_ext=CMakeBuild, install_hook=install_hook, build_hook=build_hook),
         zip_safe=False,

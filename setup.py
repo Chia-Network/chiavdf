@@ -268,7 +268,7 @@ else:
         long_description_content_type="text/markdown",
         url="https://github.com/Chia-Network/chiavdf",
         setup_requires=['pybind11>=2.5.0'],
-        eager_resources=['src/lib/pybind11/']
+        eager_resources=['src/lib/pybind11/'],
         ext_modules=[CMakeExtension('chiavdf', 'src')],
         cmdclass=dict(build_ext=CMakeBuild, install_hook=install_hook, build_hook=build_hook),
         zip_safe=False,

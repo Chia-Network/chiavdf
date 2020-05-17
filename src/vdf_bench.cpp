@@ -1,4 +1,6 @@
 #include "include.h"
+#include "bit_manipulation.h"
+#include "double_utility.h"
 #include "parameters.h"
 #include "asm_main.h"
 #include "integer.h"
@@ -22,12 +24,15 @@ static void usage(const char *progname)
 
 int main(int argc, char **argv)
 {
+    assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
+    init_gmp();
+    allow_integer_constructor=true; //make sure the old gmp allocator isn't used
+    set_rounding_mode();
+
     if (argc < 3) {
         usage(argv[0]);
         return 1;
     }
-    if (!strcmp(argv[1], "square_asm"))
-        init_gmp();
     int iters = atoi(argv[2]);
     auto D = integer("-141140317794792668862943332656856519378482291428727287413318722089216448567155737094768903643716404517549715385664163360316296284155310058980984373770517398492951860161717960368874227473669336541818575166839209228684755811071416376384551902149780184532086881683576071479646499601330824259260645952517205526679");
 

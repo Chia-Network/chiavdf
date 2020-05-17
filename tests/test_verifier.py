@@ -2,13 +2,13 @@ from chiavdf import prove, verify_wesolowski, create_discriminant
 import secrets
 import time
 
-for _ in range(10):
+def test_prove_and_verify():
     discriminant_challenge = secrets.token_bytes(10)
     discriminant_size = 512
     discriminant = create_discriminant(discriminant_challenge, discriminant_size)
     int_size = (discriminant_size + 16) >> 4
 
-    iters = 2000000
+    iters = 1000000
     t1 = time.time()
     result = prove(discriminant_challenge, discriminant_size, iters)
     t2 = time.time()

@@ -8,18 +8,21 @@
 [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/Chia-Network/chiavdf.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/Chia-Network/chiavdf/context:python)
 [![Language grade: C/C++](https://img.shields.io/lgtm/grade/cpp/g/Chia-Network/chiavdf.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/Chia-Network/chiavdf/context:cpp)
 
-## Building
-This component requires cmake, boost and GMP.
+## Building a wheel
+Compiling chiavdf requires cmake, boost and GMP.
 ```
-pip install wheel setuptools_scm
+python3 -m venv venv
+source venv/bin/activate
+
+pip install wheel setuptools_scm pybind11
 pip wheel .
 ```
 
 The primary build process for this repository is to use GitHub Actions to
 build binary wheels for MacOS, Linux, and Windows and publish them with
 a source wheel on PyPi. See `.github/workflows/build.yml`. setup.py adds
-a dependency on [pybind11](https://github.com/pybind/pybind11) by invoking git
-to check out the pybind submodules. Building is then managed by
+a dependency on [pybind11](https://github.com/pybind/pybind11) using
+`pip install pybind11`. Building is then managed by
 [cibuildwheel](https://github.com/joerick/cibuildwheel). Further installation
 is then available via `pip install chiavdf` e.g.
 
@@ -37,7 +40,7 @@ To build vdf_client set the environment variable BUILD_VDF_CLIENT to "Y".
 Similarly, to build vdf_bench set the environment variable BUILD_VDF_BENCH to
 "Y". `export BUILD_VDF_BENCH=Y`.
 
-This is currently automated in the
+This is currently automated via pip in the
 [install-timelord.sh](https://github.com/Chia-Network/chia-blockchain/blob/master/install-timelord.sh)
 script in the
 [chia-blockchain repository](https://github.com/Chia-Network/chia-blockchain)

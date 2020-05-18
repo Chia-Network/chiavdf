@@ -6,8 +6,7 @@
 
 [![Total alerts](https://img.shields.io/lgtm/alerts/g/Chia-Network/chiavdf.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/Chia-Network/chiavdf/alerts/)
 [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/Chia-Network/chiavdf.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/Chia-Network/chiavdf/context:python)
-[![Language grade: C/C++](https://img.shields.io/lgtm/grade/cpp/g/Chia-Network/chiavdf.svg?logo=lgtm&logoWidth=18)]
-(https://lgtm.com/projects/g/Chia-Network/chiavdf/context:cpp)
+[![Language grade: C/C++](https://img.shields.io/lgtm/grade/cpp/g/Chia-Network/chiavdf.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/Chia-Network/chiavdf/context:cpp)
 
 ## Building
 This component requires cmake, boost and GMP.

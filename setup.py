@@ -39,11 +39,9 @@ class HookCommand(Command):
 class build_hook(HookCommand):
     hooks = BUILD_HOOKS
 
+
 class install_hook(HookCommand):
     hooks = INSTALL_HOOKS
-
-
-
 
 ############################################
 
@@ -64,7 +62,6 @@ class CMakeExtension(Extension):
     def __init__(self, name, sourcedir=''):
         Extension.__init__(self, name, sources=['./'])
         self.sourcedir = os.path.abspath(sourcedir)
-
 
 
 def copy_vdf_client(build_dir, install_dir):
@@ -92,7 +89,6 @@ if BUILD_VDF_CLIENT or BUILD_VDF_BENCH:
 if BUILD_VDF_CLIENT:
     add_install_hook(copy_vdf_client)
 
-
 if BUILD_VDF_BENCH:
     add_install_hook(copy_vdf_bench)
 
@@ -105,10 +101,15 @@ class CMakeBuild(build_ext):
             raise RuntimeError("CMake must be installed to build" +
                                " the following extensions: " +
                                ", ".join(e.name for e in self.extensions))
+        """
+        Work around pybind11's need to be on the filesystem
+        """
+        if os.path.exists('.gitmodules'):
+            out = subprocess.run(['git', 'submodule', 'update', '--init', '--recursive'])
 
         if platform.system() == "Windows":
             cmake_version = LooseVersion(
-                    re.search(r'version\s*([\d.]+)', out.decode()).group(1))
+                re.search(r'version\s*([\d.]+)', out.decode()).group(1))
             if cmake_version < '3.1.0':
                 raise RuntimeError("CMake >= 3.1.0 is required on Windows")
 
@@ -159,10 +160,12 @@ class get_pybind_include(object):
 ext_modules = [
     Extension(
         'chiavdf',
-        [
-            "src/python_bindings/fastvdf.cpp",
-            "src/refcode/lzcnt.c",
-        ],
+        sorted (
+            [
+                "src/python_bindings/fastvdf.cpp",
+                "src/refcode/lzcnt.c",
+            ]
+        ),
         include_dirs=[
             # Path to pybind11 headers
             get_pybind_include(),
@@ -239,9 +242,7 @@ class BuildExt(build_ext):
         build_ext.build_extensions(self)
 
 
-import platform
-
-if platform.system()=="Windows":
+if platform.system() == "Windows":
     setup(
         name='chiavdf',
         author='Mariano Sorgente',
@@ -252,6 +253,7 @@ if platform.system()=="Windows":
         long_description=open('README.md').read(),
         long_description_content_type="text/markdown",
         build_requires=["pybind11"],
+        url="https://github.com/Chia-Network/chiavdf",
         ext_modules=ext_modules,
         cmdclass={'build_ext': BuildExt},
         zip_safe=False,
@@ -266,9 +268,11 @@ else:
         author_email='florin@chia.net',
         description='Chia vdf verification (wraps C++)',
         license='Apache License',
-        python_requires='>=3.5',
+        python_requires='>=3.7',
         long_description=open('README.md').read(),
         long_description_content_type="text/markdown",
+        url="https://github.com/Chia-Network/chiavdf",
+        setup_requires=['pybind11>=2.5.0'],
         ext_modules=[CMakeExtension('chiavdf', 'src')],
         cmdclass=dict(build_ext=CMakeBuild, install_hook=install_hook, build_hook=build_hook),
         zip_safe=False,

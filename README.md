@@ -11,7 +11,6 @@
 ## Building
 This component requires cmake, boost and GMP.
 ```
-git submodule update --init --recursive
 pip install wheel setuptools_scm
 pip wheel .
 ```
@@ -19,16 +18,17 @@ pip wheel .
 The primary build process for this repository is to use GitHub Actions to
 build binary wheels for MacOS, Linux, and Windows and publish them with
 a source wheel on PyPi. See `.github/workflows/build.yml`. setup.py adds
-a dependency on [pybind11](https://github.com/pybind/pybind11) that is then
-managed by [cibuildwheel](https://github.com/joerick/cibuildwheel). Further
-installation is then available via `pip install chiavdf` e.g.
+a dependency on [pybind11](https://github.com/pybind/pybind11) by invoking git
+to check out the pybind submodules. Building is then managed by
+[cibuildwheel](https://github.com/joerick/cibuildwheel). Further installation
+is then available via `pip install chiavdf` e.g.
 
 ## Building Timelord and related binaries
 In addition to building the required binary and source wheels for Windows,
 MacOS and Linux, chiavdf can be used to compile vdf_client and vdf_bench.
 vdf_client is the core VDF process that completes the Proof of Time submitted
-to it by the Timelord. This also includes a benchmarking tool to get a sense
-of the iterations per second of a given CPU called vdf_bench. Try
+to it by the Timelord. The repo also includes a benchmarking tool to get a
+sense of the iterations per second of a given CPU called vdf_bench. Try
 `./vdf_bench square_asm 250000` for an ips estimate.
 
 To build vdf_client set the environment variable BUILD_VDF_CLIENT to "Y".
@@ -39,7 +39,8 @@ Similarly, to build vdf_bench set the environment variable BUILD_VDF_BENCH to
 
 This is currently automated in the
 [install-timelord.sh](https://github.com/Chia-Network/chia-blockchain/blob/master/install-timelord.sh)
-script in the [chia-blockchain repository](https://github.com/Chia-Network/chia-blockchain)
+script in the
+[chia-blockchain repository](https://github.com/Chia-Network/chia-blockchain)
 which depends on this repository.
 
 ## Contributing and workflow

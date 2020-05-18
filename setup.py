@@ -39,11 +39,9 @@ class HookCommand(Command):
 class build_hook(HookCommand):
     hooks = BUILD_HOOKS
 
+
 class install_hook(HookCommand):
     hooks = INSTALL_HOOKS
-
-
-
 
 ############################################
 
@@ -108,7 +106,7 @@ class CMakeBuild(build_ext):
 
         if platform.system() == "Windows":
             cmake_version = LooseVersion(
-                    re.search(r'version\s*([\d.]+)', out.decode()).group(1))
+                re.search(r'version\s*([\d.]+)', out.decode()).group(1))
             if cmake_version < '3.1.0':
                 raise RuntimeError("CMake >= 3.1.0 is required on Windows")
 
@@ -241,7 +239,7 @@ class BuildExt(build_ext):
         build_ext.build_extensions(self)
 
 
-if platform.system()=="Windows":
+if platform.system() == "Windows":
     setup(
         name='chiavdf',
         author='Mariano Sorgente',
@@ -251,6 +249,7 @@ if platform.system()=="Windows":
         python_requires='>=3.7',
         long_description=open('README.md').read(),
         long_description_content_type="text/markdown",
+        build_requires=["pybind11"],
         url="https://github.com/Chia-Network/chiavdf",
         ext_modules=ext_modules,
         cmdclass={'build_ext': BuildExt},

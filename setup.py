@@ -1,7 +1,16 @@
-from distutils.command.install import install
-from distutils.command.build import build
+import os
+import re
+import shutil
+import sys
+import platform
+import subprocess
+#import distutils.command.build
 
-from setuptools import Command
+from distutils.command.build import build
+from distutils.command.install import install
+from distutils.version import LooseVersion
+from setuptools.command.build_ext import build_ext
+from setuptools import setup, setuptools, Extension, Command
 
 
 BUILD_HOOKS = []
@@ -46,18 +55,6 @@ class install_hook(HookCommand):
 ############################################
 
 
-import os
-import re
-import shutil
-import sys
-import platform
-import subprocess
-
-from setuptools import setup, Extension
-from setuptools.command.build_ext import build_ext
-from distutils.version import LooseVersion
-
-
 class CMakeExtension(Extension):
     def __init__(self, name, sourcedir=''):
         Extension.__init__(self, name, sources=['./'])
@@ -95,18 +92,9 @@ class CMakeBuild(build_ext):
         try:
             out = subprocess.check_output(['cmake', '--version'])
         except OSError:
-            raise RuntimeError("CMake must be installed to build" +
-                               " the following extensions: " +
-                               ", ".join(e.name for e in self.extensions))
-        """
-        Work around pybind11's need to be on the filesystem
-        """
-        if os.path.exists('.gitmodules'):
-            try:
-                subprocess.run(['git', 'submodule', 'update', '--init', '--recursive'])
-            except OSError:
-                raise RuntimeError("git is not available"
-                                   + ", ".join(e.name for e in self.extensions))
+            raise RuntimeError("CMake must be installed to build"
+                               + " the following extensions: "
+                               + ", ".join(e.name for e in self.extensions))
 
         if platform.system() == "Windows":
             cmake_version = LooseVersion(
@@ -137,8 +125,9 @@ class CMakeBuild(build_ext):
 
         env = os.environ.copy()
         env['CXXFLAGS'] = '{} -DVERSION_INFO=\\"{}\\"'.format(
-                env.get('CXXFLAGS', ''),
-                self.distribution.get_version())
+            env.get('CXXFLAGS', ''),
+            self.distribution.get_version()
+        )
         subprocess.check_call(['cmake', ext.sourcedir] + cmake_args, env=env)
         subprocess.check_call(['cmake', '--build', '.'] + build_args)
 
@@ -161,7 +150,7 @@ class get_pybind_include(object):
 ext_modules = [
     Extension(
         'chiavdf',
-        sorted (
+        sorted(
             [
                 "src/python_bindings/fastvdf.cpp",
                 "src/refcode/lzcnt.c",
@@ -204,7 +193,8 @@ def cpp_flag(compiler):
     flags = ['-std=c++17', '-std=c++14', '-std=c++11']
 
     for flag in flags:
-        if has_flag(compiler, flag): return flag
+        if has_flag(compiler, flag):
+            return flag
 
     raise RuntimeError('Unsupported compiler -- at least C++11 support '
                        'is needed!')
@@ -213,12 +203,12 @@ def cpp_flag(compiler):
 class BuildExt(build_ext):
     """A custom build extension for adding compiler-specific options."""
     c_opts = {
-        'msvc': ['/EHsc','/std:c++17'],
-        'unix': [],
+        'msvc': ['/EHsc', '/std:c++17'],
+        'unix': [""],
     }
     l_opts = {
-        'msvc': [],
-        'unix': [],
+        'msvc': [""],
+        'unix': [""],
     }
 
     if sys.platform == 'darwin':

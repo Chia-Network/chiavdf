@@ -20,9 +20,10 @@ pip wheel .
 
 The primary build process for this repository is to use GitHub Actions to
 build binary wheels for MacOS, Linux, and Windows and publish them with
-a source wheel on PyPi. See `.github/workflows/build.yml`. setup.py adds
-a dependency on [pybind11](https://github.com/pybind/pybind11) using
-`pip install pybind11`. Building is then managed by
+a source wheel on PyPi. See `.github/workflows/build.yml`. CMake uses
+[FetchContent](https://cmake.org/cmake/help/latest/module/FetchContent.html)
+to download [pybind11](https://github.com/pybind/pybind11).
+Building is then managed by
 [cibuildwheel](https://github.com/joerick/cibuildwheel). Further installation
 is then available via `pip install chiavdf` e.g.
 

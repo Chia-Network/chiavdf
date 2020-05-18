@@ -8,9 +8,12 @@
 [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/Chia-Network/chiavdf.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/Chia-Network/chiavdf/context:python)
 [![Language grade: C/C++](https://img.shields.io/lgtm/grade/cpp/g/Chia-Network/chiavdf.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/Chia-Network/chiavdf/context:cpp)
 
-## Building
-This component requires cmake, boost and GMP.
+## Building a wheel
+Compiling chiavdf requires cmake, boost and GMP.
 ```
+python3 -m venv venv
+source venv/bin/activate
+
 pip install wheel setuptools_scm pybind11
 pip wheel .
 ```
@@ -37,7 +40,7 @@ To build vdf_client set the environment variable BUILD_VDF_CLIENT to "Y".
 Similarly, to build vdf_bench set the environment variable BUILD_VDF_BENCH to
 "Y". `export BUILD_VDF_BENCH=Y`.
 
-This is currently automated in the
+This is currently automated via pip in the
 [install-timelord.sh](https://github.com/Chia-Network/chia-blockchain/blob/master/install-timelord.sh)
 script in the
 [chia-blockchain repository](https://github.com/Chia-Network/chia-blockchain)

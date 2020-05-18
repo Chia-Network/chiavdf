@@ -74,7 +74,6 @@ jobs:
           && cp {wheel} {dest_dir}
         CIBW_BEFORE_BUILD_WINDOWS: >
           python -m pip install --upgrade pip
-          && pwd
           && git clone https://github.com/Chia-Network/mpir_gc_x64.git
         CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: >
         ls -l mpir_gc_x64 && pip uninstall -y delocate

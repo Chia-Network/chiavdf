@@ -74,22 +74,21 @@ jobs:
           && cp {wheel} {dest_dir}
         CIBW_BEFORE_BUILD_WINDOWS: >
           python -m pip install --upgrade pip
-          && pwd
           && git clone https://github.com/Chia-Network/mpir_gc_x64.git
         CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: >
-        ls -l mpir_gc_x64 && pip uninstall -y delocate
-        && pip install git+https://github.com/Chia-Network/delocate.git
-        && delocate-wheel -v -i mpir_gc_x64/mpir.dll {wheel}
-        && delocate-wheel -v -i mpir_gc_x64/mpir_gc.dll {wheel}
-        && delocate-wheel -v -i mpir_gc_x64/mpir_broadwell.dll {wheel}
-        && delocate-wheel -v -i mpir_gc_x64/mpir_broadwell_avx.dll {wheel}
-        && delocate-wheel -v -i mpir_gc_x64/mpir_bulldozer.dll {wheel}
-        && delocate-wheel -v -i mpir_gc_x64/mpir_haswell.dll {wheel}
-        && delocate-wheel -v -i mpir_gc_x64/mpir_piledriver.dll {wheel}
-        && delocate-wheel -v -i mpir_gc_x64/mpir_skylake.dll {wheel}
-        && delocate-wheel -v -i mpir_gc_x64/mpir_skylake_avx.dll {wheel}
-        && cp {wheel} {dest_dir}
-        && rm -rf mpir_gc_x64
+          ls -l mpir_gc_x64 && pip uninstall -y delocate
+          && pip install git+https://github.com/Chia-Network/delocate.git
+          && delocate-wheel -v -i mpir_gc_x64/mpir.dll {wheel}
+          && delocate-wheel -v -i mpir_gc_x64/mpir_gc.dll {wheel}
+          && delocate-wheel -v -i mpir_gc_x64/mpir_broadwell.dll {wheel}
+          && delocate-wheel -v -i mpir_gc_x64/mpir_broadwell_avx.dll {wheel}
+          && delocate-wheel -v -i mpir_gc_x64/mpir_bulldozer.dll {wheel}
+          && delocate-wheel -v -i mpir_gc_x64/mpir_haswell.dll {wheel}
+          && delocate-wheel -v -i mpir_gc_x64/mpir_piledriver.dll {wheel}
+          && delocate-wheel -v -i mpir_gc_x64/mpir_skylake.dll {wheel}
+          && delocate-wheel -v -i mpir_gc_x64/mpir_skylake_avx.dll {wheel}
+          && cp {wheel} {dest_dir}
+          && rm -rf mpir_gc_x64
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v1

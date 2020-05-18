@@ -102,7 +102,11 @@ class CMakeBuild(build_ext):
         Work around pybind11's need to be on the filesystem
         """
         if os.path.exists('.gitmodules'):
-            out = subprocess.run(['git', 'submodule', 'update', '--init', '--recursive'])
+            try:
+                subprocess.run(['git', 'submodule', 'update', '--init', '--recursive'])
+            except OSError:
+                raise RuntimeError("git is not available"
+                                   + ", ".join(e.name for e in self.extensions))
 
         if platform.system() == "Windows":
             cmake_version = LooseVersion(

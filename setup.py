@@ -4,7 +4,6 @@ import shutil
 import sys
 import platform
 import subprocess
-#import distutils.command.build
 
 from distutils.command.build import build
 from distutils.command.install import install

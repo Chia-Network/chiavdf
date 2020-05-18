@@ -1,4 +1,4 @@
-CMAKE_MINIMUM_REQUIRED(VERSION 3.1.0 FATAL_ERROR)
+CMAKE_MINIMUM_REQUIRED(VERSION 3.14 FATAL_ERROR)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -26,6 +26,7 @@ include_directories(
 
 set (CMAKE_CXX_FLAGS "-std=c++1z")
 
+# CMake 3.14+
 include(FetchContent)
 
 FetchContent_Declare(

@@ -66,7 +66,6 @@ class CMakeExtension(Extension):
         self.sourcedir = os.path.abspath(sourcedir)
 
 
-
 def copy_vdf_client(build_dir, install_dir):
     shutil.copy("src/vdf_client", install_dir)
 
@@ -89,7 +88,6 @@ if BUILD_VDF_CLIENT or BUILD_VDF_BENCH:
 if BUILD_VDF_CLIENT:
     add_install_hook(copy_vdf_client)
 
-
 if BUILD_VDF_BENCH:
     add_install_hook(copy_vdf_bench)
 
@@ -102,6 +100,11 @@ class CMakeBuild(build_ext):
             raise RuntimeError("CMake must be installed to build" +
                                " the following extensions: " +
                                ", ".join(e.name for e in self.extensions))
+        """
+        Work around pybind11's need to be on the filesystem
+        """
+        if os.path.exists('.gitmodules'):
+            out = subprocess.run(['git', 'submodule', 'update', '--init', '--recursive'])
 
         if platform.system() == "Windows":
             cmake_version = LooseVersion(
@@ -263,12 +266,11 @@ else:
         author_email='florin@chia.net',
         description='Chia vdf verification (wraps C++)',
         license='Apache License',
-        python_requires='>=3.5',
+        python_requires='>=3.7',
         long_description=open('README.md').read(),
         long_description_content_type="text/markdown",
         url="https://github.com/Chia-Network/chiavdf",
         setup_requires=['pybind11>=2.5.0'],
-        eager_resources=['src/lib/pybind11/'],
         ext_modules=[CMakeExtension('chiavdf', 'src')],
         cmdclass=dict(build_ext=CMakeBuild, install_hook=install_hook, build_hook=build_hook),
         zip_safe=False,

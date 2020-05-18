@@ -61,7 +61,7 @@ void CreateAndWriteProof(ProverManager& pm, uint64_t iteration, bool& stop_signa
 
 void CreateAndWriteProofTwoWeso(integer& D, form f, uint64_t iters, TwoWesolowskiCallback* weso, bool& stop_signal, tcp::socket& sock) {
     Proof result = ProveTwoWeso(D, f, iters, 0, weso, 0, stop_signal);
-    if (!stop_signal) {
+    if (stop_signal) {
         PrintInfo("Got stop signal before completing the proof!");
         return ;
     }

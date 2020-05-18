@@ -60,7 +60,7 @@ void CreateAndWriteProof(ProverManager& pm, uint64_t iteration, bool& stop_signa
 }
 
 void CreateAndWriteProofTwoWeso(integer& D, form f, uint64_t iters, TwoWesolowskiCallback* weso, bool& stop_signal, tcp::socket& sock) {
-    Proof result = ProveTwoWeso(D, f, iters, 0, weso, 2, stop_signal);
+    Proof result = ProveTwoWeso(D, f, iters, 0, weso, 0, stop_signal);
     if (!stop_signal) {
         PrintInfo("Got stop signal before completing the proof!");
         return ;
@@ -323,17 +323,17 @@ int main(int argc, char* argv[])
     fast_algorithm = false;
     two_weso = false;
     boost::system::error_code error;
-    char one_weso_buf[10];
-    boost::asio::read(s, boost::asio::buffer(one_weso_buf, 6), error);
-    // Check for "SIMPLE" (0-witness), "NORMAL" (nweso), or "TWOWESO" (2-witness)
-    if (one_weso_buf[0] == 'S') {
+    char prover_type_buf[5];
+    boost::asio::read(s, boost::asio::buffer(prover_type_buf, 1), error);
+    // Check for "S" (simple weso), "N" (n-weso), or "T" (2-weso)
+    if (prover_type_buf[0] == 'S') {
         SessionOneWeso(s);
     }
-    if (one_weso_buf[0] == 'N') {
+    if (prover_type_buf[0] == 'N') {
         fast_algorithm = true;
         SessionFastAlgorithm(s);
     }
-    if (one_weso_buf[0] == 'T') {
+    if (prover_type_buf[0] == 'T') {
         two_weso = true;
         SessionTwoWeso(s);
     }

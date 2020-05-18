@@ -26,8 +26,16 @@ include_directories(
 
 set (CMAKE_CXX_FLAGS "-std=c++1z")
 
-add_subdirectory(lib/pybind11)
-pybind11_add_module(chiavdf 
+include(FetchContent)
+
+FetchContent_Declare(
+  pybind11-src
+  GIT_REPOSITORY https://github.com/pybind/pybind11.git
+  GIT_TAG        v2.5.0
+)
+FetchContent_MakeAvailable(pybind11-src)
+
+pybind11_add_module(chiavdf
   ${CMAKE_CURRENT_SOURCE_DIR}/python_bindings/fastvdf.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
 )

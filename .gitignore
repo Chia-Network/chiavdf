@@ -12,6 +12,7 @@ CMakeFiles/
 Makefile
 CMakeCache.txt
 cmake_install.cmake
+_deps/
 
 # Binary files
 src/compile_asm

@@ -11,7 +11,6 @@
 ## Building
 This component requires cmake, boost and GMP.
 ```
-git submodule update --init --recursive
 pip install wheel setuptools_scm
 pip wheel .
 ```

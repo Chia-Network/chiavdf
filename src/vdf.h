@@ -222,7 +222,7 @@ void repeated_square(form f, const integer& D, const integer& L, WesolowskiCallb
         #endif
     }
 
-    std::cout << "Final number of iterations: " << num_iterations << "\n";
+    std::cout << "VDF loop finished. Total iters: " << num_iterations << "\n" << std::flush;
     #ifdef VDF_TEST
         print( "fast average batch size", double(num_iterations_fast)/double(num_calls_fast) );
         print( "fast iterations per slow iteration", double(num_iterations_fast)/double(num_iterations_slow) );
@@ -358,24 +358,27 @@ class ProverManager {
     }
 
     void start() {
-        std::thread t([=] {RunEventLoop(); });
-        t.detach();
+        main_loop = new std::thread([=] {RunEventLoop();});
     }
 
     void stop() {        
         stopped = true;
         {
-            std::lock_guard<std::mutex> lk(proof_mutex);
-            for (int i = 0; i < provers.size(); i++)
-                provers[i].first->stop();
-        }
-        proof_cv.notify_all();
-        last_segment_cv.notify_all();
-        {
             std::lock_guard<std::mutex> lk(new_event_mutex);
             new_event = true;
         }
         new_event_cv.notify_all();
+        main_loop->join();
+        delete(main_loop);
+        std::cout << "Prover event loop finished.\n" << std::flush;
+
+        for (int i = 0; i < provers.size(); i++) {
+            provers[i].first->stop();
+        }
+        std::cout << "Segment provers finished.\n" << std::flush;
+
+        proof_cv.notify_all();
+        last_segment_cv.notify_all();
     }
 
     Proof Prove(uint64_t iteration) {
@@ -716,6 +719,7 @@ class ProverManager {
     int segment_count;
     // Maximum amount of proving threads running at once.
     int max_proving_threads;
+    std::thread* main_loop;
     FastAlgorithmCallback* weso;
     FastStorage* fast_storage;
     // The discriminant used.

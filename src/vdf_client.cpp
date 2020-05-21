@@ -245,7 +245,7 @@ void SessionTwoWeso(tcp::socket& sock) {
                     threads[t].join();
                 }
                 vdf_worker.join();
-                free(weso);
+                delete(weso);
             } else {
                 uint64_t max_iter = 0;
                 uint64_t max_iter_thread_id = -1;

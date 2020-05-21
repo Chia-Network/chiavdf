@@ -209,19 +209,21 @@ class InterruptableProver: public Prover {
     }
 
     void start() {
-        std::thread t([=] { GenerateProof(); });
-        t.detach();
+        th = new std::thread([=] { GenerateProof(); });
     }
 
     void stop() {
         {
             std::lock_guard<std::mutex> lk(m);
             is_finished = true;
+            is_fully_finished = true;
             if (is_paused) {
                 is_paused = false;
             }
         }
         cv.notify_one();
+        th->join();
+        delete(th);
     }
 
     bool PerformExtraStep() {
@@ -259,16 +261,19 @@ class InterruptableProver: public Prover {
 
     void OnFinish() {
         is_finished = true;
-        // Notify event loop a proving thread is free.
-        {
-            std::lock_guard<std::mutex> lk(new_event_mutex);
-            new_event = true;
+        if (!is_fully_finished) {
+            // Notify event loop a proving thread is free.
+            {
+                std::lock_guard<std::mutex> lk(new_event_mutex);
+                new_event = true;
+            }
+            new_event_cv.notify_one();
+            is_fully_finished = true;
         }
-        new_event_cv.notify_one();
-        is_fully_finished = true;
     }
 
   private:
+    std::thread* th;
     FastAlgorithmCallback* weso;
     std::condition_variable cv;
     std::mutex m;

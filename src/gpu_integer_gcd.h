@@ -10,7 +10,7 @@ template<int size> struct fixed_gcd_res {
 //threshold is 0 to calculate the normal gcd
 //this calculates either s (u) or t (v)
 template<int size> fixed_gcd_res<size> gcd(
-    const fixed_integer<uint64, size>& a_signed, const fixed_integer<uint64, size>& b_signed, const fixed_integer<uint64, size>& threshold,
+    fixed_integer<uint64, size> a_signed, fixed_integer<uint64, size> b_signed, fixed_integer<uint64, size> threshold,
     bool calculate_u
 ) {
     assert(!threshold.is_negative());

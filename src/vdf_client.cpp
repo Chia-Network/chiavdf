@@ -140,10 +140,10 @@ void SessionFastAlgorithm(tcp::socket& sock) {
         PrintInfo("Discriminant = " + to_string(D.impl));
 
         std::vector<std::thread> threads;
-        const bool fast_machine = (std::thread::hardware_concurrency() >= 16) ? true : false;
-        WesolowskiCallback* weso = new FastAlgorithmCallback(segments, D, fast_machine);
+        const bool multi_proc_machine = (std::thread::hardware_concurrency() >= 16) ? true : false;
+        WesolowskiCallback* weso = new FastAlgorithmCallback(segments, D, multi_proc_machine);
         FastStorage* fast_storage = NULL;
-        if (fast_machine) {
+        if (multi_proc_machine) {
             fast_storage = new FastStorage((FastAlgorithmCallback*)weso);   
         }
         bool stopped = false;

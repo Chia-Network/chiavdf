@@ -107,8 +107,8 @@ class Prover {
     integer D;
     form proof;
     uint64_t num_iterations;
-    int k;
-    int l;
+    uint32_t k;
+    uint32_t l;
     bool is_finished;
 };
 
@@ -202,6 +202,14 @@ class InterruptableProver: public Prover {
             l = (segm.length >> 18);
         is_paused = false;
         is_fully_finished = false;
+        joined = false;
+    }
+
+    ~InterruptableProver() {
+        if (!joined) {
+            th->join();
+        }
+        delete(th);
     }
 
     form* GetForm(uint64_t i) {
@@ -223,7 +231,7 @@ class InterruptableProver: public Prover {
         }
         cv.notify_one();
         th->join();
-        delete(th);
+        joined = true;
     }
 
     bool PerformExtraStep() {
@@ -279,6 +287,7 @@ class InterruptableProver: public Prover {
     std::mutex m;
     bool is_paused;
     bool is_fully_finished;
+    bool joined;
     uint64_t done_iterations;  
     int bucket;
 };

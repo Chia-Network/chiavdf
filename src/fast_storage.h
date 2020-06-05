@@ -36,6 +36,7 @@ class FastStorage {
             storage_threads[i].join();
         }
         delete[] intermediates_stored;
+        std::cout << "Fast storage fully stopped.\n" << std::flush;
     }
 
     void AddIntermediates(uint64_t iter) {

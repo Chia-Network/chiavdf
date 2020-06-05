@@ -19,7 +19,9 @@ public:
         this->L = root(-D, 4);
     }
 
-    virtual ~WesolowskiCallback() {   
+    virtual ~WesolowskiCallback() {
+        delete(vdfo);
+        delete(reducer);
     }
 
     void reduce(form& inf) {
@@ -71,7 +73,7 @@ public:
 class OneWesolowskiCallback: public WesolowskiCallback {
   public:
     OneWesolowskiCallback(integer& D, uint64_t wanted_iter) : WesolowskiCallback(D) {
-        int k, l;
+        uint32_t k, l;
         this->wanted_iter = wanted_iter;
         ApproximateParameters(wanted_iter, k, l);
         kl = k * l;
@@ -82,8 +84,6 @@ class OneWesolowskiCallback: public WesolowskiCallback {
     }
 
     ~OneWesolowskiCallback() {
-        delete(vdfo);
-        delete(reducer);
         free(forms);
     }
 
@@ -103,7 +103,7 @@ class OneWesolowskiCallback: public WesolowskiCallback {
     }
 
     uint64_t wanted_iter;
-    uint64_t kl;
+    uint32_t kl;
     form result;
 };
 
@@ -119,8 +119,6 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
     }
 
     ~TwoWesolowskiCallback() {
-        delete(vdfo);
-        delete(reducer);
         free(forms);
     }
 
@@ -163,12 +161,12 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
 
 class FastAlgorithmCallback : public WesolowskiCallback {
   public:
-    FastAlgorithmCallback(int segments, integer& D, bool fast_machine) : WesolowskiCallback(D) {
+    FastAlgorithmCallback(int segments, integer& D, bool multi_proc_machine) : WesolowskiCallback(D) {
         form f = form::generator(D);
         buckets_begin.push_back(0);
         buckets_begin.push_back(bucket_size1 * window_size);
         this->segments = segments;
-        this->fast_machine = fast_machine;
+        this->multi_proc_machine = multi_proc_machine;
         for (int i = 0; i < segments - 2; i++) {
             buckets_begin.push_back(buckets_begin[buckets_begin.size() - 1] + bucket_size2 * window_size);
         }
@@ -184,8 +182,6 @@ class FastAlgorithmCallback : public WesolowskiCallback {
 
     ~FastAlgorithmCallback() {
         free(checkpoints);
-        delete(vdfo);
-        delete(reducer);
         free(forms);
     }
 
@@ -209,12 +205,12 @@ class FastAlgorithmCallback : public WesolowskiCallback {
     // 2^(18 + 2*m) * k + 12 * 2^(2*m) * l
     void OnIteration(int type, void *data, uint64_t iteration) {
         iteration++;
-        if (fast_machine) {
+        if (multi_proc_machine) {
             if (iteration % (1 << 15) == 0) {
                 SetForm(type, data, &y_ret);
             }
         } else {
-            // If 'FAST_MACHINE' is 0, we store the intermediates
+            // If 'multi_proc_machine' is 0, we store the intermediates
             // right away.
             for (int i = 0; i < segments; i++) {
                 uint64_t power_2 = 1LL << (16 + 2LL * i);
@@ -242,7 +238,7 @@ class FastAlgorithmCallback : public WesolowskiCallback {
     const int bucket_size2 = 21846;
     // Assume provers won't be left behind by more than this # of segments.
     const int window_size = kWindowSize;
-    bool fast_machine;
+    bool multi_proc_machine;
 };
 
 #endif // CALLBACK_H

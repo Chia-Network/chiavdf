@@ -45,14 +45,14 @@ int main() {
 
     integer L=root(-D, 4);
     form f=form::generator(D);
-    bool fast_machine = (std::thread::hardware_concurrency() >= 16) ? true : false;
+    bool multi_proc_machine = (std::thread::hardware_concurrency() >= 16) ? true : false;
 
-    WesolowskiCallback* weso = new FastAlgorithmCallback(segments, D, fast_machine);
+    WesolowskiCallback* weso = new FastAlgorithmCallback(segments, D, multi_proc_machine);
     std::cout << "Discriminant: " << D.impl << "\n";
     bool stopped = false;
     fast_algorithm = true;
     FastStorage* fast_storage = NULL;
-    if (fast_machine) {
+    if (multi_proc_machine) {
         fast_storage = new FastStorage((FastAlgorithmCallback*)weso);
     }
     std::thread vdf_worker(repeated_square, f, D, L, weso, fast_storage, std::ref(stopped));

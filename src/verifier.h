@@ -28,7 +28,7 @@ void VerifyWesolowskiProof(integer &D, form x, form y, form proof, uint64_t iter
     }
 }
 
-// Used only to verify 'Proof' objects.
+// Used only to verify 'Proof' objects in tests. This is not used by chia-blockchain.
 
 integer ConvertBytesToInt(uint8_t *bytes, int start_index, int end_index)
 {
@@ -135,8 +135,6 @@ bool CheckProofOfTimeNWesolowski(integer D, form x, uint8_t *proof_blob, int pro
     {
         auto iter_vector = ConvertBytesToInt(proof_blob, i, i + 8).to_vector();
         iter_list.push_back(iter_vector[0]);
-        if (iter_vector[0] < 0)
-            return false;
         memcpy(new_proof_blob + new_cnt, proof_blob + i + 8, 4 * int_size);
         new_cnt += 4 * int_size;
     }

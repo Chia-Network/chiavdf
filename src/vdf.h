@@ -1,3 +1,6 @@
+#ifndef VDF_H
+#define VDF_H
+
 #include "include.h"
 
 #include <x86intrin.h>
@@ -357,6 +360,10 @@ class ProverManager {
         }
     }
 
+    ~ProverManager() {
+        delete(main_loop);
+    }
+
     void start() {
         main_loop = new std::thread([=] {RunEventLoop();});
     }
@@ -369,7 +376,6 @@ class ProverManager {
         }
         new_event_cv.notify_all();
         main_loop->join();
-        delete(main_loop);
         std::cout << "Prover event loop finished.\n" << std::flush;
 
         for (int i = 0; i < provers.size(); i++) {
@@ -508,7 +514,7 @@ class ProverManager {
     }
 
     void RunEventLoop() {
-        const bool c_fast_machine = (std::thread::hardware_concurrency() >= 16) ? true : false;
+        const bool multi_proc_machine = (std::thread::hardware_concurrency() >= 16) ? true : false;
         bool warned = false;
         bool increased_proving = false;
         while (!stopped) {
@@ -525,7 +531,7 @@ class ProverManager {
             vdf_iteration = weso->iterations;
             // VDF running longer than expected, increase proving threads count.
             if (vdf_iteration >= 5e8) {
-                if (!increased_proving && c_fast_machine) {
+                if (!increased_proving && multi_proc_machine) {
                     std::cout << "Warning: VDF running longer than (expected) 5 minutes. Adding 2 more proving threads.\n";
                     max_proving_threads += 2;
                     increased_proving = true;
@@ -749,3 +755,5 @@ class ProverManager {
     bool proof_done;
     uint64_t intermediates_iter;
 };
+
+#endif // VDF_H

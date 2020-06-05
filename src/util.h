@@ -62,7 +62,7 @@ std::string BytesToStr(const std::vector<unsigned char> &in)
     return oss.str();
 }
 
-void ApproximateParameters(uint64_t T, int& L, int& K) {
+void ApproximateParameters(uint64_t T, uint32_t& L, uint32_t& K) {
     double log_memory = 23.25349666;
     double log_T = log2(T);
     L = 1;

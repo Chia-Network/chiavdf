@@ -7,7 +7,7 @@ typedef array<reg_scalar, 2> reg_scalar_128;
 //preserves inputs. returns low part of result
 //regs: RCX, 1x scalar
 void shift_right(
-    reg_alloc regs, array<reg_scalar, 2> v, reg_scalar amount, reg_scalar res,
+    const reg_alloc& regs, array<reg_scalar, 2> v, reg_scalar amount, reg_scalar res,
     reg_scalar tmp_rcx, reg_scalar tmp_res_2
 ) {
     EXPAND_MACROS_SCOPE;

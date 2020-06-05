@@ -47,6 +47,16 @@ script in the
 [chia-blockchain repository](https://github.com/Chia-Network/chia-blockchain)
 which depends on this repository.
 
+If you're running a timelord, the following tests are available, depending of which type of timelord you are running:
+
+`./1weso_test`, in case you're running in sanitizer_mode.
+
+`./2weso_test`, in case you're running a timelord that extends the chain and you're running the slow algorithm.
+
+`./prover_test`, in case you're running a timelord that extends the chain and you're running the fast algorithm.
+
+Those tests will simulate the vdf_client and verify for correctness the produced proofs. 
+
 ## Contributing and workflow
 Contributions are welcome and more details are available in chia-blockchain's
 [CONTRIBUTING.md](https://github.com/Chia-Network/chia-blockchain/blob/master/CONTRIBUTING.md).

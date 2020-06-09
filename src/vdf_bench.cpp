@@ -10,6 +10,7 @@
 #include "proof_common.h"
 
 #include "threading.h"
+#include "avx512_integer.h"
 #include "vdf_fast.h"
 #include "create_discriminant.h"
 

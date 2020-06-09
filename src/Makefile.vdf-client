@@ -11,15 +11,15 @@ endif
 
 .PHONY: all clean
 
-all: vdf_client vdf_bench
+all: vdf_client avx512_test vdf_bench
 
 clean:
-	rm -f *.o vdf_client vdf_bench compile_asm
+	rm -f *.o vdf_client vdf_bench avx512_test compile_asm
 
-vdf_client vdf_bench: %: %.o lzcnt.o asm_compiled.o avx2_asm_compiled.o
+vdf_client vdf_bench avx512_test: %: %.o lzcnt.o asm_compiled.o avx2_asm_compiled.o avx512_asm_compiled.o
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-vdf_client.o vdf_bench.o: CXXFLAGS += $(OPT_CFLAGS)
+vdf_client.o vdf_bench.o avx512_test.o: CXXFLAGS += $(OPT_CFLAGS)
 
 lzcnt.o: refcode/lzcnt.c
 	$(CC) -c refcode/lzcnt.c
@@ -29,6 +29,9 @@ asm_compiled.s: compile_asm
 
 avx2_asm_compiled.s: compile_asm
 	./compile_asm avx2
+
+avx512_asm_compiled.s: compile_asm
+	./compile_asm avx512
 
 compile_asm: compile_asm.o
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)

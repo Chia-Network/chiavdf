@@ -7,7 +7,6 @@
 namespace generic {
 using namespace std;
 
-
 template<class type_a> void print_impl(ostream& out, const type_a& a) {}
 
 template<class type_b> void print_impl(ostream& out, const char* a, const type_b& b) {
@@ -246,6 +245,35 @@ template<class type_a, class type_b> class union_pair {
         if (t_is_first) first().~type_a(); else second().~type_b();
     }
 };
+
+void str_impl(vector<string>& out) {}
+
+template<class type_a, class... types> void str_impl(
+    vector<string>& out, const type_a& a, const types&... targs
+) {
+    out.push_back(to_string(a));
+    str_impl(out, targs...);
+}
+
+template<class... types> string str(const string& t, const types&... targs) {
+    vector<string> data;
+    str_impl(data, targs...);
+
+    string res;
+    int next=0;
+    for (char c : t) {
+        if (c=='#') {
+            res+=data.at(next);
+            ++next;
+        } else {
+            res+=c;
+        }
+    }
+    assert(next==data.size());
+
+    return res;
+}
+
 
 }
 

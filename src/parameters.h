@@ -32,6 +32,8 @@ extern bool enable_all_instructions;
 bool bChecked=false;
 bool bAVX2=false;
 
+bool enable_avx512_ifma=false;
+
 #if defined(__i386) || defined(_M_IX86)
     #define ARCH_X86
 #elif defined(__x86_64__) || defined(_M_X64)

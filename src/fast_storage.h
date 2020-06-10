@@ -30,7 +30,10 @@ class FastStorage {
     }
 
     ~FastStorage() {
-        stopped = true;
+        {
+            std::lock_guard<std::mutex> lk(intermediates_mutex);
+            stopped = true;
+        }
         intermediates_cv.notify_all();
         for (int i = 0; i < storage_threads.size(); i++) {
             storage_threads[i].join();
@@ -102,9 +105,9 @@ class FastStorage {
         while (!stopped) {
             {
                 std::unique_lock<std::mutex> lk(intermediates_mutex);
-                while (pending_intermediates.empty() && !stopped) {
-                    intermediates_cv.wait(lk);
-                }
+                intermediates_cv.wait(lk, [&] {
+                    return (!pending_intermediates.empty() || stopped);
+                });
                 if (!stopped) {
                     uint64_t iter_begin = (*pending_intermediates.begin()).first;
                     form y = (*pending_intermediates.begin()).second;

@@ -238,11 +238,10 @@ class InterruptableProver: public Prover {
         if (is_finished) {
             return false;
         }
-        while (is_paused) {
-            std::unique_lock<std::mutex> lk(m);
-            cv.wait(lk);
-            lk.unlock();
-        }
+        std::unique_lock<std::mutex> lk(m);
+        cv.wait(lk, [&] {
+            return !is_paused;
+        });
         return true;
     } 
 

@@ -369,9 +369,9 @@ class ProverManager {
     }
 
     void stop() {        
-        stopped = true;
         {
             std::lock_guard<std::mutex> lk(new_event_mutex);
+            stopped = true;
             new_event = true;
         }
         new_event_cv.notify_all();

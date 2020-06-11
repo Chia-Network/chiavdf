@@ -75,7 +75,12 @@ class OneWesolowskiCallback: public WesolowskiCallback {
     OneWesolowskiCallback(integer& D, uint64_t wanted_iter) : WesolowskiCallback(D) {
         uint32_t k, l;
         this->wanted_iter = wanted_iter;
-        ApproximateParameters(wanted_iter, k, l);
+        if (wanted_iter >= (1 << 16) {
+            ApproximateParameters(wanted_iter, k, l);
+        } else {
+            k = 10;
+            l = 1;
+        }
         kl = k * l;
         uint64_t space_needed = wanted_iter / (k * l) + 100;
         forms = (form*) calloc(space_needed, sizeof(form));

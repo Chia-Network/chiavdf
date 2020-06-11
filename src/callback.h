@@ -75,7 +75,7 @@ class OneWesolowskiCallback: public WesolowskiCallback {
     OneWesolowskiCallback(integer& D, uint64_t wanted_iter) : WesolowskiCallback(D) {
         uint32_t k, l;
         this->wanted_iter = wanted_iter;
-        if (wanted_iter >= (1 << 16) {
+        if (wanted_iter >= (1 << 16)) {
             ApproximateParameters(wanted_iter, k, l);
         } else {
             k = 10;

@@ -1,28 +1,52 @@
-from chiavdf import verify
+from chiavdf import prove, verify_wesolowski, create_discriminant
+import secrets
 import time
 
+def test_prove_and_verify():
+    discriminant_challenge = secrets.token_bytes(10)
+    discriminant_size = 512
+    discriminant = create_discriminant(discriminant_challenge, discriminant_size)
+    int_size = (discriminant_size + 16) >> 4
 
-def test_verifier():
-    # fmt: off
-    challenge_hash = bytes.fromhex('a4bb1461ade74ac602e9ae511af68bb254dfe65d61b7faf9fab82d0b4364a30b')
-    a = "129392441642625789887524274893732839124623753968475426991607715550898925107401519646387196500104727753215068212087229898741148154329866232520504900621326"
-    b = "-16851112157693805756687431026931138278065906490623740906983506462979144983441261648159113047576418550440588178771786333612502853511426689500318791981943"
-    num_iterations = 12345
-    witness = bytes([0, 55, 255, 221, 221, 132, 45, 21, 39, 100, 172, 47, 35, 184, 239, 219, 233, 191, 234, 149, 59, 122, 230, 108, 4, 49, 175, 225, 216, 54, 63, 151, 97, 120, 55, 251, 235, 89, 153, 68, 152, 187, 57, 64, 216, 193, 17, 89, 116, 62, 11, 191, 213, 168, 84, 161, 26, 198, 247, 249, 87, 144, 232, 124, 52, 255, 217, 252, 59, 230, 47, 71, 149, 156, 107, 205, 233, 64, 213, 141, 127, 203, 246, 28, 242, 57, 172, 146, 178, 73, 27, 205, 128, 90, 105, 34, 10, 76, 145, 176, 58, 34, 37, 50, 143, 96, 191, 52, 177, 163, 168, 230, 62, 174, 14, 117, 33, 225, 90, 4, 1, 68, 149, 234, 153, 2, 242, 169, 55, 195])
-    witness_type = 0
-    # fmt: on
-
+    iters = 1000000
     t1 = time.time()
-    result_1 = verify(1024, challenge_hash, a, b, num_iterations, witness, witness_type)
+    result = prove(discriminant_challenge, discriminant_size, iters)
     t2 = time.time()
+    print(f"IPS: {iters / (t2 - t1)}")
 
-    print(f"Result test 1: {result_1}")
-    print(f"Test time: {t2 - t1}")
-    assert result_1
-
-    result_2 = verify(
-        1024, challenge_hash, a, b, num_iterations + 1, witness, witness_type
+    is_valid = verify_wesolowski(
+        str(discriminant),
+        str(2),
+        str(1),
+        str(
+            int.from_bytes(
+                result[0:int_size],
+                "big",
+                signed=True,
+            )
+        ),
+        str(
+            int.from_bytes(
+                result[int_size:2*int_size],
+                "big",
+                signed=True,
+            )
+        ),
+        str(
+            int.from_bytes(
+                result[2*int_size:3*int_size],
+                "big",
+                signed=True,
+            )
+        ),
+        str(
+            int.from_bytes(
+                result[3*int_size:4*int_size],
+                "big",
+                signed=True,
+            )
+        ),
+        iters,
     )
+    assert is_valid == True
 
-    print(f"Result test 2: {result_2}")
-    assert not result_2

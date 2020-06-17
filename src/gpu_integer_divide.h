@@ -149,7 +149,7 @@ void divide_integers_impl(
 //this has a bug if size_a<size_b and the quotient is nonzero. remainder is wrong. dont care
 template<class type, int size_a, int size_b>
 void divide_integers(
-    fixed_integer<type, size_a> a, fixed_integer<type, size_b> b,
+    const fixed_integer<type, size_a>& a, const fixed_integer<type, size_b>& b,
     fixed_integer<type, size_a>& q, fixed_integer<type, size_b>& r
 ) {
     int shift_limbs;
@@ -213,7 +213,7 @@ void divide_integers(
 
 template<class type, int size_a, int size_b>
 fixed_integer<type, size_a> operator/(
-    fixed_integer<type, size_a> a, fixed_integer<type, size_b> b
+    const fixed_integer<type, size_a>& a, const fixed_integer<type, size_b>& b
 ) {
     fixed_integer<type, size_a> q;
     fixed_integer<type, size_b> r;
@@ -223,7 +223,7 @@ fixed_integer<type, size_a> operator/(
 
 template<class type, int size_a, int size_b>
 fixed_integer<type, size_b> operator%(
-    fixed_integer<type, size_a> a, fixed_integer<type, size_b> b
+    const fixed_integer<type, size_a>& a, fixed_integer<type, size_b> b
 ) {
     fixed_integer<type, size_a> q;
     fixed_integer<type, size_b> r;

@@ -1,3 +1,6 @@
+#ifndef VDF_H
+#define VDF_H
+
 #include "include.h"
 
 #include <x86intrin.h>
@@ -39,18 +42,17 @@
 #include <future>
 
 #include <chrono>
-
+#include <condition_variable>
 #include "proof_common.h"
-
+#include "provers.h"
+#include "util.h"
+#include "callback.h"
+#include "fast_storage.h"
 #include <boost/asio.hpp>
 
 bool warn_on_corruption_in_production=false;
 
 using boost::asio::ip::tcp;
-
-const int kMaxItersAllowed = 8e8;
-// Don't modify this constant!
-const int kSwitchIters = 91000000;
 
 struct akashnil_form {
     // y = ax^2 + bxy + y^2
@@ -63,7 +65,14 @@ struct akashnil_form {
 const int64_t THRESH = 1UL<<31;
 const int64_t EXP_THRESH = 31;
 
-form* forms;
+// Notifies ProverManager class each time there's a new event.
+bool new_event = false;
+std::condition_variable new_event_cv;
+std::mutex new_event_mutex;
+
+bool debug_mode = false;
+bool fast_algorithm = false;
+bool two_weso = false;
 
 //always works
 void repeated_square_original(vdf_original &vdfo, form& f, const integer& D, const integer& L, uint64 base, uint64 iterations, INUDUPLListener *nuduplListener) {
@@ -85,134 +94,8 @@ void repeated_square_original(vdf_original &vdfo, form& f, const integer& D, con
     mpz_set(f.c.impl, f_res->c);
 }
 
-class WesolowskiCallback :public INUDUPLListener {
-public:
-    uint64_t kl;
-
-    //struct form *forms;
-    form result;
-
-    bool deferred;
-    int64_t switch_iters = -1;
-    int64_t switch_index;
-    int64_t iterations = 0; // This must be intialized to zero at start
-
-    integer D;
-    integer L;
-
-    ClassGroupContext *t;
-    Reducer *reducer;
-
-    vdf_original* vdfo;
-
-    WesolowskiCallback(uint64_t expected_space) {
-        vdfo = new vdf_original();
-        t=new ClassGroupContext(4096);
-        reducer=new Reducer(*t);
-    }
-
-    ~WesolowskiCallback() {
-        delete(vdfo);
-        delete(reducer);
-        delete(t);
-    }
-
-    void reduce(form& inf) {
-#if 0
-        // Old reduce from Sundersoft form
-        inf.reduce();
-#else
-        // Pulmark reduce based on Akashnil reduce
-        mpz_set(t->a, inf.a.impl);
-        mpz_set(t->b, inf.b.impl);
-        mpz_set(t->c, inf.c.impl);
-
-        reducer->run();
-
-        mpz_set(inf.a.impl, t->a);
-        mpz_set(inf.b.impl, t->b);
-        mpz_set(inf.c.impl, t->c);
-#endif
-    }
-
-    void IncreaseConstants(int num_iters) {
-        kl = 100;
-        switch_iters = num_iters;
-        switch_index = num_iters / 10;
-    }
-
-    int GetPosition(int power) {
-        if (switch_iters == -1 || power < switch_iters) {
-            return power / 10;
-        } else {
-            return (switch_index + (power - switch_iters) / 100);
-        }
-    }
-
-    form *GetForm(int power) {
-        return &(forms[GetPosition(power)]);
-    }
-
-    void OnIteration(int type, void *data, uint64 iteration)
-    {
-        iteration++;
-
-        //cout << iteration << " " << maxiterations << endl;
-        if(iteration%kl==0)
-        {
-            form *mulf=GetForm(iteration);
-            // Initialize since it is raw memory
-            // mpz_inits(mulf->a.impl,mulf->b.impl,mulf->c.impl,NULL);
-
-            switch(type)
-            {
-                case NL_SQUARESTATE:
-                {
-                    //cout << "NL_SQUARESTATE" << endl;
-                    uint64 res;
-
-                    square_state_type *square_state=(square_state_type *)data;
-
-                    if(!square_state->assign(mulf->a, mulf->b, mulf->c, res))
-                        cout << "square_state->assign failed" << endl;
-                    break;
-                }
-                case NL_FORM:
-                {
-                    //cout << "NL_FORM" << endl;
-
-                    vdf_original::form *f=(vdf_original::form *)data;
-
-                    mpz_set(mulf->a.impl, f->a);
-                    mpz_set(mulf->b.impl, f->b);
-                    mpz_set(mulf->c.impl, f->c);
-                    break;
-                }
-                default:
-                    cout << "Unknown case" << endl;
-            }
-            reduce(*mulf);
-
-            iterations=iteration; // safe to access now
-        }
-    }
-};
-
-void ApproximateParameters(uint64_t T, uint64_t& L, uint64_t& k, uint64_t& w) {
-    double log_memory = 23.25349666;
-    double log_T = log2(T);
-    L = 1;
-    if (log_T - log_memory > 0.000001) {
-        L = ceil(pow(2, log_memory - 20));
-    }
-    double intermediate = T * (double)0.6931471 / (2.0 * L);
-    k = std::max(std::round(log(intermediate) - log(log(intermediate)) + 0.25), 1.0);
-    //w = floor((double) T / ((double) T/k + L * (1 << (k+1)))) - 2;
-    w = 2;
-}
-
 // thread safe; but it is only called from the main thread
-void repeated_square(form f, const integer& D, const integer& L, WesolowskiCallback &weso, bool& stopped) {
+void repeated_square(form f, const integer& D, const integer& L, WesolowskiCallback* weso, FastStorage* fast_storage, bool& stopped) {
     #ifdef VDF_TEST
         uint64 num_calls_fast=0;
         uint64 num_iterations_fast=0;
@@ -220,23 +103,10 @@ void repeated_square(form f, const integer& D, const integer& L, WesolowskiCallb
     #endif
 
     uint64_t num_iterations = 0;
+    uint64_t last_checkpoint = 0;
 
     while (!stopped) {
         uint64 c_checkpoint_interval=checkpoint_interval;
-
-        if (weso.iterations >= kMaxItersAllowed - 500000) {
-            std::cout << "Maximum possible number of iterations reached!\n";
-            return ;
-        }
-
-        if (weso.iterations >= kSwitchIters && weso.kl == 10) {
-            uint64 round_up = (100 - num_iterations % 100) % 100;
-            if (round_up > 0) {
-                repeated_square_original(*weso.vdfo, f, D, L, num_iterations, round_up, &weso);
-            }
-            num_iterations += round_up;
-            weso.IncreaseConstants(num_iterations);
-        }
 
         #ifdef VDF_TEST
             form f_copy;
@@ -255,14 +125,14 @@ void repeated_square(form f, const integer& D, const integer& L, WesolowskiCallb
 
         #ifdef ENABLE_TRACK_CYCLES
             print( "track cycles enabled; results will be wrong" );
-            repeated_square_original(*weso.vdfo, f, D, L, 100); //randomize the a and b values
+            repeated_square_original(*weso->vdfo, f, D, L, 100); //randomize the a and b values
         #endif
 
         // This works single threaded
         square_state_type square_state;
         square_state.pairindex=0;
 
-        uint64 actual_iterations=repeated_square_fast(square_state, f, D, L, num_iterations, batch_size, &weso);
+        uint64 actual_iterations=repeated_square_fast(square_state, f, D, L, num_iterations, batch_size, weso);
 
         #ifdef VDF_TEST
             ++num_calls_fast;
@@ -276,7 +146,7 @@ void repeated_square(form f, const integer& D, const integer& L, WesolowskiCallb
 
         if (actual_iterations==~uint64(0)) {
             //corruption; f is unchanged. do the entire batch with the slow algorithm
-            repeated_square_original(*weso.vdfo, f, D, L, num_iterations, batch_size, &weso);
+            repeated_square_original(*weso->vdfo, f, D, L, num_iterations, batch_size, weso);
             actual_iterations=batch_size;
 
             #ifdef VDF_TEST
@@ -292,7 +162,7 @@ void repeated_square(form f, const integer& D, const integer& L, WesolowskiCallb
             //the fast algorithm terminated prematurely for whatever reason. f is still valid
             //it might terminate prematurely again (e.g. gcd quotient too large), so will do one iteration of the slow algorithm
             //this will also reduce f if the fast algorithm terminated because it was too big
-            repeated_square_original(*weso.vdfo, f, D, L, num_iterations+actual_iterations, 1, &weso);
+            repeated_square_original(*weso->vdfo, f, D, L, num_iterations+actual_iterations, 1, weso);
 
 #ifdef VDF_TEST
                 ++num_iterations_slow;
@@ -306,216 +176,153 @@ void repeated_square(form f, const integer& D, const integer& L, WesolowskiCallb
         }
 
         num_iterations+=actual_iterations;
+        if (num_iterations >= last_checkpoint) {
+            weso->iterations = num_iterations;
+
+            // n-weso specific logic.
+            if (fast_algorithm) {
+                if (fast_storage != NULL) {
+                    fast_storage->SubmitCheckpoint(static_cast<FastAlgorithmCallback*> (weso)->y_ret, last_checkpoint);
+                } else if (last_checkpoint % (1 << 16) == 0) {
+                    // Notify prover event loop, we have a new segment with intermediates stored.
+                    {
+                        std::lock_guard<std::mutex> lk(new_event_mutex);
+                        new_event = true;
+                    }
+                    new_event_cv.notify_all();
+                }
+            }
+
+            // 2-weso specific logic.
+            if (two_weso) {
+                TwoWesolowskiCallback* nweso = (TwoWesolowskiCallback*) weso;
+                if (num_iterations >= kSwitchIters && !nweso->LargeConstants()) {
+                    uint64 round_up = (100 - num_iterations % 100) % 100;
+                    if (round_up > 0) {
+                        repeated_square_original(*weso->vdfo, f, D, L, num_iterations, round_up, weso);
+                    }
+                    num_iterations += round_up;
+                    nweso->IncreaseConstants(num_iterations);
+                    weso->iterations = num_iterations;
+                }
+                if (num_iterations >= kMaxItersAllowed - 500000) {
+                    std::cout << "Maximum possible number of iterations reached!\n";
+                    return ;
+                }
+            }
+
+            last_checkpoint += (1 << 15);
+        }
 
         #ifdef VDF_TEST
             if (vdf_test_correctness) {
                 form f_copy_2=f;
-                weso.reduce(f_copy_2);
+                weso->reduce(f_copy_2);
 
-                repeated_square_original(&weso.vdfo, f_copy, D, L, actual_iterations);
+                repeated_square_original(*weso->vdfo, f_copy, D, L, actual_iterations);
                 assert(f_copy==f_copy_2);
             }
         #endif
     }
 
+    std::cout << "VDF loop finished. Total iters: " << num_iterations << "\n" << std::flush;
     #ifdef VDF_TEST
         print( "fast average batch size", double(num_iterations_fast)/double(num_calls_fast) );
         print( "fast iterations per slow iteration", double(num_iterations_fast)/double(num_iterations_slow) );
     #endif
 }
 
-uint64_t GetBlock(uint64_t i, uint64_t k, uint64_t T, integer& B) {
-    integer res = FastPow(2, T - k * (i + 1), B);
-    mpz_mul_2exp(res.impl, res.impl, k);
-    res = res / B;
-    auto res_vector = res.to_vector();
-    return res_vector[0];
-}
-
-std::string BytesToStr(const std::vector<unsigned char> &in)
-{
-    std::vector<unsigned char>::const_iterator from = in.cbegin();
-    std::vector<unsigned char>::const_iterator to = in.cend();
-    std::ostringstream oss;
-    for (; from != to; ++from)
-       oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(*from);
-    return oss.str();
-}
-
-struct Proof {
-    Proof() {
-
+Proof ProveOneWesolowski(uint64_t iters, integer& D, OneWesolowskiCallback* weso, bool& stopped) {
+    while (weso->iterations < iters) {
+        this_thread::sleep_for(1s);
     }
-
-    Proof(std::vector<unsigned char> y, std::vector<unsigned char> proof) {
-        this->y = y;
-        this->proof = proof;
+    stopped = true;
+    form f = form::generator(D);
+    Segment sg(
+        /*start=*/0,
+        /*length=*/iters,
+        /*x=*/f,
+        /*y=*/weso->result
+    );
+    OneWesolowskiProver prover(sg, D, weso->forms);
+    prover.start();
+    while (!prover.IsFinished()) {
+        this_thread::sleep_for(1s);
     }
-
-    string hex() {
-        std::vector<unsigned char> bytes(y);
-        bytes.insert(bytes.end(), proof.begin(), proof.end());
-        return BytesToStr(bytes);
-    }
-
-    std::vector<unsigned char> y;
-    std::vector<unsigned char> proof;
-};
-
-form GenerateProof(form &y, form &x_init, integer &D, uint64_t done_iterations, uint64_t num_iterations, uint64_t k, uint64_t l, WesolowskiCallback& weso, bool& stop_signal) {
-    auto t1 = std::chrono::high_resolution_clock::now();
-
-    PulmarkReducer reducer;
-
-    integer B = GetB(D, x_init, y);
-    integer L=root(-D, 4);
-
-    uint64_t k1 = k / 2;
-    uint64_t k0 = k - k1;
-
-    form x = form::identity(D);
-
-    for (int64_t j = l - 1; j >= 0; j--) {
-        x = FastPowFormNucomp(x, D, integer(1 << k), L, reducer);
-
-        std::vector<form> ys((1 << k));
-        for (uint64_t i = 0; i < (1 << k); i++)
-            ys[i] = form::identity(D);
-
-        form *tmp;
-        for (uint64_t i = 0; !stop_signal && i < ceil(1.0 * num_iterations / (k * l)); i++) {
-            if (num_iterations >= k * (i * l + j + 1)) {
-                uint64_t b = GetBlock(i*l + j, k, num_iterations, B);
-                tmp = weso.GetForm(done_iterations + i * k * l);
-                nucomp_form(ys[b], ys[b], *tmp, D, L);
-            }
-        }
-
-        if (stop_signal)
-            return form();
-
-        for (uint64_t b1 = 0; b1 < (1 << k1) && !stop_signal; b1++) {
-            form z = form::identity(D);
-            for (uint64_t b0 = 0; b0 < (1 << k0) && !stop_signal; b0++) {
-                nucomp_form(z, z, ys[b1 * (1 << k0) + b0], D, L);
-            }
-            z = FastPowFormNucomp(z, D, integer(b1 * (1 << k0)), L, reducer);
-            nucomp_form(x, x, z, D, L);
-        }
-
-        for (uint64_t b0 = 0; b0 < (1 << k0) && !stop_signal; b0++) {
-            form z = form::identity(D);
-            for (uint64_t b1 = 0; b1 < (1 << k1) && !stop_signal; b1++) {
-                nucomp_form(z, z, ys[b1 * (1 << k0) + b0], D, L);
-            }
-            z = FastPowFormNucomp(z, D, integer(b0), L, reducer);
-            nucomp_form(x, x, z, D, L);
-        }
-
-        if (stop_signal)
-            return form();
-    }
-
-    reducer.reduce(x);
-
-    auto t2 = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
-    return x;
-}
-
-void GenerateProofThreaded(std::promise<form> && form_promise, form y, form x_init, integer D, uint64_t done_iterations, uint64_t num_iterations, uint64_t
-k, uint64_t l, WesolowskiCallback& weso, bool& stop_signal) {
-    form proof = GenerateProof(y, x_init, D, done_iterations, num_iterations, k, l, weso, stop_signal);
-    form_promise.set_value(proof);
-}
-
-Proof CreateProofOfTimeWesolowski(integer& D, form x, int64_t num_iterations, uint64_t done_iterations, WesolowskiCallback& weso, bool& stop_signal) {
-    uint64_t l, k, w;
-    form x_init = x;
-    integer L=root(-D, 4);
-
-    k = 10;
-    w = 2;
-    l = (num_iterations >= 10000000) ? 10 : 1;
-
-    while (!stop_signal && weso.iterations < done_iterations + num_iterations) {
-        std::this_thread::sleep_for (std::chrono::milliseconds(200));
-    }
-
-    if (stop_signal)
-        return Proof();
-
-    vdf_original vdfo_proof;
-
-    uint64 checkpoint = (done_iterations + num_iterations) - (done_iterations + num_iterations) % 100;
-    //mpz_init(y.a.impl);
-    //mpz_init(y.b.impl);
-    //mpz_init(y.c.impl);
-    form y = forms[weso.GetPosition(checkpoint)];
-    repeated_square_original(vdfo_proof, y, D, L, 0, (done_iterations + num_iterations) % 100, NULL);
-
-    auto proof = GenerateProof(y, x_init, D, done_iterations, num_iterations, k, l, weso, stop_signal);
-
-    if (stop_signal)
-        return Proof();
-
     int int_size = (D.num_bits() + 16) >> 4;
-
-    std::vector<unsigned char> y_bytes = SerializeForm(y, 129);
-
-    std::vector<unsigned char> proof_bytes = SerializeForm(proof, int_size);
-    Proof final_proof=Proof(y_bytes, proof_bytes);
-    return final_proof;
+    std::vector<unsigned char> y_serialized;
+    std::vector<unsigned char> proof_serialized;
+    y_serialized = SerializeForm(weso->result, 129);
+    form proof_form = prover.GetProof();
+    proof_serialized = SerializeForm(proof_form, int_size);
+    Proof proof(y_serialized, proof_serialized);
+    proof.witness_type = 0;
+    std::cout << "Got simple weso proof: " << proof.hex() << "\n";
+    return proof;
 }
 
-Proof CreateProofOfTimeNWesolowski(integer& D, form x, int64_t num_iterations,
-                                   uint64_t done_iterations, WesolowskiCallback& weso, int depth_limit, int depth, bool& stop_signal) {
-    uint64_t l, k, w;
-    int64_t iterations1, iterations2;
+Proof ProveTwoWeso(integer& D, form x, uint64_t iters, uint64_t done_iterations, TwoWesolowskiCallback* weso, int depth, bool& stop_signal) {
     integer L=root(-D, 4);
-    form x_init = x;
+    if (depth == 2) {
+        while (!stop_signal && weso->iterations < done_iterations + iters) {
+            std::this_thread::sleep_for (std::chrono::milliseconds(200));
+        }
+        if (stop_signal)
+            return Proof();
 
-    k = 10;
-    w = 2;
-    iterations1 = num_iterations * w / (w + 1);
+        vdf_original vdfo_proof;
+        uint64 checkpoint = (done_iterations + iters) - (done_iterations + iters) % 100;
+        form y = *(weso->GetForm(checkpoint));
+        repeated_square_original(vdfo_proof, y, D, L, 0, (done_iterations + iters) % 100, NULL);
 
-    // NOTE(Florin): This is still suboptimal,
-    // some work can still be lost if weso iterations is in between iterations1 and num_iterations.
-    if (weso.iterations >= done_iterations + num_iterations) {
-        iterations1 = (done_iterations + num_iterations) / 3;
+        Segment sg(
+            /*start=*/done_iterations,
+            /*length=*/iters,
+            /*x=*/x,
+            /*y=*/y
+        );
+        TwoWesolowskiProver prover(sg, D, weso, stop_signal);
+        prover.GenerateProof();
+
+        if (stop_signal)
+            return Proof();
+        form proof = prover.GetProof();
+
+        int int_size = (D.num_bits() + 16) >> 4;
+        std::vector<unsigned char> y_bytes = SerializeForm(y, 129);
+        std::vector<unsigned char> proof_bytes = SerializeForm(proof, int_size);
+        Proof final_proof=Proof(y_bytes, proof_bytes);
+        return final_proof;
     }
 
+    uint64_t iterations1, iterations2;
+    iterations1 = iters * 2 / 3;
     iterations1 = iterations1 - iterations1 % 100;
-    iterations2 = num_iterations - iterations1;
+    iterations2 = iters - iterations1;
+    while (!stop_signal && weso->iterations < done_iterations + iterations1) {
+        std::this_thread::sleep_for (std::chrono::milliseconds(100));
+    }
+    if (stop_signal)
+        return Proof();
 
-    l = (iterations1 >= 10000000) ? 10 : 1;
+    form y1 = *(weso->GetForm(done_iterations + iterations1));
+    Segment sg(
+        /*start=*/done_iterations,
+        /*lenght=*/iterations1,
+        /*x=*/x,
+        /*y=*/y1
+    );
+    TwoWesolowskiProver prover(sg, D, weso, stop_signal);
+    prover.start();
+    Proof proof2 = ProveTwoWeso(D, y1, iterations2, done_iterations + iterations1, weso, depth + 1, stop_signal);
+
+    while (!stop_signal && !prover.IsFinished()) {
+        std::this_thread::sleep_for (std::chrono::milliseconds(100));
+    }
+    if (stop_signal)
+        return Proof();
+    form proof = prover.GetProof();
     
-    while (!stop_signal && weso.iterations < done_iterations + iterations1) {
-        std::this_thread::sleep_for (std::chrono::milliseconds(200));
-    }
-
-    if (stop_signal)
-        return Proof();
-
-    form y1 = *weso.GetForm(done_iterations + iterations1);
-
-    std::promise<form> form_promise;
-    auto form_future = form_promise.get_future();
-
-    std::thread t(&GenerateProofThreaded, std::move(form_promise), y1, x_init, D, done_iterations, iterations1, k, l, std::ref(weso), std::ref(stop_signal));
-
-    Proof proof2;
-    if (depth < depth_limit - 1) {
-        proof2 = CreateProofOfTimeNWesolowski(D, y1, iterations2, done_iterations + iterations1, weso, depth_limit, depth + 1, stop_signal);
-    } else {
-        proof2 = CreateProofOfTimeWesolowski(D, y1, iterations2, done_iterations + iterations1, weso, stop_signal);
-    }
-
-    t.join();
-    if (stop_signal)
-        return Proof();
-    form proof = form_future.get();
-
     int int_size = (D.num_bits() + 16) >> 4;
     Proof final_proof;
     final_proof.y = proof2.y;
@@ -529,5 +336,424 @@ Proof CreateProofOfTimeNWesolowski(integer& D, form x, int64_t num_iterations,
     tmp = SerializeForm(proof, int_size);
     proof_bytes.insert(proof_bytes.end(), tmp.begin(), tmp.end());
     final_proof.proof = proof_bytes;
+    if (depth == 0) {
+        final_proof.witness_type = 2;
+        std::cout << "Got 2-wesolowski proof for iteration: " << iters << ".\n";
+        std::cout << "Proof: " << final_proof.hex() << "\n";
+    }
     return final_proof;
 }
+
+class ProverManager {
+  public:
+    ProverManager(integer& D, FastAlgorithmCallback* weso, FastStorage* fast_storage, int segment_count, int max_proving_threads) {
+        this->segment_count = segment_count;
+        this->max_proving_threads = max_proving_threads;
+        this->D = D;
+        this->weso = weso;
+        this->fast_storage = fast_storage;
+        std::vector<Segment> tmp;
+        for (int i = 0; i < segment_count; i++) {
+            pending_segments.push_back(tmp);
+            done_segments.push_back(tmp);
+            last_appended.push_back(0);
+        }
+    }
+
+    ~ProverManager() {
+        delete(main_loop);
+    }
+
+    void start() {
+        main_loop = new std::thread([=] {RunEventLoop();});
+    }
+
+    void stop() {        
+        {
+            std::lock_guard<std::mutex> lk(new_event_mutex);
+            stopped = true;
+            new_event = true;
+        }
+        new_event_cv.notify_all();
+        main_loop->join();
+        std::cout << "Prover event loop finished.\n" << std::flush;
+
+        for (int i = 0; i < provers.size(); i++) {
+            provers[i].first->stop();
+        }
+        std::cout << "Segment provers finished.\n" << std::flush;
+
+        proof_cv.notify_all();
+        last_segment_cv.notify_all();
+    }
+
+    Proof Prove(uint64_t iteration) {
+        {
+            std::lock_guard<std::mutex> lkg(proof_mutex);
+            pending_iters.insert(iteration);
+        }
+        {
+            std::lock_guard<std::mutex> lkg(last_segment_mutex);
+            pending_iters_last_sg.insert(iteration - iteration % (1 << 16));
+        }
+        std::vector<Segment> proof_segments;
+        // Wait for weso.iteration to reach the last segment.
+        {
+            std::unique_lock<std::mutex> lk(last_segment_mutex);
+            last_segment_cv.wait(lk, [this, iteration] {
+                if (vdf_iteration >= iteration - iteration % (1 << 16))
+                    return true;
+                return stopped;
+            });
+            if (stopped) {
+                return Proof();
+            }
+            pending_iters_last_sg.erase(iteration - iteration % (1 << 16));
+            lk.unlock();
+        }
+        Segment last_segment;
+        form y = weso->checkpoints[iteration / (1 << 16)];
+        if (iteration % (1 << 16)) {
+            // Recalculate everything from the checkpoint, since there is no guarantee the iter didn't arrive late.
+            integer L = root(-D, 4);
+            PulmarkReducer reducer;
+            form* intermediates = (form*) calloc((iteration % (1 << 16)) / 10 + 100, sizeof(form));
+            for (int i = 0; i < iteration % (1 << 16); i++) {
+                if (i % 10 == 0) {
+                    intermediates[i / 10] = y;
+                }
+                nudupl_form(y, y, D, L);
+                reducer.reduce(y);   
+                if (stopped) {
+                    return Proof();
+                }
+            }
+            Segment sg(
+                /*start=*/iteration - iteration % (1 << 16),
+                /*length=*/iteration % (1 << 16),
+                /*x=*/weso->checkpoints[iteration / (1 << 16)],
+                /*y=*/y
+            );
+            // TODO: stop this prover as well in case stop signal arrives.
+            OneWesolowskiProver prover(sg, D, intermediates);
+            prover.start();
+            sg.proof = prover.GetProof();
+            free(intermediates);
+            if (stopped) {
+                return Proof();
+            }
+            last_segment = sg;
+        }
+        uint64_t proved_iters = 0;
+        bool valid_proof = false;
+        while (!valid_proof && !stopped) {
+            std::unique_lock<std::mutex> lk(proof_mutex);
+            proof_cv.wait(lk, [this, iteration] {
+                if (max_proving_iteration >= iteration - iteration % (1 << 16)) 
+                    return true;
+                return stopped;
+            });
+            if (stopped)    
+                return Proof();
+            int blobs = 0;
+            for (int i = segment_count - 1; i >= 0; i--) {
+                uint64_t segment_size = (1LL << (16 + 2 * i));
+                uint64_t position = proved_iters / segment_size;
+                while (position < done_segments[i].size() && proved_iters + segment_size <= iteration) {
+                    proof_segments.emplace_back(done_segments[i][position]);
+                    position++;
+                    proved_iters += segment_size;
+                    blobs++;
+                }
+            }
+            pending_iters.erase(iteration);
+            lk.unlock();
+            if (blobs > 63 || proved_iters < iteration - iteration % (1 << 16)) {
+                std::cout << "Warning: Insufficient segments yet. Retrying in 1 minute\n";
+                proof_segments.clear();
+                proved_iters = 0;
+                this_thread::sleep_for(60s);
+                {
+                    std::lock_guard<std::mutex> lkg(proof_mutex);
+                    pending_iters.insert(iteration);
+                }
+            } else {
+                valid_proof = true;
+            }
+        }
+        if (!last_segment.is_empty) {
+            proof_segments.emplace_back(last_segment);
+        }
+        // y, proof, [iters1, y1, proof1], [iters2, y2, proof2], ...
+        int int_size = (D.num_bits() + 16) >> 4;
+        std::vector<unsigned char> y_serialized;
+        std::vector<unsigned char> proof_serialized;
+        // Match ClassGroupElement type from the blockchain.
+        y_serialized = SerializeForm(y, 129);
+        proof_serialized = SerializeForm(proof_segments[proof_segments.size() - 1].proof, int_size);
+        for (int i = proof_segments.size() - 2; i >= 0; i--) {
+            std::vector<unsigned char> tmp = ConvertIntegerToBytes(integer(proof_segments[i].length), 8);
+            proof_serialized.insert(proof_serialized.end(), tmp.begin(), tmp.end());
+            tmp.clear();
+            tmp = SerializeForm(proof_segments[i].y, int_size);
+            proof_serialized.insert(proof_serialized.end(), tmp.begin(), tmp.end());
+            tmp.clear();
+            tmp = SerializeForm(proof_segments[i].proof, int_size);
+            proof_serialized.insert(proof_serialized.end(), tmp.begin(), tmp.end());
+        }
+        Proof proof(y_serialized, proof_serialized);
+        proof.witness_type = proof_segments.size() - 1;
+        uint64_t vdf_iteration = weso->iterations;
+        std::cout << "Got proof for iteration: " << iteration << ". ("
+                  << proof_segments.size() - 1 << "-wesolowski proof)\n";
+        std::cout << "Proof: " << proof.hex() << "\n";
+        std::cout << "Current weso iteration: " << vdf_iteration
+                  << ". Extra proof time (in VDF iterations): " << vdf_iteration - iteration
+                  << "\n";
+        return proof;
+    }
+
+    void RunEventLoop() {
+        const bool multi_proc_machine = (std::thread::hardware_concurrency() >= 16) ? true : false;
+        bool warned = false;
+        bool increased_proving = false;
+        while (!stopped) {
+            // Wait for some event to happen.
+            {
+                std::unique_lock<std::mutex> lk(new_event_mutex);
+                new_event_cv.wait(lk, []{return new_event;});
+                new_event = false;
+                lk.unlock();
+            }
+            if (stopped)
+                return; 
+            // Check if we can prove the last segment for some iteration.
+            vdf_iteration = weso->iterations;
+            // VDF running longer than expected, increase proving threads count.
+            if (vdf_iteration >= 5e8) {
+                if (!increased_proving && multi_proc_machine) {
+                    std::cout << "Warning: VDF running longer than (expected) 5 minutes. Adding 2 more proving threads.\n";
+                    max_proving_threads += 2;
+                    increased_proving = true;
+                }
+            }
+            bool new_last_segment = false;
+            {
+                std::lock_guard<std::mutex> lk(last_segment_mutex);
+                if (pending_iters_last_sg.size() > 0 && vdf_iteration >= *pending_iters_last_sg.begin()) {
+                    new_last_segment = true;
+                }
+            }
+            if (new_last_segment) {
+                last_segment_cv.notify_all();
+            }
+            uint64_t best_pending_iter = (1LL << 63);
+            {
+                // Protect done_segments, pending_iters and max_proving_iters.
+                std::lock_guard<std::mutex> lk(proof_mutex);
+                bool new_small_segment = false;
+                // Check if some provers finished.
+                for (int i = 0; i < provers.size(); i++) {
+                    if (provers[i].first->IsFinished()) {
+                        provers[i].second.proof = provers[i].first->GetProof();
+                        if (debug_mode) {
+                            std::cout << "Done segment: [" << provers[i].second.start 
+                                      << ", " << provers[i].second.start + provers[i].second.length 
+                                      << "]. Bucket: " << provers[i].second.GetSegmentBucket() << ".\n";
+                        }
+                        if (provers[i].second.length == (1 << 16)) {
+                            new_small_segment = true;
+                        }
+                        int index = provers[i].second.GetSegmentBucket();
+                        int position = provers[i].second.start / provers[i].second.length;
+                        while (done_segments[index].size() <= position)  
+                            done_segments[index].emplace_back(Segment());
+                        done_segments[index][position] = provers[i].second;
+                        if (provers[i].first->IsFullyFinished()) {
+                            provers.erase(provers.begin() + i);
+                            i--;
+                        }
+                    }
+                }
+
+                // We can advance the proving iterations only when a new 2^16 segment is done.
+                if (new_small_segment) {
+                    uint64_t expected_proving_iters = 0;
+                    if (done_segments[0].size() > 0) {
+                        expected_proving_iters = done_segments[0][done_segments[0].size() - 1].start +
+                                                 done_segments[0][done_segments[0].size() - 1].length;
+                    }
+                    
+                    if (pending_iters.size() > 0)
+                        best_pending_iter = *pending_iters.begin();
+                    if (pending_iters.size() > 0 && expected_proving_iters >= best_pending_iter - best_pending_iter % (1 << 16)) {
+                        // Calculate the real number of iters we can prove.
+                        // It needs to stick to 64-wesolowski limit.
+                        // In some cases, the last 2^16 segment might be slightly inaccurate,
+                        // so calculate the real number.
+                        max_proving_iteration = 0;
+                        int proof_blobs = 0;
+                        for (int i = segment_count - 1; i >= 0 && proof_blobs < 63; i--) {
+                            uint64_t segment_size = (1LL << (16 + 2 * i));
+                            if (max_proving_iteration % segment_size != 0) {
+                                std::cout << "Warning: segments don't have the proper sizes.\n";
+                            } else {
+                                int position = max_proving_iteration / segment_size;
+                                while (position < done_segments[i].size() && !done_segments[i][position].is_empty) {
+                                    max_proving_iteration += segment_size;
+                                    proof_blobs++;
+                                    position++;
+                                    if (proof_blobs == 63)
+                                        break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // We have all the proof for some iter, except for the small segment.
+            if (max_proving_iteration >= best_pending_iter - best_pending_iter % (1 << 16)) {
+                proof_cv.notify_all();
+            }
+
+            if (fast_storage != NULL) {
+                intermediates_iter = fast_storage -> GetFinishedSegment();
+            } else {
+                intermediates_iter = vdf_iteration;
+            }
+
+            // Check if new segments have arrived, and add them as pending proof.
+            for (int i = 0; i < segment_count; i++) {
+                uint64_t sg_length = 1LL << (16 + 2 * i); 
+                while (last_appended[i] + sg_length <= intermediates_iter) {
+                    if (stopped) return ;
+                    Segment sg(
+                        /*start=*/last_appended[i], 
+                        /*length=*/sg_length, 
+                        /*x=*/weso->checkpoints[last_appended[i] / (1 << 16)],
+                        /*y=*/weso->checkpoints[(last_appended[i] + sg_length) / (1 << 16)]
+                    );
+                    pending_segments[i].emplace_back(sg);
+                    if (!warned && pending_segments[i].size() >= kWindowSize - 2) {
+                        warned = true;
+                        std::cout << "Warning: VDF loop way ahead of proving loop. "
+                                  << "Possible proof corruption. Please increase kWindowSize.\n";
+                    }
+                    last_appended[i] += sg_length;
+                }
+            }
+            // If we have free proving threads, use them first.
+            int active_provers = 0;
+            for (int i = 0; i < provers.size(); i++) {
+                if (provers[i].first->IsRunning())
+                    active_provers++;
+            }
+
+            while (!stopped) {
+                // Find the best pending/paused segment and remember where it is.
+                Segment best;
+                int index;
+                bool new_segment;
+                for (int i = 0; i < provers.size(); i++) {
+                    if (!provers[i].first->IsRunning()) {
+                        if (best.IsWorseThan(provers[i].second)) {
+                            best = provers[i].second;
+                            index = i;
+                            new_segment = false;
+                        }
+                    }
+                }
+                for (int i = 0; i < segment_count; i++) {
+                    if (pending_segments[i].size() > 0) {
+                        if (best.IsWorseThan(pending_segments[i][0])) {
+                            best = pending_segments[i][0];
+                            index = i;
+                            new_segment = true;
+                        }
+                    }
+                }
+                // If nothing to run, stop.
+                if (best.is_empty)
+                    break;
+                bool spawn_best = false;
+                // If we have free threads, use them.
+                if (active_provers < max_proving_threads) {
+                    spawn_best = true;
+                    active_provers++;
+                } else {
+                    // Otherwise, pause one already running segment, if candidate is better.
+                    Segment worst_running;
+                    int worst_index;
+                    for (int i = 0; i < provers.size(); i++) 
+                        if (provers[i].first->IsRunning()) {
+                            if (worst_running.is_empty == true || provers[i].second.IsWorseThan(worst_running)) {
+                                worst_running = provers[i].second;
+                                worst_index = i;
+                            }
+                        }
+                    // If the candidate is better than worst running, stop worst running and spawn candidate.
+                    if (worst_running.IsWorseThan(best)) {
+                        spawn_best = true;
+                        provers[worst_index].first->pause();
+                    }
+                }
+                // Best provers are already running, nothing will change until a new event happens.
+                if (!spawn_best) {
+                    break;
+                }
+                // Spawn the best segment.
+                if (!new_segment) {
+                    provers[index].first->resume();
+                } else {
+                    if (!stopped) {
+                        provers.emplace_back(
+                            std::make_pair(
+                                std::make_unique<InterruptableProver>(best, D, weso),                            
+                                best
+                            )
+                        );
+                        provers[provers.size() - 1].first->start();
+                        pending_segments[index].erase(pending_segments[index].begin());
+                    }
+                }
+            }
+        }
+    }
+
+  private:
+    bool stopped = false;
+    int segment_count;
+    // Maximum amount of proving threads running at once.
+    int max_proving_threads;
+    std::thread* main_loop;
+    FastAlgorithmCallback* weso;
+    FastStorage* fast_storage;
+    // The discriminant used.
+    integer D;
+    // Active or paused provers currently running.
+    std::vector<std::pair<std::unique_ptr<InterruptableProver>, Segment>> provers;
+    // Vectors of segments needing proving, for each segment length. 
+    std::vector<std::vector<Segment>> pending_segments;
+    // For each segment length, remember the endpoint of the last segment marked as pending.
+    std::vector<uint64_t> last_appended;
+    // Finished segments.
+    std::vector<std::vector<Segment>> done_segments;
+    // Iterations that we need proof for.
+    std::set<uint64_t> pending_iters;
+    // Last segment beginning for our pending iters.
+    std::set<uint64_t> pending_iters_last_sg;
+    // Protect pending_iters and done_segments.
+    std::mutex proof_mutex;
+    std::mutex last_segment_mutex;
+    // Notify proving threads when they are ready to prove.
+    std::condition_variable proof_cv;
+    std::condition_variable last_segment_cv;
+    // Maximum iter that can be proved.
+    uint64_t max_proving_iteration = 0;
+    // Where the VDF thread is at.
+    uint64_t vdf_iteration = 0;
+    bool proof_done;
+    uint64_t intermediates_iter;
+};
+
+#endif // VDF_H

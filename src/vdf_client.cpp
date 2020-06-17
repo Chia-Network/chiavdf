@@ -1,30 +1,38 @@
 #include <boost/asio.hpp>
 #include "vdf.h"
+
 using boost::asio::ip::tcp;
 
 const int max_length = 2048;
-const int kMaxProcessesAllowed = 3;
 std::mutex socket_mutex;
 
 int process_number;
+// Segments are 2^16, 2^18, ..., 2^30
+// Best case it'll be able to proof for up to 2^36 due to 64-wesolowski restriction.
+int segments = 8;
+int thread_count = 3;
 
 void PrintInfo(std::string input) {
     std::cout << "VDF Client: " << input << "\n";
+    std::cout << std::flush;
 }
 
-void CreateAndWriteProof(integer D, form x, int64_t num_iterations, WesolowskiCallback& weso, bool& stop_signal, tcp::socket& sock) {
-    Proof result = CreateProofOfTimeNWesolowski(D, x, num_iterations, 0, weso, 2, 0, stop_signal);
-    if (stop_signal == true) {
-        PrintInfo("Got stop signal before completing the proof!");
-        return ;
-    }
+char disc[350];
+char disc_size[5];
+int disc_int_size;
 
-    std::vector<unsigned char> bytes = ConvertIntegerToBytes(integer(num_iterations), 8);
+void WriteProof(uint64_t iteration, Proof& result, tcp::socket& sock) {
+    // Writes the number of iterations
+    std::vector<unsigned char> bytes = ConvertIntegerToBytes(integer(iteration), 8);
 
     // Writes the y, with prepended size
     std::vector<unsigned char> y_size = ConvertIntegerToBytes(integer(result.y.size()), 8);
     bytes.insert(bytes.end(), y_size.begin(), y_size.end());
     bytes.insert(bytes.end(), result.y.begin(), result.y.end());
+    
+    // Writes the witness type.
+    std::vector<unsigned char> witness_type = ConvertIntegerToBytes(integer(result.witness_type), 1);
+    bytes.insert(bytes.end(), witness_type.begin(), witness_type.end());
 
     bytes.insert(bytes.end(), result.proof.begin(), result.proof.end());
     std::string str_result = BytesToStr(bytes);
@@ -33,98 +41,201 @@ void CreateAndWriteProof(integer D, form x, int64_t num_iterations, WesolowskiCa
     std::vector<unsigned char> prefix_bytes = ConvertIntegerToBytes(integer(length), 4);
     std::string prefix = BytesToStr(prefix_bytes);
 
-    std::lock_guard<std::mutex> lock(socket_mutex);
-
-    PrintInfo("Sending length = " + to_string(length));
-    PrintInfo("Generated proof = " + str_result);
-
-    boost::asio::write(sock, boost::asio::buffer(prefix_bytes, 4));
-    boost::asio::write(sock, boost::asio::buffer(str_result.c_str(), str_result.size()));
+    PrintInfo("Sending proof");
+    {
+        std::lock_guard<std::mutex> lock(socket_mutex);
+        boost::asio::write(sock, boost::asio::buffer(prefix_bytes, 4));
+        boost::asio::write(sock, boost::asio::buffer(str_result.c_str(), str_result.size()));
+    }
+    PrintInfo("Sended proof");
 }
 
-void session(tcp::socket& sock) {
+void CreateAndWriteProof(ProverManager& pm, uint64_t iteration, bool& stop_signal, tcp::socket& sock) {
+    Proof result = pm.Prove(iteration);
+    if (stop_signal == true) {
+        PrintInfo("Got stop signal before completing the proof!");
+        return ;
+    }
+    WriteProof(iteration, result, sock);
+}
+
+void CreateAndWriteProofTwoWeso(integer& D, form f, uint64_t iters, TwoWesolowskiCallback* weso, bool& stop_signal, tcp::socket& sock) {
+    Proof result = ProveTwoWeso(D, f, iters, 0, weso, 0, stop_signal);
+    if (stop_signal) {
+        PrintInfo("Got stop signal before completing the proof!");
+        return ;
+    }
+    WriteProof(iters, result, sock);
+}
+
+void InitSession(tcp::socket& sock) {
+    boost::system::error_code error;
+
+    memset(disc,0x00,sizeof(disc)); // For null termination
+    memset(disc_size,0x00,sizeof(disc_size)); // For null termination
+
+    boost::asio::read(sock, boost::asio::buffer(disc_size, 3), error);
+    disc_int_size = atoi(disc_size);
+    boost::asio::read(sock, boost::asio::buffer(disc, disc_int_size), error);
+
+    if (error == boost::asio::error::eof)
+        return ; // Connection closed cleanly by peer.
+    else if (error)
+        throw boost::system::system_error(error); // Some other error.
+
+    if (getenv( "warn_on_corruption_in_production" )!=nullptr) {
+        warn_on_corruption_in_production=true;
+    }
+    if (is_vdf_test) {
+        PrintInfo( "=== Test mode ===" );
+    }
+    if (warn_on_corruption_in_production) {
+        PrintInfo( "=== Warn on corruption enabled ===" );
+    }
+    assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
+    init_gmp();
+    allow_integer_constructor=true; //make sure the old gmp allocator isn't used
+    set_rounding_mode();
+}
+
+void FinishSession(tcp::socket& sock) {
     try {
-        char disc[350];
-        char disc_size[5];
+        // Tell client I've stopped everything, wait for ACK and close.
         boost::system::error_code error;
 
-        memset(disc,0x00,sizeof(disc)); // For null termination
-        memset(disc_size,0x00,sizeof(disc_size)); // For null termination
+        PrintInfo("Stopped everything! Ready for the next challenge.");
 
-        boost::asio::read(sock, boost::asio::buffer(disc_size, 3), error);
-        int disc_int_size = atoi(disc_size);
+        std::lock_guard<std::mutex> lock(socket_mutex);
+        boost::asio::write(sock, boost::asio::buffer("STOP", 4));
 
-        boost::asio::read(sock, boost::asio::buffer(disc, disc_int_size), error);
+        char ack[5];
+        memset(ack,0x00,sizeof(ack));
+        boost::asio::read(sock, boost::asio::buffer(ack, 3), error);
+        assert (strncmp(ack, "ACK", 3) == 0);
+    } catch (std::exception& e) {
+        PrintInfo("Exception in thread: " + to_string(e.what()));
+    }
+}
 
+uint64_t ReadIteration(tcp::socket& sock) {
+    boost::system::error_code error;
+    char data[20];
+    memset(data, 0, sizeof(data));
+    boost::asio::read(sock, boost::asio::buffer(data, 2), error);
+    int size = (data[0] - '0') * 10 + (data[1] - '0');
+    memset(data, 0, sizeof(data));
+    boost::asio::read(sock, boost::asio::buffer(data, size), error);
+    uint64_t iters = 0;
+    for (int i = 0; i < size; i++)
+        iters = iters * 10 + data[i] - '0';       
+    return iters;
+}
+
+void SessionFastAlgorithm(tcp::socket& sock) {
+    InitSession(sock);
+    try {
         integer D(disc);
-        PrintInfo("Discriminant = " + to_string(D.impl));
-
-        int space_needed = kSwitchIters / 10 + (kMaxItersAllowed - kSwitchIters) / 100;
-        forms = (form*) calloc(space_needed, sizeof(form));
-
-        PrintInfo("Calloc'd " + to_string(space_needed * sizeof(form)) + " bytes");
-
-        // Init VDF the discriminant...
-
-        if (error == boost::asio::error::eof)
-            return ; // Connection closed cleanly by peer.
-        else if (error)
-            throw boost::system::system_error(error); // Some other error.
-
-        if (getenv( "warn_on_corruption_in_production" )!=nullptr) {
-            warn_on_corruption_in_production=true;
-        }
-        if (is_vdf_test) {
-            PrintInfo( "=== Test mode ===" );
-        }
-        if (warn_on_corruption_in_production) {
-            PrintInfo( "=== Warn on corruption enabled ===" );
-        }
-        assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
-        init_gmp();
-        allow_integer_constructor=true; //make sure the old gmp allocator isn't used
-        set_rounding_mode();
-
         integer L=root(-D, 4);
         form f=form::generator(D);
-
-        bool stop_signal = false;
-        // (iteration, thread_id)
-        std::set<std::pair<uint64_t, uint64_t> > seen_iterations;
-        bool stop_vector[100];
+        PrintInfo("Discriminant = " + to_string(D.impl));
 
         std::vector<std::thread> threads;
-        WesolowskiCallback weso(1000000);
-
-        //mpz_init(weso.forms[0].a.impl);
-        //mpz_init(weso.forms[0].b.impl);
-        //mpz_init(weso.forms[0].c.impl);
-
-        forms[0]=f;
-        weso.D = D;
-        weso.L = L;
-        weso.kl = 10;
-
+        const bool multi_proc_machine = (std::thread::hardware_concurrency() >= 16) ? true : false;
+        WesolowskiCallback* weso = new FastAlgorithmCallback(segments, D, multi_proc_machine);
+        FastStorage* fast_storage = NULL;
+        if (multi_proc_machine) {
+            fast_storage = new FastStorage((FastAlgorithmCallback*)weso);   
+        }
         bool stopped = false;
-        bool got_iters = false;
-        std::thread vdf_worker(repeated_square, f, D, L, std::ref(weso), std::ref(stopped));
+        std::thread vdf_worker(repeated_square, f, std::ref(D), std::ref(L), weso, fast_storage, std::ref(stopped));
+        ProverManager pm(D, (FastAlgorithmCallback*)weso, fast_storage, segments, thread_count);        
+        pm.start();
 
         // Tell client that I'm ready to get the challenges.
         boost::asio::write(sock, boost::asio::buffer("OK", 2));
-        char data[30];
 
         while (!stopped) {
-            memset(data, 0, sizeof(data));
-            boost::asio::read(sock, boost::asio::buffer(data, 2), error);
-            int size = (data[0] - '0') * 10 + (data[1] - '0');
-            memset(data, 0, sizeof(data));
-            boost::asio::read(sock, boost::asio::buffer(data, size), error);
-            uint64_t iters = 0;
-            for (int i = 0; i < size; i++) {
-                iters = iters * 10 + data[i] - '0';
+            uint64_t iters = ReadIteration(sock);
+            if (iters == 0) {
+                PrintInfo("Got stop signal!");
+                stopped = true;
+                pm.stop();
+                vdf_worker.join();
+                for (int t = 0; t < threads.size(); t++) {
+                    threads[t].join();
+                }
+                if (fast_storage != NULL) {
+                    delete(fast_storage);
+                }
+                delete(weso);
+            } else {
+                PrintInfo("Received iteration: " + to_string(iters));
+                threads.push_back(std::thread(CreateAndWriteProof, std::ref(pm), iters, std::ref(stopped), std::ref(sock)));
             }
-            got_iters = true;
+        }
+    } catch (std::exception& e) {
+        PrintInfo("Exception in thread: " + to_string(e.what()));
+    }
+    FinishSession(sock);
+}
 
+void SessionOneWeso(tcp::socket& sock) {
+    InitSession(sock);
+    try {
+        integer D(disc);
+        integer L=root(-D, 4);
+        form f=form::generator(D);
+        PrintInfo("Discriminant = " + to_string(D.impl));
+
+        // Tell client that I'm ready to get the challenges.
+        boost::asio::write(sock, boost::asio::buffer("OK", 2));
+
+        uint64_t iter = ReadIteration(sock);
+        bool stopped = false;
+        WesolowskiCallback* weso = new OneWesolowskiCallback(D, iter);
+        FastStorage* fast_storage = NULL;
+        std::thread vdf_worker(repeated_square, f, std::ref(D), std::ref(L), weso, fast_storage, std::ref(stopped));
+
+        Proof proof = ProveOneWesolowski(iter, D, (OneWesolowskiCallback*)weso, stopped);
+        WriteProof(iter, proof, sock);
+
+        iter = ReadIteration(sock);
+        while (iter != 0) {
+            std::cout << "Warning: did not receive stop signal\n";
+            iter = ReadIteration(sock);
+        }
+        stopped = true;
+        vdf_worker.join();
+        delete(weso);
+    } catch (std::exception& e) {
+        PrintInfo("Exception in thread: " + to_string(e.what()));
+    }
+    FinishSession(sock);
+}
+
+void SessionTwoWeso(tcp::socket& sock) {
+    const int kMaxProcessesAllowed = 3;
+    InitSession(sock);
+    try {
+        integer D(disc);
+        integer L=root(-D, 4);
+        form f = form::generator(D);
+        PrintInfo("Discriminant = " + to_string(D.impl));
+
+        // Tell client that I'm ready to get the challenges.
+        boost::asio::write(sock, boost::asio::buffer("OK", 2));
+
+        bool stopped = false;
+        bool stop_vector[100];
+        std::vector<std::thread> threads;
+        // (iteration, thread_id)
+        std::set<std::pair<uint64_t, uint64_t> > seen_iterations;
+        WesolowskiCallback* weso = new TwoWesolowskiCallback(D);
+        FastStorage* fast_storage = NULL;
+        std::thread vdf_worker(repeated_square, f, std::ref(D), std::ref(L), weso, fast_storage, std::ref(stopped));
+
+        while (!stopped) {
+            uint64_t iters = ReadIteration(sock);
             if (iters == 0) {
                 PrintInfo("Got stop signal!");
                 stopped = true;
@@ -134,7 +245,7 @@ void session(tcp::socket& sock) {
                     threads[t].join();
                 }
                 vdf_worker.join();
-                free(forms);
+                delete(weso);
             } else {
                 uint64_t max_iter = 0;
                 uint64_t max_iter_thread_id = -1;
@@ -157,12 +268,17 @@ void session(tcp::socket& sock) {
                     PrintInfo("Duplicate iteration " + to_string(iters) + "... Ignoring.");
                     continue;
                 }
+                if (iters >= kMaxProcessesAllowed - 500000) {
+                    PrintInfo("Too big iter... ignoring");
+                    continue;
+                }
                 if (threads.size() < kMaxProcessesAllowed || iters < min_iter) {
                     seen_iterations.insert({iters, threads.size()});
                     PrintInfo("Running proving for iter: " + to_string(iters));
                     stop_vector[threads.size()] = false;
-                    threads.push_back(std::thread(CreateAndWriteProof, D, f, iters, std::ref(weso),
-                                      std::ref(stop_vector[threads.size()]), std::ref(sock)));
+                    threads.push_back(std::thread(CreateAndWriteProofTwoWeso, std::ref(D), f, iters,
+                                      (TwoWesolowskiCallback*)weso, std::ref(stop_vector[threads.size()]), 
+                                      std::ref(sock)));
                     if (threads.size() > kMaxProcessesAllowed) {
                         PrintInfo("Stopping proving for iter: " + to_string(max_iter));
                         stop_vector[max_iter_thread_id] = true;
@@ -174,23 +290,7 @@ void session(tcp::socket& sock) {
     } catch (std::exception& e) {
         PrintInfo("Exception in thread: " + to_string(e.what()));
     }
-
-    try {
-        // Tell client I've stopped everything, wait for ACK and close.
-        boost::system::error_code error;
-
-        PrintInfo("Stopped everything! Ready for the next challenge.");
-
-        std::lock_guard<std::mutex> lock(socket_mutex);
-        boost::asio::write(sock, boost::asio::buffer("STOP", 4));
-
-        char ack[5];
-        memset(ack,0x00,sizeof(ack));
-        boost::asio::read(sock, boost::asio::buffer(ack, 3), error);
-        assert (strncmp(ack, "ACK", 3) == 0);
-    } catch (std::exception& e) {
-        PrintInfo("Exception in thread: " + to_string(e.what()));
-    }
+    FinishSession(sock);
 }
 
 int gcd_base_bits=50;
@@ -198,10 +298,11 @@ int gcd_128_max_iter=3;
 
 int main(int argc, char* argv[])
 {
-  try {
+  try
+  {
     if (argc != 4)
     {
-      std::cerr << "Usage: ./vdf_client <host> <port> <process_number>\n";
+      std::cerr << "Usage: ./vdf_client <host> <port>\n";
       return 1;
     }
 
@@ -219,10 +320,25 @@ int main(int argc, char* argv[])
 
     tcp::socket s(io_service);
     boost::asio::connect(s, iterator);
-    process_number = atoi(argv[3]);
-    session(s);
+    fast_algorithm = false;
+    two_weso = false;
+    boost::system::error_code error;
+    char prover_type_buf[5];
+    boost::asio::read(s, boost::asio::buffer(prover_type_buf, 1), error);
+    // Check for "S" (simple weso), "N" (n-weso), or "T" (2-weso)
+    if (prover_type_buf[0] == 'S') {
+        SessionOneWeso(s);
+    }
+    if (prover_type_buf[0] == 'N') {
+        fast_algorithm = true;
+        SessionFastAlgorithm(s);
+    }
+    if (prover_type_buf[0] == 'T') {
+        two_weso = true;
+        SessionTwoWeso(s);
+    }
   } catch (std::exception& e) {
     std::cerr << "Exception: " << e.what() << "\n";
-  }
+  } 
   return 0;
 }

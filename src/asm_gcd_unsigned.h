@@ -278,7 +278,7 @@ struct asm_integer {
     //-first calculate ~(c*d)
     //-then calculate a*b+(~(c*d))+1
     void mul_add(
-        reg_alloc regs, asm_integer a, reg_scalar b, asm_integer c, bool invert_output, bool carry_in_is_1
+        const reg_alloc& regs, asm_integer a, reg_scalar b, asm_integer c, bool invert_output, bool carry_in_is_1
     ) {
         EXPAND_MACROS_SCOPE;
 

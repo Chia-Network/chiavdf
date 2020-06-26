@@ -50,13 +50,11 @@ jobs:
 
     - name: Lint source with flake8
       run: |
-        source venv/bin/activate
         pip install flake8
         flake8 tests setup.py
 
     - name: Lint source with mypy
       run: |
-        source venv/bin/activate
         pip install mypy
         mypy --config-file mypi.ini setup.py tests
 

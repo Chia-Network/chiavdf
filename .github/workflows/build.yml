@@ -48,6 +48,18 @@ jobs:
         pip install pep517
         python -m pep517.build --source --out-dir dist .
 
+    - name: Lint source with flake8
+      run: |
+        source venv/bin/activate
+        pip install flake8
+        flake8 tests setup.py
+
+    - name: Lint source with mypy
+      run: |
+        source venv/bin/activate
+        pip install mypy
+        mypy --config-file mypi.ini setup.py tests
+
     - name: Build ${{ matrix.os }} wheels and test
       run: |
         python -m cibuildwheel --output-dir dist

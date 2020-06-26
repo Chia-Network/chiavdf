@@ -19,8 +19,9 @@ pip wheel .
 ```
 
 The primary build process for this repository is to use GitHub Actions to
-build binary wheels for MacOS, Linux, and Windows and publish them with
-a source wheel on PyPi. See `.github/workflows/build.yml`. CMake uses
+build binary wheels for MacOS, Linux (x64 and aarch64), and Windows and
+publish them with a source wheel on PyPi. See `.github/workflows/build.yml`.
+CMake uses
 [FetchContent](https://cmake.org/cmake/help/latest/module/FetchContent.html)
 to download [pybind11](https://github.com/pybind/pybind11).
 Building is then managed by
@@ -55,7 +56,7 @@ If you're running a timelord, the following tests are available, depending of wh
 
 `./prover_test`, in case you're running a timelord that extends the chain and you're running the fast algorithm.
 
-Those tests will simulate the vdf_client and verify for correctness the produced proofs. 
+Those tests will simulate the vdf_client and verify for correctness the produced proofs.
 
 ## Contributing and workflow
 Contributions are welcome and more details are available in chia-blockchain's
@@ -196,6 +197,6 @@ Since the maximum segment size is 2^30 and we can use at most 64 segments in a c
 
 In order to finish segments, some intermediate values need to be stored for each segment. For each different possible segment length, we use a sliding window of length 20 to store those. Hence, for each segment length, we'll store only the intermediates values needed for the last 20 segments produced by the main VDF loop. Since finishing segments is faster than producing them by the main VDF loop, we assume the segment threads won't be behind by more than 20 segments from the main VDF loop, for each segment length. Thanks to the sliding window technique, the memory used will always be constant.
 
-Generally, the main VDF loop performs all the storing, after computing a form we're interested in. However, since storing is very frequent and expensive (GMP operations), this will slow down the main VDF loop. 
+Generally, the main VDF loop performs all the storing, after computing a form we're interested in. However, since storing is very frequent and expensive (GMP operations), this will slow down the main VDF loop.
 
 For the machines having at least 16 concurrent threads, an optimisation is provided: the main VDF loop does only repeated squaring, without storing any form. After each 2^15 steps are performed, a new thread starts redoing the work for 2^15 more steps, this time storing the intermediate values as well. All the intermediates threads and the main VDF loop will work in parallel. The only purpose of the main VDF loop becomes now to produce the starting values for the intermediate threads, as fast as possible. The squarings used in the intermediates threads will be 2 times slower than the ones used in the main VDF loop. It's expected the intermediates will only lag behind the main VDF loop by 2^15 iterations, at any point: after 2^16 iterations are done by the main VDF loop, the first thread doing the first 2^15 intermediate values is already finished. Also, at that point, half of the work of the second thread doing the last 2^15 intermediates values should be already done.

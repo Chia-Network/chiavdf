@@ -5,7 +5,7 @@ import sys
 import platform
 import subprocess
 
-from distutils.command.build import build
+from distutils.command.build import build  # type: ignore
 from distutils.command.install import install
 from distutils.version import LooseVersion
 from setuptools.command.build_ext import build_ext
@@ -252,7 +252,7 @@ if platform.system() == "Windows":
         zip_safe=False,
     )
 else:
-    build.sub_commands.append(("build_hook", lambda x: True))
+    build.sub_commands.append(("build_hook", lambda x: True))  # type: ignore
     install.sub_commands.append(("install_hook", lambda x: True))
 
     setup(

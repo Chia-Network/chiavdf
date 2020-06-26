@@ -2,6 +2,7 @@ from chiavdf import prove, verify_wesolowski, create_discriminant
 import secrets
 import time
 
+
 def test_prove_and_verify():
     discriminant_challenge = secrets.token_bytes(10)
     discriminant_size = 512
@@ -27,26 +28,25 @@ def test_prove_and_verify():
         ),
         str(
             int.from_bytes(
-                result[int_size:2*int_size],
+                result[int_size:2 * int_size],
                 "big",
                 signed=True,
             )
         ),
         str(
             int.from_bytes(
-                result[2*int_size:3*int_size],
+                result[2 * int_size:3 * int_size],
                 "big",
                 signed=True,
             )
         ),
         str(
             int.from_bytes(
-                result[3*int_size:4*int_size],
+                result[3 * int_size:4 * int_size],
                 "big",
                 signed=True,
             )
         ),
         iters,
     )
-    assert is_valid == True
-
+    assert is_valid

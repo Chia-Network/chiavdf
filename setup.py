@@ -4,8 +4,8 @@ import shutil
 import sys
 import platform
 import subprocess
-import distutils.command.build as build
 
+from distutils.command.build import build  # type: ignore
 from distutils.command.install import install
 from distutils.version import LooseVersion
 from setuptools.command.build_ext import build_ext

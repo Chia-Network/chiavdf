@@ -72,7 +72,7 @@ jobs:
           && python -m pip install --upgrade pip
           && cmake --version
           && uname -a
-        CIBW_BUILD_VERBOSITY_LINUX: 0
+        CIBW_BUILD_VERBOSITY_LINUX: 1
         CIBW_TEST_REQUIRES: pytest
         CIBW_TEST_COMMAND: py.test -v {project}/tests
         CIBW_ENVIRONMENT_LINUX: "BUILD_VDF_CLIENT=N"
@@ -109,6 +109,7 @@ jobs:
         source venv/bin/activate
         twine upload --non-interactive --skip-existing --verbose 'dist/*'
 
-    - name: Clean up venv
+    - name: Clean up
       run: |
         rm -rf venv
+        rm -rf chiavdf

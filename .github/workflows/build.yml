@@ -77,7 +77,7 @@ jobs:
           && rm -f /usr/bin/cmake
           && yum -y install boost-devel lzip
           && curl -L https://gmplib.org/download/gmp/gmp-6.2.0.tar.lz | lzip -dc | tar x
-          && cd gmp-6.2.0 && ./configure --enable-fat
+          && cd gmp-6.2.0 && ./configure --enable-fat --enable-cxx
           && make && make install && cd .. && rm -rf gmp-6.2.0
           && python -m pip install --upgrade pip
         CIBW_BEFORE_BUILD_MACOS: >

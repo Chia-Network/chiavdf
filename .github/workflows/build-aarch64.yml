@@ -69,9 +69,9 @@ jobs:
           yum -y install epel-release
           && yum -y install boost-devel lzip cmake3
           && ln -s /usr/bin/cmake3 /usr/local/bin/cmake
-          && curl -L https://gmplib.org/download/gmp/gmp-6.2.0.tar.lz | lzip -dc | tar x
-          && cd gmp-6.2.0 && ./configure --enable-fat --enable-cxx
-          && make && make install && cd .. && rm -rf gmp-6.2.0
+          && curl -L https://gmplib.org/download/gmp/gmp-6.1.2.tar.lz | lzip -dc | tar x
+          && cd gmp-6.1.2 && ./configure --enable-fat --enable-cxx
+          && make && make install && cd .. && rm -rf gmp-6.1.2
           && python -m pip install --upgrade pip
           && cmake --version
           && uname -a

@@ -64,7 +64,7 @@ jobs:
       env:
         CIBW_BUILD_VERBOSITY_MACOS: 0
         CIBW_BUILD_VERBOSITY_LINUX: 0
-        CIBW_BUILD_VERBOSITY_WINDOWS: 1
+        CIBW_BUILD_VERBOSITY_WINDOWS: 0
         # build python 3.7 and 3.8
         CIBW_BUILD: cp37-* cp38-*
         # don't build i686 targets, can't seem to find cmake for these

@@ -60,14 +60,14 @@ jobs:
         source venv/bin/activate
         python -m cibuildwheel --output-dir dist
       env:
-        CIBW_BUILD_VERBOSITY_LINUX: 1
+        CIBW_BUILD_VERBOSITY_LINUX: 0
         # build python 3.7 and 3.8
         CIBW_BUILD: cp38-*
         CIBW_MANYLINUX_AARCH64_IMAGE: manylinux2014
         # we need boost
         CIBW_BEFORE_BUILD_LINUX: >
           yum -y install epel-release
-          && yum -y install boost-devel lzip cmake
+          && yum -y install boost-devel lzip cmake3
           && ln -s /usr/bin/cmake3 /usr/local/bin/cmake
           && curl -L https://gmplib.org/download/gmp/gmp-6.2.0.tar.lz | lzip -dc | tar x
           && cd gmp-6.2.0 && ./configure --enable-fat --enable-cxx

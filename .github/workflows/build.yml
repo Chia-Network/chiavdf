@@ -17,7 +17,7 @@ jobs:
       with:
         access_token: ${{ github.token }}
 
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v2
       with:
         fetch-depth: 0
         # we need fetch-depth 0 so setuptools_scm can resolve tags
@@ -42,12 +42,6 @@ jobs:
         python -m pip install --upgrade pip
         pip install cibuildwheel==1.5.1
 
-    - name: Build source distribution with MacOS
-      if: startsWith(matrix.os, 'mac')
-      run: |
-        pip install pep517
-        python -m pep517.build --source --out-dir dist .
-
     - name: Lint source with flake8
       run: |
         pip install flake8
@@ -58,10 +52,19 @@ jobs:
         pip install mypy
         mypy --config-file mypi.ini setup.py tests
 
+    - name: Build source distribution with MacOS
+      if: startsWith(matrix.os, 'mac')
+      run: |
+        pip install pep517
+        python -m pep517.build --source --out-dir dist .
+
     - name: Build ${{ matrix.os }} wheels and test
       run: |
         python -m cibuildwheel --output-dir dist
       env:
+        CIBW_BUILD_VERBOSITY_MACOS: 0
+        CIBW_BUILD_VERBOSITY_LINUX: 0
+        CIBW_BUILD_VERBOSITY_WINDOWS: 1
         # build python 3.7 and 3.8
         CIBW_BUILD: cp37-* cp38-*
         # don't build i686 targets, can't seem to find cmake for these
@@ -72,13 +75,15 @@ jobs:
           curl -L https://github.com/Kitware/CMake/releases/download/v3.17.0/cmake-3.17.0-Linux-`uname -m`.sh > cmake.sh
           && yes | sh cmake.sh | cat
           && rm -f /usr/bin/cmake
-          && yum -y install boost-devel gmp-devel
+          && yum -y install boost-devel lzip
+          && curl -L https://gmplib.org/download/gmp/gmp-6.2.0.tar.lz | lzip -dc | tar x
+          && cd gmp-6.2.0 && ./configure --enable-fat
+          && make && make install && cd .. && rm -rf gmp-6.2.0
           && python -m pip install --upgrade pip
         CIBW_BEFORE_BUILD_MACOS: >
           brew install boost
           && python -m pip install --upgrade pip
         CIBW_ENVIRONMENT_MACOS: "MACOSX_DEPLOYMENT_TARGET=10.14 BUILD_VDF_CLIENT=N"
-        CIBW_BUILD_VERBOSITY_MACOS: 0
         CIBW_TEST_REQUIRES: pytest
         CIBW_TEST_COMMAND: py.test -v {project}/tests
         CIBW_ENVIRONMENT_LINUX: "PATH=/project/cmake-3.17.0-Linux-`uname -m`/bin:$PATH BUILD_VDF_CLIENT=N"

@@ -5,7 +5,7 @@ import sys
 import platform
 import subprocess
 
-from distutils.command.build import build
+from distutils.command.build import build  # type: ignore
 from distutils.command.install import install
 from distutils.version import LooseVersion
 from setuptools.command.build_ext import build_ext
@@ -62,6 +62,9 @@ class CMakeExtension(Extension):
 
 def copy_vdf_client(build_dir, install_dir):
     shutil.copy("src/vdf_client", install_dir)
+    shutil.copy("src/prover_test", install_dir)
+    shutil.copy("src/1weso_test", install_dir)
+    shutil.copy("src/2weso_test", install_dir)
 
 
 def copy_vdf_bench(build_dir, install_dir):
@@ -249,7 +252,7 @@ if platform.system() == "Windows":
         zip_safe=False,
     )
 else:
-    build.sub_commands.append(("build_hook", lambda x: True))
+    build.sub_commands.append(("build_hook", lambda x: True))  # type: ignore
     install.sub_commands.append(("install_hook", lambda x: True))
 
     setup(

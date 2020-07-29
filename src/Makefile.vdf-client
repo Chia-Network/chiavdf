@@ -2,7 +2,7 @@ UNAME := $(shell uname)
 
 LDFLAGS += -no-pie
 LDLIBS += -lgmpxx -lgmp -lboost_system -pthread
-CXXFLAGS += -std=c++1z -D VDF_MODE=0 -pthread -no-pie
+CXXFLAGS += -std=c++1z -D VDF_MODE=0 -D FAST_MACHINE=1 -pthread -no-pie
 ifeq ($(UNAME),Darwin)
 CXXFLAGS += -D CHIAOSX=1
 else
@@ -11,15 +11,15 @@ endif
 
 .PHONY: all clean
 
-all: vdf_client avx512_test vdf_bench
+all: vdf_client prover_test 1weso_test 2weso_test vdf_bench
 
 clean:
-	rm -f *.o vdf_client vdf_bench avx512_test compile_asm
+	rm -f *.o vdf_client prover_test 1weso_test 2weso_test compile_asm vdf_bench
 
-vdf_client vdf_bench avx512_test: %: %.o lzcnt.o asm_compiled.o avx2_asm_compiled.o avx512_asm_compiled.o
+vdf_client vdf_bench prover_test 1weso_test 2weso_test avx512_test: %: %.o lzcnt.o asm_compiled.o avx2_asm_compiled.o avx512_asm_compiled.o
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-vdf_client.o vdf_bench.o avx512_test.o: CXXFLAGS += $(OPT_CFLAGS)
+vdf_client.o vdf_bench.o prover_test.o 1weso_test.o 2weso_test.o avx512_test.o: CXXFLAGS += $(OPT_CFLAGS)
 
 lzcnt.o: refcode/lzcnt.c
 	$(CC) -c refcode/lzcnt.c

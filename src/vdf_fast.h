@@ -1,7 +1,10 @@
-typedef mpz< 9, 16> mpz_9 ; //3 cache lines
-typedef mpz<17, 24> mpz_17; //4 cache lines
-typedef mpz<25, 32> mpz_25; //5 cache lines
-typedef mpz<33, 40> mpz_33; //6 cache lines
+#ifndef VDF_FAST_H
+#define VDF_FAST_H
+
+typedef mpz< 9, 14> mpz_9 ; //2 cache lines
+typedef mpz<17, 22> mpz_17; //3 cache lines
+typedef mpz<25, 30> mpz_25; //4 cache lines
+typedef mpz<33, 38> mpz_33; //5 cache lines
 
 static_assert(sizeof(mpz_9 )==3*64);
 static_assert(sizeof(mpz_17)==4*64);
@@ -1157,3 +1160,5 @@ uint64 repeated_square_fast(square_state_type &square_state,form& f, const integ
         return repeated_square_fast_single_thread(square_state, f, D, L, base, iterations, nuduplListener);
     }
 }
+
+#endif // VDF_FAST_H

@@ -85,14 +85,14 @@ template<class type, int size> struct fixed_integer {
     }
 
     //truncation
-    template<int t_size> explicit fixed_integer(fixed_integer<type, t_size> t) {
+    template<int t_size> explicit fixed_integer(const fixed_integer<type, t_size>& t) {
         for (int x=0;x<size+1;++x) {
             data[x]=(x<t_size+1)? t.data[x] : 0;
         }
     }
 
     fixed_integer& operator=(const integer& v) { return *this=fixed_integer(v); }
-    template<int t_size> fixed_integer& operator=(fixed_integer<type, t_size> t) { return *this=fixed_integer(t); }
+    template<int t_size> fixed_integer& operator=(const fixed_integer<type, t_size>& t) { return *this=fixed_integer(t); }
 
     bool is_negative() const {
         return !is_zero() && data[0]==negative_sign;
@@ -156,7 +156,7 @@ template<class type, int size> struct fixed_integer {
         return res;
     }
 
-    template<int b_size> int compare(fixed_integer<type, b_size> b) const {
+    template<int b_size> int compare(const fixed_integer<type, b_size>& b) const {
         return compare(
             data+1, size, data[0],
             b.data+1, size, b.data[0]
@@ -256,7 +256,7 @@ template<class type, int size> struct fixed_integer {
         return res;
     }
 
-    void operator+=(fixed_integer b) {
+    void operator+=(const fixed_integer& b) {
         add(
             data+1, size, data[0],
             b.data+1, size, b.data[0],
@@ -264,7 +264,7 @@ template<class type, int size> struct fixed_integer {
         );
     }
 
-    void operator-=(fixed_integer b) {
+    void operator-=(const fixed_integer& b) {
         add(
             data+1, size, data[0],
             b.data+1, size, negative_sign^b.data[0],
@@ -274,7 +274,7 @@ template<class type, int size> struct fixed_integer {
 
     template<int b_size>
     fixed_integer<type, max_constexpr(size, b_size)+1> operator+(
-        fixed_integer<type, b_size> b
+        const fixed_integer<type, b_size>& b
     ) const {
         const int output_size=max_constexpr(size, b_size)+1;
 
@@ -291,7 +291,7 @@ template<class type, int size> struct fixed_integer {
 
     template<int b_size>
     fixed_integer<type, max_constexpr(size, b_size)+1> operator-(
-        fixed_integer<type, b_size> b
+        const fixed_integer<type, b_size>& b
     ) const {
         const int output_size=max_constexpr(size, b_size)+1;
 
@@ -391,7 +391,7 @@ template<class type, int size> struct fixed_integer {
 
     template<int t_size, int this_size>
     static fixed_integer<type, t_size> subset(
-        fixed_integer<type, this_size> this_v, int start
+        const fixed_integer<type, this_size>& this_v, int start
     ) {
         const int end=start+t_size;
 
@@ -451,7 +451,7 @@ template<class type, int size> struct fixed_integer {
 
     template<int b_size>
     fixed_integer<type, size+b_size> operator*(
-        fixed_integer<type, b_size> b
+        const fixed_integer<type, b_size>& b
     ) const {
         const int output_size=size+b_size;
         fixed_integer<type, output_size> res;
@@ -533,32 +533,32 @@ template<class type, int size> struct fixed_integer {
     }
 
     template<int b_size>
-    bool operator>=(fixed_integer<type, b_size> b) const {
+    bool operator>=(const fixed_integer<type, b_size>& b) const {
         return compare(b)>=0;
     }
 
     template<int b_size>
-    bool operator==(fixed_integer<type, b_size> b) const {
+    bool operator==(const fixed_integer<type, b_size>& b) const {
         return compare(b)==0;
     }
 
     template<int b_size>
-    bool operator<(fixed_integer<type, b_size> b) const {
+    bool operator<(const fixed_integer<type, b_size>& b) const {
         return compare(b)<0;
     }
 
     template<int b_size>
-    bool operator<=(fixed_integer<type, b_size> b) const {
+    bool operator<=(const fixed_integer<type, b_size>& b) const {
         return compare(b)<=0;
     }
 
     template<int b_size>
-    bool operator>(fixed_integer<type, b_size> b) const {
+    bool operator>(const fixed_integer<type, b_size>& b) const {
         return compare(b)>0;
     }
 
     template<int b_size>
-    bool operator!=(fixed_integer<type, b_size> b) const {
+    bool operator!=(const fixed_integer<type, b_size>& b) const {
         return compare(b)!=0;
     }
 

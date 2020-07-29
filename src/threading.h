@@ -686,7 +686,7 @@ struct thread_state {
         memory_barrier();
     }
 
-    const uint64 v() {
+    uint64 v() {
         return this_counter().counter_value;
     }
 

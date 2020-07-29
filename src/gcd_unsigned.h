@@ -6,7 +6,7 @@ template<int size> void gcd_unsigned_slow(
     array<fixed_integer<uint64, size>, 2>& ab,
     array<fixed_integer<uint64, size>, 2>& uv,
     int& parity,
-    fixed_integer<uint64, size> threshold=fixed_integer<uint64, size>(integer(0))
+    const fixed_integer<uint64, size>& threshold=fixed_integer<uint64, size>(integer(0))
 ) {
     assert(ab[0]>threshold);
 

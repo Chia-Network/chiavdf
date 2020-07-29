@@ -28,6 +28,8 @@ void VerifyWesolowskiProof(integer &D, form x, form y, form proof, uint64_t iter
     }
 }
 
+// Used only to verify 'Proof' objects in tests. This is not used by chia-blockchain.
+
 integer ConvertBytesToInt(uint8_t *bytes, int start_index, int end_index)
 {
     integer res(0);
@@ -76,12 +78,12 @@ bool CheckProofOfTimeNWesolowskiInner(integer &D, form x, uint8_t *proof_blob,
                                       int blob_len, int iters, int int_size,
                                       std::vector<int> iter_list, int recursion)
 {
-    uint8_t* result_bytes = new uint8_t[2 * int_size];
-    uint8_t* proof_bytes = new uint8_t[blob_len - 2 * int_size];
-    memcpy(result_bytes, proof_blob, 2 * int_size);
-    memcpy(proof_bytes, proof_blob + 2 * int_size, blob_len - 2 * int_size);
-    form y = DeserializeForm(D, result_bytes, int_size);
-    std::vector<form> proof = DeserializeProof(proof_bytes, blob_len - 2 * int_size, D);
+    uint8_t* result_bytes = new uint8_t[2 * 129];
+    uint8_t* proof_bytes = new uint8_t[blob_len - 2 * 129];
+    memcpy(result_bytes, proof_blob, 2 * 129);
+    memcpy(proof_bytes, proof_blob + 2 * 129, blob_len - 2 * 129);
+    form y = DeserializeForm(D, result_bytes, 129);
+    std::vector<form> proof = DeserializeProof(proof_bytes, blob_len - 2 * 129, D);
     if (recursion * 2 + 1 != proof.size())
         return false;
     if (proof.size() == 1)
@@ -126,15 +128,13 @@ bool CheckProofOfTimeNWesolowski(integer D, form x, uint8_t *proof_blob, int pro
 {
     int int_size = (D.num_bits() + 16) >> 4;
     uint8_t* new_proof_blob = new uint8_t[proof_blob_len];
-    int new_cnt = 4 * int_size;
+    int new_cnt = 2 * 129 + 2 * int_size;
     memcpy(new_proof_blob, proof_blob, new_cnt);
     std::vector<int> iter_list;
     for (int i = new_cnt; i < proof_blob_len; i += 4 * int_size + 8)
     {
         auto iter_vector = ConvertBytesToInt(proof_blob, i, i + 8).to_vector();
         iter_list.push_back(iter_vector[0]);
-        if (iter_vector[0] < 0)
-            return false;
         memcpy(new_proof_blob + new_cnt, proof_blob + i + 8, 4 * int_size);
         new_cnt += 4 * int_size;
     }
@@ -143,65 +143,4 @@ bool CheckProofOfTimeNWesolowski(integer D, form x, uint8_t *proof_blob, int pro
     return is_valid;
 }
 
-std::vector<uint8_t> HexToBytes(char *hex_proof)
-{
-    int len = strlen(hex_proof);
-    assert(len % 2 == 0);
-    std::vector<uint8_t> result;
-    for (int i = 0; i < len; i += 2)
-    {
-        int hex1 = hex_proof[i] >= 'a' ? (hex_proof[i] - 'a' + 10) : (hex_proof[i] - '0');
-        int hex2 = hex_proof[i + 1] >= 'a' ? (hex_proof[i + 1] - 'a' + 10) : (hex_proof[i + 1] - '0');
-        result.push_back(hex1 * 16 + hex2);
-    }
-    return result;
-}
-
-// Intended to match with ProofOfTime type from Chia Blockchain.
-struct ProofOfTimeType
-{
-    int discriminant_size_bits;
-    std::vector<uint8_t> challenge_hash;
-    integer a;
-    integer b;
-    uint64_t iterations_needed;
-    std::vector<uint8_t> witness;
-    uint8_t witness_type;
-
-    ProofOfTimeType(const int discriminant_size_bits, const std::vector<uint8_t>& challenge_hash, const integer &a, const integer &b, uint64_t iterations_needed,
-                    const std::vector<uint8_t> &witness, uint8_t witness_type)
-    {
-        this->discriminant_size_bits = discriminant_size_bits;
-        this->challenge_hash = challenge_hash;
-        this->a = a;
-        this->b = b;
-        this->iterations_needed = iterations_needed;
-        this->witness = witness;
-        this->witness_type = witness_type;
-    }
-};
-
-// Converts from ProofOfTimeType to CheckProofOfTimeNWesolowski-like arguments and calls the check.
-bool CheckProofOfTimeType(ProofOfTimeType &proof)
-{
-    bool result;
-    integer discriminant = CreateDiscriminant(proof.challenge_hash, proof.discriminant_size_bits);
-
-    try
-    {
-        form x = form::generator(discriminant);
-        int int_size = (discriminant.num_bits() + 16) >> 4;
-        form y = form::from_abd(proof.a, proof.b, discriminant);
-        std::vector<uint8_t> proof_blob = SerializeForm(y, int_size);
-        proof_blob.insert(proof_blob.end(), proof.witness.begin(), proof.witness.end());
-        result = CheckProofOfTimeNWesolowski(discriminant, x, proof_blob.data(), proof_blob.size(), proof.iterations_needed, proof.witness_type);
-    }
-    catch (std::exception &e)
-    {
-        result = false;
-    }
-    return result;
-}
-
-// end Headerguard VERIFIER_H
-#endif
+#endif // VERIFIER_H

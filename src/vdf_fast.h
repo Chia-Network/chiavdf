@@ -1,5 +1,5 @@
-#ifndef TEST_AVX512
-#define TEST_AVX512 0    #define TEST_AVX512 0
+#ifndef VDF_FAST_H
+#define VDF_FAST_H
 
 typedef mpz< 9, 16> mpz_9 ; //3 cache lines
 typedef mpz<17, 24> mpz_17; //4 cache lines

@@ -1,4 +1,6 @@
-#ifndef TEST_AVX512
+#ifndef AVX512_INTEGER_H
+#define AVX512_INTEGER_H
+
 #define TEST_AVX512 0
 
 template<int d_num_limbs, int d_padded_size> struct alignas(64) avx512_integer {
@@ -135,5 +137,5 @@ void mpz_impl_set_mul(
     }
 }
 
-// end Headerguard TEST_AVX512
+// end Headerguard AVX512_INTEGER_H
 #endif

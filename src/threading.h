@@ -9,13 +9,28 @@ static_assert(sizeof(mp_limb_t)==8, "");
 static_assert(sizeof(unsigned long int)==8, "");
 static_assert(sizeof(long int)==8, "");
 
+static uint64 get_time_cycles() {
+    // Returns the time in EDX:EAX.
+    uint64 high;
+    uint64 low;
+    asm volatile(
+        "lfence\n\t"
+        "sfence\n\t"
+        "rdtsc\n\t"
+        "sfence\n\t"
+        "lfence\n\t"
+    : "=a"(low), "=d"(high) :: "memory");
+
+    return (high<<32) | low;
+}
+
 #ifdef ENABLE_TRACK_CYCLES
     const int track_cycles_array_size=track_cycles_max_num*track_cycles_num_buckets;
 
     thread_local int track_cycles_next_slot=0;
     thread_local array<uint64, track_cycles_array_size> track_cycles_cycle_counters;
     thread_local array<uint64, track_cycles_array_size> track_cycles_call_counters;
-    thread_local array<const char*, track_cycles_max_num> track_cycles_names;
+    thread_local array<string, track_cycles_max_num> track_cycles_names;
 
     void track_cycles_init() {
         thread_local bool is_init=false;
@@ -32,7 +47,7 @@ static_assert(sizeof(long int)==8, "");
             }
 
             for (int x=0;x<track_cycles_max_num;++x) {
-                track_cycles_names.at(x)=nullptr;
+                track_cycles_names.at(x).clear();
             }
             is_init=true;
         }
@@ -74,26 +89,11 @@ static_assert(sizeof(long int)==8, "");
         uint64 start_time=0;
         bool is_aborted=false;
 
-        static uint64 get_time() {
-            // Returns the time in EDX:EAX.
-            uint64 high;
-            uint64 low;
-            asm volatile(
-                "lfence\n\t"
-                "sfence\n\t"
-                "rdtsc\n\t"
-                "sfence\n\t"
-                "lfence\n\t"
-            : "=a"(low), "=d"(high) :: "memory");
-
-            return (high<<32) | low;
-        }
-
         track_cycles_impl(int t_slot) {
             slot=t_slot;
             assert(slot>=0 && slot<track_cycles_max_num);
 
-            start_time=get_time();
+            start_time=get_time_cycles();
         }
 
         void abort() {
@@ -101,7 +101,7 @@ static_assert(sizeof(long int)==8, "");
         }
 
         ~track_cycles_impl() {
-            uint64 end_time=get_time();
+            uint64 end_time=get_time_cycles();
 
             if (is_aborted) {
                 return;
@@ -133,17 +133,19 @@ static_assert(sizeof(long int)==8, "");
 
     #define TO_STRING(x) TO_STRING_IMPL(x)
 
-    #define TRACK_CYCLES \
+    #define TRACK_CYCLES_NAMED(NAME) \
         track_cycles_init();\
         thread_local int track_cycles_c_slot=-1;\
         if (track_cycles_c_slot==-1) {\
             track_cycles_c_slot=track_cycles_next_slot;\
             ++track_cycles_next_slot;\
             \
-            track_cycles_names.at(track_cycles_c_slot)=__FILE__ ":" TO_STRING(__LINE__);\
+            track_cycles_names.at(track_cycles_c_slot)=(NAME);\
         }\
         track_cycles_impl c_track_cycles_impl(track_cycles_c_slot);
     //
+
+    #define TRACK_CYCLES TRACK_CYCLES_NAMED(__FILE__ ":" TO_STRING(__LINE__))
 
     #define TRACK_CYCLES_ABORT c_track_cycles_impl.abort();
 
@@ -159,24 +161,34 @@ void* alloc_cache_line(size_t bytes) {
     //round up to the next multiple of 64
     size_t aligned_bytes=((bytes+63)>>6)<<6;
 
+    //padding so that the result
+    aligned_bytes+=64;
+
     void* res=boost::alignment::aligned_alloc(64, aligned_bytes); // aligned_alloc(64, aligned_bytes);
-    assert((uint64(res)&63)==0); //must be aligned for correctness
+
+    //the address modulo 64 is used to decide if the gmp integer is allocated on the stack or the heap
+    //stack integers are 64-aligned and heap integers aren't
+    res=((char*)res)+16;
+
+    assert((uint64(res)&63)==16); //must have this alignment for correctness
     return res;
 }
 
+void free_cache_line(void* ptr) {
+    boost::alignment::aligned_free(((char*)ptr)-16); //free(old_ptr);
+}
+
 void* mp_alloc_func(size_t new_bytes) {
-    void* res=alloc_cache_line(new_bytes);
-    assert((uint64(res)&63)==0); //all memory used by gmp must be cache line aligned
-    return res;
+    return alloc_cache_line(new_bytes);
 }
 
 void mp_free_func(void* old_ptr, size_t old_bytes) {
     //either mp_alloc_func allocated old_ptr and it is 64-aligned, or it points to data in mpz and its address equals 16 modulo 64
     assert((uint64(old_ptr)&63)==0 || (uint64(old_ptr)&63)==16);
 
-    if ((uint64(old_ptr)&63)==0) {
+    if ((uint64(old_ptr)&63)==16) {
         //mp_alloc_func allocated this, so it can be freed with std::free
-        boost::alignment::aligned_free(old_ptr); //free(old_ptr);
+        free_cache_line(old_ptr);
     } else {
         //this is part of the mpz struct defined below. it can't be freed, so do nothing
     }
@@ -198,7 +210,25 @@ void init_gmp() {
     mp_set_memory_functions(mp_alloc_func, mp_realloc_func, mp_free_func);
 }
 
-struct mpz_base {
+template<int d_expected_size, int d_padded_size> struct alignas(64) mpz;
+
+template<int expected_size_out, int padded_size_out, int expected_size_a, int padded_size_a, int expected_size_b, int padded_size_b>
+void mpz_impl_set_mul(
+    mpz<expected_size_out, padded_size_out>& out,
+    const mpz<expected_size_a, padded_size_a>& a,
+    const mpz<expected_size_b, padded_size_b>& b
+);
+
+//gmp can dynamically reallocate this
+//d_padded_size must be a multiple of 8 for avx512 support to work
+template<int d_expected_size, int d_padded_size> struct alignas(64) mpz {
+    static const int expected_size=d_expected_size;
+    static const int padded_size=d_padded_size;
+
+    static_assert(padded_size%8==0, "");
+
+    uint64 data[padded_size]; //must be cache line aligned
+
     //16 bytes
     //int mpz._mp_alloc: number of limbs allocated
     //int mpz._mp_size: abs(_mp_size) is number of limbs in use; 0 if the integer is zero. it is negated if the integer is negative
@@ -206,27 +236,15 @@ struct mpz_base {
     //do not call mpz_swap on this. mpz_swap can be called on other gmp integers
     mpz_struct c_mpz;
 
+    uint64 padding[6];
+
     operator mpz_struct*() { return &c_mpz; }
     operator const mpz_struct*() const { return &c_mpz; }
 
     mpz_struct* _() { return &c_mpz; }
     const mpz_struct* _() const { return &c_mpz; }
-};
-
-//gmp can dynamically reallocate this
-//the number of cache lines used is (padded_size+2)/8 rounded up
-//1 cache line :  6 limbs
-//2 cache lines: 14 limbs
-//3 cache lines: 22 limbs
-//4 cache lines: 30 limbs
-//5 cache lines: 38 limbs
-template<int d_expected_size, int d_padded_size> struct alignas(64) mpz : public mpz_base {
-    static const int expected_size=d_expected_size;
-    static const int padded_size=d_padded_size;
 
     static_assert(expected_size>=1 && expected_size<=padded_size, "");
-
-    uint64 data[padded_size]; //must not be cache line aligned
 
     bool was_reallocated() const {
         return c_mpz._mp_d!=data;
@@ -242,7 +260,7 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz : public
         assert((uint64(this)&63)==0);
 
         //mp_free_func uses this to decide whether to free or not
-        assert((uint64(c_mpz._mp_d)&63)==16);
+        assert((uint64(c_mpz._mp_d)&63)==0);
     }
 
     ~mpz() {
@@ -253,7 +271,7 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz : public
 
         //if c_mpz.data wasn't reallocated, it has to point to this instance's data and not some other instance's data
         //if mpz_swap was used, this might be violated
-        assert((uint64(c_mpz._mp_d)&63)==0 || c_mpz._mp_d==data);
+        assert((uint64(c_mpz._mp_d)&63)==16 || c_mpz._mp_d==data);
         mpz_clear(&c_mpz);
     }
 
@@ -275,16 +293,6 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz : public
         return *this;
     }
 
-    /*mpz& operator=(const mpz_base& t) {
-        mpz_set(*this, t);
-        return *this;
-    }
-
-    mpz& operator=(mpz_base&& t) {
-        mpz_set(*this, t); //do not use mpz_swap
-        return *this;
-    }*/
-
     mpz& operator=(uint64 i) {
         mpz_set_ui(*this, i);
         return *this;
@@ -302,25 +310,28 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz : public
     }
 
     USED string to_string() const {
-        char* res_char=mpz_get_str(nullptr, 16, *this);
-        string res_string = "0x";
-        res_string+=res_char;
+        string res_string="0x";
+        res_string.resize(res_string.size() + mpz_sizeinbase(*this, 16) + 2);
 
-        if (res_string.substr(0, 3) == "0x-") {
+        mpz_get_str(&(res_string[2]), 16, *this);
+
+        if (res_string.substr(0, 3)=="0x-") {
             res_string.at(0)='-';
             res_string.at(1)='0';
             res_string.at(2)='x';
         }
 
-        free(res_char);
-        return res_string;
+        //get rid of the null terminator and everything after it
+        return res_string.c_str();
     }
 
     USED string to_string_dec() const {
-        char* res_char=mpz_get_str(nullptr, 10, *this);
-        string res_string=res_char;
-        free(res_char);
-        return res_string;
+        string res_string;
+        res_string.resize(mpz_sizeinbase(*this, 10));
+
+        mpz_get_str(&(res_string[0]), 10, *this);
+
+        return res_string.c_str();
     }
 
     //sets *this to a+b
@@ -359,8 +370,14 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz : public
         return *this;
     }
 
-    void set_mul(const mpz_struct* a, const mpz_struct* b) {
+    /*void set_mul(const mpz_struct* a, const mpz_struct* b) {
+        todo
         mpz_mul(*this, a, b);
+    }*/
+
+    template<int expected_size_a, int padded_size_a, int expected_size_b, int padded_size_b>
+    void set_mul(const mpz<expected_size_a, padded_size_a>& a, const mpz<expected_size_b, padded_size_b>& b) {
+        mpz_impl_set_mul(*this, a, b);
     }
 
     void set_mul(const mpz_struct* a, int64 b) {
@@ -398,6 +415,7 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz : public
 
     //*this+=a*b
     void set_add_mul(const mpz_struct* a, const mpz_struct* b) {
+        todo
         mpz_addmul(*this, a, b);
     }
 
@@ -407,6 +425,7 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz : public
 
     //*this-=a*b
     void set_sub_mul(const mpz_struct* a, const mpz_struct* b) {
+        todo
         mpz_submul(*this, a, b);
     }
 

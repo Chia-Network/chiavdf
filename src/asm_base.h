@@ -129,5 +129,40 @@ string constant_address_double(double value_0, double value_1, bool use_brackets
     return constant_address_uint64(value_bits_0, value_bits_1, use_brackets);
 }
 
+string constant_address_avx512_uint64(array<uint64, 8> value, bool use_brackets=true) {
+    static map<array<uint64, 8>, string> constant_map;
+    string& name=constant_map[value];
+
+    if (name.empty()) {
+        name=m.alloc_label();
+
+#ifdef CHIAOSX
+        APPEND_M(str( ".text " ));
+#else
+        APPEND_M(str( ".text 1" ));
+#endif
+        APPEND_M(str( ".balign 64" ));
+        APPEND_M(str( "#:", name ));
+        for (int x=0;x<8;++x) {
+            APPEND_M(str( ".quad #", to_hex(value[x]) )); //lane x
+        }
+        APPEND_M(str( ".text" ));
+    }
+#ifdef CHIAOSX
+    return (use_brackets)? str( "ZMMWORD PTR [RIP+#]", name ) : name;
+#else
+    return (use_brackets)? str( "ZMMWORD PTR [#]", name ) : name;
+#endif
+}
+
+string constant_address_avx512_uint64(uint64 value, bool use_brackets=true) {
+    array<uint64, 8> value_array;
+    for (int x=0;x<8;++x) {
+        value_array[x]=value;
+    }
+
+    return constant_address_avx512_uint64(value_array);
+}
+
 
 }

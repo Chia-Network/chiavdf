@@ -70,34 +70,6 @@ string to_hex(int128 i) {
     return ss.str();
 }
 
-void str_impl(vector<string>& out) {}
-
-template<class type_a, class... types> void str_impl(
-    vector<string>& out, const type_a& a, const types&... targs
-) {
-    out.push_back(to_string(a));
-    str_impl(out, targs...);
-}
-
-template<class... types> string str(const string& t, const types&... targs) {
-    vector<string> data;
-    str_impl(data, targs...);
-
-    string res;
-    int next=0;
-    for (char c : t) {
-        if (c=='#') {
-            res+=data.at(next);
-            ++next;
-        } else {
-            res+=c;
-        }
-    }
-    assert(next==data.size());
-
-    return res;
-}
-
 struct expand_macros_recording {
     int start_pos=-1;
     int end_pos=-1;
@@ -440,10 +412,12 @@ const reg_scalar reg_r15=reg_scalar(15);
 struct reg_vector {
     static const bool is_spill=false;
 
+    int default_num_bits=128;
+
     int value=-1;
 
     reg_vector() {}
-    explicit reg_vector(int i) : value(i) {}
+    explicit reg_vector(int i, int t_default_num_bits) : value(i), default_num_bits(t_default_num_bits) {}
 
     string name(int num_bits=512) const {
         assert(value>=0);
@@ -468,7 +442,7 @@ struct reg_vector {
 
     typedef void bindable;
     void bind_impl(expand_macros& m, string n) const {
-        m.bind_impl(n, name(128));
+        m.bind_impl(n, name(default_num_bits));
         m.bind_impl(n + "_512", name(512));
         m.bind_impl(n + "_256", name(256));
         m.bind_impl(n + "_128", name(128));
@@ -595,13 +569,13 @@ struct reg_alloc {
         return reg_scalar(order_to_scalar.at(res));
     }
 
-    reg_vector get_vector() {
+    reg_vector get_vector(int default_num_bits=128) {
         assert(!vectors.empty());
 
         int res=*vectors.begin();
         bool erase_res=vectors.erase(res);
         assert(erase_res);
-        return reg_vector(res);
+        return reg_vector(res, default_num_bits);
     }
 
     reg_spill get_spill(int size=8, int alignment=-1) {
@@ -648,8 +622,8 @@ struct reg_alloc {
         return res;
     }
 
-    reg_vector bind_vector(expand_macros& m, string name) {
-        reg_vector res=get_vector();
+    reg_vector bind_vector(expand_macros& m, string name, int default_num_bits=128) {
+        reg_vector res=get_vector(default_num_bits);
         m.bind(res, name);
         return res;
     }

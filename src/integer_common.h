@@ -121,6 +121,7 @@ int mpz_num_bits_upper_bound(mpz_struct* v) {
 
 static bool allow_integer_constructor=false; //don't want static integers because they use the wrong allocator
 
+//16 bytes
 struct integer {
     mpz_struct impl[1];
 
@@ -211,9 +212,10 @@ struct integer {
     }
 
     USED string to_string() const {
-        char* res_char=mpz_get_str(nullptr, 16, impl);
         string res_string="0x";
-        res_string+=res_char;
+        res_string.resize(res_string.size() + mpz_sizeinbase(impl, 16) + 2);
+
+        mpz_get_str(&(res_string[2]), 16, impl);
 
         if (res_string.substr(0, 3)=="0x-") {
             res_string.at(0)='-';
@@ -221,15 +223,17 @@ struct integer {
             res_string.at(2)='x';
         }
 
-        free(res_char);
-        return res_string;
+        //get rid of the null terminator and everything after it
+        return res_string.c_str();
     }
 
     string to_string_dec() const {
-        char* res_char=mpz_get_str(nullptr, 10, impl);
-        string res_string=res_char;
-        free(res_char);
-        return res_string;
+        string res_string;
+        res_string.resize(mpz_sizeinbase(impl, 10));
+        
+        mpz_get_str(&(res_string[0]), 10, impl);
+
+        return res_string.c_str();
     }
 
     integer& operator+=(const integer& t) {

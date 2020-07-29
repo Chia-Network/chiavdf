@@ -31,6 +31,7 @@
 #include "asm_types.h"
 
 #include "threading.h"
+#include "avx512_integer.h"
 #include "nucomp.h"
 #include "vdf_fast.h"
 

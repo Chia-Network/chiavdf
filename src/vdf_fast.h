@@ -6,10 +6,10 @@ typedef mpz<17, 22> mpz_17; //3 cache lines
 typedef mpz<25, 30> mpz_25; //4 cache lines
 typedef mpz<33, 38> mpz_33; //5 cache lines
 
-static_assert(sizeof(mpz_9 )==2*64);
-static_assert(sizeof(mpz_17)==3*64);
-static_assert(sizeof(mpz_25)==4*64);
-static_assert(sizeof(mpz_33)==5*64);
+static_assert(sizeof(mpz_9 )==3*64);
+static_assert(sizeof(mpz_17)==4*64);
+static_assert(sizeof(mpz_25)==5*64);
+static_assert(sizeof(mpz_33)==6*64);
 
 //these all have at least 64 extra bits before they reallocate
 //x is the discriminant number of bits divided by 4
@@ -17,6 +17,21 @@ typedef mpz_9 int1x;
 typedef mpz_17 int2x;
 typedef mpz_25 int3x;
 typedef mpz_33 int4x;
+
+//GMP integer num limbs -> avx512 num limbs:
+//  9 -> 12
+// 17 -> 21
+// 25 -> 31
+// 33 -> 41
+typedef avx512_integer<12, 16> avx512_int1x; //5 cache lines
+typedef avx512_integer<21, 24> avx512_int2x; //6 cache lines
+typedef avx512_integer<31, 32> avx512_int3x; //7 cache lines
+typedef avx512_integer<41, 48> avx512_int4x; //9 cache lines
+
+static_assert(sizeof(avx512_int1x)==5*64);
+static_assert(sizeof(avx512_int2x)==6*64);
+static_assert(sizeof(avx512_int3x)==7*64);
+static_assert(sizeof(avx512_int4x)==9*64);
 
 typedef gcd_results_type<int2x> gcd_results_int2x;
 

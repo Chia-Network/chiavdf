@@ -36,6 +36,7 @@ bool enable_all_instructions=false;
 #include "asm_gcd_base_divide_table.h"
 #include "asm_gcd_128.h"
 #include "asm_gcd_unsigned.h"
+#include "asm_avx512_ifma.h"
 
 #include "asm_main.h"
 
@@ -44,6 +45,8 @@ int main(int argc, char** argv) {
 
     string filename="asm_compiled.s";
     
+    bool compile_avx512=false;
+
     if((argc==2)&&(strcmp(argv[1],"avx2")==0))
     {
        use_divide_table=true;
@@ -54,5 +57,17 @@ int main(int argc, char** argv) {
        filename="avx2_asm_compiled.s";
     }
 
-    asm_code::compile_asm(filename);
+    if((argc==2)&&(strcmp(argv[1],"avx512")==0))
+    {
+        enable_all_instructions=true;
+        asmprefix="avx512_";
+        filename="avx512_asm_compiled.s";
+        compile_avx512=true;
+    }
+
+    if (compile_avx512) {
+        asm_code::compile_asm_avx512(filename);
+    } else {
+        asm_code::compile_asm(filename);
+    }
 }

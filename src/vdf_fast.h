@@ -1,10 +1,10 @@
 #ifndef VDF_FAST_H
 #define VDF_FAST_H
 
-typedef mpz< 9, 14> mpz_9 ; //2 cache lines
-typedef mpz<17, 22> mpz_17; //3 cache lines
-typedef mpz<25, 30> mpz_25; //4 cache lines
-typedef mpz<33, 38> mpz_33; //5 cache lines
+typedef mpz< 9, 16> mpz_9 ; //3 cache lines
+typedef mpz<17, 24> mpz_17; //4 cache lines
+typedef mpz<25, 32> mpz_25; //5 cache lines
+typedef mpz<33, 40> mpz_33; //6 cache lines
 
 static_assert(sizeof(mpz_9 )==3*64);
 static_assert(sizeof(mpz_17)==4*64);
@@ -56,7 +56,7 @@ struct square_state_type {
     struct phase_start_type {
         //int2x wjba;
         //int2x wjbb;
-        
+
         int2x as[2]; // a>=0
         int2x bs[2]; // b>=0
         alignas(64) int ab_index=0; //index of the start a/b values. the new values will be written to the other slot in this array
@@ -829,12 +829,12 @@ struct square_state_type {
             TRACK_CYCLES //430
             B.set_mod(f, A_2);
         }
-        
+
         {
             TRACK_CYCLES //80
             A.abs();
         }
-        
+
         {
             TRACK_CYCLES //94
             b_higher_magnitude_than_a=(B.compare_abs(A)>=0);
@@ -842,14 +842,14 @@ struct square_state_type {
 
         ab_index=1-ab_index;
         ++num_valid_iterations;
-        
+
         //phase_start.wjba=phase_start.a();
         //phase_start.wjbb=phase_start.b();
 
         return true;
     }
     bool phase_4_slave() {
-        
+
         return true;
     }
 
@@ -963,33 +963,33 @@ struct square_state_type {
         int4x c_remainder; //only assigned if c is being validated
 
         num_iterations=phase_start.num_valid_iterations;
-        
+
         if (phase_start.corruption_flag) {
             assert(!is_vdf_test);
             num_iterations=~uint64(0);
             return false;
         }
-        
+
         const auto& a=phase_start.wjba;
         const auto& b=phase_start.wjbb;
-        
+
         const auto& D=phase_constant.D;
-   
+
         b_b.set_mul(b, b);
         a_4.set_left_shift(a, 2);
         b_b_D.set_sub(b_b, D);
-        
+
         c.set_divide_floor(b_b_D, a_4, c_remainder);
         if (c_remainder.sgn()!=0 || a.sgn()<0 || c.sgn()<0) {
             assert(!is_vdf_test);
             num_iterations=~uint64(0);
             return false;
         }
-        
+
         mpz_set(t_a.impl, a);
         mpz_set(t_b.impl, b);
         mpz_set(t_c.impl, c);
-        
+
         return true;
     }*/
 };
@@ -1031,9 +1031,9 @@ void repeated_square_fast_work(square_state_type &square_state,bool is_slave, ui
         if (has_error) {
             break;
         }
-        
+
         c_thread_state.counter_start+=square_state_type::counter_end;
-        
+
         if(!is_slave)
         {
             if(nuduplListener!=NULL)
@@ -1134,7 +1134,7 @@ uint64 repeated_square_fast_single_thread(square_state_type &square_state, form&
 
         thread_state_master.counter_start+=square_state_type::counter_end;
         thread_state_slave.counter_start+=square_state_type::counter_end;
-        
+
         if(nuduplListener!=NULL)
             nuduplListener->OnIteration(NL_SQUARESTATE,&square_state,base+iter);
     }
@@ -1153,7 +1153,7 @@ uint64 repeated_square_fast_single_thread(square_state_type &square_state, form&
 //returns number of iterations performed
 //if this returns ~0, the discriminant was invalid and the inputs are unchanged
 uint64 repeated_square_fast(square_state_type &square_state,form& f, const integer& D, const integer& L, uint64 base, uint64 iterations, INUDUPLListener *nuduplListener) {
-    
+
     if (enable_threads) {
         return repeated_square_fast_multithread(square_state, f, D, L, base, iterations, nuduplListener);
     } else {

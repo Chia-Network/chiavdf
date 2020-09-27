@@ -237,7 +237,6 @@ Proof ProveOneWesolowski(uint64_t iters, integer& D, OneWesolowskiCallback* weso
     while (weso->iterations < iters) {
         this_thread::sleep_for(1s);
     }
-    stopped = true;
     form f = form::generator(D);
     Segment sg(
         /*start=*/0,
@@ -245,7 +244,7 @@ Proof ProveOneWesolowski(uint64_t iters, integer& D, OneWesolowskiCallback* weso
         /*x=*/f,
         /*y=*/weso->result
     );
-    OneWesolowskiProver prover(sg, D, weso->forms);
+    OneWesolowskiProver prover(sg, D, weso->forms, stopped);
     prover.start();
     while (!prover.IsFinished()) {
         this_thread::sleep_for(1s);
@@ -435,8 +434,7 @@ class ProverManager {
                 /*x=*/weso->checkpoints[iteration / (1 << 16)],
                 /*y=*/y
             );
-            // TODO: stop this prover as well in case stop signal arrives.
-            OneWesolowskiProver prover(sg, D, intermediates);
+            OneWesolowskiProver prover(sg, D, intermediates, stopped);
             prover.start();
             sg.proof = prover.GetProof();
             free(intermediates);

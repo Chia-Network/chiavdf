@@ -59,6 +59,15 @@ void CreateAndWriteProof(ProverManager& pm, uint64_t iteration, bool& stop_signa
     WriteProof(iteration, result, sock);
 }
 
+void CreateAndWriteProofOneWeso(uint64_t iters, integer& D, OneWesolowskiCallback* weso, bool& stop_signal, tcp::socket& sock) {
+    Proof result = ProveOneWesolowski(iters, D, weso, stop_signal);
+    if (stop_signal) {
+        PrintInfo("Got stop signal before completing the proof!");
+        return ;
+    }
+    WriteProof(iters, result, sock);
+}
+
 void CreateAndWriteProofTwoWeso(integer& D, form f, uint64_t iters, TwoWesolowskiCallback* weso, bool& stop_signal, tcp::socket& sock) {
     Proof result = ProveTwoWeso(D, f, iters, 0, weso, 0, stop_signal);
     if (stop_signal) {
@@ -191,14 +200,15 @@ void SessionOneWeso(tcp::socket& sock) {
         boost::asio::write(sock, boost::asio::buffer("OK", 2));
 
         uint64_t iter = ReadIteration(sock);
+        if (iter == 0) {
+            FinishSession(sock);
+            return;
+        }
         bool stopped = false;
         WesolowskiCallback* weso = new OneWesolowskiCallback(D, iter);
         FastStorage* fast_storage = NULL;
         std::thread vdf_worker(repeated_square, f, std::ref(D), std::ref(L), weso, fast_storage, std::ref(stopped));
-
-        Proof proof = ProveOneWesolowski(iter, D, (OneWesolowskiCallback*)weso, stopped);
-        WriteProof(iter, proof, sock);
-
+        std::thread th_prover(ProveOneWesolowski, iter, std::ref(D), (OneWesolowskiCallback*)weso, std::ref(stopped));
         iter = ReadIteration(sock);
         while (iter != 0) {
             std::cout << "Warning: did not receive stop signal\n";
@@ -206,6 +216,7 @@ void SessionOneWeso(tcp::socket& sock) {
         }
         stopped = true;
         vdf_worker.join();
+        th_prover.join();
         delete(weso);
     } catch (std::exception& e) {
         PrintInfo("Exception in thread: " + to_string(e.what()));

@@ -114,7 +114,7 @@ class Prover {
 
 class OneWesolowskiProver : public Prover {
   public:
-    OneWesolowskiProver(Segment segm, integer D, form* intermediates) : Prover(segm, D) {
+    OneWesolowskiProver(Segment segm, integer D, form* intermediates, bool& stop_signal) : Prover(segm, D), stop_signal(stop_signal) {
         this->intermediates = intermediates;
         if (num_iterations >= (1 << 16)) {
             ApproximateParameters(num_iterations, k, l);
@@ -136,7 +136,7 @@ class OneWesolowskiProver : public Prover {
     }
 
     bool PerformExtraStep() {
-        return true;
+        return !stop_signal;
     }
 
     void OnFinish() {
@@ -145,6 +145,7 @@ class OneWesolowskiProver : public Prover {
 
   private:
     form* intermediates;
+    bool& stop_signal;
 };
 
 class TwoWesolowskiProver : public Prover{

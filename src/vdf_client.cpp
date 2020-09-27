@@ -208,7 +208,7 @@ void SessionOneWeso(tcp::socket& sock) {
         WesolowskiCallback* weso = new OneWesolowskiCallback(D, iter);
         FastStorage* fast_storage = NULL;
         std::thread vdf_worker(repeated_square, f, std::ref(D), std::ref(L), weso, fast_storage, std::ref(stopped));
-        std::thread th_prover(ProveOneWesolowski, iter, std::ref(D), (OneWesolowskiCallback*)weso, std::ref(stopped));
+        std::thread th_prover(CreateAndWriteProofOneWeso, iter, std::ref(D), (OneWesolowskiCallback*)weso, std::ref(stopped), std::ref(sock));
         iter = ReadIteration(sock);
         while (iter != 0) {
             std::cout << "Warning: did not receive stop signal\n";

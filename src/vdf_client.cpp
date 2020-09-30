@@ -29,7 +29,7 @@ void WriteProof(uint64_t iteration, Proof& result, tcp::socket& sock) {
     std::vector<unsigned char> y_size = ConvertIntegerToBytes(integer(result.y.size()), 8);
     bytes.insert(bytes.end(), y_size.begin(), y_size.end());
     bytes.insert(bytes.end(), result.y.begin(), result.y.end());
-    
+
     // Writes the witness type.
     std::vector<unsigned char> witness_type = ConvertIntegerToBytes(integer(result.witness_type), 1);
     bytes.insert(bytes.end(), witness_type.begin(), witness_type.end());
@@ -47,7 +47,7 @@ void WriteProof(uint64_t iteration, Proof& result, tcp::socket& sock) {
         boost::asio::write(sock, boost::asio::buffer(prefix_bytes, 4));
         boost::asio::write(sock, boost::asio::buffer(str_result.c_str(), str_result.size()));
     }
-    PrintInfo("Sended proof");
+    PrintInfo("Sent proof");
 }
 
 void CreateAndWriteProof(ProverManager& pm, uint64_t iteration, bool& stop_signal, tcp::socket& sock) {
@@ -136,7 +136,7 @@ uint64_t ReadIteration(tcp::socket& sock) {
     boost::asio::read(sock, boost::asio::buffer(data, size), error);
     uint64_t iters = 0;
     for (int i = 0; i < size; i++)
-        iters = iters * 10 + data[i] - '0';       
+        iters = iters * 10 + data[i] - '0';
     return iters;
 }
 
@@ -153,11 +153,11 @@ void SessionFastAlgorithm(tcp::socket& sock) {
         WesolowskiCallback* weso = new FastAlgorithmCallback(segments, D, multi_proc_machine);
         FastStorage* fast_storage = NULL;
         if (multi_proc_machine) {
-            fast_storage = new FastStorage((FastAlgorithmCallback*)weso);   
+            fast_storage = new FastStorage((FastAlgorithmCallback*)weso);
         }
         bool stopped = false;
         std::thread vdf_worker(repeated_square, f, std::ref(D), std::ref(L), weso, fast_storage, std::ref(stopped));
-        ProverManager pm(D, (FastAlgorithmCallback*)weso, fast_storage, segments, thread_count);        
+        ProverManager pm(D, (FastAlgorithmCallback*)weso, fast_storage, segments, thread_count);
         pm.start();
 
         // Tell client that I'm ready to get the challenges.
@@ -288,7 +288,7 @@ void SessionTwoWeso(tcp::socket& sock) {
                     PrintInfo("Running proving for iter: " + to_string(iters));
                     stop_vector[threads.size()] = false;
                     threads.push_back(std::thread(CreateAndWriteProofTwoWeso, std::ref(D), f, iters,
-                                      (TwoWesolowskiCallback*)weso, std::ref(stop_vector[threads.size()]), 
+                                      (TwoWesolowskiCallback*)weso, std::ref(stop_vector[threads.size()]),
                                       std::ref(sock)));
                     if (threads.size() > kMaxProcessesAllowed) {
                         PrintInfo("Stopping proving for iter: " + to_string(max_iter));
@@ -350,6 +350,6 @@ int main(int argc, char* argv[])
     }
   } catch (std::exception& e) {
     std::cerr << "Exception: " << e.what() << "\n";
-  } 
+  }
   return 0;
 }

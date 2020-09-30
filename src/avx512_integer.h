@@ -54,7 +54,7 @@ template<int d_num_limbs, int d_padded_size> struct alignas(64) avx512_integer {
         assert(!t_mpz.was_reallocated());
 
         t_mpz.c_mpz._mp_size=int(asm_code::asm_avx512_func_to_gmp_integer<num_limbs, mpz_expected_size>(
-            sign, data(), t_mpz._()->_mp_d
+            sign, data(), (uint64*)t_mpz._()->_mp_d  // Casting (mp_limb_t *) to (uint64*)
         ));
 
         #if TEST_AVX512

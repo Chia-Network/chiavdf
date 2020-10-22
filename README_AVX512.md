@@ -15,8 +15,9 @@ There might be multiple values for a single benchmark if there was high variance
 
 For example:
 
-```
 benchmark_512_to_avx512, :
+
+```
 99%: 11719
 0%: 22699
 0%: 40319

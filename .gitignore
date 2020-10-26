@@ -40,3 +40,6 @@ activate
 # Tests cache
 .mypy_cache
 .pytest_cache
+
+src/cmake-build-debug/
+.idea

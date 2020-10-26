@@ -78,12 +78,10 @@ form GenerateWesolowski(form &y, form &x_init,
     return x;
 }
 
-std::vector<uint8_t> ProveSlow(std::vector<uint8_t>& challenge_hash, int discriminant_size_bits,
-                           uint64_t num_iterations) {
-    integer D = CreateDiscriminant(challenge_hash, discriminant_size_bits);
+std::vector<uint8_t> ProveSlow(integer& D, form& x, uint64_t num_iterations) {
     integer L = root(-D, 4);
     PulmarkReducer reducer;
-    form y = form::generator(D);
+    form y = form::from_abd(x.a, x.b, D);
     std::vector<form> intermediates;
     int k, l;
     int int_size = (D.num_bits() + 16) >> 4;
@@ -96,7 +94,6 @@ std::vector<uint8_t> ProveSlow(std::vector<uint8_t>& challenge_hash, int discrim
         nudupl_form(y, y, D, L);
         reducer.reduce(y);
     } 
-    form x = form::generator(D);
     form proof = GenerateWesolowski(y, x, D, reducer, intermediates, num_iterations, k, l);
     std::vector<uint8_t> result = SerializeForm(y, int_size);
     std::vector<uint8_t> proof_bytes = SerializeForm(proof, int_size);

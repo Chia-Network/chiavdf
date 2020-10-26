@@ -45,10 +45,19 @@ PYBIND11_MODULE(chiavdf, m) {
         return is_valid;
     });
 
-    m.def("prove", [] (const py::bytes& challenge_hash, int discriminant_size_bits, uint64_t num_iterations) {
+    m.def("prove", [] (const py::bytes& challenge_hash, const string& x_a, const string& x_b, int discriminant_size_bits, uint64_t num_iterations) {
         std::string challenge_hash_str(challenge_hash);
         std::vector<uint8_t> challenge_hash_bytes(challenge_hash_str.begin(), challenge_hash_str.end());
-        auto result = ProveSlow(challenge_hash_bytes, discriminant_size_bits, num_iterations);
+        integer D = CreateDiscriminant(
+                challenge_hash_bytes,
+                discriminant_size_bits
+        );
+        form x = form::from_abd(
+                integer(x_a),
+                integer(x_b),
+                D
+        );
+        auto result = ProveSlow(D, x, num_iterations);
         py::bytes ret = py::bytes(reinterpret_cast<char*>(result.data()), result.size());
         return ret;
     });

@@ -20,17 +20,17 @@ def test_prove_and_verify():
         signed=True,
     )
     result_y_b = int.from_bytes(
-        result[int_size:2 * int_size],
+        result[int_size : 2 * int_size],
         "big",
         signed=True,
     )
     proof_a = int.from_bytes(
-        result[2 * int_size:3 * int_size],
+        result[2 * int_size : 3 * int_size],
         "big",
         signed=True,
     )
     proof_b = int.from_bytes(
-        result[3 * int_size:4 * int_size],
+        result[3 * int_size : 4 * int_size],
         "big",
         signed=True,
     )
@@ -50,7 +50,13 @@ def test_prove_and_verify():
     # Creates another proof starting at the previous output
     iters_2 = 200000
     t1 = time.time()
-    result_2 = prove(discriminant_challenge, str(result_y_a), str(result_y_b), discriminant_size, iters_2)
+    result_2 = prove(
+        discriminant_challenge,
+        str(result_y_a),
+        str(result_y_b),
+        discriminant_size,
+        iters_2,
+    )
     t2 = time.time()
     print(f"IPS: {iters_2 / (t2 - t1)}")
 
@@ -67,21 +73,21 @@ def test_prove_and_verify():
         ),
         str(
             int.from_bytes(
-                result_2[int_size:2 * int_size],
+                result_2[int_size : 2 * int_size],
                 "big",
                 signed=True,
             )
         ),
         str(
             int.from_bytes(
-                result_2[2 * int_size:3 * int_size],
+                result_2[2 * int_size : 3 * int_size],
                 "big",
                 signed=True,
             )
         ),
         str(
             int.from_bytes(
-                result_2[3 * int_size:4 * int_size],
+                result_2[3 * int_size : 4 * int_size],
                 "big",
                 signed=True,
             )

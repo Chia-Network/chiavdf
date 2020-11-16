@@ -209,7 +209,7 @@ class BuildExt(build_ext):
         'unix': [""],
     }
     l_opts = {
-        'msvc': [""],
+        'msvc': [],
         'unix': [""],
     }
 

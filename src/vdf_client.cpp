@@ -77,6 +77,11 @@ void CreateAndWriteProofTwoWeso(integer& D, form f, uint64_t iters, TwoWesolowsk
     WriteProof(iters, result, sock);
 }
 
+form initial_form;
+char form_size[10];
+char form_a[10000];
+char form_b[10000];
+
 void InitSession(tcp::socket& sock) {
     boost::system::error_code error;
 
@@ -86,6 +91,24 @@ void InitSession(tcp::socket& sock) {
     boost::asio::read(sock, boost::asio::buffer(disc_size, 3), error);
     disc_int_size = atoi(disc_size);
     boost::asio::read(sock, boost::asio::buffer(disc, disc_int_size), error);
+
+    boost::asio::read(sock, boost::asio::buffer(disc_size, 3), error);
+    char prefix_len[3];
+    for (int i = 0; i < 2; i++) {
+        memset(prefix_len, 0x00, sizeof(prefix_len));
+        boost::asio::read(sock, boost::asio::buffer(prefix_len, 1), error);
+        int prefix_len_int = prefix_len[0] - '0';
+        memset(form_size, 0x00, sizeof(form_size));
+        boost::asio::read(sock, boost::asio::buffer(form_size, prefix_len_int), error);
+        int form_size_int = atoi(form_size);
+        if (i == 0) {
+            memset(form_a, 0x00, sizeof(form_a));
+            boost::asio::read(sock, boost::asio::buffer(form_a, form_size_int), error);
+        } else {
+            memset(form_b, 0x00, sizeof(form_b));
+            boost::asio::read(sock, boost::asio::buffer(form_b, form_size_int), error);
+        }
+    }
 
     if (error == boost::asio::error::eof)
         return ; // Connection closed cleanly by peer.
@@ -145,9 +168,11 @@ void SessionFastAlgorithm(tcp::socket& sock) {
     try {
         integer D(disc);
         integer L=root(-D, 4);
-        form f=form::generator(D);
         PrintInfo("Discriminant = " + to_string(D.impl));
-
+        integer init_A(form_a);
+        integer init_B(form_b);
+        form f = form::from_abd(init_A, init_B, D);
+        PrintInfo("Initial form: " + to_string(f.a.impl) + " " + to_string(f.b.impl));
         std::vector<std::thread> threads;
         const bool multi_proc_machine = (std::thread::hardware_concurrency() >= 16) ? true : false;
         WesolowskiCallback* weso = new FastAlgorithmCallback(segments, D, multi_proc_machine);
@@ -230,8 +255,11 @@ void SessionTwoWeso(tcp::socket& sock) {
     try {
         integer D(disc);
         integer L=root(-D, 4);
-        form f = form::generator(D);
         PrintInfo("Discriminant = " + to_string(D.impl));
+        integer init_A(form_a);
+        integer init_B(form_b);
+        form f = form::from_abd(init_A, init_B, D);
+        PrintInfo("Initial form: " + to_string(f.a.impl) + " " + to_string(f.b.impl));
 
         // Tell client that I'm ready to get the challenges.
         boost::asio::write(sock, boost::asio::buffer("OK", 2));

@@ -114,10 +114,9 @@ class OneWesolowskiCallback: public WesolowskiCallback {
 
 class TwoWesolowskiCallback: public WesolowskiCallback {
   public:
-    TwoWesolowskiCallback(integer& D) : WesolowskiCallback(D) {
+    TwoWesolowskiCallback(integer& D, form f) : WesolowskiCallback(D) {
         int space_needed = kSwitchIters / 10 + (kMaxItersAllowed - kSwitchIters) / 100;
         forms = (form*) calloc(space_needed, sizeof(form));
-        form f = form::generator(D);
         forms[0] = f;
         kl = 10;
         switch_iters = -1;
@@ -166,8 +165,7 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
 
 class FastAlgorithmCallback : public WesolowskiCallback {
   public:
-    FastAlgorithmCallback(int segments, integer& D, bool multi_proc_machine) : WesolowskiCallback(D) {
-        form f = form::generator(D);
+    FastAlgorithmCallback(int segments, integer& D, form f, bool multi_proc_machine) : WesolowskiCallback(D) {
         buckets_begin.push_back(0);
         buckets_begin.push_back(bucket_size1 * window_size);
         this->segments = segments;
@@ -179,7 +177,7 @@ class FastAlgorithmCallback : public WesolowskiCallback {
         forms = (form*) calloc(space_needed, sizeof(form));
         checkpoints = (form*) calloc((1 << 18), sizeof(form));
 
-        y_ret = form::generator(D);
+        y_ret = f;
         for (int i = 0; i < segments; i++)
             forms[buckets_begin[i]] = f;
         checkpoints[0] = f;

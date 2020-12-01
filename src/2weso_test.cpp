@@ -44,7 +44,7 @@ int main() {
     bool stopped = false;
     fast_algorithm = false;
     two_weso = true;
-    TwoWesolowskiCallback* weso = new TwoWesolowskiCallback(D);
+    TwoWesolowskiCallback* weso = new TwoWesolowskiCallback(D, f);
     FastStorage* fast_storage = NULL;
     std::thread vdf_worker(repeated_square, f, D, L, weso, fast_storage, std::ref(stopped));
     // Test 1 - 1 million iters.

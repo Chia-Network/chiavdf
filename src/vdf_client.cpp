@@ -92,7 +92,6 @@ void InitSession(tcp::socket& sock) {
     disc_int_size = atoi(disc_size);
     boost::asio::read(sock, boost::asio::buffer(disc, disc_int_size), error);
 
-    boost::asio::read(sock, boost::asio::buffer(disc_size, 3), error);
     char prefix_len[3];
     for (int i = 0; i < 2; i++) {
         memset(prefix_len, 0x00, sizeof(prefix_len));
@@ -175,7 +174,7 @@ void SessionFastAlgorithm(tcp::socket& sock) {
         PrintInfo("Initial form: " + to_string(f.a.impl) + " " + to_string(f.b.impl));
         std::vector<std::thread> threads;
         const bool multi_proc_machine = (std::thread::hardware_concurrency() >= 16) ? true : false;
-        WesolowskiCallback* weso = new FastAlgorithmCallback(segments, D, multi_proc_machine);
+        WesolowskiCallback* weso = new FastAlgorithmCallback(segments, D, f, multi_proc_machine);
         FastStorage* fast_storage = NULL;
         if (multi_proc_machine) {
             fast_storage = new FastStorage((FastAlgorithmCallback*)weso);
@@ -250,16 +249,17 @@ void SessionOneWeso(tcp::socket& sock) {
 }
 
 void SessionTwoWeso(tcp::socket& sock) {
-    const int kMaxProcessesAllowed = 3;
+    const int kMaxProcessesAllowed = 100;
     InitSession(sock);
     try {
         integer D(disc);
         integer L=root(-D, 4);
         PrintInfo("Discriminant = " + to_string(D.impl));
         integer init_A(form_a);
+        PrintInfo("Initial A: " + to_string(init_A.impl));
         integer init_B(form_b);
+        PrintInfo("Initial B: " + to_string(init_B.impl));
         form f = form::from_abd(init_A, init_B, D);
-        PrintInfo("Initial form: " + to_string(f.a.impl) + " " + to_string(f.b.impl));
 
         // Tell client that I'm ready to get the challenges.
         boost::asio::write(sock, boost::asio::buffer("OK", 2));
@@ -269,7 +269,7 @@ void SessionTwoWeso(tcp::socket& sock) {
         std::vector<std::thread> threads;
         // (iteration, thread_id)
         std::set<std::pair<uint64_t, uint64_t> > seen_iterations;
-        WesolowskiCallback* weso = new TwoWesolowskiCallback(D);
+        WesolowskiCallback* weso = new TwoWesolowskiCallback(D, f);
         FastStorage* fast_storage = NULL;
         std::thread vdf_worker(repeated_square, f, std::ref(D), std::ref(L), weso, fast_storage, std::ref(stopped));
 

@@ -40,27 +40,26 @@ int main() {
 
     integer L=root(-D, 4);
     form f=form::generator(D);
-    
+
     bool stopped = false;
     fast_algorithm = false;
     two_weso = true;
-    TwoWesolowskiCallback* weso = new TwoWesolowskiCallback(D);
+    TwoWesolowskiCallback weso(D);
     FastStorage* fast_storage = NULL;
-    std::thread vdf_worker(repeated_square, f, D, L, weso, fast_storage, std::ref(stopped));
+    std::thread vdf_worker(repeated_square, f, D, L, &weso, fast_storage, std::ref(stopped));
     // Test 1 - 1 million iters.
     uint64_t iteration = 1000000;
-    Proof proof = ProveTwoWeso(D, f, 1000000, 0, weso, 0, stopped);
+    Proof proof = ProveTwoWeso(D, f, 1000000, 0, &weso, 0, stopped);
     CheckProof(D, proof, iteration);
     // Test 2 - 15 million iters.
     iteration = 15000000;
-    proof = ProveTwoWeso(D, f, iteration, 0, weso, 0, stopped);
+    proof = ProveTwoWeso(D, f, iteration, 0, &weso, 0, stopped);
     CheckProof(D, proof, iteration);
     // Test 3 - 100 million iters.
     iteration = 100000000;
-    proof = ProveTwoWeso(D, f, iteration, 0, weso, 0, stopped);
+    proof = ProveTwoWeso(D, f, iteration, 0, &weso, 0, stopped);
     CheckProof(D, proof, iteration);
     // Test stopping gracefully.
     stopped = true;
     vdf_worker.join();
-    free(weso);
 }

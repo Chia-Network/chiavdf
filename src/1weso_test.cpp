@@ -40,7 +40,7 @@ int main() {
     OneWesolowskiCallback weso(D, iter);
     FastStorage* fast_storage = nullptr;
     std::thread vdf_worker(repeated_square, f, D, L, &weso, fast_storage, std::ref(stopped));
-    Proof proof = ProveOneWesolowski(iter, D, &weso, stopped);
+    Proof const proof = ProveOneWesolowski(iter, D, &weso, stopped);
     stopped = true;
     vdf_worker.join();
 

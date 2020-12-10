@@ -32,18 +32,17 @@ int main() {
 
     integer L=root(-D, 4);
     form f=form::generator(D);
-    
+
     bool stopped = false;
     fast_algorithm = false;
 
     uint64_t iter = 1000000;
-    OneWesolowskiCallback* weso = new OneWesolowskiCallback(D, iter);
-    FastStorage* fast_storage = NULL;
-    std::thread vdf_worker(repeated_square, f, D, L, weso, fast_storage, std::ref(stopped));
-    Proof proof = ProveOneWesolowski(iter, D, (OneWesolowskiCallback*)weso, stopped);
+    OneWesolowskiCallback weso(D, iter);
+    FastStorage* fast_storage = nullptr;
+    std::thread vdf_worker(repeated_square, f, D, L, &weso, fast_storage, std::ref(stopped));
+    Proof proof = ProveOneWesolowski(iter, D, &weso, stopped);
     stopped = true;
     vdf_worker.join();
-    free(weso);
 
     bool is_valid;
     form x_init = form::generator(D);
@@ -53,7 +52,7 @@ int main() {
         ConvertBytesToInt(proof.y.data(), 129, 2*129),
         D
     );
-    proof_form = form::from_abd( 
+    proof_form = form::from_abd(
         ConvertBytesToInt(proof.proof.data(), 0, 65),
         ConvertBytesToInt(proof.proof.data(), 65, 2*65),
         D

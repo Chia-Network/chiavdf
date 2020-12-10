@@ -30,7 +30,7 @@ void VerifyWesolowskiProof(integer &D, form x, form y, form proof, uint64_t iter
 
 // Used only to verify 'Proof' objects in tests. This is not used by chia-blockchain.
 
-integer ConvertBytesToInt(uint8_t *bytes, int start_index, int end_index)
+integer ConvertBytesToInt(const uint8_t* bytes, int start_index, int end_index)
 {
     integer res(0);
     bool negative = false;
@@ -52,7 +52,7 @@ integer ConvertBytesToInt(uint8_t *bytes, int start_index, int end_index)
     return res;
 }
 
-form DeserializeForm(integer &d, uint8_t *bytes, int int_size)
+form DeserializeForm(integer &d, const uint8_t* bytes, int int_size)
 {
     integer a = ConvertBytesToInt(bytes, 0, int_size);
     integer b = ConvertBytesToInt(bytes, int_size, 2 * int_size);
@@ -60,7 +60,7 @@ form DeserializeForm(integer &d, uint8_t *bytes, int int_size)
     return f;
 }
 
-std::vector<form> DeserializeProof(uint8_t *proof_bytes, int proof_len, integer &D)
+std::vector<form> DeserializeProof(const uint8_t* proof_bytes, int proof_len, integer &D)
 {
     int int_size = (D.num_bits() + 16) >> 4;
     std::vector<form> proof;
@@ -74,7 +74,7 @@ std::vector<form> DeserializeProof(uint8_t *proof_bytes, int proof_len, integer 
     return proof;
 }
 
-bool CheckProofOfTimeNWesolowskiInner(integer &D, form x, uint8_t *proof_blob,
+bool CheckProofOfTimeNWesolowskiInner(integer &D, form x, const uint8_t* proof_blob,
                                       int blob_len, int iters, int int_size,
                                       std::vector<int> iter_list, int recursion)
 {
@@ -124,7 +124,7 @@ bool CheckProofOfTimeNWesolowskiInner(integer &D, form x, uint8_t *proof_blob,
     }
 }
 
-bool CheckProofOfTimeNWesolowski(integer D, form x, uint8_t *proof_blob, int proof_blob_len, int iters, int recursion)
+bool CheckProofOfTimeNWesolowski(integer D, form x, const uint8_t* proof_blob, int proof_blob_len, int iters, int recursion)
 {
     int int_size = (D.num_bits() + 16) >> 4;
     uint8_t* new_proof_blob = new uint8_t[proof_blob_len];

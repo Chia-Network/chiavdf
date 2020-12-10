@@ -41,6 +41,7 @@
 
 #include <thread>
 #include <future>
+#include <memory>
 
 #include <chrono>
 #include <condition_variable>
@@ -417,13 +418,13 @@ class ProverManager {
             // Recalculate everything from the checkpoint, since there is no guarantee the iter didn't arrive late.
             integer L = root(-D, 4);
             PulmarkReducer reducer;
-            form* intermediates = (form*) calloc((iteration % (1 << 16)) / 10 + 100, sizeof(form));
+            std::unique_ptr<form[]> intermediates(new form[(iteration % (1 << 16)) / 10 + 100]);
             for (int i = 0; i < iteration % (1 << 16); i++) {
                 if (i % 10 == 0) {
                     intermediates[i / 10] = y;
                 }
                 nudupl_form(y, y, D, L);
-                reducer.reduce(y);   
+                reducer.reduce(y);
                 if (stopped) {
                     return Proof();
                 }
@@ -434,10 +435,9 @@ class ProverManager {
                 /*x=*/weso->checkpoints[iteration / (1 << 16)],
                 /*y=*/y
             );
-            OneWesolowskiProver prover(sg, D, intermediates, stopped);
+            OneWesolowskiProver prover(sg, D, intermediates.get(), stopped);
             prover.start();
             sg.proof = prover.GetProof();
-            free(intermediates);
             if (stopped) {
                 return Proof();
             }

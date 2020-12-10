@@ -245,7 +245,7 @@ Proof ProveOneWesolowski(uint64_t iters, integer& D, OneWesolowskiCallback* weso
         /*x=*/f,
         /*y=*/weso->result
     );
-    OneWesolowskiProver prover(sg, D, weso->forms, stopped);
+    OneWesolowskiProver prover(sg, D, weso->forms.get(), stopped);
     prover.start();
     while (!prover.IsFinished()) {
         this_thread::sleep_for(1s);

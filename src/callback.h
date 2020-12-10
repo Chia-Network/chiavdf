@@ -62,7 +62,7 @@ public:
 
     virtual void OnIteration(int type, void *data, uint64_t iteration) = 0;
 
-    form* forms;
+    std::unique_ptr<form[]> forms;
     int64_t iterations = 0;
     integer D;
     integer L;
@@ -83,13 +83,9 @@ class OneWesolowskiCallback: public WesolowskiCallback {
         }
         kl = k * l;
         uint64_t space_needed = wanted_iter / (k * l) + 100;
-        forms = (form*) calloc(space_needed, sizeof(form));
+        forms.reset(new form[space_needed]);
         form f = form::generator(D);
         forms[0] = f;
-    }
-
-    ~OneWesolowskiCallback() {
-        free(forms);
     }
 
     void OnIteration(int type, void *data, uint64_t iteration) {
@@ -116,14 +112,10 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
   public:
     TwoWesolowskiCallback(integer& D, form f) : WesolowskiCallback(D) {
         int space_needed = kSwitchIters / 10 + (kMaxItersAllowed - kSwitchIters) / 100;
-        forms = (form*) calloc(space_needed, sizeof(form));
+        forms.reset(new form[space_needed]);
         forms[0] = f;
         kl = 10;
         switch_iters = -1;
-    }
-
-    ~TwoWesolowskiCallback() {
-        free(forms);
     }
 
     void IncreaseConstants(uint64_t num_iters) {
@@ -174,18 +166,13 @@ class FastAlgorithmCallback : public WesolowskiCallback {
             buckets_begin.push_back(buckets_begin[buckets_begin.size() - 1] + bucket_size2 * window_size);
         }
         int space_needed = window_size * (bucket_size1 + bucket_size2 * (segments - 1));
-        forms = (form*) calloc(space_needed, sizeof(form));
-        checkpoints = (form*) calloc((1 << 18), sizeof(form));
+        forms.reset(new form[space_needed]);
+        checkpoints.reset(new form[1 << 18]);
 
         y_ret = f;
         for (int i = 0; i < segments; i++)
             forms[buckets_begin[i]] = f;
         checkpoints[0] = f;
-    }
-
-    ~FastAlgorithmCallback() {
-        free(checkpoints);
-        free(forms);
     }
 
     int GetPosition(uint64_t exponent, int bucket) {
@@ -232,7 +219,7 @@ class FastAlgorithmCallback : public WesolowskiCallback {
     }
 
     std::vector<int> buckets_begin;
-    form* checkpoints;
+    std::unique_ptr<form[]> checkpoints;
     form y_ret;
     int segments;
     // The intermediate values size of a 2^16 segment.

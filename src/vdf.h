@@ -52,6 +52,9 @@
 #include "fast_storage.h"
 #include <boost/asio.hpp>
 
+#include <atomic>
+#include <optional>
+
 bool warn_on_corruption_in_production=false;
 
 using boost::asio::ip::tcp;
@@ -97,7 +100,9 @@ void repeated_square_original(vdf_original &vdfo, form& f, const integer& D, con
 }
 
 // thread safe; but it is only called from the main thread
-void repeated_square(form f, const integer& D, const integer& L, WesolowskiCallback* weso, FastStorage* fast_storage, bool& stopped) {
+void repeated_square(form f, const integer& D, const integer& L,
+    WesolowskiCallback* weso, FastStorage* fast_storage, std::atomic<bool>& stopped)
+{
     #ifdef VDF_TEST
         uint64 num_calls_fast=0;
         uint64 num_iterations_fast=0;
@@ -234,7 +239,9 @@ void repeated_square(form f, const integer& D, const integer& L, WesolowskiCallb
     #endif
 }
 
-Proof ProveOneWesolowski(uint64_t iters, integer& D, OneWesolowskiCallback* weso, bool& stopped) {
+Proof ProveOneWesolowski(uint64_t iters, integer& D, OneWesolowskiCallback* weso,
+    std::atomic<bool>& stopped)
+{
     while (weso->iterations < iters) {
         this_thread::sleep_for(1s);
     }
@@ -262,7 +269,9 @@ Proof ProveOneWesolowski(uint64_t iters, integer& D, OneWesolowskiCallback* weso
     return proof;
 }
 
-Proof ProveTwoWeso(integer& D, form x, uint64_t iters, uint64_t done_iterations, TwoWesolowskiCallback* weso, int depth, bool& stop_signal) {
+Proof ProveTwoWeso(integer& D, form x, uint64_t iters, uint64_t done_iterations,
+    TwoWesolowskiCallback* weso, int depth, std::atomic<bool>& stop_signal)
+{
     integer L=root(-D, 4);
     if (depth == 2) {
         while (!stop_signal && weso->iterations < done_iterations + iters) {
@@ -323,7 +332,7 @@ Proof ProveTwoWeso(integer& D, form x, uint64_t iters, uint64_t done_iterations,
     if (stop_signal)
         return Proof();
     form proof = prover.GetProof();
-    
+
     int int_size = (D.num_bits() + 16) >> 4;
     Proof final_proof;
     final_proof.y = proof2.y;
@@ -361,15 +370,11 @@ class ProverManager {
         }
     }
 
-    ~ProverManager() {
-        delete(main_loop);
-    }
-
     void start() {
-        main_loop = new std::thread([=] {RunEventLoop();});
+        main_loop.emplace(&ProverManager::RunEventLoop, this);
     }
 
-    void stop() {        
+    void stop() {
         {
             std::lock_guard<std::mutex> lk(new_event_mutex);
             stopped = true;
@@ -404,7 +409,7 @@ class ProverManager {
             last_segment_cv.wait(lk, [this, iteration] {
                 if (vdf_iteration >= iteration - iteration % (1 << 16))
                     return true;
-                return stopped;
+                return stopped.load();
             });
             if (stopped) {
                 return Proof();
@@ -450,9 +455,9 @@ class ProverManager {
             proof_cv.wait(lk, [this, iteration] {
                 if (max_proving_iteration >= iteration - iteration % (1 << 16)) 
                     return true;
-                return stopped;
+                return stopped.load();
             });
-            if (stopped)    
+            if (stopped)
                 return Proof();
             int blobs = 0;
             for (int i = segment_count - 1; i >= 0; i--) {
@@ -525,7 +530,7 @@ class ProverManager {
                 lk.unlock();
             }
             if (stopped)
-                return; 
+                return;
             // Check if we can prove the last segment for some iteration.
             vdf_iteration = weso->iterations;
             // VDF running longer than expected, increase proving threads count.
@@ -623,12 +628,12 @@ class ProverManager {
 
             // Check if new segments have arrived, and add them as pending proof.
             for (int i = 0; i < segment_count; i++) {
-                uint64_t sg_length = 1LL << (16 + 2 * i); 
+                uint64_t sg_length = 1LL << (16 + 2 * i);
                 while (last_appended[i] + sg_length <= intermediates_iter) {
                     if (stopped) return ;
                     Segment sg(
-                        /*start=*/last_appended[i], 
-                        /*length=*/sg_length, 
+                        /*start=*/last_appended[i],
+                        /*length=*/sg_length,
                         /*x=*/weso->checkpoints[last_appended[i] / (1 << 16)],
                         /*y=*/weso->checkpoints[(last_appended[i] + sg_length) / (1 << 16)]
                     );
@@ -707,7 +712,7 @@ class ProverManager {
                     if (!stopped) {
                         provers.emplace_back(
                             std::make_pair(
-                                std::make_unique<InterruptableProver>(best, D, weso),                            
+                                std::make_unique<InterruptableProver>(best, D, weso),
                                 best
                             )
                         );
@@ -720,18 +725,18 @@ class ProverManager {
     }
 
   private:
-    bool stopped = false;
+    std::atomic<bool> stopped = false;
     int segment_count;
     // Maximum amount of proving threads running at once.
     int max_proving_threads;
-    std::thread* main_loop;
+    std::optional<std::thread> main_loop;
     FastAlgorithmCallback* weso;
     FastStorage* fast_storage;
     // The discriminant used.
     integer D;
     // Active or paused provers currently running.
     std::vector<std::pair<std::unique_ptr<InterruptableProver>, Segment>> provers;
-    // Vectors of segments needing proving, for each segment length. 
+    // Vectors of segments needing proving, for each segment length.
     std::vector<std::vector<Segment>> pending_segments;
     // For each segment length, remember the endpoint of the last segment marked as pending.
     std::vector<uint64_t> last_appended;

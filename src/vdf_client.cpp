@@ -1,5 +1,6 @@
 #include <boost/asio.hpp>
 #include "vdf.h"
+#include <atomic>
 
 using boost::asio::ip::tcp;
 
@@ -50,7 +51,7 @@ void WriteProof(uint64_t iteration, Proof& result, tcp::socket& sock) {
     PrintInfo("Sent proof");
 }
 
-void CreateAndWriteProof(ProverManager& pm, uint64_t iteration, bool& stop_signal, tcp::socket& sock) {
+void CreateAndWriteProof(ProverManager& pm, uint64_t iteration, std::atomic<bool>& stop_signal, tcp::socket& sock) {
     Proof result = pm.Prove(iteration);
     if (stop_signal == true) {
         PrintInfo("Got stop signal before completing the proof!");
@@ -59,7 +60,7 @@ void CreateAndWriteProof(ProverManager& pm, uint64_t iteration, bool& stop_signa
     WriteProof(iteration, result, sock);
 }
 
-void CreateAndWriteProofOneWeso(uint64_t iters, integer& D, OneWesolowskiCallback* weso, bool& stop_signal, tcp::socket& sock) {
+void CreateAndWriteProofOneWeso(uint64_t iters, integer& D, OneWesolowskiCallback* weso, std::atomic<bool>& stop_signal, tcp::socket& sock) {
     Proof result = ProveOneWesolowski(iters, D, weso, stop_signal);
     if (stop_signal) {
         PrintInfo("Got stop signal before completing the proof!");
@@ -68,7 +69,7 @@ void CreateAndWriteProofOneWeso(uint64_t iters, integer& D, OneWesolowskiCallbac
     WriteProof(iters, result, sock);
 }
 
-void CreateAndWriteProofTwoWeso(integer& D, form f, uint64_t iters, TwoWesolowskiCallback* weso, bool& stop_signal, tcp::socket& sock) {
+void CreateAndWriteProofTwoWeso(integer& D, form f, uint64_t iters, TwoWesolowskiCallback* weso, std::atomic<bool>& stop_signal, tcp::socket& sock) {
     Proof result = ProveTwoWeso(D, f, iters, 0, weso, 0, stop_signal);
     if (stop_signal) {
         PrintInfo("Got stop signal before completing the proof!");
@@ -179,7 +180,7 @@ void SessionFastAlgorithm(tcp::socket& sock) {
         if (multi_proc_machine) {
             fast_storage = new FastStorage((FastAlgorithmCallback*)weso);
         }
-        bool stopped = false;
+        std::atomic<bool> stopped(false);
         std::thread vdf_worker(repeated_square, f, std::ref(D), std::ref(L), weso, fast_storage, std::ref(stopped));
         ProverManager pm(D, (FastAlgorithmCallback*)weso, fast_storage, segments, thread_count);
         pm.start();
@@ -228,7 +229,7 @@ void SessionOneWeso(tcp::socket& sock) {
             FinishSession(sock);
             return;
         }
-        bool stopped = false;
+        std::atomic<bool> stopped(false);
         WesolowskiCallback* weso = new OneWesolowskiCallback(D, iter);
         FastStorage* fast_storage = NULL;
         std::thread vdf_worker(repeated_square, f, std::ref(D), std::ref(L), weso, fast_storage, std::ref(stopped));
@@ -264,8 +265,8 @@ void SessionTwoWeso(tcp::socket& sock) {
         // Tell client that I'm ready to get the challenges.
         boost::asio::write(sock, boost::asio::buffer("OK", 2));
 
-        bool stopped = false;
-        bool stop_vector[100];
+        std::atomic<bool> stopped(false);
+        std::atomic<bool> stop_vector[100];
         std::vector<std::thread> threads;
         // (iteration, thread_id)
         std::set<std::pair<uint64_t, uint64_t> > seen_iterations;

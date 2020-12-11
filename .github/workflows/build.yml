@@ -110,6 +110,10 @@ jobs:
         CIBW_TEST_REQUIRES: pytest
         CIBW_TEST_COMMAND: py.test -v {project}/tests
 
+    - name: build vdf-client
+      if: startsWith(matrix.os, 'mac') || matrix.os == 'Linux'
+      run: (cd src; make -f Makefile.vdf-client)
+
     - name: Upload artifacts
       uses: actions/upload-artifact@v2
       with:

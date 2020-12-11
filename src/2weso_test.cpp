@@ -2,6 +2,8 @@
 #include "create_discriminant.h"
 #include "verifier.h"
 
+#include <atomic>
+
 int segments = 7;
 int thread_count = 3;
 
@@ -41,7 +43,7 @@ int main() {
     integer L=root(-D, 4);
     form f=form::generator(D);
 
-    bool stopped = false;
+    std::atomic<bool> stopped = false;
     fast_algorithm = false;
     two_weso = true;
     TwoWesolowskiCallback weso(D, f);

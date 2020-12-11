@@ -50,7 +50,7 @@ class Prover {
             std::cout << "Segment start:" << segm.start << "\n";
             std::cout << "Segment length:" << segm.length << "\n";
             std::cout << std::flush;
-            
+
             return ;
         }
         uint64_t k1 = k / 2;
@@ -70,7 +70,7 @@ class Prover {
                 limit++;
             for (uint64_t i = 0; i < limit; i++) {
                 if (num_iterations >= k * (i * l + j + 1)) {
-                    uint64_t b = GetBlock(i*l + j, k, num_iterations, B);  
+                    uint64_t b = GetBlock(i*l + j, k, num_iterations, B);
                     if (!PerformExtraStep()) return;
                     tmp = GetForm(i);
                     nucomp_form(ys[b], ys[b], *tmp, D, L);
@@ -114,7 +114,9 @@ class Prover {
 
 class OneWesolowskiProver : public Prover {
   public:
-    OneWesolowskiProver(Segment segm, integer D, form* intermediates, bool& stop_signal) : Prover(segm, D), stop_signal(stop_signal) {
+    OneWesolowskiProver(Segment segm, integer D, form* intermediates, std::atomic<bool>& stop_signal)
+        : Prover(segm, D), stop_signal(stop_signal)
+    {
         this->intermediates = intermediates;
         if (num_iterations >= (1 << 16)) {
             ApproximateParameters(num_iterations, k, l);
@@ -145,12 +147,14 @@ class OneWesolowskiProver : public Prover {
 
   private:
     form* intermediates;
-    bool& stop_signal;
+    std::atomic<bool>& stop_signal;
 };
 
 class TwoWesolowskiProver : public Prover{
   public:
-    TwoWesolowskiProver(Segment segm, integer D, TwoWesolowskiCallback* weso, bool& stop_signal) : Prover(segm, D), stop_signal(stop_signal) {
+    TwoWesolowskiProver(Segment segm, integer D, TwoWesolowskiCallback* weso, std::atomic<bool>& stop_signal):
+        Prover(segm, D), stop_signal(stop_signal)
+    {
         this->weso = weso;
         this->done_iterations = segm.start;
         k = 10;
@@ -165,7 +169,7 @@ class TwoWesolowskiProver : public Prover{
     virtual form* GetForm(uint64_t i) {
         return weso->GetForm(done_iterations + i * k * l);
     }
-    
+
     void stop() {
     }
 
@@ -179,7 +183,7 @@ class TwoWesolowskiProver : public Prover{
 
   private:
     TwoWesolowskiCallback* weso;
-    bool& stop_signal;
+    std::atomic<bool>& stop_signal;
     uint64_t done_iterations;
 };
 
@@ -197,7 +201,7 @@ class InterruptableProver: public Prover {
             k = 10;
         else
             k = 12;
-        if (segm.length <= (1 << 18)) 
+        if (segm.length <= (1 << 18))
             l = 1;
         else
             l = (segm.length >> 18);
@@ -244,7 +248,7 @@ class InterruptableProver: public Prover {
             return !is_paused;
         });
         return true;
-    } 
+    }
 
     void pause() {
         std::lock_guard<std::mutex> lk(m);
@@ -288,7 +292,7 @@ class InterruptableProver: public Prover {
     bool is_paused;
     bool is_fully_finished;
     bool joined;
-    uint64_t done_iterations;  
+    uint64_t done_iterations;
     int bucket;
 };
 

@@ -1,6 +1,7 @@
 #include "vdf.h"
 #include "verifier.h"
 #include "create_discriminant.h"
+#include <atomic>
 
 int segments = 7;
 int thread_count = 3;
@@ -49,7 +50,7 @@ int main() {
 
     WesolowskiCallback* weso = new FastAlgorithmCallback(segments, D, f, multi_proc_machine);
     std::cout << "Discriminant: " << D.impl << "\n";
-    bool stopped = false;
+    std::atomic<bool> stopped = false;
     fast_algorithm = true;
     FastStorage* fast_storage = NULL;
     if (multi_proc_machine) {

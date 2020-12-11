@@ -83,7 +83,7 @@ jobs:
 
     - name: Build and test vdf-client
       run: |
-        sudo apt-get install libgmp-dev libboost-python-dev libpython3.7-dev libboost-system-dev build-essential -y
+        sudo apt-get install libgmp-dev libboost-python-dev libpython3-dev libboost-system-dev build-essential -y
         cd src
         make -f Makefile.vdf-client
         echo "Running 1weso_test"

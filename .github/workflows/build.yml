@@ -110,7 +110,7 @@ jobs:
         CIBW_TEST_REQUIRES: pytest
         CIBW_TEST_COMMAND: py.test -v {project}/tests
 
-    - name: build vdf-client on Ubuntu
+    - name: Build and test vdf-client on Ubuntu
       if: startsWith(matrix.os, 'ubuntu')
       run: |
         sudo apt-get install libgmp-dev libboost-python-dev libpython3.7-dev libboost-system-dev build-essential -y
@@ -125,7 +125,7 @@ jobs:
         echo "Benchmarking vdf_client with 400,000 iterations of vdf_bench"
         ./vdf_bench square_asm 400000
 
-    - name: build vdf-client on MacOS
+    - name: Build and test vdf-client on MacOS
       if: startsWith(matrix.os, 'mac')
       run: |
         cd src

@@ -81,6 +81,21 @@ jobs:
         CIBW_TEST_COMMAND: py.test -v {project}/tests
         CIBW_ENVIRONMENT_LINUX: "BUILD_VDF_CLIENT=N"
 
+    - name: Build and test vdf-client
+      if: startsWith(matrix.os, 'ubuntu')
+      run: |
+        sudo apt-get install libgmp-dev libboost-python-dev libpython3.7-dev libboost-system-dev build-essential -y
+        cd src
+        make -f Makefile.vdf-client
+        echo "Running 1weso_test"
+        ./1weso_test
+        echo "Running 2weso_test"
+        ./2weso_test
+        echo "Running prover_test"
+        ./prover_test
+        echo "Benchmarking vdf_client with 400,000 iterations of vdf_bench"
+        ./vdf_bench square_asm 400000
+
     - name: Upload artifacts
       uses: actions/upload-artifact@v2
       with:

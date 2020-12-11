@@ -82,7 +82,6 @@ jobs:
         CIBW_ENVIRONMENT_LINUX: "BUILD_VDF_CLIENT=N"
 
     - name: Build and test vdf-client
-      if: startsWith(matrix.os, 'ubuntu')
       run: |
         sudo apt-get install libgmp-dev libboost-python-dev libpython3.7-dev libboost-system-dev build-essential -y
         cd src

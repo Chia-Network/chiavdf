@@ -264,18 +264,23 @@ void SessionTwoWeso(tcp::socket& sock) {
 
         // Tell client that I'm ready to get the challenges.
         boost::asio::write(sock, boost::asio::buffer("OK", 2));
-
+        PrintInfo("Written OK.");
         std::atomic<bool> stopped(false);
         std::atomic<bool> stop_vector[100];
         std::vector<std::thread> threads;
         // (iteration, thread_id)
         std::set<std::pair<uint64_t, uint64_t> > seen_iterations;
+        PrintInfo("Initialized variables.");
         WesolowskiCallback* weso = new TwoWesolowskiCallback(D, f);
+        PrintInfo("Initialized callback.");
         FastStorage* fast_storage = NULL;
         std::thread vdf_worker(repeated_square, f, std::ref(D), std::ref(L), weso, fast_storage, std::ref(stopped));
+        PrintInfo("Created vdf_worker.");
 
         while (!stopped) {
+            PrintInfo("Waiting for iter.");
             uint64_t iters = ReadIteration(sock);
+            PrintInfo("Got iter: " + to_string(iters));
             if (iters == 0) {
                 PrintInfo("Got stop signal!");
                 stopped = true;

@@ -9,11 +9,13 @@ struct Segment {
     form x;
     form y;
     form proof;
-    bool is_empty;
+    bool is_empty = true;
 
-    Segment() {
-        is_empty = true;
-    }
+    Segment() = default;
+    Segment(Segment&&) = default;
+    Segment(Segment const&) = default;
+    Segment& operator=(Segment const&) = default;
+    Segment& operator=(Segment&&) = default;
 
     Segment(uint64_t start, uint64_t length, form& x, form& y) {        
         this->start = start;

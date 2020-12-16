@@ -7,10 +7,11 @@
 
 class Prover {
   public:
-    Prover(Segment segm, integer D) {
-        this->segm = segm;
-        this->D = D;
-        this->num_iterations = segm.length;
+    Prover(Segment s, integer D):
+        segm(std::move(s)),
+        D(std::move(D)),
+        num_iterations(segm.length)
+    {
         is_finished = false;
     }
 
@@ -107,17 +108,17 @@ class Prover {
     integer D;
     form proof;
     uint64_t num_iterations;
-    uint32_t k;
-    uint32_t l;
-    bool is_finished;
+    uint32_t k = 0;
+    uint32_t l = 0;
+    bool is_finished = false;
 };
 
 class OneWesolowskiProver : public Prover {
   public:
-    OneWesolowskiProver(Segment segm, integer D, form* intermediates, std::atomic<bool>& stop_signal)
-        : Prover(segm, D), stop_signal(stop_signal)
+    OneWesolowskiProver(Segment s, integer D, form* im, std::atomic<bool>& stop_signal):
+        Prover(std::move(s), D), stop_signal(stop_signal),
+        intermediates(im)
     {
-        this->intermediates = intermediates;
         if (num_iterations >= (1 << 16)) {
             ApproximateParameters(num_iterations, k, l);
         } else {
@@ -152,8 +153,8 @@ class OneWesolowskiProver : public Prover {
 
 class TwoWesolowskiProver : public Prover{
   public:
-    TwoWesolowskiProver(Segment segm, integer D, TwoWesolowskiCallback* weso, std::atomic<bool>& stop_signal):
-        Prover(segm, D), stop_signal(stop_signal)
+    TwoWesolowskiProver(Segment s, integer D, TwoWesolowskiCallback* weso, std::atomic<bool>& stop_signal):
+        Prover(std::move(s), D), stop_signal(stop_signal)
     {
         this->weso = weso;
         this->done_iterations = segm.start;
@@ -193,7 +194,7 @@ extern std::condition_variable new_event_cv;
 
 class InterruptableProver: public Prover {
   public:
-    InterruptableProver(Segment segm, integer D, FastAlgorithmCallback* weso) : Prover(segm, D) {
+    InterruptableProver(Segment s, integer D, FastAlgorithmCallback* weso) : Prover(std::move(s), D) {
         this->weso = weso;
         this->done_iterations = segm.start;
         this->bucket = segm.GetSegmentBucket();

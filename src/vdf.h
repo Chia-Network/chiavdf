@@ -518,6 +518,11 @@ class ProverManager {
     }
 
     void RunEventLoop() {
+        // this is running in a separate thread. Any member variables it
+        // accesses must be one of:
+        // * protected by a mutex
+        // * owned entirely by this thread
+        // * atomic
         const bool multi_proc_machine = (std::thread::hardware_concurrency() >= 16) ? true : false;
         bool warned = false;
         bool increased_proving = false;
@@ -755,7 +760,7 @@ class ProverManager {
     // Maximum iter that can be proved.
     uint64_t max_proving_iteration = 0;
     // Where the VDF thread is at.
-    uint64_t vdf_iteration = 0;
+    std::atomic<uint64_t> vdf_iteration{0};
     bool proof_done;
     uint64_t intermediates_iter;
 };

@@ -2,6 +2,7 @@
 #define THREADING_H
 
 #include <boost/align/aligned_alloc.hpp>
+#include <atomic>
 
 //mp_limb_t is an unsigned integer
 static_assert(sizeof(mp_limb_t)==8, "");
@@ -632,19 +633,13 @@ template<bool is_write, class type> void prefetch(const type& p) {
 template<class type> void prefetch_write(const type& p) { prefetch<true>(p); }
 template<class type> void prefetch_read(const type& p) { prefetch<false>(p); }
 
-void memory_barrier() {
-    asm volatile( "" ::: "memory" );
-}
-
 struct alignas(64) thread_counter {
-    uint64 counter_value=0; //updated atomically since only one thread can write to it
-    uint64 error_flag=0;
+    std::atomic<uint64> counter_value{0}; //updated atomically since only one thread can write to it
+    std::atomic<bool> error_flag{false};
 
     void reset() {
-        memory_barrier();
         counter_value=0;
-        error_flag=0;
-        memory_barrier();
+        error_flag = false;
     }
 
     thread_counter() {
@@ -680,10 +675,8 @@ struct thread_state {
             //print( "raise_error", is_slave );
         //}
 
-        memory_barrier();
-        this_counter().error_flag=1;
-        other_counter().error_flag=1;
-        memory_barrier();
+        this_counter().error_flag = true;
+        other_counter().error_flag = true;
     }
 
     uint64 v() {
@@ -697,11 +690,9 @@ struct thread_state {
             return true;
         }
 
-        memory_barrier();
-
         uint64 spin_counter=0;
         while (other_counter().counter_value < t_v) {
-            if (this_counter().error_flag || other_counter().error_flag) {
+            if (this_counter().error_flag.load() || other_counter().error_flag.load()) {
                 raise_error();
                 break;
             }
@@ -716,10 +707,7 @@ struct thread_state {
             }
 
             ++spin_counter;
-            memory_barrier();
         }
-
-        memory_barrier();
 
         if (!(this_counter().error_flag)) {
             last_fence=t_v;
@@ -739,8 +727,6 @@ struct thread_state {
             return true;
         }
 
-        memory_barrier(); //wait for all writes to finish (on x86 this doesn't do anything but the compiler still needs it)
-
         assert(t_v>=v());
 
         if (this_counter().error_flag) {
@@ -749,7 +735,6 @@ struct thread_state {
 
         this_counter().counter_value=t_v;
 
-        memory_barrier(); //want the counter writes to be low latency so prevent the compiler from caching it
         return !(this_counter().error_flag);
     }
 
@@ -764,17 +749,15 @@ struct thread_state {
     /*void wait_for_error_to_be_cleared() {
         assert(is_slave && enable_threads);
         while (this_counter().error_flag) {
-            memory_barrier();
+            std::this_thread::yield();
         }
     }
 
     void clear_error() {
         assert(!is_slave);
 
-        memory_barrier();
-        this_counter().error_flag=0;
-        other_counter().error_flag=0;
-        memory_barrier();
+        this_counter().error_flag = false;
+        other_counter().error_flag = false;
     }*/
 };
 
@@ -879,7 +862,8 @@ template<class mpz_type> bool gcd_unsigned(
     data.threshold=(uint64*)&threshold[0];
 
     data.uv_counter_start=c_thread_state.counter_start+counter_start_delta+1;
-    data.out_uv_counter_addr=&(c_thread_state.this_counter().counter_value);
+    // TODO: come up with something better here
+    data.out_uv_counter_addr=reinterpret_cast<uint64_t*>(&(c_thread_state.this_counter().counter_value));
     data.out_uv_addr=(uint64*)&(c_results.uv_entries[1]);
     data.iter=-1;
     data.a_end_index=(a_limbs==0)? 0 : a_limbs-1;
@@ -888,12 +872,9 @@ template<class mpz_type> bool gcd_unsigned(
         assert((uint64(data.out_uv_addr)&63)==0); //should be cache line aligned
     }
 
-    memory_barrier();
     int error_code=hasAVX2()?
-	    asm_code::asm_avx2_func_gcd_unsigned(&data):
-	    asm_code::asm_cel_func_gcd_unsigned(&data);
-
-    memory_barrier();
+    asm_code::asm_avx2_func_gcd_unsigned(&data):
+    asm_code::asm_cel_func_gcd_unsigned(&data);
 
     if (error_code!=0) {
         c_thread_state.raise_error();

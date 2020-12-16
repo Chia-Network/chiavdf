@@ -126,23 +126,33 @@ struct integer {
     mpz_struct impl[1]{};
 
     ~integer() {
-        mpz_clear(impl);
+        if (is_initialized())
+            mpz_clear(impl);
     }
 
-    // we don't call mpz_init() here, since that would allocate memory. Instead
-    // we alllocate the memory lazily the first time we assign a value to the
-    // integer. It appears mpz_set() will also initialize the mpz integer if it
-    // needs to.
     integer() = default;
 
     integer(const integer& t) {
+        if (!t.is_initialized()) return;
         mpz_init(impl);
         mpz_set(impl, t.impl);
     }
 
     integer(integer&& t) {
+        memcpy(impl, t.impl, sizeof(impl));
+        memset(t.impl, 0, sizeof(t.impl));
+    }
+
+    void maybe_init()
+    {
+        if (is_initialized()) return;
         mpz_init(impl);
-        mpz_swap(impl, t.impl);
+    }
+
+    bool is_initialized() const
+    {
+        static const mpz_struct zero[1]{};
+        return ::memcmp(impl, zero, sizeof(impl));
     }
 
     explicit integer(int64 i) {

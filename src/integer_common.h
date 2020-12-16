@@ -123,16 +123,17 @@ static bool allow_integer_constructor=false; //don't want static integers becaus
 
 //16 bytes
 struct integer {
-    mpz_struct impl[1];
+    mpz_struct impl[1]{};
 
     ~integer() {
         mpz_clear(impl);
     }
 
-    integer() {
-        assert(allow_integer_constructor);
-        mpz_init(impl);
-    }
+    // we don't call mpz_init() here, since that would allocate memory. Instead
+    // we alllocate the memory lazily the first time we assign a value to the
+    // integer. It appears mpz_set() will also initialize the mpz integer if it
+    // needs to.
+    integer() = default;
 
     integer(const integer& t) {
         mpz_init(impl);

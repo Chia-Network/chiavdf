@@ -81,9 +81,9 @@ public:
         mpz_mul_si(ctx.fab, ctx.b, u * w);
         mpz_mul_si(ctx.fac, ctx.c, w * w);
 
-        mpz_mul_si(ctx.fba, ctx.a, u * v << 1);
+        mpz_mul_si(ctx.fba, ctx.a, uint_fast64_t(u * v) << 1);
         mpz_mul_si(ctx.fbb, ctx.b, u * x + v * w);
-        mpz_mul_si(ctx.fbc, ctx.c, w * x << 1);
+        mpz_mul_si(ctx.fbc, ctx.c, uint_fast64_t(w * x) << 1);
 
         mpz_mul_si(ctx.fca, ctx.a, v * v);
         mpz_mul_si(ctx.fcb, ctx.b, v * x);
@@ -206,7 +206,7 @@ bool bLZCHasHW=false;
       // a = c
       a = c;
       // b = -b + 2cs
-      b = -b + (c * s << 1);
+      b = -b + (uint_fast64_t(c * s) << 1);
       // c = a + cs^2 - bs
       c = a_ - s * (b_ - c * s);
 

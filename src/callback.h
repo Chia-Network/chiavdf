@@ -63,7 +63,7 @@ public:
     virtual void OnIteration(int type, void *data, uint64_t iteration) = 0;
 
     std::unique_ptr<form[]> forms;
-    int64_t iterations = 0;
+    std::atomic<int64_t> iterations{0};
     integer D;
     integer L;
     PulmarkReducer* reducer;

@@ -73,4 +73,5 @@ int main() {
     if (fast_storage != NULL)
         delete(fast_storage);
     delete(weso);
+    return 0;
 }

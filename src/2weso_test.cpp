@@ -59,10 +59,12 @@ int main() {
     proof = ProveTwoWeso(D, f, iteration, 0, &weso, 0, stopped);
     CheckProof(D, proof, iteration);
     // Test 3 - 100 million iters.
-    iteration = 100000000;
+    iteration = 30000000;
     proof = ProveTwoWeso(D, f, iteration, 0, &weso, 0, stopped);
     CheckProof(D, proof, iteration);
     // Test stopping gracefully.
     stopped = true;
     vdf_worker.join();
+    delete(weso);
+    return 0;
 }

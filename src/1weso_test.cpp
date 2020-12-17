@@ -60,5 +60,7 @@ int main() {
         D
     );
     VerifyWesolowskiProof(D, x_init, y, proof_form, iter, is_valid);
-    std::cout << "Verify result: " << is_valid << "\n";
+    std::cout << "Verify result: " << is_valid << "\n" << std::flush;
+    delete(weso);
+    return 0;
 }

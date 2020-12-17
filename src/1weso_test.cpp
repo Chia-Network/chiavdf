@@ -3,6 +3,7 @@
 #include "verifier.h"
 
 #include <atomic>
+#include <unistd.h>
 
 int segments = 7;
 int thread_count = 3;
@@ -61,5 +62,6 @@ int main() {
     );
     VerifyWesolowskiProof(D, x_init, y, proof_form, iter, is_valid);
     std::cout << "Verify result: " << is_valid << "\n" << std::flush;
+    sleep(5);
     return 0;
 }

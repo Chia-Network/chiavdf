@@ -19,6 +19,7 @@ void CheckProof(integer& D, Proof& proof, uint64_t iteration) {
         std::cout << "Correct proof\n";
     } else {
         std::cout << "Incorrect proof\n";
+        abort();
     }
 }
 

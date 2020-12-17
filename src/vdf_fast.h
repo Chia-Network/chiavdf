@@ -1061,14 +1061,12 @@ uint64 repeated_square_fast_multithread(square_state_type &square_state, form& f
     slave_counter[square_state.pairindex].reset();
 
     square_state.init(D, L, f.a, f.b);
-    memory_barrier();
 
     thread slave_thread(repeated_square_fast_work, std::ref(square_state), false, base, iterations, std::ref(nuduplListener));
 
     repeated_square_fast_work(square_state, true, base, iterations, nuduplListener);
 
     slave_thread.join(); //slave thread can't get stuck; is supposed to error out instead
-    memory_barrier();
 
     uint64 res;
     square_state.assign(f.a, f.b, f.c, res);

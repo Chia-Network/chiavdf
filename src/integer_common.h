@@ -139,6 +139,7 @@ struct integer {
     }
 
     integer(integer&& t) {
+        maybe_init();
         memcpy(impl, t.impl, sizeof(impl));
         memset(t.impl, 0, sizeof(t.impl));
     }
@@ -190,27 +191,32 @@ struct integer {
     }
 
     integer& operator=(const integer& t) {
+        maybe_init();
         mpz_set(impl, t.impl);
         return *this;
     }
 
     integer& operator=(integer&& t) {
+        maybe_init();
         mpz_swap(impl, t.impl);
         return *this;
     }
 
     integer& operator=(int64 i) {
+        maybe_init();
         mpz_set_si(impl, i);
         return *this;
     }
 
     integer& operator=(const string& s) {
+        maybe_init();
         int res=mpz_set_str(impl, s.c_str(), 0);
         assert(res==0);
         return *this;
     }
 
     void set_bit(int index, bool value) {
+        maybe_init();
         if (value) {
             mpz_setbit(impl, index);
         } else {

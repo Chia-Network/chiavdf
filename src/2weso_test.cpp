@@ -65,6 +65,5 @@ int main() {
     // Test stopping gracefully.
     stopped = true;
     vdf_worker.join();
-    delete(weso);
     return 0;
 }

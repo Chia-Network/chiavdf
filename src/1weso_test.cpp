@@ -3,7 +3,6 @@
 #include "verifier.h"
 
 #include <atomic>
-#include <unistd.h>
 
 int segments = 7;
 int thread_count = 3;
@@ -33,7 +32,7 @@ int main() {
     allow_integer_constructor=true; //make sure the old gmp allocator isn't used
     set_rounding_mode();
 
-    integer L=root(-D, 4);
+    integer L = root(-D, 4);
     form f=form::generator(D);
 
     std::atomic<bool> stopped = false;
@@ -62,6 +61,5 @@ int main() {
     );
     VerifyWesolowskiProof(D, x_init, y, proof_form, iter, is_valid);
     std::cout << "Verify result: " << is_valid << "\n" << std::flush;
-    sleep(5);
-    return 0;
+    exit(0);
 }

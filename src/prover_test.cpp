@@ -2,7 +2,6 @@
 #include "verifier.h"
 #include "create_discriminant.h"
 #include <atomic>
-#include <unistd.h>
 
 int segments = 7;
 int thread_count = 3;
@@ -74,6 +73,5 @@ int main() {
     if (fast_storage != NULL)
         delete(fast_storage);
     delete(weso);
-    sleep(5);
-    return 0;
+    exit(0);
 }

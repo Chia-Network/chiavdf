@@ -3,7 +3,6 @@
 #include "verifier.h"
 
 #include <atomic>
-#include <unistd.h>
 
 int segments = 7;
 int thread_count = 3;
@@ -66,6 +65,5 @@ int main() {
     // Test stopping gracefully.
     stopped = true;
     vdf_worker.join();
-    sleep(5);
-    return 0;
+    exit(0);
 }

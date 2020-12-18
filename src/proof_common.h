@@ -12,6 +12,7 @@ std::vector<unsigned char> ConvertIntegerToBytes(integer x, uint64_t num_bytes) 
     }
     for (int iter = 0; iter < num_bytes; iter++) {
         auto byte = (x % integer(256)).to_vector();
+        if (byte.empty()) byte.push_back(0);
         if (negative)
             byte[0] ^= 255;
         bytes.push_back(byte[0]);

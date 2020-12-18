@@ -78,7 +78,6 @@ template<class intnx, class avx512_intnx, class intjx, class avx512_intjx> void 
 int main(int argc, char **argv) {
     assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
     init_gmp();
-    allow_integer_constructor=true; //make sure the old gmp allocator isn't used
     set_rounding_mode();
 
     enable_avx512_ifma=false;

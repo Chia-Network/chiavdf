@@ -28,6 +28,8 @@ int gcd_base_bits=50;
 int gcd_128_max_iter=3;
 
 int main() {
+    assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
+    init_gmp();
     if(hasAVX2())
     {
       gcd_base_bits=63;
@@ -39,9 +41,6 @@ int main() {
     if (getenv( "warn_on_corruption_in_production" )!=nullptr) {
         warn_on_corruption_in_production=true;
     }
-    assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
-    init_gmp();
-    allow_integer_constructor=true; //make sure the old gmp allocator isn't used
     set_rounding_mode();
 
     integer L=root(-D, 4);

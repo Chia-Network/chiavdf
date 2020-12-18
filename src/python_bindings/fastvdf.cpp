@@ -1,8 +1,15 @@
 #include <pybind11/pybind11.h>
 #include "../verifier.h"
 #include "../prover_slow.h"
+#include "../alloc.hpp"
 
 namespace py = pybind11;
+
+namespace {
+struct init {
+    init() { init_gmp(); }
+} g_init;
+}
 
 PYBIND11_MODULE(chiavdf, m) {
     m.doc() = "Chia proof of time";

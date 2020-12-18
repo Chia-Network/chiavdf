@@ -172,7 +172,7 @@ struct integer {
         res.resize(mpz_sizeinbase(impl, 2)/64 + 1, 0);
 
         size_t count;
-        mpz_export(&res[0], &count, -1, 8, 0, 0, impl);
+        mpz_export(res.data(), &count, -1, 8, 0, 0, impl);
         res.resize(count);
 
         return res;

@@ -209,6 +209,7 @@ void* mp_realloc_func(void* old_ptr, size_t old_bytes, size_t new_bytes) {
 //(the mpz class constructor does not call any gmp functions)
 void init_gmp() {
     mp_set_memory_functions(mp_alloc_func, mp_realloc_func, mp_free_func);
+    allow_integer_constructor=true; //make sure the old gmp allocator isn't used
 }
 
 template<int d_expected_size, int d_padded_size> struct alignas(64) mpz;

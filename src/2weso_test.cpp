@@ -23,6 +23,8 @@ void CheckProof(integer& D, Proof& proof, uint64_t iteration) {
 }
 
 int main() {
+    assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
+    init_gmp();
     debug_mode = true;
     if(hasAVX2())
     {
@@ -35,9 +37,6 @@ int main() {
     if (getenv( "warn_on_corruption_in_production" )!=nullptr) {
         warn_on_corruption_in_production=true;
     }
-    assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
-    init_gmp();
-    allow_integer_constructor=true; //make sure the old gmp allocator isn't used
     set_rounding_mode();
 
     integer L=root(-D, 4);

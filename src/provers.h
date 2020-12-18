@@ -34,7 +34,7 @@ class Prover {
         mpz_mul_2exp(res.impl, res.impl, k);
         res = res / B;
         auto res_vector = res.to_vector();
-        return res_vector[0];
+        return res_vector.empty() ? 0 : res_vector[0];
     }
 
     void GenerateProof() {

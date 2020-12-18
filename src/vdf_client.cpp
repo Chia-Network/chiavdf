@@ -126,7 +126,6 @@ void InitSession(tcp::socket& sock) {
     }
     assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
     init_gmp();
-    allow_integer_constructor=true; //make sure the old gmp allocator isn't used
     set_rounding_mode();
 }
 

@@ -1,7 +1,7 @@
 #ifndef THREADING_H
 #define THREADING_H
 
-#include <boost/align/aligned_alloc.hpp>
+#include "alloc.hpp"
 #include <atomic>
 
 //mp_limb_t is an unsigned integer
@@ -156,61 +156,6 @@ static uint64 get_time_cycles() {
     #define TRACK_CYCLES_ABORT
     #define TRACK_CYCLES_OUTPUT_STATS
 #endif
-
-//use realloc or free to free the memory
-void* alloc_cache_line(size_t bytes) {
-    //round up to the next multiple of 64
-    size_t aligned_bytes=((bytes+63)>>6)<<6;
-
-    //padding so that the result
-    aligned_bytes+=64;
-
-    void* res=boost::alignment::aligned_alloc(64, aligned_bytes); // aligned_alloc(64, aligned_bytes);
-
-    //the address modulo 64 is used to decide if the gmp integer is allocated on the stack or the heap
-    //stack integers are 64-aligned and heap integers aren't
-    res=((char*)res)+16;
-
-    assert((uint64(res)&63)==16); //must have this alignment for correctness
-    return res;
-}
-
-void free_cache_line(void* ptr) {
-    boost::alignment::aligned_free(((char*)ptr)-16); //free(old_ptr);
-}
-
-void* mp_alloc_func(size_t new_bytes) {
-    return alloc_cache_line(new_bytes);
-}
-
-void mp_free_func(void* old_ptr, size_t old_bytes) {
-    //either mp_alloc_func allocated old_ptr and it is 64-aligned, or it points to data in mpz and its address equals 16 modulo 64
-    assert((uint64(old_ptr)&63)==0 || (uint64(old_ptr)&63)==16);
-
-    if ((uint64(old_ptr)&63)==16) {
-        //mp_alloc_func allocated this, so it can be freed with std::free
-        free_cache_line(old_ptr);
-    } else {
-        //this is part of the mpz struct defined below. it can't be freed, so do nothing
-    }
-}
-
-void* mp_realloc_func(void* old_ptr, size_t old_bytes, size_t new_bytes) {
-    void* res=mp_alloc_func(new_bytes);
-
-    memcpy(res, old_ptr, (old_bytes<new_bytes)? old_bytes : new_bytes);
-
-    mp_free_func(old_ptr, old_bytes);
-
-    return res;
-}
-
-//must call this before calling any gmp functions
-//(the mpz class constructor does not call any gmp functions)
-void init_gmp() {
-    mp_set_memory_functions(mp_alloc_func, mp_realloc_func, mp_free_func);
-    allow_integer_constructor=true; //make sure the old gmp allocator isn't used
-}
 
 template<int d_expected_size, int d_padded_size> struct alignas(64) mpz;
 
@@ -592,35 +537,6 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz {
         return res;
     }
 };
-
-template<class type> struct cache_line_ptr {
-    type* ptr=nullptr;
-
-    cache_line_ptr() {}
-    cache_line_ptr(cache_line_ptr& t)=delete;
-    cache_line_ptr(cache_line_ptr&& t) { swap(ptr, t.ptr); }
-
-    cache_line_ptr& operator=(cache_line_ptr& t)=delete;
-    cache_line_ptr& operator=(cache_line_ptr&& t) { swap(ptr, t.ptr); }
-
-    ~cache_line_ptr() {
-        if (ptr) {
-            ptr->~type();
-            boost::alignment::aligned_free(ptr); // wjb free(ptr);
-            ptr=nullptr;
-        }
-    }
-
-    type& operator*() const { return *ptr; }
-    type* operator->() const { return ptr; }
-};
-
-template<class type, class... arg_types> cache_line_ptr<type> make_cache_line(arg_types&&... args) {
-    cache_line_ptr<type> res;
-    res.ptr=(type*)alloc_cache_line(sizeof(type));
-    new(res.ptr) type(forward<arg_types>(args)...);
-    return res;
-}
 
 template<bool is_write, class type> void prefetch(const type& p) {
     //write prefetching lowers performance but read prefetching increases it

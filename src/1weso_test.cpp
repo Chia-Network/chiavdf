@@ -14,7 +14,14 @@ Proof CreateProof(ProverManager& pm, uint64_t iteration) {
 int gcd_base_bits=50;
 int gcd_128_max_iter=3;
 
-int main() {
+int main(int argc, char const* argv[]) try
+{
+    // allow setting the multiplier for the number of iterations to test on the
+    // command line. This can be used to run smaller and faster tests on CI,
+    // specifically with instrumented binaries that aren't as fast
+    std::uint64_t const iter_multiplier = (argc > 1)
+        ? std::stoull(argv[1]) : 1000000;
+
     assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
     init_gmp();
     debug_mode = true;
@@ -37,7 +44,7 @@ int main() {
     std::atomic<bool> stopped = false;
     fast_algorithm = false;
 
-    uint64_t iter = 1000000;
+    uint64_t iter = iter_multiplier;
     OneWesolowskiCallback weso(D, iter);
     FastStorage* fast_storage = nullptr;
     std::thread vdf_worker(repeated_square, f, D, L, &weso, fast_storage, std::ref(stopped));
@@ -60,4 +67,9 @@ int main() {
     );
     VerifyWesolowskiProof(D, x_init, y, proof_form, iter, is_valid);
     std::cout << "Verify result: " << is_valid << "\n";
+    return is_valid ? 0 : 1;
+}
+catch (std::exception const& e) {
+    std::cerr << "Exception " << e.what() << '\n';
+    return 1;
 }

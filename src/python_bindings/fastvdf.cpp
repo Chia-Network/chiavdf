@@ -5,12 +5,6 @@
 
 namespace py = pybind11;
 
-namespace {
-struct init {
-    init() { init_gmp(); }
-} g_init;
-}
-
 PYBIND11_MODULE(chiavdf, m) {
     m.doc() = "Chia proof of time";
 

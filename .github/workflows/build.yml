@@ -185,6 +185,14 @@ jobs:
         ./1weso_test 1000
         echo "Running 2weso_test"
         ./2weso_test 1000
+
+    # macos thread sanitizer will give false positives on ./prover_test because
+    # it prints to std::cout from multiple threads. Which is allowed by the
+    # standard
+    - name: test Prover
+      if: matrix.config != 'optimized=1' && (matrix.config != 'TSAN=1' || startsWith(matrix.os, 'ubuntu'))
+      run: |
+        cd src
         echo "Running prover_test"
         ./prover_test
 

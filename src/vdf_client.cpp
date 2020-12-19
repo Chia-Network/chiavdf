@@ -125,7 +125,6 @@ void InitSession(tcp::socket& sock) {
         PrintInfo( "=== Warn on corruption enabled ===" );
     }
     assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
-    init_gmp();
     set_rounding_mode();
 }
 
@@ -335,10 +334,9 @@ void SessionTwoWeso(tcp::socket& sock) {
 int gcd_base_bits=50;
 int gcd_128_max_iter=3;
 
-int main(int argc, char* argv[])
+int main(int argc, char* argv[]) try
 {
-  try
-  {
+    init_gmp();
     if (argc != 4)
     {
       std::cerr << "Usage: ./vdf_client <host> <port>\n";
@@ -376,8 +374,9 @@ int main(int argc, char* argv[])
         two_weso = true;
         SessionTwoWeso(s);
     }
-  } catch (std::exception& e) {
+    return 0;
+}
+catch (std::exception& e) {
     std::cerr << "Exception: " << e.what() << "\n";
-  }
-  return 0;
+    return 1;
 }

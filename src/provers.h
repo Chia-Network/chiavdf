@@ -292,7 +292,7 @@ class InterruptableProver: public Prover {
     std::condition_variable cv;
     std::mutex m;
     bool is_paused;
-    bool is_fully_finished;
+    std::atomic<bool> is_fully_finished;
     bool joined;
     uint64_t done_iterations;
     int bucket;

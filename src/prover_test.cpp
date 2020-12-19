@@ -5,7 +5,7 @@
 
 int segments = 7;
 int thread_count = 3;
-bool stop_signal = false;
+std::atomic<bool> stop_signal{false};
 
 Proof CreateProof(integer D, ProverManager& pm, uint64_t iteration) {
     Proof proof = pm.Prove(iteration);
@@ -56,17 +56,18 @@ int main() {
         fast_storage = new FastStorage((FastAlgorithmCallback*)weso);
     }
     std::thread vdf_worker(repeated_square, f, D, L, weso, fast_storage, std::ref(stopped));
-    ProverManager pm(D, (FastAlgorithmCallback*)weso, fast_storage, segments, thread_count); 
+    ProverManager pm(D, (FastAlgorithmCallback*)weso, fast_storage, segments, thread_count);
     pm.start();
+    std::vector<std::thread> threads;
     for (int i = 0; i <= 30; i++) {
-        std::thread t(CreateProof, D, std::ref(pm), (1 << 21) * i + 60000);
-        t.detach();
-    } 
+        threads.emplace_back(CreateProof, D, std::ref(pm), (1 << 21) * i + 60000);
+    }
     std::this_thread::sleep_for (std::chrono::seconds(300));
     stop_signal = true;
     std::cout << "Stopping everything.\n";
     pm.stop();
     stopped = true;
+    for (auto& t : threads) t.join();
     vdf_worker.join();
     if (fast_storage != NULL)
         delete(fast_storage);

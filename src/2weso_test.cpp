@@ -19,10 +19,18 @@ void CheckProof(integer& D, Proof& proof, uint64_t iteration) {
         std::cout << "Correct proof\n";
     } else {
         std::cout << "Incorrect proof\n";
+        throw std::runtime_error("incorrect proof");
     }
 }
 
-int main() {
+int main(int argc, char const* argv[]) try
+{
+    // allow setting the multiplier for the number of iterations to test on the
+    // command line. This can be used to run smaller and faster tests on CI,
+    // specifically with instrumented binaries that aren't as fast
+    std::uint64_t const iter_multiplier = (argc > 1)
+        ? std::stoull(argv[1]) : 1000000;
+
     assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
     init_gmp();
     debug_mode = true;
@@ -49,18 +57,23 @@ int main() {
     FastStorage* fast_storage = NULL;
     std::thread vdf_worker(repeated_square, f, D, L, &weso, fast_storage, std::ref(stopped));
     // Test 1 - 1 million iters.
-    uint64_t iteration = 1000000;
-    Proof proof = ProveTwoWeso(D, f, 1000000, 0, &weso, 0, stopped);
+    uint64_t iteration = 1 * iter_multiplier;
+    Proof proof = ProveTwoWeso(D, f, iteration, 0, &weso, 0, stopped);
     CheckProof(D, proof, iteration);
     // Test 2 - 15 million iters.
-    iteration = 15000000;
+    iteration = 15 * iter_multiplier;
     proof = ProveTwoWeso(D, f, iteration, 0, &weso, 0, stopped);
     CheckProof(D, proof, iteration);
     // Test 3 - 100 million iters.
-    iteration = 100000000;
+    iteration = 100 * iter_multiplier;
     proof = ProveTwoWeso(D, f, iteration, 0, &weso, 0, stopped);
     CheckProof(D, proof, iteration);
     // Test stopping gracefully.
     stopped = true;
     vdf_worker.join();
+    return 0;
+}
+catch (std::exception const& e) {
+    std::cerr << "Exception " << e.what() << '\n';
+    return 1;
 }

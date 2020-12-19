@@ -167,6 +167,7 @@ jobs:
 
 
     - name: Test vdf-client
+      if: matrix.config == 'optimized=1'
       run: |
         cd src
         echo "Running 1weso_test"
@@ -176,8 +177,19 @@ jobs:
         echo "Running prover_test"
         ./prover_test
 
+    - name: Test vdf-client
+      if: matrix.config != 'optimized=1'
+      run: |
+        cd src
+        echo "Running 1weso_test"
+        ./1weso_test 1000
+        echo "Running 2weso_test"
+        ./2weso_test 1000
+        echo "Running prover_test"
+        ./prover_test
+
     - name: Benchmark vdf-client
-      if: matrix.config == 'optimized'
+      if: matrix.config == 'optimized=1'
       run: |
         cd src
         echo "Benchmarking vdf_client with 400,000 iterations of vdf_bench"

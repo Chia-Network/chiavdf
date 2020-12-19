@@ -1,7 +1,7 @@
 #ifndef THREADING_H
 #define THREADING_H
 
-#include <boost/align/aligned_alloc.hpp>
+#include "alloc.hpp"
 #include <atomic>
 
 //mp_limb_t is an unsigned integer

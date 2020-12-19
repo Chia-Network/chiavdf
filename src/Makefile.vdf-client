@@ -1,13 +1,13 @@
 UNAME := $(shell uname)
 
-LDFLAGS += -no-pie
+LDFLAGS += -flto -no-pie
 LDLIBS += -lgmpxx -lgmp -lboost_system -pthread
-CXXFLAGS += -std=c++1z -D VDF_MODE=0 -D FAST_MACHINE=1 -pthread -no-pie
+CXXFLAGS += -flto -std=c++1z -D VDF_MODE=0 -D FAST_MACHINE=1 -pthread -no-pie
 ifeq ($(UNAME),Darwin)
 CXXFLAGS += -D CHIAOSX=1
-else
-OPT_CFLAGS = -O3
 endif
+
+OPT_CFLAGS = -O3
 
 .PHONY: all clean
 

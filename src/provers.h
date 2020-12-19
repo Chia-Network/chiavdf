@@ -1,6 +1,8 @@
 #ifndef PROVERS_H
 #define PROVERS_H
 
+#include <atomic>
+
 #include "proof_common.h"
 #include "util.h"
 #include "callback.h"
@@ -109,7 +111,7 @@ class Prover {
     uint64_t num_iterations;
     uint32_t k;
     uint32_t l;
-    bool is_finished;
+    std::atomic<bool> is_finished;
 };
 
 class OneWesolowskiProver : public Prover {

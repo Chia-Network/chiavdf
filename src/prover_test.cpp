@@ -18,6 +18,7 @@ Proof CreateProof(integer D, ProverManager& pm, uint64_t iteration) {
             std::cout << "Correct proof";
         } else {
             std::cout << "Incorrect proof";
+            std::exit(1);
         }
         std::cout << " (iteration: " << iteration << ").\n";
     }

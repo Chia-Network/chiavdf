@@ -3,6 +3,8 @@
 #include "../prover_slow.h"
 #include "../alloc.hpp"
 
+bool CheckProofOfTimeNWesolowski(integer D, form x, const uint8_t* proof_blob, int proof_blob_len, int iters, int recursion);
+
 namespace py = pybind11;
 
 PYBIND11_MODULE(chiavdf, m) {
@@ -44,6 +46,20 @@ PYBIND11_MODULE(chiavdf, m) {
         bool is_valid = false;
         VerifyWesolowskiProof(D, x, y, proof, num_iterations, is_valid);
         return is_valid;
+    });
+
+    // Checks an N wesolowski proof.
+    m.def("verify_n_wesolowski", [] (const string& discriminant,
+                                   const string& x_a, const string& x_b,
+                                   const string& proof_blob, 
+                                   const uint64_t num_iterations, const uint64_t disc_size_bits, const uint64_t recursion) {
+        integer D(discriminant);
+        form x = form::from_abd(
+            integer(x_a),
+            integer(x_b),
+            D
+        );
+        CheckProofOfTimeNWesolowski(D, x, (uint8_t *)proof_blob.data(), proof_blob.size(), num_iterations, disc_size_bits, recursion);
     });
 
     m.def("prove", [] (const py::bytes& challenge_hash, const string& x_a, const string& x_b, int discriminant_size_bits, uint64_t num_iterations) {

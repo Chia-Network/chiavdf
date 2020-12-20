@@ -75,8 +75,8 @@ std::vector<form> DeserializeProof(const uint8_t* proof_bytes, int proof_len, in
 }
 
 bool CheckProofOfTimeNWesolowskiInner(integer &D, form x, const uint8_t* proof_blob,
-                                      int blob_len, int iters, int int_size,
-                                      std::vector<int> iter_list, int recursion)
+                                      int blob_len, uint64_t iters, int int_size,
+                                      std::vector<uint64_t> iter_list, int recursion)
 {
     uint8_t* result_bytes = new uint8_t[2 * 129];
     uint8_t* proof_bytes = new uint8_t[blob_len - 2 * 129];
@@ -101,8 +101,8 @@ bool CheckProofOfTimeNWesolowskiInner(integer &D, form x, const uint8_t* proof_b
             delete[] proof_bytes;
             return false;
         }
-        int iters1 = iter_list[iter_list.size() - 1];
-        int iters2 = iters - iters1;
+        uint64_t iters1 = iter_list[iter_list.size() - 1];
+        uint64_t iters2 = iters - iters1;
         bool ver_outer;
         VerifyWesolowskiProof(D, x, proof[proof.size() - 2], proof[proof.size() - 1], iters1, ver_outer);
         if (!ver_outer) {
@@ -124,13 +124,15 @@ bool CheckProofOfTimeNWesolowskiInner(integer &D, form x, const uint8_t* proof_b
     }
 }
 
-bool CheckProofOfTimeNWesolowski(integer D, form x, const uint8_t* proof_blob, int proof_blob_len, int iters, int recursion)
+bool CheckProofOfTimeNWesolowski(integer D, form x, const uint8_t* proof_blob, int proof_blob_len, uint64_t iters, uint64 disc_size_bits, int depth)
 {
-    int int_size = (D.num_bits() + 16) >> 4;
+    int int_size = (disc_size_bits + 16) >> 4;
+    if (proof_blob_len != 4 * int_size + depth * (8 + 4 * int_size))
+        return false;
     uint8_t* new_proof_blob = new uint8_t[proof_blob_len];
     int new_cnt = 2 * 129 + 2 * int_size;
     memcpy(new_proof_blob, proof_blob, new_cnt);
-    std::vector<int> iter_list;
+    std::vector<uint64_t> iter_list;
     for (int i = new_cnt; i < proof_blob_len; i += 4 * int_size + 8)
     {
         auto iter_vector = ConvertBytesToInt(proof_blob, i, i + 8).to_vector();
@@ -138,7 +140,8 @@ bool CheckProofOfTimeNWesolowski(integer D, form x, const uint8_t* proof_blob, i
         memcpy(new_proof_blob + new_cnt, proof_blob + i + 8, 4 * int_size);
         new_cnt += 4 * int_size;
     }
-    bool is_valid = CheckProofOfTimeNWesolowskiInner(D, x, new_proof_blob, new_cnt, iters, int_size, iter_list, recursion);
+std::cout << "iter_list " << iter_list.size() << std::endl;
+    bool is_valid = CheckProofOfTimeNWesolowskiInner(D, x, new_proof_blob, new_cnt, iters, int_size, iter_list, depth);
     delete[] new_proof_blob;
     return is_valid;
 }

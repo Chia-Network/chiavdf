@@ -124,8 +124,10 @@ bool CheckProofOfTimeNWesolowskiInner(integer &D, form x, const uint8_t* proof_b
     }
 }
 
-bool CheckProofOfTimeNWesolowski(integer D, form x, const uint8_t* proof_blob, int proof_blob_len, uint64_t iters, uint64 disc_size_bits, int depth)
+bool CheckProofOfTimeNWesolowski(integer D, integer a, integer b, const uint8_t* proof_blob, int proof_blob_len, uint64_t iters, uint64 disc_size_bits, int depth)
 {
+    form x = form::from_abd(a,b,D);
+
     int int_size = (disc_size_bits + 16) >> 4;
     if (proof_blob_len != 4 * int_size + depth * (8 + 4 * int_size))
         return false;

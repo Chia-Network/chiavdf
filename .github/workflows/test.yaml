@@ -1,0 +1,71 @@
+name: Build Wheels
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    name: Test ${{ matrix.config }} ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+        config: [ optimized=1, TSAN=1, ASAN=1]
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+        # we need fetch-depth 0 so setuptools_scm can resolve tags
+
+    - name: Build vdf-client on Ubuntu
+      if: startsWith(matrix.os, 'ubuntu')
+      run: |
+        sudo apt-get install libgmp-dev libboost-python-dev libpython3.7-dev libboost-system-dev build-essential -y
+        cd src
+        make ${{ matrix.config }} -f Makefile.vdf-client
+
+    - name: Build vdf-client on Mac
+      if: startsWith(matrix.os, 'mac')
+      run: |
+        brew install boost
+        cd src
+        make ${{ matrix.config }} -f Makefile.vdf-client
+
+
+    - name: Test vdf-client
+      if: matrix.config == 'optimized=1'
+      run: |
+        cd src
+        echo "Running 1weso_test"
+        ./1weso_test
+        echo "Running 2weso_test"
+        ./2weso_test
+        echo "Running prover_test"
+        ./prover_test
+
+    - name: Test vdf-client
+      if: matrix.config != 'optimized=1'
+      run: |
+        cd src
+        echo "Running 1weso_test"
+        ./1weso_test 1000
+        echo "Running 2weso_test"
+        ./2weso_test 1000
+
+    # macos thread sanitizer will give false positives on ./prover_test because
+    # it prints to std::cout from multiple threads. Which is allowed by the
+    # standard
+    - name: test Prover
+      if: matrix.config != 'optimized=1' && (matrix.config != 'TSAN=1' || startsWith(matrix.os, 'ubuntu'))
+      run: |
+        cd src
+        echo "Running prover_test"
+        ./prover_test
+
+    - name: Benchmark vdf-client
+      if: matrix.config == 'optimized=1'
+      run: |
+        cd src
+        echo "Benchmarking vdf_client with 400,000 iterations of vdf_bench"
+        ./vdf_bench square_asm 400000

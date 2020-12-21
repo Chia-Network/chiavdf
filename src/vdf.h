@@ -260,7 +260,7 @@ Proof ProveOneWesolowski(uint64_t iters, integer& D, OneWesolowskiCallback* weso
     int int_size = (D.num_bits() + 16) >> 4;
     std::vector<unsigned char> y_serialized;
     std::vector<unsigned char> proof_serialized;
-    y_serialized = SerializeForm(weso->result, 129);
+    y_serialized = SerializeForm(weso->result, int_size);
     form proof_form = prover.GetProof();
     proof_serialized = SerializeForm(proof_form, int_size);
     Proof proof(y_serialized, proof_serialized);
@@ -299,7 +299,7 @@ Proof ProveTwoWeso(integer& D, form x, uint64_t iters, uint64_t done_iterations,
         form proof = prover.GetProof();
 
         int int_size = (D.num_bits() + 16) >> 4;
-        std::vector<unsigned char> y_bytes = SerializeForm(y, 129);
+        std::vector<unsigned char> y_bytes = SerializeForm(y, int_size);
         std::vector<unsigned char> proof_bytes = SerializeForm(proof, int_size);
         Proof final_proof=Proof(y_bytes, proof_bytes);
         return final_proof;
@@ -493,7 +493,7 @@ class ProverManager {
         std::vector<unsigned char> y_serialized;
         std::vector<unsigned char> proof_serialized;
         // Match ClassGroupElement type from the blockchain.
-        y_serialized = SerializeForm(y, 129);
+        y_serialized = SerializeForm(y, int_size);
         proof_serialized = SerializeForm(proof_segments[proof_segments.size() - 1].proof, int_size);
         for (int i = proof_segments.size() - 2; i >= 0; i--) {
             std::vector<unsigned char> tmp = ConvertIntegerToBytes(integer(proof_segments[i].length), 8);

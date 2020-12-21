@@ -93,8 +93,11 @@ bool CheckProofOfTimeNWesolowski(integer D, integer a, integer b, const uint8_t*
     uint8_t* proof_bytes = new uint8_t[blob_len - 2 * int_size];
     memcpy(result_bytes, new_proof_blob, 2 * int_size);
     memcpy(proof_bytes, new_proof_blob + 2 * int_size, blob_len - 2 * int_size);
+    delete[] new_proof_blob; 
     form y = DeserializeForm(D, result_bytes, int_size);
+    delete[] result_bytes;
     std::vector<form> proof = DeserializeProof(proof_bytes, blob_len - 2 * int_size, int_size, D);
+    delete[] proof_bytes;
 
     if (depth * 2 + 1 != proof.size())
             return false;

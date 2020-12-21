@@ -1,4 +1,4 @@
-from chiavdf import prove, verify_wesolowski, verify_n_wesolowski, create_discriminant
+from chiavdf import prove, verify_wesolowski, create_discriminant
 import secrets
 import time
 

@@ -51,7 +51,11 @@ PYBIND11_MODULE(chiavdf, m) {
                                    const string& x_a, const string& x_b,
                                    const string& proof_blob, 
                                    const uint64_t num_iterations, const uint64_t disc_size_bits, const uint64_t recursion) {
-        return CheckProofOfTimeNWesolowski(integer(discriminant), integer(x_a), integer(x_b), (uint8_t *)proof_blob.data(), proof_blob.size(), num_iterations, disc_size_bits, recursion);
+        std::string proof_blob_str(proof_blob);
+        uint8_t *proof_blob_ptr = reinterpret_cast<uint8_t *>(proof_blob_str.data());
+        int proof_blob_size = proof_blob.size();
+
+        return CheckProofOfTimeNWesolowski(integer(discriminant), integer(x_a), integer(x_b), proof_blob_ptr, proof_blob_size, num_iterations, disc_size_bits, recursion);
     });
 
     m.def("prove", [] (const py::bytes& challenge_hash, const string& x_a, const string& x_b, int discriminant_size_bits, uint64_t num_iterations) {

@@ -56,8 +56,8 @@ int main(int argc, char const* argv[]) try
     form x_init = form::generator(D);
     form y, proof_form;
     y = form::from_abd(
-        ConvertBytesToInt(proof.y.data(), 0, 129),
-        ConvertBytesToInt(proof.y.data(), 129, 2*129),
+        ConvertBytesToInt(proof.y.data(), 0, 65),
+        ConvertBytesToInt(proof.y.data(), 65, 2*65),
         D
     );
     proof_form = form::from_abd(

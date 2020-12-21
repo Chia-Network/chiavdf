@@ -1,4 +1,4 @@
-name: Build Wheels
+name: Test Prover and vdf_client
 
 on: [push, pull_request]
 

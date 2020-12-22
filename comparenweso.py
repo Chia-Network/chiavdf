@@ -32,7 +32,6 @@ class ClassGroup(tuple):
         return tuple.__new__(cls, (a, b, c))
 
     def __init__(self, t):
-        a, b, c = t
         super(ClassGroup, self).__init__()
         self._discriminant = None
 

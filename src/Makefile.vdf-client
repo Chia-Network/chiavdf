@@ -1,8 +1,14 @@
 UNAME := $(shell uname)
 
-LDFLAGS += -flto -no-pie
+ifneq (,$(findstring clang, $(shell $(CXX) --version)))
+NOPIE = -fno-PIE
+else
+NOPIE = -no-pie
+endif
+
+LDFLAGS += -flto $(NOPIE)
 LDLIBS += -lgmpxx -lgmp -lboost_system -pthread
-CXXFLAGS += -flto -std=c++1z -D VDF_MODE=0 -D FAST_MACHINE=1 -pthread -no-pie
+CXXFLAGS += -flto -std=c++1z -D VDF_MODE=0 -D FAST_MACHINE=1 -pthread $(NOPIE) -fvisibility=hidden
 ifeq ($(UNAME),Darwin)
 CXXFLAGS += -D CHIAOSX=1
 endif

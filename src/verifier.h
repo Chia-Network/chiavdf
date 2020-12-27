@@ -12,7 +12,7 @@
 void VerifyWesolowskiProof(integer &D, form x, form y, form proof, uint64_t iters, bool &is_valid)
 {
     PulmarkReducer reducer;
-    int int_size = (D.num_bits() + 16) >> 4;
+    int32_t int_size = (D.num_bits() + 16) >> 4;
     integer L = root(-D, 4);
     integer B = GetB(D, x, y);
     integer r = FastPow(2, iters, B);
@@ -28,13 +28,13 @@ void VerifyWesolowskiProof(integer &D, form x, form y, form proof, uint64_t iter
     }
 }
 
-integer ConvertBytesToInt(const uint8_t* bytes, int start_index, int end_index)
+integer ConvertBytesToInt(const uint8_t* bytes, int32_t start_index, int32_t end_index)
 {
     integer res(0);
     bool negative = false;
     if (bytes[start_index] & (1 << 7))
         negative = true;
-    for (int i = start_index; i < end_index; i++)
+    for (int32_t i = start_index; i < end_index; i++)
     {
         res = res * integer(256);
         if (!negative)
@@ -50,7 +50,7 @@ integer ConvertBytesToInt(const uint8_t* bytes, int start_index, int end_index)
     return res;
 }
 
-form DeserializeForm(integer &d, const uint8_t* bytes, int int_size)
+form DeserializeForm(integer &d, const uint8_t* bytes, int32_t int_size)
 {
     integer a = ConvertBytesToInt(bytes, 0, int_size);
     integer b = ConvertBytesToInt(bytes, int_size, 2 * int_size);
@@ -58,17 +58,17 @@ form DeserializeForm(integer &d, const uint8_t* bytes, int int_size)
     return f;
 }
 
-bool CheckProofOfTimeNWesolowski(integer D, integer a, integer b, const uint8_t* proof_blob, int proof_blob_len, uint64_t iterations, uint64 disc_size_bits, int depth)
+bool CheckProofOfTimeNWesolowski(integer D, integer a, integer b, const uint8_t* proof_blob, int32_t proof_blob_len, uint64_t iterations, uint64 disc_size_bits, int32_t depth)
 {
     form x = form::from_abd(a,b,D);
-    int int_size = (disc_size_bits + 16) >> 4;
+    int32_t int_size = (disc_size_bits + 16) >> 4;
 
     if (proof_blob_len != 4 * int_size + depth * (8 + 4 * int_size))
         return false;
 
     // Loop depth times
     bool is_valid = false;
-    for (int i = proof_blob_len - 4 * int_size - 8; i >= 4 * int_size; i -= 4 * int_size + 8)
+    for (int32_t i = proof_blob_len - 4 * int_size - 8; i >= 4 * int_size; i -= 4 * int_size + 8)
     {
         auto iter_vector = ConvertBytesToInt(proof_blob, i, i + 8).to_vector();
         form xnew = DeserializeForm(D, &(proof_blob[i + 8]), int_size);

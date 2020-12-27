@@ -66,41 +66,26 @@ bool CheckProofOfTimeNWesolowski(integer D, integer a, integer b, const uint8_t*
     if (proof_blob_len != 4 * int_size + depth * (8 + 4 * int_size))
         return false;
 
-    form y = DeserializeForm(D, proof_blob, int_size);
-
-    std::vector<form> proof;
-    proof.reserve(depth * 2 + 1);
-    std::vector<uint64_t> iter_list;
-    iter_list.reserve(depth);
-
-    proof.emplace_back(DeserializeForm(D, &(proof_blob[2 * int_size]), int_size));
-
     // Loop depth times
-    for (int i = 4 * int_size; i < proof_blob_len; i += 4 * int_size + 8)
+    bool is_valid = false;
+    for (int i = proof_blob_len - 4 * int_size - 8; i >= 4 * int_size; i -= 4 * int_size + 8)
     {
         auto iter_vector = ConvertBytesToInt(proof_blob, i, i + 8).to_vector();
-        iter_list.push_back(iter_vector[0]);
-        proof.emplace_back(DeserializeForm(D, &(proof_blob[i + 8]), int_size));
-        proof.emplace_back(DeserializeForm(D, &(proof_blob[i + 8 + 2 * int_size]), int_size));
-    }
-
-    if (depth * 2 + 1 != proof.size())
-            return false;
-    
-    bool is_valid = false;
-    for (int i=0; i < depth; i++) {
-        uint64_t iterations_1=iter_list[iter_list.size() - 1 - i];
-        VerifyWesolowskiProof(D, x, 
-            proof[proof.size() - 2 - 2 * i], 
-            proof[proof.size() - 1 - 2 * i], 
-            iterations_1, is_valid);
+        form xnew = DeserializeForm(D, &(proof_blob[i + 8]), int_size);
+        VerifyWesolowskiProof(D, x,
+            xnew,
+            DeserializeForm(D, &(proof_blob[i + 8 + 2 * int_size]), int_size),
+            iter_vector[0], is_valid);
         if(!is_valid)
             return false;
-        x=proof[proof.size() - 2 - 2 * i];
-	iterations=iterations - iterations_1;
+        x=xnew;
+        iterations=iterations - iter_vector[0];
     }
 
-    VerifyWesolowskiProof(D, x, y, proof[0], iterations, is_valid);
+    VerifyWesolowskiProof(D, x,
+        DeserializeForm(D, proof_blob, int_size),
+        DeserializeForm(D, &(proof_blob[2 * int_size]), int_size), 
+        iterations, is_valid);
     if(!is_valid)
         return false;
    

@@ -86,10 +86,8 @@ bool CheckProofOfTimeNWesolowski(integer D, integer a, integer b, const uint8_t*
         DeserializeForm(D, proof_blob, int_size),
         DeserializeForm(D, &(proof_blob[2 * int_size]), int_size), 
         iterations, is_valid);
-    if(!is_valid)
-        return false;
    
-    return true;
+    return is_valid;
 }
 
 #endif // VERIFIER_H

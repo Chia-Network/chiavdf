@@ -1040,6 +1040,86 @@ extern UWtype __MPN(udiv_qrnnd) (UWtype *, UWtype, UWtype, UWtype);
 #endif /* 80x86 */
 
 #if defined (__amd64__) && W_TYPE_SIZE == 64
+
+#ifndef RUNTIMECPUID
+#define RUNTIMECPUID
+
+extern int bCheckedBMI;
+extern int bBMI1;
+extern int bBMI2;
+
+inline void hasBMI()
+{ 
+    if(bCheckedBMI)
+        return;
+
+    bCheckedBMI = 1;
+    int info[4] = {0};
+#if defined(_MSC_VER)
+    __cpuid(info, 0x7); 
+#elif defined(__GNUC__) || defined(__clang__)
+#if defined(ARCH_X86) && defined(__PIC__)
+    __asm__ __volatile__ (
+                "xchg{l} {%%}ebx, %k1;"
+                "cpuid;" 
+                "xchg{l} {%%}ebx, %k1;"
+                : "=a"(info[0]), "=&r"(info[1]), "=c"(info[2]), "=d"(info[3]) : "a"(0x7), "c"(0)
+    );
+#else
+    __asm__ __volatile__ (
+                "cpuid" : "=a"(info[0]), "=b"(info[1]), "=c"(info[2]), "=d"(info[3]) : "a"(0x7), "c"(0)
+    );
+#endif
+#endif
+    bBMI1 = ((info[1] & (1 << 3)) != 0);
+    bBMI2 = ((info[1] & (1 << 8)) != 0);
+}
+
+inline int hasBMI1()
+{
+    hasBMI();
+    return bBMI1;
+}
+
+inline int hasBMI2()
+{
+    hasBMI();
+    return bBMI2;
+}
+
+extern int bCheckedLZCNT;
+extern int bLZCNT;
+
+inline int hasLZCNT()
+{
+    if(bCheckedLZCNT)
+        return bLZCNT;
+
+    bCheckedLZCNT = 1;
+    int info[4] = {0};
+    #if defined(_MSC_VER)
+        __cpuid(info, 0x80000001);
+    #elif defined(__GNUC__) || defined(__clang__)
+        #if defined(ARCH_X86) && defined(__PIC__)
+            __asm__ __volatile__ (
+                "xchg{l} {%%}ebx, %k1;"
+                "cpuid;"
+                "xchg{l} {%%}ebx, %k1;"
+                : "=a"(info[0]), "=&r"(info[1]), "=c"(info[2]), "=d"(info[3]) : "a"(0x80000001), "c"(0)
+            );
+        #else
+            __asm__ __volatile__ (
+                "cpuid" : "=a"(info[0]), "=b"(info[1]), "=c"(info[2]), "=d"(info[3]) : "a"(0x80000001), "c"(0)
+            );
+        #endif
+    #endif
+
+    bLZCNT = ((info[2] & (1 << 5)) != 0);
+    return bLZCNT;
+}
+
+#endif // RUNTIMECPUID
+
 #define add_ssaaaa(sh, sl, ah, al, bh, bl) \
   __asm__ ("addq %5,%q1\n\tadcq %3,%q0"					\
 	   : "=r" (sh), "=&r" (sl)					\
@@ -1051,38 +1131,51 @@ extern UWtype __MPN(udiv_qrnnd) (UWtype *, UWtype, UWtype, UWtype);
 	   : "0" ((UDItype)(ah)), "rme" ((UDItype)(bh)),		\
 	     "1" ((UDItype)(al)), "rme" ((UDItype)(bl)))
 #define umul_ppmm(w1, w0, u, v) \
-  __asm__ ("mulq\t%3"							\
+  if(hasBMI2()) {                                                       \
+      __asm__ ("mulx\t%3, %q0, %q1"					\
+	   : "=r" (w0), "=r" (w1)					\
+	   : "%d" ((UDItype)(u)), "rm" ((UDItype)(v)));                  \
+  } else {                                                              \
+      __asm__ ("mulq\t%3"						\
 	   : "=a" (w0), "=d" (w1)					\
-	   : "%0" ((UDItype)(u)), "rm" ((UDItype)(v)))
+	   : "%0" ((UDItype)(u)), "rm" ((UDItype)(v)));                  \
+  }
 #define udiv_qrnnd(q, r, n1, n0, dx) /* d renamed to dx avoiding "=d" */\
   __asm__ ("divq %4"		     /* stringification in K&R C */	\
 	   : "=a" (q), "=d" (r)						\
 	   : "0" ((UDItype)(n0)), "1" ((UDItype)(n1)), "rm" ((UDItype)(dx)))
 
 #define count_leading_zeros(count, x)					\
-  do {									\
-    UDItype __cbtmp;							\
-    ASSERT ((x) != 0);							\
-    __asm__ ("bsr\t%1,%0" : "=r" (__cbtmp) : "rm" ((UDItype)(x)));	\
-    (count) = __cbtmp ^ 63;						\
-  } while (0)
+  if(hasLZCNT()) {                                                      \
+    do {									\
+      /* This is lzcnt, spelled for older assemblers.  Destination and */	\
+      /* source must be a 64-bit registers, hence cast and %q.         */	\
+      __asm__ ("rep;bsr\t%1, %q0" : "=r" (count) : "rm" ((UDItype)(x)));	\
+     } while (0);                                                         \
+  } else {                                                                \
+    do {                                                                  \
+      UDItype __cbtmp;                                                    \
+      ASSERT ((x) != 0);                                                  \
+      __asm__ ("bsr\t%1,%0" : "=r" (__cbtmp) : "rm" ((UDItype)(x)));      \
+      (count) = __cbtmp ^ 63;                                             \
+    } while (0);                                                         \
+  }
+#define COUNT_LEADING_ZEROS_0 64
 
-#if HAVE_HOST_CPU_bd2 || HAVE_HOST_CPU_bd3 || HAVE_HOST_CPU_bd4 \
-  || HAVE_HOST_CPU_zen || HAVE_HOST_CPU_jaguar
 #define count_trailing_zeros(count, x)					\
-  do {									\
-    /* This is tzcnt, spelled for older assemblers.  Destination and */	\
-    /* source must be a 64-bit registers, hence cast and %q.         */	\
-    __asm__ ("rep;bsf\t%1, %q0" : "=r" (count) : "rm" ((UDItype)(x)));	\
-  } while (0)
+  if(hasBMI1()) {                                                       \
+    do {								\
+      /* This is tzcnt, spelled for older assemblers.  Destination and */	\
+      /* source must be a 64-bit registers, hence cast and %q.         */	\
+      __asm__ ("rep;bsf\t%1, %q0" : "=r" (count) : "rm" ((UDItype)(x)));	\
+    } while (0);                                                        \
+  } else {                                                              \
+    do {                                                                \
+      ASSERT ((x) != 0);                                                \
+      __asm__ ("bsf\t%1, %q0" : "=r" (count) : "rm" ((UDItype)(x)));    \
+    } while (0);                                                        \
+  }
 #define COUNT_TRAILING_ZEROS_0 64
-#else
-#define count_trailing_zeros(count, x)					\
-  do {									\
-    ASSERT ((x) != 0);							\
-    __asm__ ("bsf\t%1, %q0" : "=r" (count) : "rm" ((UDItype)(x)));	\
-  } while (0)
-#endif
 #endif /* __amd64__ */
 
 #if defined (__i860__) && W_TYPE_SIZE == 32

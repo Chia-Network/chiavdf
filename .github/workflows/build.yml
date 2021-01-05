@@ -79,6 +79,7 @@ jobs:
           && yum -y install boost-devel lzip
           && curl -L https://gmplib.org/download/gmp/gmp-6.2.1.tar.lz | tar x --lzip
           && cp src/lib/gmp-patch-6.2.1/longlong.h gmp-6.2.1/
+          && cp src/lib/gmp-patch-6.2.1/compat.c gmp-6.2.1/
           && cd gmp-6.2.1 && ./configure --enable-fat --enable-cxx
           && make && make install && cd .. && rm -rf gmp-6.2.1
         CIBW_BEFORE_BUILD_LINUX: >

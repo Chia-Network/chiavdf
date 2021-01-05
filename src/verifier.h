@@ -12,7 +12,7 @@
 void VerifyWesolowskiProof(integer &D, form x, form y, form proof, uint64_t iters, bool &is_valid)
 {
     PulmarkReducer reducer;
-    int int_size = (D.num_bits() + 16) >> 4;
+    int32_t int_size = (D.num_bits() + 16) >> 4;
     integer L = root(-D, 4);
     integer B = GetB(D, x, y);
     integer r = FastPow(2, iters, B);
@@ -28,15 +28,13 @@ void VerifyWesolowskiProof(integer &D, form x, form y, form proof, uint64_t iter
     }
 }
 
-// Used only to verify 'Proof' objects in tests. This is not used by chia-blockchain.
-
-integer ConvertBytesToInt(const uint8_t* bytes, int start_index, int end_index)
+integer ConvertBytesToInt(const uint8_t* bytes, int32_t start_index, int32_t end_index)
 {
     integer res(0);
     bool negative = false;
     if (bytes[start_index] & (1 << 7))
         negative = true;
-    for (int i = start_index; i < end_index; i++)
+    for (int32_t i = start_index; i < end_index; i++)
     {
         res = res * integer(256);
         if (!negative)
@@ -52,7 +50,7 @@ integer ConvertBytesToInt(const uint8_t* bytes, int start_index, int end_index)
     return res;
 }
 
-form DeserializeForm(integer &d, const uint8_t* bytes, int int_size)
+form DeserializeForm(integer &d, const uint8_t* bytes, int32_t int_size)
 {
     integer a = ConvertBytesToInt(bytes, 0, int_size);
     integer b = ConvertBytesToInt(bytes, int_size, 2 * int_size);
@@ -60,66 +58,36 @@ form DeserializeForm(integer &d, const uint8_t* bytes, int int_size)
     return f;
 }
 
-std::vector<form> DeserializeProof(const uint8_t* proof_bytes, int proof_len, int int_size, integer &D)
-{
-    std::vector<form> proof;
-    for (int i = 0; i < proof_len; i += 2 * int_size)
-    {
-        proof.emplace_back(DeserializeForm(D, &(proof_bytes[i]), int_size));
-    }
-    return proof;
-}
-
-bool CheckProofOfTimeNWesolowski(integer D, integer a, integer b, const uint8_t* proof_blob, int proof_blob_len, uint64_t iterations, uint64 disc_size_bits, int depth)
+bool CheckProofOfTimeNWesolowski(integer D, integer a, integer b, const uint8_t* proof_blob, int32_t proof_blob_len, uint64_t iterations, uint64 disc_size_bits, int32_t depth)
 {
     form x = form::from_abd(a,b,D);
-    int int_size = (disc_size_bits + 16) >> 4;
+    int32_t int_size = (disc_size_bits + 16) >> 4;
 
     if (proof_blob_len != 4 * int_size + depth * (8 + 4 * int_size))
         return false;
 
-    uint8_t* new_proof_blob = new uint8_t[proof_blob_len];
-    memcpy(new_proof_blob, proof_blob, 4 * int_size);
-    int blob_len=4 * int_size;
-    std::vector<uint64_t> iter_list;
-    for (int i = 4 * int_size; i < proof_blob_len; i += 4 * int_size + 8)
+    // Loop depth times
+    bool is_valid = false;
+    for (int32_t i = proof_blob_len - 4 * int_size - 8; i >= 4 * int_size; i -= 4 * int_size + 8)
     {
         auto iter_vector = ConvertBytesToInt(proof_blob, i, i + 8).to_vector();
-        iter_list.push_back(iter_vector[0]);
-        memcpy(&(new_proof_blob[blob_len]), proof_blob + i + 8, 4 * int_size);
-	blob_len+=4 * int_size;
-    }
-    uint8_t* result_bytes = new uint8_t[2 * int_size];
-    uint8_t* proof_bytes = new uint8_t[blob_len - 2 * int_size];
-    memcpy(result_bytes, new_proof_blob, 2 * int_size);
-    memcpy(proof_bytes, new_proof_blob + 2 * int_size, blob_len - 2 * int_size);
-    delete[] new_proof_blob; 
-    form y = DeserializeForm(D, result_bytes, int_size);
-    delete[] result_bytes;
-    std::vector<form> proof = DeserializeProof(proof_bytes, blob_len - 2 * int_size, int_size, D);
-    delete[] proof_bytes;
-
-    if (depth * 2 + 1 != proof.size())
-            return false;
-    
-    bool is_valid;
-    for (int i=0; i < depth; i++) {
-        uint64_t iterations_1=iter_list[iter_list.size()-1];
-        VerifyWesolowskiProof(D, x, proof[proof.size()-2], proof[proof.size()-1], iterations_1, is_valid);
+        form xnew = DeserializeForm(D, &(proof_blob[i + 8]), int_size);
+        VerifyWesolowskiProof(D, x,
+            xnew,
+            DeserializeForm(D, &(proof_blob[i + 8 + 2 * int_size]), int_size),
+            iter_vector[0], is_valid);
         if(!is_valid)
             return false;
-        x=proof[proof.size()-2];
-	iterations=iterations-iterations_1;
-	proof.pop_back();
-	proof.pop_back();
-	iter_list.pop_back();
+        x=xnew;
+        iterations=iterations - iter_vector[0];
     }
 
-    VerifyWesolowskiProof(D, x, y, proof[proof.size()-1], iterations, is_valid);
-    if(!is_valid)
-        return false;
+    VerifyWesolowskiProof(D, x,
+        DeserializeForm(D, proof_blob, int_size),
+        DeserializeForm(D, &(proof_blob[2 * int_size]), int_size), 
+        iterations, is_valid);
    
-    return true;
+    return is_valid;
 }
 
 #endif // VERIFIER_H

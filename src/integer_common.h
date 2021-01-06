@@ -331,7 +331,9 @@ struct integer {
     }
 
     bool prime() const {
-        return mpz_probab_prime_p(impl, 50)!=0;
+        // reps=24 makes GMP 6.2.1 do only the Baillie-PSW primality test
+        // without additional Miller-Rabin rounds.
+        return mpz_probab_prime_p(impl, 24) != 0;
     }
 
     bool operator<(const integer& t) const {

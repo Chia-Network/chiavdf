@@ -108,28 +108,27 @@ class PulmarkReducer {
 
 form FastPowFormNucomp(form x, integer &D, integer num_iterations, integer &L, PulmarkReducer& reducer)
 {
-    form res = form::identity(D);
-    int D_size = D.impl->_mp_size;
+    if (!mpz_sgn(num_iterations.impl))
+        return form::identity(D);
 
-    while (1) {
-        if (num_iterations.get_bit(0)) {
+    form res = x;
+    int max_size = -D.impl->_mp_size / 2 + 1, i;
+
+    // Do exponentiation by squaring from top bits of exponent to bottom
+    for (i = num_iterations.num_bits() - 2; i >= 0; i--) {
+        nudupl_form(res, res, D, L);
+        if (res.a.impl->_mp_size > max_size) {
+            // Reduce only when 'a' exceeds a half of the discriminant size by
+            // more than one limb
+            reducer.reduce(res);
+        }
+
+        if (num_iterations.get_bit(i)) {
             nucomp_form(res, res, x, D, L);
-            if (res.a.impl->_mp_size > D_size) {
-                // Reduce only when 'a' has more limbs than D
-                reducer.reduce(res);
-            }
-        }
-
-        num_iterations >>= 1;
-        if (num_iterations == 0) {
-            break;
-        }
-
-        nudupl_form(x, x, D, L);
-        if (x.a.impl->_mp_size > D_size) {
-            reducer.reduce(x);
         }
     }
+
+    reducer.reduce(res);
     return res;
 }
 

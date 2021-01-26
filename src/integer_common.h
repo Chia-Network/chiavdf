@@ -1,6 +1,8 @@
 #ifndef INTEGER_COMMON_H
 #define INTEGER_COMMON_H
 
+#include "primetest.h"
+
 //note: gmp already has c++ bindings so could have just used those. oh well
 
 //const bool output_stats=false;
@@ -331,9 +333,7 @@ struct integer {
     }
 
     bool prime() const {
-        // reps=24 makes GMP 6.2.1 do only the Baillie-PSW primality test
-        // without additional Miller-Rabin rounds.
-        return mpz_probab_prime_p(impl, 24) != 0;
+        return is_prime_bpsw(impl) != 0;
     }
 
     bool operator<(const integer& t) const {

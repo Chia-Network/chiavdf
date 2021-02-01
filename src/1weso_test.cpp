@@ -3,6 +3,7 @@
 #include "verifier.h"
 
 #include <atomic>
+#include <cassert>
 
 int segments = 7;
 int thread_count = 3;
@@ -45,10 +46,10 @@ int main(int argc, char const* argv[]) try
     fast_algorithm = false;
 
     uint64_t iter = iter_multiplier;
-    OneWesolowskiCallback weso(D, iter);
+    OneWesolowskiCallback weso(D, f, iter);
     FastStorage* fast_storage = nullptr;
     std::thread vdf_worker(repeated_square, f, D, L, &weso, fast_storage, std::ref(stopped));
-    Proof const proof = ProveOneWesolowski(iter, D, &weso, stopped);
+    Proof const proof = ProveOneWesolowski(iter, D, f, &weso, stopped);
     stopped = true;
     vdf_worker.join();
 
@@ -67,7 +68,7 @@ int main(int argc, char const* argv[]) try
     );
     VerifyWesolowskiProof(D, x_init, y, proof_form, iter, is_valid);
     std::cout << "Verify result: " << is_valid << "\n";
-    return is_valid ? 0 : 1;
+    assert(is_valid);
 }
 catch (std::exception const& e) {
     std::cerr << "Exception " << e.what() << '\n';

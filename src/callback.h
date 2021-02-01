@@ -72,7 +72,7 @@ public:
 
 class OneWesolowskiCallback: public WesolowskiCallback {
   public:
-    OneWesolowskiCallback(integer& D, uint64_t wanted_iter) : WesolowskiCallback(D) {
+    OneWesolowskiCallback(integer& D, form& f, uint64_t wanted_iter) : WesolowskiCallback(D) {
         uint32_t k, l;
         this->wanted_iter = wanted_iter;
         if (wanted_iter >= (1 << 16)) {
@@ -84,7 +84,6 @@ class OneWesolowskiCallback: public WesolowskiCallback {
         kl = k * l;
         uint64_t space_needed = wanted_iter / (k * l) + 100;
         forms.reset(new form[space_needed]);
-        form f = form::generator(D);
         forms[0] = f;
     }
 

@@ -257,12 +257,12 @@ Proof ProveOneWesolowski(uint64_t iters, integer& D, OneWesolowskiCallback* weso
     while (!prover.IsFinished()) {
         this_thread::sleep_for(1s);
     }
-    int int_size = (D.num_bits() + 16) >> 4;
+    int d_bits = D.num_bits();
     std::vector<unsigned char> y_serialized;
     std::vector<unsigned char> proof_serialized;
-    y_serialized = SerializeForm(weso->result, int_size);
+    y_serialized = SerializeForm(weso->result, d_bits);
     form proof_form = prover.GetProof();
-    proof_serialized = SerializeForm(proof_form, int_size);
+    proof_serialized = SerializeForm(proof_form, d_bits);
     Proof proof(y_serialized, proof_serialized);
     proof.witness_type = 0;
     std::cout << "Got simple weso proof: " << proof.hex() << "\n";
@@ -298,9 +298,9 @@ Proof ProveTwoWeso(integer& D, form x, uint64_t iters, uint64_t done_iterations,
             return Proof();
         form proof = prover.GetProof();
 
-        int int_size = (D.num_bits() + 16) >> 4;
-        std::vector<unsigned char> y_bytes = SerializeForm(y, int_size);
-        std::vector<unsigned char> proof_bytes = SerializeForm(proof, int_size);
+        int d_bits = D.num_bits();
+        std::vector<unsigned char> y_bytes = SerializeForm(y, d_bits);
+        std::vector<unsigned char> proof_bytes = SerializeForm(proof, d_bits);
         Proof final_proof=Proof(y_bytes, proof_bytes);
         return final_proof;
     }
@@ -333,17 +333,17 @@ Proof ProveTwoWeso(integer& D, form x, uint64_t iters, uint64_t done_iterations,
         return Proof();
     form proof = prover.GetProof();
 
-    int int_size = (D.num_bits() + 16) >> 4;
+    int d_bits = D.num_bits();
     Proof final_proof;
     final_proof.y = proof2.y;
     std::vector<unsigned char> proof_bytes(proof2.proof);
     std::vector<unsigned char> tmp = ConvertIntegerToBytes(integer(iterations1), 8);
     proof_bytes.insert(proof_bytes.end(), tmp.begin(), tmp.end());
     tmp.clear();
-    tmp = SerializeForm(y1, int_size);
+    tmp = SerializeForm(y1, d_bits);
     proof_bytes.insert(proof_bytes.end(), tmp.begin(), tmp.end());
     tmp.clear();
-    tmp = SerializeForm(proof, int_size);
+    tmp = SerializeForm(proof, d_bits);
     proof_bytes.insert(proof_bytes.end(), tmp.begin(), tmp.end());
     final_proof.proof = proof_bytes;
     if (depth == 0) {
@@ -489,20 +489,20 @@ class ProverManager {
             proof_segments.emplace_back(last_segment);
         }
         // y, proof, [iters1, y1, proof1], [iters2, y2, proof2], ...
-        int int_size = (D.num_bits() + 16) >> 4;
+        int d_bits = D.num_bits();
         std::vector<unsigned char> y_serialized;
         std::vector<unsigned char> proof_serialized;
         // Match ClassGroupElement type from the blockchain.
-        y_serialized = SerializeForm(y, int_size);
-        proof_serialized = SerializeForm(proof_segments[proof_segments.size() - 1].proof, int_size);
+        y_serialized = SerializeForm(y, d_bits);
+        proof_serialized = SerializeForm(proof_segments[proof_segments.size() - 1].proof, d_bits);
         for (int i = proof_segments.size() - 2; i >= 0; i--) {
             std::vector<unsigned char> tmp = ConvertIntegerToBytes(integer(proof_segments[i].length), 8);
             proof_serialized.insert(proof_serialized.end(), tmp.begin(), tmp.end());
             tmp.clear();
-            tmp = SerializeForm(proof_segments[i].y, int_size);
+            tmp = SerializeForm(proof_segments[i].y, d_bits);
             proof_serialized.insert(proof_serialized.end(), tmp.begin(), tmp.end());
             tmp.clear();
-            tmp = SerializeForm(proof_segments[i].proof, int_size);
+            tmp = SerializeForm(proof_segments[i].proof, d_bits);
             proof_serialized.insert(proof_serialized.end(), tmp.begin(), tmp.end());
         }
         Proof proof(y_serialized, proof_serialized);

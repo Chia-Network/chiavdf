@@ -78,10 +78,7 @@ void CreateAndWriteProofTwoWeso(integer& D, form f, uint64_t iters, TwoWesolowsk
     WriteProof(iters, result, sock);
 }
 
-form initial_form;
-char form_size[10];
-char form_a[10000];
-char form_b[10000];
+char initial_form_s[100];
 
 void InitSession(tcp::socket& sock) {
     boost::system::error_code error;
@@ -93,22 +90,9 @@ void InitSession(tcp::socket& sock) {
     disc_int_size = atoi(disc_size);
     boost::asio::read(sock, boost::asio::buffer(disc, disc_int_size), error);
 
-    char prefix_len[3];
-    for (int i = 0; i < 2; i++) {
-        memset(prefix_len, 0x00, sizeof(prefix_len));
-        boost::asio::read(sock, boost::asio::buffer(prefix_len, 1), error);
-        int prefix_len_int = prefix_len[0] - '0';
-        memset(form_size, 0x00, sizeof(form_size));
-        boost::asio::read(sock, boost::asio::buffer(form_size, prefix_len_int), error);
-        int form_size_int = atoi(form_size);
-        if (i == 0) {
-            memset(form_a, 0x00, sizeof(form_a));
-            boost::asio::read(sock, boost::asio::buffer(form_a, form_size_int), error);
-        } else {
-            memset(form_b, 0x00, sizeof(form_b));
-            boost::asio::read(sock, boost::asio::buffer(form_b, form_size_int), error);
-        }
-    }
+    char form_size;
+    boost::asio::read(sock, boost::asio::buffer(&form_size, 1), error);
+    boost::asio::read(sock, boost::asio::buffer(initial_form_s, form_size), error);
 
     if (error == boost::asio::error::eof)
         return ; // Connection closed cleanly by peer.
@@ -167,9 +151,7 @@ void SessionFastAlgorithm(tcp::socket& sock) {
         integer D(disc);
         integer L=root(-D, 4);
         PrintInfo("Discriminant = " + to_string(D.impl));
-        integer init_A(form_a);
-        integer init_B(form_b);
-        form f = form::from_abd(init_A, init_B, D);
+        form f = DeserializeForm(D, (uint8_t *)initial_form_s);
         PrintInfo("Initial form: " + to_string(f.a.impl) + " " + to_string(f.b.impl));
         std::vector<std::thread> threads;
         const bool multi_proc_machine = (std::thread::hardware_concurrency() >= 16) ? true : false;
@@ -254,11 +236,7 @@ void SessionTwoWeso(tcp::socket& sock) {
         integer D(disc);
         integer L=root(-D, 4);
         PrintInfo("Discriminant = " + to_string(D.impl));
-        integer init_A(form_a);
-        PrintInfo("Initial A: " + to_string(init_A.impl));
-        integer init_B(form_b);
-        PrintInfo("Initial B: " + to_string(init_B.impl));
-        form f = form::from_abd(init_A, init_B, D);
+        form f = DeserializeForm(D, (uint8_t *)initial_form_s);
 
         // Tell client that I'm ready to get the challenges.
         boost::asio::write(sock, boost::asio::buffer("OK", 2));

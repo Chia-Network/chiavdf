@@ -7,42 +7,22 @@ def test_prove_and_verify():
     discriminant_challenge = secrets.token_bytes(10)
     discriminant_size = 512
     discriminant = create_discriminant(discriminant_challenge, discriminant_size)
-    int_size = (discriminant_size + 16) >> 4
+    form_size = discriminant_size // 32 * 3 + 4
+    initial_el = bytes([0x08])
 
     iters = 1000000
     t1 = time.time()
-    result = prove(discriminant_challenge, str(2), str(1), discriminant_size, iters)
+    result = prove(discriminant_challenge, initial_el, discriminant_size, iters)
     t2 = time.time()
     print(f"IPS: {iters / (t2 - t1)}")
-    result_y_a = int.from_bytes(
-        result[0:int_size],
-        "big",
-        signed=True,
-    )
-    result_y_b = int.from_bytes(
-        result[int_size : 2 * int_size],
-        "big",
-        signed=True,
-    )
-    proof_a = int.from_bytes(
-        result[2 * int_size : 3 * int_size],
-        "big",
-        signed=True,
-    )
-    proof_b = int.from_bytes(
-        result[3 * int_size : 4 * int_size],
-        "big",
-        signed=True,
-    )
+    result_y = result[:form_size]
+    proof = result[form_size : 2 * form_size]
 
     is_valid = verify_wesolowski(
         str(discriminant),
-        str(2),
-        str(1),
-        str(result_y_a),
-        str(result_y_b),
-        str(proof_a),
-        str(proof_b),
+        initial_el,
+        result_y,
+        proof,
         iters,
     )
     assert is_valid
@@ -52,8 +32,7 @@ def test_prove_and_verify():
     t1 = time.time()
     result_2 = prove(
         discriminant_challenge,
-        str(result_y_a),
-        str(result_y_b),
+        result_y,
         discriminant_size,
         iters_2,
     )
@@ -62,36 +41,12 @@ def test_prove_and_verify():
 
     is_valid = verify_wesolowski(
         str(discriminant),
-        str(result_y_a),
-        str(result_y_b),
-        str(
-            int.from_bytes(
-                result_2[0:int_size],
-                "big",
-                signed=True,
-            )
-        ),
-        str(
-            int.from_bytes(
-                result_2[int_size : 2 * int_size],
-                "big",
-                signed=True,
-            )
-        ),
-        str(
-            int.from_bytes(
-                result_2[2 * int_size : 3 * int_size],
-                "big",
-                signed=True,
-            )
-        ),
-        str(
-            int.from_bytes(
-                result_2[3 * int_size : 4 * int_size],
-                "big",
-                signed=True,
-            )
-        ),
+        result_y,
+        result_2[:form_size],
+        result_2[form_size : 2 * form_size],
         iters_2,
     )
     assert is_valid
+
+
+test_prove_and_verify()

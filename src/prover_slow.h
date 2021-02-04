@@ -84,7 +84,7 @@ std::vector<uint8_t> ProveSlow(integer& D, form& x, uint64_t num_iterations) {
     form y = form::from_abd(x.a, x.b, D);
     std::vector<form> intermediates;
     int k, l;
-    int int_size = (D.num_bits() + 16) >> 4;
+    int d_bits = D.num_bits();
 
     ApproximateParameters(num_iterations, l, k);
     for (int i = 0; i < num_iterations; i++) {
@@ -95,8 +95,8 @@ std::vector<uint8_t> ProveSlow(integer& D, form& x, uint64_t num_iterations) {
         reducer.reduce(y);
     } 
     form proof = GenerateWesolowski(y, x, D, reducer, intermediates, num_iterations, k, l);
-    std::vector<uint8_t> result = SerializeForm(y, int_size);
-    std::vector<uint8_t> proof_bytes = SerializeForm(proof, int_size);
+    std::vector<uint8_t> result = SerializeForm(y, d_bits);
+    std::vector<uint8_t> proof_bytes = SerializeForm(proof, d_bits);
     result.insert(result.end(), proof_bytes.begin(), proof_bytes.end());
     return result;
 }

@@ -31,7 +31,8 @@ int main(int argc, char const* argv[]) try
       gcd_128_max_iter=2;
     }
     std::vector<uint8_t> challenge_hash({0, 0, 1, 2, 3, 3, 4, 4});
-    integer D = CreateDiscriminant(challenge_hash, 1024);
+    int d_bits = 1024;
+    integer D = CreateDiscriminant(challenge_hash, d_bits);
 
     if (getenv( "warn_on_corruption_in_production" )!=nullptr) {
         warn_on_corruption_in_production=true;
@@ -54,17 +55,8 @@ int main(int argc, char const* argv[]) try
 
     bool is_valid;
     form x_init = form::generator(D);
-    form y, proof_form;
-    y = form::from_abd(
-        ConvertBytesToInt(proof.y.data(), 0, 65),
-        ConvertBytesToInt(proof.y.data(), 65, 2*65),
-        D
-    );
-    proof_form = form::from_abd(
-        ConvertBytesToInt(proof.proof.data(), 0, 65),
-        ConvertBytesToInt(proof.proof.data(), 65, 2*65),
-        D
-    );
+    form y = DeserializeForm(D, proof.y.data());
+    form proof_form = DeserializeForm(D, proof.proof.data());
     VerifyWesolowskiProof(D, x_init, y, proof_form, iter, is_valid);
     std::cout << "Verify result: " << is_valid << "\n";
     return is_valid ? 0 : 1;

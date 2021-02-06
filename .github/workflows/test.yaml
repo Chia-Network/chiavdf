@@ -13,10 +13,8 @@ jobs:
         config: [ optimized=1, TSAN=1, ASAN=1]
 
     steps:
-    - uses: actions/checkout@v2
-      with:
-        fetch-depth: 0
-        # we need fetch-depth 0 so setuptools_scm can resolve tags
+    - name: Checkout code
+      uses: actions/checkout@v2
 
     - name: Build vdf-client on Ubuntu
       if: startsWith(matrix.os, 'ubuntu')
@@ -31,7 +29,6 @@ jobs:
         brew install boost
         cd src
         make ${{ matrix.config }} -f Makefile.vdf-client
-
 
     - name: Test vdf-client
       if: matrix.config == 'optimized=1'

@@ -55,8 +55,8 @@ int main(int argc, char const* argv[]) try
 
     bool is_valid;
     form x_init = form::generator(D);
-    form y = DeserializeForm(D, proof.y.data());
-    form proof_form = DeserializeForm(D, proof.proof.data());
+    form y = DeserializeForm(D, proof.y.data(), proof.y.size());
+    form proof_form = DeserializeForm(D, proof.proof.data(), proof.proof.size());
     VerifyWesolowskiProof(D, x_init, y, proof_form, iter, is_valid);
     std::cout << "Verify result: " << is_valid << "\n";
     return is_valid ? 0 : 1;

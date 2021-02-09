@@ -54,7 +54,7 @@ integer ConvertBytesToInt(const uint8_t* bytes, int32_t start_index, int32_t end
 bool CheckProofOfTimeNWesolowski(integer D, const uint8_t* x_s, const uint8_t* proof_blob, int32_t proof_blob_len, uint64_t iterations, uint64 disc_size_bits, int32_t depth)
 {
     int form_size = bqfc_get_compr_size(D.num_bits());
-    form x = DeserializeForm(D, x_s);
+    form x = DeserializeForm(D, x_s, form_size);
 
     if (proof_blob_len != 2 * form_size + depth * (8 + 2 * form_size))
         return false;
@@ -64,10 +64,10 @@ bool CheckProofOfTimeNWesolowski(integer D, const uint8_t* x_s, const uint8_t* p
     for (int32_t i = proof_blob_len - 2 * form_size - 8; i >= 2 * form_size; i -= 2 * form_size + 8)
     {
         auto iter_vector = ConvertBytesToInt(proof_blob, i, i + 8).to_vector();
-        form xnew = DeserializeForm(D, &(proof_blob[i + 8]));
+        form xnew = DeserializeForm(D, &proof_blob[i + 8], form_size);
         VerifyWesolowskiProof(D, x,
             xnew,
-            DeserializeForm(D, &(proof_blob[i + 8 + form_size])),
+            DeserializeForm(D, &proof_blob[i + 8 + form_size], form_size),
             iter_vector[0], is_valid);
         if(!is_valid)
             return false;
@@ -76,10 +76,10 @@ bool CheckProofOfTimeNWesolowski(integer D, const uint8_t* x_s, const uint8_t* p
     }
 
     VerifyWesolowskiProof(D, x,
-        DeserializeForm(D, proof_blob),
-        DeserializeForm(D, &proof_blob[form_size]),
+        DeserializeForm(D, proof_blob, form_size),
+        DeserializeForm(D, &proof_blob[form_size], form_size),
         iterations, is_valid);
-   
+
     return is_valid;
 }
 

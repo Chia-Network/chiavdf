@@ -25,9 +25,9 @@ PYBIND11_MODULE(chiavdf, m) {
                                    const string& proof_s,
                                    uint64_t num_iterations) {
         integer D(discriminant);
-        form x = DeserializeForm(D, (const uint8_t *)x_s.data());
-        form y = DeserializeForm(D, (const uint8_t *)y_s.data());
-        form proof = DeserializeForm(D, (const uint8_t *)proof_s.data());
+        form x = DeserializeForm(D, (const uint8_t *)x_s.data(), x_s.size());
+        form y = DeserializeForm(D, (const uint8_t *)y_s.data(), y_s.size());
+        form proof = DeserializeForm(D, (const uint8_t *)proof_s.data(), proof_s.size());
 
         bool is_valid = false;
         VerifyWesolowskiProof(D, x, y, proof, num_iterations, is_valid);
@@ -53,7 +53,7 @@ PYBIND11_MODULE(chiavdf, m) {
                 challenge_hash_bytes,
                 discriminant_size_bits
         );
-        form x = DeserializeForm(D, (const uint8_t *)x_s.data());
+        form x = DeserializeForm(D, (const uint8_t *)x_s.data(), x_s.size());
         auto result = ProveSlow(D, x, num_iterations);
         py::bytes ret = py::bytes(reinterpret_cast<char*>(result.data()), result.size());
         return ret;

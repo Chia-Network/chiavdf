@@ -233,10 +233,13 @@ out:
     return ret;
 }
 
-int bqfc_deserialize(mpz_t out_a, mpz_t out_b, const mpz_t D, const uint8_t *str, size_t d_bits)
+int bqfc_deserialize(mpz_t out_a, mpz_t out_b, const mpz_t D, const uint8_t *str, size_t size, size_t d_bits)
 {
     struct qfb_c f_c;
     int ret;
+
+    if (!size)
+        return -1;
 
     /* "Identity" (1, 1) and "generator" (2, 1) forms are serialized with a
      * special flag set in the first byte. */
@@ -245,6 +248,9 @@ int bqfc_deserialize(mpz_t out_a, mpz_t out_b, const mpz_t D, const uint8_t *str
         mpz_set_ui(out_b, 1);
         return 0;
     }
+
+    if (size != bqfc_get_compr_size(d_bits))
+        return -1;
 
     mpz_inits(f_c.a, f_c.t, f_c.g, f_c.b0, NULL);
     ret = bqfc_deserialize_only(&f_c, str, d_bits);

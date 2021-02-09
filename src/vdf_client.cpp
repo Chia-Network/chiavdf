@@ -151,7 +151,7 @@ void SessionFastAlgorithm(tcp::socket& sock) {
         integer D(disc);
         integer L=root(-D, 4);
         PrintInfo("Discriminant = " + to_string(D.impl));
-        form f = DeserializeForm(D, (uint8_t *)initial_form_s);
+        form f = DeserializeForm(D, (uint8_t *)initial_form_s, sizeof(initial_form_s));
         PrintInfo("Initial form: " + to_string(f.a.impl) + " " + to_string(f.b.impl));
         std::vector<std::thread> threads;
         const bool multi_proc_machine = (std::thread::hardware_concurrency() >= 16) ? true : false;
@@ -236,7 +236,7 @@ void SessionTwoWeso(tcp::socket& sock) {
         integer D(disc);
         integer L=root(-D, 4);
         PrintInfo("Discriminant = " + to_string(D.impl));
-        form f = DeserializeForm(D, (uint8_t *)initial_form_s);
+        form f = DeserializeForm(D, (uint8_t *)initial_form_s, sizeof(initial_form_s));
 
         // Tell client that I'm ready to get the challenges.
         boost::asio::write(sock, boost::asio::buffer("OK", 2));

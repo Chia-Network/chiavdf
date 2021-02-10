@@ -78,7 +78,7 @@ void CreateAndWriteProofTwoWeso(integer& D, form f, uint64_t iters, TwoWesolowsk
     WriteProof(iters, result, sock);
 }
 
-char initial_form_s[100];
+char initial_form_s[BQFC_FORM_SIZE];
 
 void InitSession(tcp::socket& sock) {
     boost::system::error_code error;

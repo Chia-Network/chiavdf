@@ -199,11 +199,7 @@ void SessionOneWeso(tcp::socket& sock) {
         integer D(disc);
         integer L=root(-D, 4);
         PrintInfo("Discriminant = " + to_string(D.impl));
-        integer init_A(form_a);
-        PrintInfo("Initial A: " + to_string(init_A.impl));
-        integer init_B(form_b);
-        PrintInfo("Initial B: " + to_string(init_B.impl));
-        form f = form::from_abd(init_A, init_B, D);
+        form f = DeserializeForm(D, (uint8_t *)initial_form_s, sizeof(initial_form_s));
         // Tell client that I'm ready to get the challenges.
         boost::asio::write(sock, boost::asio::buffer("OK", 2));
 

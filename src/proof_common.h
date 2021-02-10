@@ -1,6 +1,7 @@
 #ifndef PROOF_COMMON_H
 #define PROOF_COMMON_H
 #include "Reducer.h"
+#include "bqfc.c"
 
 std::vector<unsigned char> ConvertIntegerToBytes(integer x, uint64_t num_bytes) {
     std::vector<unsigned char> bytes;
@@ -56,12 +57,22 @@ integer HashPrime(std::vector<uint8_t> seed, int length, vector<int> bitmask) {
     }
 }
 
-std::vector<unsigned char> SerializeForm(form &y, int int_size) {
+std::vector<unsigned char> SerializeForm(form &y, int d_bits)
+{
     y.reduce();
-    std::vector<unsigned char> res = ConvertIntegerToBytes(y.a, int_size);
-    std::vector<unsigned char> b_res = ConvertIntegerToBytes(y.b, int_size);
-    res.insert(res.end(), b_res.begin(), b_res.end());
+    int form_size = bqfc_get_compr_size(d_bits);
+    std::vector<unsigned char> res(form_size);
+    bqfc_serialize(res.data(), y.a.impl, y.b.impl, d_bits);
     return res;
+}
+
+form DeserializeForm(const integer &D, const uint8_t *bytes, size_t size)
+{
+    integer a, b;
+    if (bqfc_deserialize(a.impl, b.impl, D.impl, bytes, size, D.num_bits())) {
+        throw std::runtime_error("Deserializing compressed form failed");
+    }
+    return form::from_abd(a, b, D);
 }
 
 integer FastPow(uint64_t a, uint64_t b, integer& c) {
@@ -71,9 +82,9 @@ integer FastPow(uint64_t a, uint64_t b, integer& c) {
 }
 
 integer GetB(const integer& D, form &x, form& y) {
-    int int_size = (D.num_bits() + 16) >> 4;
-    std::vector<unsigned char> serialization = SerializeForm(x, int_size);
-    std::vector<unsigned char> serialization_y = SerializeForm(y, int_size);
+    int d_bits = D.num_bits();
+    std::vector<unsigned char> serialization = SerializeForm(x, d_bits);
+    std::vector<unsigned char> serialization_y = SerializeForm(y, d_bits);
     serialization.insert(serialization.end(), serialization_y.begin(), serialization_y.end());
     return HashPrime(serialization, 264, {263});
 }

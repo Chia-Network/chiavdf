@@ -60,8 +60,7 @@ integer HashPrime(std::vector<uint8_t> seed, int length, vector<int> bitmask) {
 std::vector<unsigned char> SerializeForm(form &y, int d_bits)
 {
     y.reduce();
-    int form_size = bqfc_get_compr_size(d_bits);
-    std::vector<unsigned char> res(form_size);
+    std::vector<unsigned char> res(BQFC_FORM_SIZE);
     bqfc_serialize(res.data(), y.a.impl, y.b.impl, d_bits);
     return res;
 }

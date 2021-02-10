@@ -216,9 +216,11 @@ int bqfc_serialize(uint8_t *out_str, mpz_t a, mpz_t b, size_t d_bits)
 {
     struct qfb_c f_c;
     int ret;
+    int valid_size = bqfc_get_compr_size(d_bits);
 
     if (!mpz_cmp_ui(b, 1) && mpz_cmp_ui(a, 2) <= 0) {
         out_str[0] = !mpz_cmp_ui(a, 2) ? BQFC_IS_GEN : BQFC_IS_1;
+        memset(&out_str[1], 0, BQFC_FORM_SIZE - 1);
         return 0;
     }
 
@@ -228,6 +230,8 @@ int bqfc_serialize(uint8_t *out_str, mpz_t a, mpz_t b, size_t d_bits)
         goto out;
 
     ret = bqfc_serialize_only(out_str, &f_c, d_bits);
+    if (valid_size != BQFC_FORM_SIZE)
+        memset(&out_str[valid_size], 0, BQFC_FORM_SIZE - valid_size);
 out:
     mpz_clears(f_c.a, f_c.t, f_c.g, f_c.b0, NULL);
     return ret;
@@ -238,7 +242,7 @@ int bqfc_deserialize(mpz_t out_a, mpz_t out_b, const mpz_t D, const uint8_t *str
     struct qfb_c f_c;
     int ret;
 
-    if (!size)
+    if (size != BQFC_FORM_SIZE)
         return -1;
 
     /* "Identity" (1, 1) and "generator" (2, 1) forms are serialized with a
@@ -248,9 +252,6 @@ int bqfc_deserialize(mpz_t out_a, mpz_t out_b, const mpz_t D, const uint8_t *str
         mpz_set_ui(out_b, 1);
         return 0;
     }
-
-    if (size != bqfc_get_compr_size(d_bits))
-        return -1;
 
     mpz_inits(f_c.a, f_c.t, f_c.g, f_c.b0, NULL);
     ret = bqfc_deserialize_only(&f_c, str, d_bits);

@@ -15,6 +15,9 @@ struct qfb_c {
     bool b_sign;
 };
 
+#define BQFC_MAX_D_BITS 1024
+/* Force all forms to have the same size (100 bytes). */
+#define BQFC_FORM_SIZE ((BQFC_MAX_D_BITS + 31) / 32 * 3 + 4)
 
 int bqfc_compr(struct qfb_c *out_c, mpz_t a, mpz_t b);
 

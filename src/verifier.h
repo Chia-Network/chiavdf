@@ -53,7 +53,7 @@ integer ConvertBytesToInt(const uint8_t* bytes, int32_t start_index, int32_t end
 
 bool CheckProofOfTimeNWesolowski(integer D, const uint8_t* x_s, const uint8_t* proof_blob, int32_t proof_blob_len, uint64_t iterations, uint64 disc_size_bits, int32_t depth)
 {
-    int form_size = bqfc_get_compr_size(D.num_bits());
+    int form_size = BQFC_FORM_SIZE;
     form x = DeserializeForm(D, x_s, form_size);
 
     if (proof_blob_len != 2 * form_size + depth * (8 + 2 * form_size))

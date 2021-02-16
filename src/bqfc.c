@@ -240,6 +240,17 @@ out:
     return ret;
 }
 
+static int bqfc_verify_canon(mpz_t a, mpz_t b, const uint8_t *str, size_t d_bits)
+{
+    uint8_t canon_str[BQFC_FORM_SIZE];
+    int ret = bqfc_serialize(canon_str, a, b, d_bits);
+
+    if (ret)
+        return ret;
+
+    return memcmp(canon_str, str, BQFC_FORM_SIZE);
+}
+
 int bqfc_deserialize(mpz_t out_a, mpz_t out_b, const mpz_t D, const uint8_t *str, size_t size, size_t d_bits)
 {
     struct qfb_c f_c;
@@ -262,6 +273,10 @@ int bqfc_deserialize(mpz_t out_a, mpz_t out_b, const mpz_t D, const uint8_t *str
         goto out;
 
     ret = bqfc_decompr(out_a, out_b, D, &f_c);
+    if (ret)
+        goto out;
+
+    ret = bqfc_verify_canon(out_a, out_b, str, d_bits);
 out:
     mpz_clears(f_c.a, f_c.t, f_c.g, f_c.b0, NULL);
     return ret;

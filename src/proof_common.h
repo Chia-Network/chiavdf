@@ -56,7 +56,11 @@ form DeserializeForm(const integer &D, const uint8_t *bytes, size_t size)
     if (bqfc_deserialize(a.impl, b.impl, D.impl, bytes, size, D.num_bits())) {
         throw std::runtime_error("Deserializing compressed form failed");
     }
-    return form::from_abd(a, b, D);
+    form f = form::from_abd(a, b, D);
+    if (!f.is_reduced()) {
+        throw std::runtime_error("Form is not reduced");
+    }
+    return f;
 }
 
 integer FastPow(uint64_t a, uint64_t b, integer& c) {

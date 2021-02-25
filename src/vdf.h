@@ -339,7 +339,7 @@ Proof ProveTwoWeso(integer& D, form x, uint64_t iters, uint64_t done_iterations,
     std::vector<unsigned char> tmp = ConvertIntegerToBytes(integer(iterations1), 8);
     proof_bytes.insert(proof_bytes.end(), tmp.begin(), tmp.end());
     tmp.clear();
-    tmp = SerializeForm(y1, d_bits);
+    tmp = ConvertIntegerToBytes(GetB(D, x, y1), B_bytes);
     proof_bytes.insert(proof_bytes.end(), tmp.begin(), tmp.end());
     tmp.clear();
     tmp = SerializeForm(proof, d_bits);
@@ -498,7 +498,7 @@ class ProverManager {
             std::vector<unsigned char> tmp = ConvertIntegerToBytes(integer(proof_segments[i].length), 8);
             proof_serialized.insert(proof_serialized.end(), tmp.begin(), tmp.end());
             tmp.clear();
-            tmp = SerializeForm(proof_segments[i].y, d_bits);
+            tmp = ConvertIntegerToBytes(GetB(D, proof_segments[i].x, proof_segments[i].y), B_bytes);
             proof_serialized.insert(proof_serialized.end(), tmp.begin(), tmp.end());
             tmp.clear();
             tmp = SerializeForm(proof_segments[i].proof, d_bits);

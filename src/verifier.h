@@ -11,6 +11,18 @@
 
 const uint8_t DEFAULT_ELEMENT[] = { 0x08 };
 
+int VerifyWesoSegment(integer &D, form x, form proof, integer &B, uint64_t iters, form &out_y)
+{
+    PulmarkReducer reducer;
+    integer L = root(-D, 4);
+    integer r = FastPow(2, iters, B);
+    form f1 = FastPowFormNucomp(proof, D, B, L, reducer);
+    form f2 = FastPowFormNucomp(x, D, r, L, reducer);
+    out_y = f1 * f2;
+
+    return B == GetB(D, x, out_y) ? 0 : -1;
+}
+
 void VerifyWesolowskiProof(integer &D, form x, form y, form proof, uint64_t iters, bool &is_valid)
 {
     PulmarkReducer reducer;
@@ -54,23 +66,23 @@ integer ConvertBytesToInt(const uint8_t* bytes, int32_t start_index, int32_t end
 bool CheckProofOfTimeNWesolowski(integer D, const uint8_t* x_s, const uint8_t* proof_blob, int32_t proof_blob_len, uint64_t iterations, uint64 disc_size_bits, int32_t depth)
 {
     int form_size = BQFC_FORM_SIZE;
+    int segment_len = 8 + B_bytes + form_size;
+    int i = proof_blob_len - segment_len;
     form x = DeserializeForm(D, x_s, form_size);
 
-    if (proof_blob_len != 2 * form_size + depth * (8 + 2 * form_size))
+    if (proof_blob_len != 2 * form_size + depth * segment_len)
         return false;
 
     // Loop depth times
     bool is_valid = false;
-    for (int32_t i = proof_blob_len - 2 * form_size - 8; i >= 2 * form_size; i -= 2 * form_size + 8)
-    {
+    for (; i >= 2 * form_size; i -= segment_len) {
         auto iter_vector = ConvertBytesToInt(proof_blob, i, i + 8).to_vector();
-        form xnew = DeserializeForm(D, &proof_blob[i + 8], form_size);
-        VerifyWesolowskiProof(D, x,
-            xnew,
-            DeserializeForm(D, &proof_blob[i + 8 + form_size], form_size),
-            iter_vector[0], is_valid);
-        if(!is_valid)
+        form proof = DeserializeForm(D, &proof_blob[i + 8 + B_bytes], form_size);
+        integer B(&proof_blob[i + 8], B_bytes);
+        form xnew;
+        if (VerifyWesoSegment(D, x, proof, B, iter_vector[0], xnew))
             return false;
+
         x=xnew;
         iterations=iterations - iter_vector[0];
     }

@@ -3,6 +3,9 @@
 #include "Reducer.h"
 #include "bqfc.c"
 
+const int B_bits = 264;
+const int B_bytes = (B_bits + 7) / 8;
+
 std::vector<unsigned char> ConvertIntegerToBytes(integer x, uint64_t num_bytes) {
     std::vector<unsigned char> bytes;
     bool negative = false;
@@ -85,7 +88,7 @@ integer GetB(const integer& D, form &x, form& y) {
     std::vector<unsigned char> serialization = SerializeForm(x, d_bits);
     std::vector<unsigned char> serialization_y = SerializeForm(y, d_bits);
     serialization.insert(serialization.end(), serialization_y.begin(), serialization_y.end());
-    return HashPrime(serialization, 264, {263});
+    return HashPrime(serialization, B_bits, {B_bits - 1});
 }
 
 class PulmarkReducer {

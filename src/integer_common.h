@@ -168,6 +168,11 @@ struct integer {
         mpz_import(impl, data.size(), -1, 8, 0, 0, &data[0]);
     }
 
+    integer(const uint8_t *bytes, size_t size) {
+        mpz_init(impl);
+        mpz_import(impl, size, 1, 1, 1, 0, bytes);
+    }
+
     //lsb first
     vector<uint64> to_vector() const {
         vector<uint64> res;

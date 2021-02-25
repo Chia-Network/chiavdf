@@ -17,7 +17,7 @@ Proof CreateProof(integer D, ProverManager& pm, uint64_t iteration) {
         if (CheckProofOfTimeNWesolowski(D, DEFAULT_ELEMENT, bytes.data(), bytes.size(), iteration, 1024, proof.witness_type)) {
             std::cout << "Correct proof";
         } else {
-            std::cout << "Incorrect proof";
+            std::cout << "Incorrect proof\n";
             std::exit(1);
         }
         std::cout << " (iteration: " << iteration << ").\n";

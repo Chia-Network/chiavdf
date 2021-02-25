@@ -183,6 +183,9 @@ int bqfc_deserialize_only(struct qfb_c *out_c, const uint8_t *str, size_t d_bits
     d_bits = (d_bits + 31) & ~(size_t)31;
 
     g_size = str[1];
+    if (g_size >= d_bits / 32)
+        return -1;
+
     offset = 2;
 
     bytes = d_bits / 16 - g_size;

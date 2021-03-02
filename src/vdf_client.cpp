@@ -60,8 +60,8 @@ void CreateAndWriteProof(ProverManager& pm, uint64_t iteration, std::atomic<bool
     WriteProof(iteration, result, sock);
 }
 
-void CreateAndWriteProofOneWeso(uint64_t iters, integer& D, OneWesolowskiCallback* weso, std::atomic<bool>& stop_signal, tcp::socket& sock) {
-    Proof result = ProveOneWesolowski(iters, D, weso, stop_signal);
+void CreateAndWriteProofOneWeso(uint64_t iters, integer& D, form f, OneWesolowskiCallback* weso, std::atomic<bool>& stop_signal, tcp::socket& sock) {
+    Proof result = ProveOneWesolowski(iters, D, f, weso, stop_signal);
     if (stop_signal) {
         PrintInfo("Got stop signal before completing the proof!");
         return ;
@@ -198,9 +198,8 @@ void SessionOneWeso(tcp::socket& sock) {
     try {
         integer D(disc);
         integer L=root(-D, 4);
-        form f=form::generator(D);
         PrintInfo("Discriminant = " + to_string(D.impl));
-
+        form f = DeserializeForm(D, (uint8_t *)initial_form_s, sizeof(initial_form_s));
         // Tell client that I'm ready to get the challenges.
         boost::asio::write(sock, boost::asio::buffer("OK", 2));
 
@@ -210,10 +209,10 @@ void SessionOneWeso(tcp::socket& sock) {
             return;
         }
         std::atomic<bool> stopped(false);
-        WesolowskiCallback* weso = new OneWesolowskiCallback(D, iter);
+        WesolowskiCallback* weso = new OneWesolowskiCallback(D, f, iter);
         FastStorage* fast_storage = NULL;
         std::thread vdf_worker(repeated_square, f, std::ref(D), std::ref(L), weso, fast_storage, std::ref(stopped));
-        std::thread th_prover(CreateAndWriteProofOneWeso, iter, std::ref(D), (OneWesolowskiCallback*)weso, std::ref(stopped), std::ref(sock));
+        std::thread th_prover(CreateAndWriteProofOneWeso, iter, std::ref(D), f, (OneWesolowskiCallback*)weso, std::ref(stopped), std::ref(sock));
         iter = ReadIteration(sock);
         while (iter != 0) {
             std::cout << "Warning: did not receive stop signal\n";

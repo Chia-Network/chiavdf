@@ -43,7 +43,7 @@ integer HashPrime(std::vector<uint8_t> seed, int length, vector<int> bitmask) {
             // Increment sprout by 1
             for (int i = (int) sprout.size() - 1; i >= 0; --i) {
                 sprout[i]++;
-                if (!sprout[i])
+                if (sprout[i])
                     break;
             }
             picosha2::hash256(sprout.begin(), sprout.end(), hash.begin(), hash.end());
@@ -55,6 +55,8 @@ integer HashPrime(std::vector<uint8_t> seed, int length, vector<int> bitmask) {
         integer p(blob);  // p = 7 (mod 8), 2^1023 <= p < 2^1024
         for (int b: bitmask)
             p.set_bit(b, true);
+        // Force the number to be odd
+        p.set_bit(0, true);
         if (p.prime())
             return p;
     }

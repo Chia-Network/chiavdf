@@ -44,7 +44,7 @@ jobs:
         python -m build --sdist --outdir dist .
 
     - name: Build ${{ matrix.os }} wheels and test
-      uses: joerick/cibuildwheel@v1.9.0
+      uses: joerick/cibuildwheel@v1.10.0
       with:
         output-dir: dist
       env:
@@ -71,7 +71,7 @@ jobs:
         CIBW_BEFORE_BUILD_LINUX: >
           python -m pip install --upgrade pip
         # CIBW_ARCHS_MACOS: x86_64 arm64 universal2
-        CIBW_ARCHS_MACOS: x86_64 universal2
+        CIBW_ARCHS_MACOS: x86_64
         CIBW_TEST_SKIP: '*_arm64 *_universal2:arm64'
         CIBW_BEFORE_ALL_MACOS: >
           brew install boost

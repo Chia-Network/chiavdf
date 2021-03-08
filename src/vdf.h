@@ -335,15 +335,14 @@ Proof ProveTwoWeso(integer& D, form x, uint64_t iters, uint64_t done_iterations,
     int d_bits = D.num_bits();
     Proof final_proof;
     final_proof.y = proof2.y;
-    std::vector<unsigned char> proof_bytes(proof2.proof);
-    std::vector<unsigned char> tmp = ConvertIntegerToBytes(integer(iterations1), 8);
-    proof_bytes.insert(proof_bytes.end(), tmp.begin(), tmp.end());
-    tmp.clear();
-    tmp = ConvertIntegerToBytes(GetB(D, x, y1), B_bytes);
-    proof_bytes.insert(proof_bytes.end(), tmp.begin(), tmp.end());
-    tmp.clear();
-    tmp = SerializeForm(proof, d_bits);
-    proof_bytes.insert(proof_bytes.end(), tmp.begin(), tmp.end());
+
+    uint8_t bytes[8];
+    Int64ToBytes(bytes, iterations1);
+    std::vector<uint8_t> proof_bytes(proof2.proof);
+
+    VectorAppendArray(proof_bytes, bytes, sizeof(bytes));
+    VectorAppend(proof_bytes, GetB(D, x, y1).to_bytes());
+    VectorAppend(proof_bytes, SerializeForm(proof, d_bits));
     final_proof.proof = proof_bytes;
     if (depth == 0) {
         final_proof.witness_type = 2;
@@ -487,22 +486,20 @@ class ProverManager {
         if (!last_segment.is_empty) {
             proof_segments.emplace_back(last_segment);
         }
-        // y, proof, [iters1, y1, proof1], [iters2, y2, proof2], ...
+        // y, proof, [iters1, B1, proof1], [iters2, B2, proof2], ...
         int d_bits = D.num_bits();
         std::vector<unsigned char> y_serialized;
         std::vector<unsigned char> proof_serialized;
-        // Match ClassGroupElement type from the blockchain.
+        // Match ClassgroupElement type from the blockchain.
         y_serialized = SerializeForm(y, d_bits);
         proof_serialized = SerializeForm(proof_segments[proof_segments.size() - 1].proof, d_bits);
         for (int i = proof_segments.size() - 2; i >= 0; i--) {
-            std::vector<unsigned char> tmp = ConvertIntegerToBytes(integer(proof_segments[i].length), 8);
-            proof_serialized.insert(proof_serialized.end(), tmp.begin(), tmp.end());
-            tmp.clear();
-            tmp = ConvertIntegerToBytes(GetB(D, proof_segments[i].x, proof_segments[i].y), B_bytes);
-            proof_serialized.insert(proof_serialized.end(), tmp.begin(), tmp.end());
-            tmp.clear();
-            tmp = SerializeForm(proof_segments[i].proof, d_bits);
-            proof_serialized.insert(proof_serialized.end(), tmp.begin(), tmp.end());
+            uint8_t bytes[8];
+            Int64ToBytes(bytes, proof_segments[i].length);
+            VectorAppendArray(proof_serialized, bytes, sizeof(bytes));
+
+            VectorAppend(proof_serialized, GetB(D, proof_segments[i].x, proof_segments[i].y).to_bytes());
+            VectorAppend(proof_serialized, SerializeForm(proof_segments[i].proof, d_bits));
         }
         Proof proof(y_serialized, proof_serialized);
         proof.witness_type = proof_segments.size() - 1;

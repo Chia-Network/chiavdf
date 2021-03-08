@@ -3,6 +3,34 @@
 
 #include "vdf_new.h"
 
+/* Platform-specific byte swap macros. */
+#if defined(_WIN32)
+#include <cstdlib>
+
+#define bswap_16(x) _byteswap_ushort(x)
+#define bswap_32(x) _byteswap_ulong(x)
+#define bswap_64(x) _byteswap_uint64(x)
+#elif defined(__APPLE__)
+
+#include <libkern/OSByteOrder.h>
+
+#define bswap_16(x) OSSwapInt16(x)
+#define bswap_32(x) OSSwapInt32(x)
+#define bswap_64(x) OSSwapInt64(x)
+#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
+# if defined(__OpenBSD__)
+#  include <machine/endian.h>
+# else
+#  include <sys/endian.h>
+# endif
+#define bswap_16(x) bswap16(x)
+#define bswap_32(x) bswap32(x)
+#define bswap_64(x) bswap64(x)
+#else
+#include <byteswap.h>
+#endif
+
+
 struct Segment {
     uint64_t start;
     uint64_t length;
@@ -51,6 +79,37 @@ struct Segment {
         return index;
     }
 };
+
+void Int64ToBytes(uint8_t *result, uint64_t input)
+{
+    uint64_t r = bswap_64(input);
+    memcpy(result, &r, sizeof(r));
+}
+
+void Int32ToBytes(uint8_t *result, uint32_t input)
+{
+    uint32_t r = bswap_32(input);
+    memcpy(result, &r, sizeof(r));
+}
+
+uint64_t BytesToInt64(const uint8_t *bytes)
+{
+    uint64_t i;
+    memcpy(&i, bytes, sizeof(i));
+    return bswap_64(i);
+}
+
+template<typename T>
+void VectorAppend(std::vector<T> &dst, const std::vector<T> &src)
+{
+    dst.insert(dst.end(), src.begin(), src.end());
+}
+
+template<typename T>
+void VectorAppendArray(std::vector<T> &dst, const T *src, size_t len)
+{
+    dst.insert(dst.end(), src, src + len);
+}
 
 std::string BytesToStr(const std::vector<unsigned char> &in)
 {

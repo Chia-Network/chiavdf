@@ -24,28 +24,28 @@ int disc_int_size;
 
 void WriteProof(uint64_t iteration, Proof& result, tcp::socket& sock) {
     // Writes the number of iterations
-    std::vector<unsigned char> bytes = ConvertIntegerToBytes(integer(iteration), 8);
+    uint8_t int_bytes[8];
+    std::vector<uint8_t> bytes;
+    Int64ToBytes(int_bytes, iteration);
+    VectorAppendArray(bytes, int_bytes, sizeof(int_bytes));
 
     // Writes the y, with prepended size
-    std::vector<unsigned char> y_size = ConvertIntegerToBytes(integer(result.y.size()), 8);
-    bytes.insert(bytes.end(), y_size.begin(), y_size.end());
-    bytes.insert(bytes.end(), result.y.begin(), result.y.end());
+    Int64ToBytes(int_bytes, result.y.size());
+    VectorAppendArray(bytes, int_bytes, sizeof(int_bytes));
+    VectorAppend(bytes, result.y);
 
     // Writes the witness type.
-    std::vector<unsigned char> witness_type = ConvertIntegerToBytes(integer(result.witness_type), 1);
-    bytes.insert(bytes.end(), witness_type.begin(), witness_type.end());
+    bytes.push_back(result.witness_type);
 
-    bytes.insert(bytes.end(), result.proof.begin(), result.proof.end());
+    VectorAppend(bytes, result.proof);
     std::string str_result = BytesToStr(bytes);
 
-    const uint32_t length = str_result.size();
-    std::vector<unsigned char> prefix_bytes = ConvertIntegerToBytes(integer(length), 4);
-    std::string prefix = BytesToStr(prefix_bytes);
+    Int32ToBytes(int_bytes, str_result.size());
 
     PrintInfo("Sending proof");
     {
         std::lock_guard<std::mutex> lock(socket_mutex);
-        boost::asio::write(sock, boost::asio::buffer(prefix_bytes, 4));
+        boost::asio::write(sock, boost::asio::buffer(int_bytes, 4));
         boost::asio::write(sock, boost::asio::buffer(str_result.c_str(), str_result.size()));
     }
     PrintInfo("Sent proof");

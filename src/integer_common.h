@@ -185,6 +185,13 @@ struct integer {
         return res;
     }
 
+    vector<uint8_t> to_bytes() const {
+        vector<uint8_t> res((mpz_sizeinbase(impl, 2) + 7) / 8);
+
+        mpz_export(res.data(), NULL, 1, 1, 0, 0, impl);
+        return res;
+    }
+
     integer& operator=(const integer& t) {
         mpz_set(impl, t.impl);
         return *this;

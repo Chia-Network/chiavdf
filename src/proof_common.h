@@ -6,26 +6,6 @@
 const int B_bits = 264;
 const int B_bytes = (B_bits + 7) / 8;
 
-std::vector<unsigned char> ConvertIntegerToBytes(integer x, uint64_t num_bytes) {
-    std::vector<unsigned char> bytes;
-    bool negative = false;
-    if (x < 0) {
-        x = abs(x);
-        x = x - integer(1);
-        negative = true;
-    }
-    for (int iter = 0; iter < num_bytes; iter++) {
-        auto byte = (x % integer(256)).to_vector();
-        if (byte.empty()) byte.push_back(0);
-        if (negative)
-            byte[0] ^= 255;
-        bytes.push_back(byte[0]);
-        x = x / integer(256);
-    }
-    std::reverse(bytes.begin(), bytes.end());
-    return bytes;
-}
-
 
 // Generates a random psuedoprime using the hash and check method:
 // Randomly chooses x with bit-length `length`, then applies a mask

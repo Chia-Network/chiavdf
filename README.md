@@ -11,7 +11,7 @@
 
 ## Building a wheel
 
-Compiling chiavdf requires cmake, boost and GMP.
+Compiling chiavdf requires cmake, boost and GMP/MPIR.
 
 ```bash
 python3 -m venv venv

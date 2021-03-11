@@ -1,6 +1,7 @@
-from chiavdf import prove, verify_wesolowski, create_discriminant
 import secrets
 import time
+
+from chiavdf import create_discriminant, prove, verify_wesolowski
 
 
 def test_prove_and_verify():

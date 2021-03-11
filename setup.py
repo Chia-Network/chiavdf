@@ -1,16 +1,15 @@
 import os
+import platform
 import re
 import shutil
-import sys
-import platform
 import subprocess
-
+import sys
 from distutils.command.build import build  # type: ignore
 from distutils.command.install import install
 from distutils.version import LooseVersion
-from setuptools.command.build_ext import build_ext
-from setuptools import setup, setuptools, Extension, Command
 
+from setuptools import Command, Extension, setup, setuptools
+from setuptools.command.build_ext import build_ext
 
 BUILD_HOOKS = []
 INSTALL_HOOKS = []

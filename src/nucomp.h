@@ -195,6 +195,11 @@ void qfb_nucomp(qfb_t r, const qfb_t f, const qfb_t g, mpz_t& D, mpz_t& L)
 void nucomp_form(form &a, form &b, form &c, integer &D, integer &L) {
     qfb fr, fr2, fr3;
 
+    // Initialize to zeros
+    memset(fr, 0x00, sizeof(fr));
+    memset(fr2, 0x00, sizeof(fr2));
+    memset(fr3, 0x00, sizeof(fr3));
+
     *fr.a = *a.a.impl;
     *fr.b = *a.b.impl;
     *fr.c = *a.c.impl;
@@ -328,6 +333,10 @@ void qfb_nudupl(qfb_t r, qfb_t f, mpz_t D, mpz_t L)
 void nudupl_form(form &a, form &b, integer &D, integer &L)
 {
     qfb fr, fr2;
+
+    // Initialize to zeros
+    memset(fr, 0x00 ,sizeof(fr));
+    memset(fr2, 0x00 ,sizeof(fr2));
 
     *fr.a = *a.a.impl;
     *fr.b = *a.b.impl;

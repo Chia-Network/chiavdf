@@ -335,8 +335,8 @@ void nudupl_form(form &a, form &b, integer &D, integer &L)
     qfb fr, fr2;
 
     // Initialize to zeros
-    memset(fr, 0x00 ,sizeof(fr));
-    memset(fr2, 0x00 ,sizeof(fr2));
+    memset(fr, 0x00, sizeof(fr));
+    memset(fr2, 0x00, sizeof(fr2));
 
     *fr.a = *a.a.impl;
     *fr.b = *a.b.impl;

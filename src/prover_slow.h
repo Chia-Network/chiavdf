@@ -38,6 +38,8 @@ form GenerateWesolowski(form &y, form &x_init,
 
     uint64_t k1 = k / 2;
     uint64_t k0 = k - k1;
+    assert(k > 0);
+    assert(l > 0);
 
     form x = form::identity(D);
 
@@ -48,12 +50,10 @@ form GenerateWesolowski(form &y, form &x_init,
         for (uint64_t i = 0; i < (1 << k); i++)
             ys[i] = form::identity(D);
 
-        form *tmp;
-        for (uint64_t i = 0; i < ceil(1.0 * num_iterations / (k * l)); i++) {
+        for (uint64_t i = 0; i < ceil(double(num_iterations)  / (k * l)); i++) {
             if (num_iterations >= k * (i * l + j + 1)) {
                 uint64_t b = GetBlock(i*l + j, k, num_iterations, B);
-                tmp = &intermediates[i];
-                nucomp_form(ys[b], ys[b], *tmp, D, L);
+                nucomp_form(ys[b], ys[b], intermediates[i], D, L);
             }
         }
         for (uint64_t b1 = 0; b1 < (1 << k1); b1++) {
@@ -87,6 +87,8 @@ std::vector<uint8_t> ProveSlow(integer& D, form& x, uint64_t num_iterations) {
     int d_bits = D.num_bits();
 
     ApproximateParameters(num_iterations, l, k);
+    if (k <= 0) k = 1;
+    if (l <= 0) l = 1;
     for (int i = 0; i < num_iterations; i++) {
         if (i % (k * l) == 0) {
             intermediates.push_back(y);

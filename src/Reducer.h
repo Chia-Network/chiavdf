@@ -23,10 +23,22 @@ limitations under the License.
 
 #include "ClassGroup.h"
 
+#ifdef __has_attribute
+# define HAS_ATTRIBUTE(x) __has_attribute(x)
+#else
+# define HAS_ATTRIBUTE(x) 0
+#endif
+
+#if HAS_ATTRIBUTE(weak)
+# define WEAK __attribute__((weak))
+#else
+# define WEAK
+#endif
+
 extern "C" {
 int has_lzcnt_hard();
 unsigned int lzcnt64_soft(unsigned long long x);
-unsigned int lzcnt64_hard(unsigned long long x);
+unsigned int lzcnt64_hard(unsigned long long x) WEAK;
 }
 
 /** constants utilized in reduction algorithm */

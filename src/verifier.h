@@ -41,15 +41,10 @@ void VerifyWesolowskiProof(integer &D, form x, form y, form proof, uint64_t iter
     }
 }
 
-bool CheckProofOfTimeNWesolowski(integer D, const uint8_t* x_s, const uint8_t* proof_blob, int32_t proof_blob_len, uint64_t iterations, uint64 disc_size_bits, int32_t depth)
-{
+bool CheckProofOfTimeNWesolowskiCommon(integer& D, form& x, const uint8_t* proof_blob, int32_t proof_blob_len, uint64_t& iterations, int depth) {
     int form_size = BQFC_FORM_SIZE;
     int segment_len = 8 + B_bytes + form_size;
     int i = proof_blob_len - segment_len;
-    form x = DeserializeForm(D, x_s, form_size);
-
-    if (proof_blob_len != 2 * form_size + depth * segment_len)
-        return false;
 
     // Loop depth times
     bool is_valid = false;
@@ -64,13 +59,61 @@ bool CheckProofOfTimeNWesolowski(integer D, const uint8_t* x_s, const uint8_t* p
         x = xnew;
         iterations -= segment_iters;
     }
+    return true;
+}
 
+bool CheckProofOfTimeNWesolowski(integer D, const uint8_t* x_s, const uint8_t* proof_blob, int32_t proof_blob_len, uint64_t iterations, uint64 disc_size_bits, int32_t depth) {
+    form x = DeserializeForm(D, x_s, form_size);
+    int form_size = BQFC_FORM_SIZE;
+    int segment_len = 8 + B_bytes + form_size;
+    if (proof_blob_len != 2 * form_size + depth * segment_len) {
+        return false;
+    }
+    bool is_valid = CheckProofOfTimeNWesolowskiCommon(D, x, proof_blob, proof_blob_len, iterations, depth);
+    if (is_valid == false) {
+        return false;
+    }
     VerifyWesolowskiProof(D, x,
         DeserializeForm(D, proof_blob, form_size),
         DeserializeForm(D, &proof_blob[form_size], form_size),
         iterations, is_valid);
 
     return is_valid;
+}
+
+bool CheckProofOfTimeNWesolowskiYCompressed(integer D, integer B, const uint8_t* x_s, const uint8_t* proof_blob, int32_t proof_blob_len, uint64_t iterations, uint64 disc_size_bits, int32_t depth) {
+    form x = DeserializeForm(D, x_s, form_size);
+    int form_size = BQFC_FORM_SIZE;
+    int segment_len = 8 + B_bytes + form_size;
+    if (proof_blob_len != form_size + depth * segment_len) {
+        return false;
+    }
+    bool is_valid = CheckProofOfTimeNWesolowskiCommon(D, x, proof_blob, proof_blob_len, iterations, depth);
+    if (is_valid == false) {
+        return false;
+    }
+    proof = DeserializeForm(D, proof_blob, form_size);
+    form tmp;
+    if (VerifyWesoSegment(D, x, proof, B, iterations, tmp) == -1) {
+        return false;
+    }
+    return true;
+}
+
+// TODO: Perhaps move?
+integer GetBFromProof(integer D, const uint8_t* x_s, const uint8_t* proof_blob, int32_t proof_blob_len, uint64_t iterations, uint64 disc_size_bits, int32_t depth) {
+    form x = DeserializeForm(D, x_s, form_size);
+    int form_size = BQFC_FORM_SIZE;
+    int segment_len = 8 + B_bytes + form_size;
+    if (proof_blob_len != 2 * form_size + depth * segment_len) {
+        throw std::runtime_error("Invalid proof.");
+    }
+    bool is_valid = CheckProofOfTimeNWesolowskiCommon(D, x, proof_blob, proof_blob_len, iterations, depth);
+    if (is_valid == false) {
+        throw std::runtime_error("Invalid proof.");
+    }
+    form y = DeserializeForm(D, proof_blob, form_size);
+    return GetB(D, x, y);
 }
 
 #endif // VERIFIER_H

@@ -46,6 +46,29 @@ PYBIND11_MODULE(chiavdf, m) {
         return CheckProofOfTimeNWesolowski(integer(discriminant), (const uint8_t *)x_s.data(), proof_blob_ptr, proof_blob_size, num_iterations, disc_size_bits, recursion);
     });
 
+    // Checks an N wesolowski proof, given y is given by 'GetB()' instead of a form.
+    m.def("verify_n_wesolowski_y_compressed", [] (const string& discriminant,
+                                   const string& B,
+                                   const string& x_s,
+                                   const string& proof_blob,
+                                   const uint64_t num_iterations, const uint64_t disc_size_bits, const uint64_t recursion) {
+        std::string proof_blob_str(proof_blob);
+        uint8_t *proof_blob_ptr = reinterpret_cast<uint8_t *>(proof_blob_str.data());
+        int proof_blob_size = proof_blob.size();
+        return CheckProofOfTimeNWesolowskiYCompressed(integer(discriminant), integer(B), (const uint8_t *)x_s.data(), proof_blob_ptr, proof_blob_size, num_iterations, disc_size_bits, recursion);
+    });
+
+    m.def("compress_y_from_n_wesolowski", [] (const string& discriminant,
+                                   const string& x_s,
+                                   const string& proof_blob,
+                                   const uint64_t num_iterations, const uint64_t disc_size_bits, const uint64_t recursion) {
+        std::string proof_blob_str(proof_blob);
+        uint8_t *proof_blob_ptr = reinterpret_cast<uint8_t *>(proof_blob_str.data());
+        int proof_blob_size = proof_blob.size();
+        integer B = GetBFromProof(integer(discriminant), integer(B), (const uint8_t *)x_s.data(), proof_blob_ptr, proof_blob_size, num_iterations, disc_size_bits, recursion);
+        return B.to_string();
+    });
+
     m.def("prove", [] (const py::bytes& challenge_hash, const string& x_s, int discriminant_size_bits, uint64_t num_iterations) {
         std::string challenge_hash_str(challenge_hash);
         std::vector<uint8_t> challenge_hash_bytes(challenge_hash_str.begin(), challenge_hash_str.end());

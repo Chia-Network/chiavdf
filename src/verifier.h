@@ -63,9 +63,9 @@ bool CheckProofOfTimeNWesolowskiCommon(integer& D, form& x, const uint8_t* proof
 }
 
 bool CheckProofOfTimeNWesolowski(integer D, const uint8_t* x_s, const uint8_t* proof_blob, int32_t proof_blob_len, uint64_t iterations, uint64 disc_size_bits, int32_t depth) {
-    form x = DeserializeForm(D, x_s, form_size);
     int form_size = BQFC_FORM_SIZE;
     int segment_len = 8 + B_bytes + form_size;
+    form x = DeserializeForm(D, x_s, form_size);
     if (proof_blob_len != 2 * form_size + depth * segment_len) {
         return false;
     }
@@ -82,9 +82,9 @@ bool CheckProofOfTimeNWesolowski(integer D, const uint8_t* x_s, const uint8_t* p
 }
 
 bool CheckProofOfTimeNWesolowskiYCompressed(integer D, integer B, const uint8_t* x_s, const uint8_t* proof_blob, int32_t proof_blob_len, uint64_t iterations, uint64 disc_size_bits, int32_t depth) {
-    form x = DeserializeForm(D, x_s, form_size);
     int form_size = BQFC_FORM_SIZE;
     int segment_len = 8 + B_bytes + form_size;
+    form x = DeserializeForm(D, x_s, form_size);
     if (proof_blob_len != form_size + depth * segment_len) {
         return false;
     }
@@ -92,7 +92,7 @@ bool CheckProofOfTimeNWesolowskiYCompressed(integer D, integer B, const uint8_t*
     if (is_valid == false) {
         return false;
     }
-    proof = DeserializeForm(D, proof_blob, form_size);
+    form proof = DeserializeForm(D, proof_blob, form_size);
     form tmp;
     if (VerifyWesoSegment(D, x, proof, B, iterations, tmp) == -1) {
         return false;
@@ -102,9 +102,9 @@ bool CheckProofOfTimeNWesolowskiYCompressed(integer D, integer B, const uint8_t*
 
 // TODO: Perhaps move?
 integer GetBFromProof(integer D, const uint8_t* x_s, const uint8_t* proof_blob, int32_t proof_blob_len, uint64_t iterations, uint64 disc_size_bits, int32_t depth) {
-    form x = DeserializeForm(D, x_s, form_size);
     int form_size = BQFC_FORM_SIZE;
     int segment_len = 8 + B_bytes + form_size;
+    form x = DeserializeForm(D, x_s, form_size);
     if (proof_blob_len != 2 * form_size + depth * segment_len) {
         throw std::runtime_error("Invalid proof.");
     }

@@ -65,7 +65,7 @@ PYBIND11_MODULE(chiavdf, m) {
         std::string proof_blob_str(proof_blob);
         uint8_t *proof_blob_ptr = reinterpret_cast<uint8_t *>(proof_blob_str.data());
         int proof_blob_size = proof_blob.size();
-        integer B = GetBFromProof(integer(discriminant), integer(B), (const uint8_t *)x_s.data(), proof_blob_ptr, proof_blob_size, num_iterations, disc_size_bits, recursion);
+        integer B = GetBFromProof(integer(discriminant), (const uint8_t *)x_s.data(), proof_blob_ptr, proof_blob_size, num_iterations, disc_size_bits, recursion);
         return B.to_string();
     });
 

@@ -41,14 +41,14 @@ void VerifyWesolowskiProof(integer &D, form x, form y, form proof, uint64_t iter
     }
 }
 
-bool CheckProofOfTimeNWesolowskiCommon(integer& D, form& x, const uint8_t* proof_blob, int32_t proof_blob_len, uint64_t& iterations, int depth) {
+bool CheckProofOfTimeNWesolowskiCommon(integer& D, form& x, const uint8_t* proof_blob, int32_t proof_blob_len, uint64_t& iterations, int depth, int last_segment) {
     int form_size = BQFC_FORM_SIZE;
     int segment_len = 8 + B_bytes + form_size;
     int i = proof_blob_len - segment_len;
 
     // Loop depth times
     bool is_valid = false;
-    for (; i >= 2 * form_size; i -= segment_len) {
+    for (; i >= last_segment; i -= segment_len) {
         uint64_t segment_iters = BytesToInt64(&proof_blob[i]);
         form proof = DeserializeForm(D, &proof_blob[i + 8 + B_bytes], form_size);
         integer B(&proof_blob[i + 8], B_bytes);
@@ -69,7 +69,7 @@ bool CheckProofOfTimeNWesolowski(integer D, const uint8_t* x_s, const uint8_t* p
     if (proof_blob_len != 2 * form_size + depth * segment_len) {
         return false;
     }
-    bool is_valid = CheckProofOfTimeNWesolowskiCommon(D, x, proof_blob, proof_blob_len, iterations, depth);
+    bool is_valid = CheckProofOfTimeNWesolowskiCommon(D, x, proof_blob, proof_blob_len, iterations, depth, 2 * form_size);
     if (is_valid == false) {
         return false;
     }
@@ -88,7 +88,7 @@ bool CheckProofOfTimeNWesolowskiYCompressed(integer D, integer B, const uint8_t*
     if (proof_blob_len != form_size + depth * segment_len) {
         return false;
     }
-    bool is_valid = CheckProofOfTimeNWesolowskiCommon(D, x, proof_blob, proof_blob_len, iterations, depth);
+    bool is_valid = CheckProofOfTimeNWesolowskiCommon(D, x, proof_blob, proof_blob_len, iterations, depth, form_size);
     if (is_valid == false) {
         return false;
     }
@@ -108,7 +108,7 @@ integer GetBFromProof(integer D, const uint8_t* x_s, const uint8_t* proof_blob, 
     if (proof_blob_len != 2 * form_size + depth * segment_len) {
         throw std::runtime_error("Invalid proof.");
     }
-    bool is_valid = CheckProofOfTimeNWesolowskiCommon(D, x, proof_blob, proof_blob_len, iterations, depth);
+    bool is_valid = CheckProofOfTimeNWesolowskiCommon(D, x, proof_blob, proof_blob_len, iterations, depth, 2 * form_size);
     if (is_valid == false) {
         throw std::runtime_error("Invalid proof.");
     }

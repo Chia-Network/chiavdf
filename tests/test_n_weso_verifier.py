@@ -1,5 +1,4 @@
 import secrets
-import time
 
 from chiavdf import (
     create_discriminant,
@@ -9,6 +8,7 @@ from chiavdf import (
     verify_n_wesolowski_y_compressed,
     compress_y_from_n_wesolowski,
 )
+
 
 def prove_n_weso(discriminant_challenge, x, discriminant_size, form_size, iters, witness):
     iters_chunk = iters // (witness + 1)
@@ -38,6 +38,7 @@ def prove_n_weso(discriminant_challenge, x, discriminant_size, form_size, iters,
         inner_proof += proof
     return y_result, y_proof + inner_proof
 
+
 def test_prove_n_weso_and_verify():
     discriminant_challenge = secrets.token_bytes(10)
     discriminant_size = 512
@@ -61,7 +62,15 @@ def test_prove_n_weso_and_verify():
         B = str(int(b_hex, 16))
         assert verify_n_wesolowski_y_compressed(discriminant, B, initial_el, proof, iters, discriminant_size, 5)
         B_wrong = str(int(b_hex, 16) + 1)
-        assert not verify_n_wesolowski_y_compressed(discriminant, B_wrong, initial_el, proof, iters, discriminant_size, 5)
+        assert not verify_n_wesolowski_y_compressed(
+            discriminant,
+            B_wrong,
+            initial_el,
+            proof,
+            iters,
+            discriminant_size,
+            5,
+        )
         initial_el = y
 
 

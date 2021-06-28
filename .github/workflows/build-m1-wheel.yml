@@ -21,6 +21,10 @@ jobs:
       with:
         fetch-depth: 0
 
+    - name: Ensure dependencies are present
+      run: |
+        brew install gmp
+
     - name: Lint source with flake8
       run: |
         arch -arm64 python -m pip install --upgrade pip

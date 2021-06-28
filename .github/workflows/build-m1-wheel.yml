@@ -38,6 +38,7 @@ jobs:
 
     - name: Build m1 wheels
       run: |
+        export BUILD_VDF_CLIENT=N
         arch -arm64 pip wheel -w dist --no-deps .
         arch -arm64 delocate-wheel -v dist/*.whl
 

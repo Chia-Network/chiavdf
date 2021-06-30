@@ -55,7 +55,11 @@ PYBIND11_MODULE(chiavdf, m) {
         std::string proof_blob_str(proof_blob);
         uint8_t *proof_blob_ptr = reinterpret_cast<uint8_t *>(proof_blob_str.data());
         int proof_blob_size = proof_blob.size();
-        return CheckProofOfTimeNWesolowskiYCompressed(integer(discriminant), integer(B), (const uint8_t *)x_s.data(), proof_blob_ptr, proof_blob_size, num_iterations, disc_size_bits, recursion);
+        std::pair<bool, std::vector<uint8_t>> result;
+        result = CheckProofOfTimeNWesolowskiYCompressed(integer(discriminant), integer(B), (const uint8_t *)x_s.data(), proof_blob_ptr, proof_blob_size, num_iterations, disc_size_bits, recursion);
+        py::bytes res_bytes = py::bytes(reinterpret_cast<char*>(result.second.data()), result.second.size());
+        py::tuple res_tuple = py::make_tuple(result.first, res_bytes);
+        return res_tuple;
     });
 
     m.def("compress_y_from_n_wesolowski", [] (const string& discriminant,

@@ -81,23 +81,26 @@ bool CheckProofOfTimeNWesolowski(integer D, const uint8_t* x_s, const uint8_t* p
     return is_valid;
 }
 
-bool CheckProofOfTimeNWesolowskiYCompressed(integer D, integer B, const uint8_t* x_s, const uint8_t* proof_blob, int32_t proof_blob_len, uint64_t iterations, uint64 disc_size_bits, int32_t depth) {
+std::pair<bool, std::vector<uint8_t>> CheckProofOfTimeNWesolowskiYCompressed(integer D, integer B, const uint8_t* x_s, const uint8_t* proof_blob, int32_t proof_blob_len, uint64_t iterations, uint64 disc_size_bits, int32_t depth) {
     int form_size = BQFC_FORM_SIZE;
     int segment_len = 8 + B_bytes + form_size;
     form x = DeserializeForm(D, x_s, form_size);
+    std::vector<uint8_t> result;
     if (proof_blob_len != form_size + depth * segment_len) {
-        return false;
+        return {false, result};
     }
     bool is_valid = CheckProofOfTimeNWesolowskiCommon(D, x, proof_blob, proof_blob_len, iterations, depth, form_size);
     if (is_valid == false) {
-        return false;
+        return {false, result};
     }
     form proof = DeserializeForm(D, proof_blob, form_size);
-    form tmp;
-    if (VerifyWesoSegment(D, x, proof, B, iterations, tmp) == -1) {
-        return false;
+    form y_result;
+    if (VerifyWesoSegment(D, x, proof, B, iterations, y_result) == -1) {
+        return {false, result};
     }
-    return true;
+    int d_bits = D.num_bits();
+    result = SerializeForm(y_result, d_bits);
+    return {true, result};
 }
 
 // TODO: Perhaps move?

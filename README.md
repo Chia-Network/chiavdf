@@ -62,6 +62,14 @@ If you're running a timelord, the following tests are available, depending of wh
 
 Those tests will simulate the vdf_client and verify for correctness the produced proofs.
 
+## Debug builds
+
+To build and install a debug build of the python module, run:
+
+```bash
+python setup.py build_ext --debug install
+```
+
 ## Contributing and workflow
 
 Contributions are welcome and more details are available in chia-blockchain's

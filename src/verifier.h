@@ -57,6 +57,9 @@ bool CheckProofOfTimeNWesolowskiCommon(integer& D, form& x, const uint8_t* proof
             return false;
 
         x = xnew;
+        if (segment_iters > iterations) {
+            return false;
+        }
         iterations -= segment_iters;
     }
     return true;

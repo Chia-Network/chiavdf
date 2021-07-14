@@ -19,13 +19,16 @@
 #define bswap_64(x) OSSwapInt64(x)
 #elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
 # if defined(__OpenBSD__)
-#  include <machine/endian.h>
+#  include <endian.h>
+#  define bswap_16(x) swap16(x)
+#  define bswap_32(x) swap32(x)
+#  define bswap_64(x) swap64(x)
 # else
 #  include <sys/endian.h>
+#  define bswap_16(x) bswap16(x)
+#  define bswap_32(x) bswap32(x)
+#  define bswap_64(x) bswap64(x)
 # endif
-#define bswap_16(x) bswap16(x)
-#define bswap_32(x) bswap32(x)
-#define bswap_64(x) bswap64(x)
 #else
 #include <byteswap.h>
 #endif

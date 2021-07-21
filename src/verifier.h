@@ -21,7 +21,7 @@ int VerifyWesoSegment(integer &D, form x, form proof, integer &B, uint64_t iters
     out_y = f1 * f2;
     // Optimize to only get `out_y` without verification, when not needed.
     if (skip_check) {
-        return true;
+        return 0;
     }
     return B == GetB(D, x, out_y) ? 0 : -1;
 }

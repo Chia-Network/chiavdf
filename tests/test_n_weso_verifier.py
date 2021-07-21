@@ -10,7 +10,7 @@ from chiavdf import (
 )
 
 
-def prove_n_weso(discriminant_challenge, x, discriminant_size, form_size, iters, witness):
+def prove_n_weso(discriminant_challenge, x, discriminant_size, form_size, iters, witness, wrong_segm):
     iters_chunk = iters // (witness + 1)
     partials = []
     discriminant = create_discriminant(discriminant_challenge, discriminant_size)
@@ -49,11 +49,16 @@ def prove_n_weso(discriminant_challenge, x, discriminant_size, form_size, iters,
             proof,
             iters_chunk,
             discriminant_size,
-            0
+            0,
         )
         assert is_valid
         assert y == y_from_compression
-        inner_proof += iters_chunk.to_bytes(8, byteorder='big')
+        if wrong_segm:
+            inner_proof += iters_chunk.to_bytes(8, byteorder='big')
+        else:
+            iters_wrong = iters_chunk + 1
+            inner_proof += iters_wrong.to_bytes(8, byteorder='big')
+            wrong_segm = False
         inner_proof += b.to_bytes(33, byteorder='big')
         inner_proof += proof
     return y_result, y_proof + inner_proof
@@ -67,7 +72,7 @@ def test_prove_n_weso_and_verify():
     initial_el = b"\x08" + (b"\x00" * 99)
 
     for iters in [1000000, 5000000, 10000000]:
-        y, proof = prove_n_weso(discriminant_challenge, initial_el, discriminant_size, form_size, iters, 5)
+        y, proof = prove_n_weso(discriminant_challenge, initial_el, discriminant_size, form_size, iters, 5, False)
         is_valid = verify_n_wesolowski(
             str(discriminant),
             initial_el,
@@ -77,6 +82,25 @@ def test_prove_n_weso_and_verify():
             5,
         )
         assert is_valid
+        is_valid = verify_n_wesolowski(
+            str(discriminant),
+            initial_el,
+            y + proof,
+            iters + 1,
+            discriminant_size,
+            5,
+        )
+        assert not is_valid
+        y, proof_wrong = prove_n_weso(discriminant_challenge, initial_el, discriminant_size, form_size, iters, 10, True)
+        is_valid = verify_n_wesolowski(
+            str(discriminant),
+            initial_el,
+            y + proof_wrong,
+            iters,
+            discriminant_size,
+            10,
+        )
+        assert not is_valid
         b_hex = get_b_from_n_wesolowski(discriminant, initial_el, y + proof, iters, discriminant_size, 5)
         is_valid, y_from_compression = verify_n_wesolowski_with_b(
             discriminant,
@@ -110,6 +134,17 @@ def test_prove_n_weso_and_verify():
             iters,
             discriminant_size,
             5,
+        )
+        assert not is_valid
+        assert y_from_compression == b""
+        is_valid, y_from_compression = verify_n_wesolowski_with_b(
+            discriminant,
+            B,
+            initial_el,
+            proof_wrong,
+            iters,
+            discriminant_size,
+            10,
         )
         assert not is_valid
         assert y_from_compression == b""

@@ -53,7 +53,7 @@ def prove_n_weso(discriminant_challenge, x, discriminant_size, form_size, iters,
         )
         assert is_valid
         assert y == y_from_compression
-        if wrong_segm:
+        if not wrong_segm:
             inner_proof += iters_chunk.to_bytes(8, byteorder='big')
         else:
             iters_wrong = iters_chunk + 1

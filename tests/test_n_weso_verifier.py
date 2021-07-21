@@ -5,8 +5,8 @@ from chiavdf import (
     prove,
     verify_wesolowski,
     verify_n_wesolowski,
-    verify_n_wesolowski_y_compressed,
-    compress_y_from_n_wesolowski,
+    verify_n_wesolowski_with_b,
+    get_b_from_n_wesolowski,
 )
 
 
@@ -25,8 +25,8 @@ def prove_n_weso(discriminant_challenge, x, discriminant_size, form_size, iters,
     y_result = result[:form_size]
     y_proof = result[form_size : 2 * form_size]
     assert verify_wesolowski(discriminant, x, y_result, y_proof, iters)
-    b_hex = compress_y_from_n_wesolowski(discriminant, x, y_result + y_proof, iters, discriminant_size, 0)
-    is_valid, y_from_compression = verify_n_wesolowski_y_compressed(
+    b_hex = get_b_from_n_wesolowski(discriminant, x, y_result + y_proof, iters, discriminant_size, 0)
+    is_valid, y_from_compression = verify_n_wesolowski_with_b(
         discriminant,
         b_hex,
         x,
@@ -39,10 +39,10 @@ def prove_n_weso(discriminant_challenge, x, discriminant_size, form_size, iters,
     assert y_from_compression == y_result
     inner_proof = b""
     for x, y, proof in reversed(partials):
-        b_hex = compress_y_from_n_wesolowski(discriminant, x, y + proof, iters_chunk, discriminant_size, 0)
+        b_hex = get_b_from_n_wesolowski(discriminant, x, y + proof, iters_chunk, discriminant_size, 0)
         b = int(b_hex, 16)
         assert verify_wesolowski(discriminant, x, y, proof, iters_chunk)
-        is_valid, y_from_compression = verify_n_wesolowski_y_compressed(
+        is_valid, y_from_compression = verify_n_wesolowski_with_b(
             discriminant,
             b_hex,
             x,
@@ -77,8 +77,8 @@ def test_prove_n_weso_and_verify():
             5,
         )
         assert is_valid
-        b_hex = compress_y_from_n_wesolowski(discriminant, initial_el, y + proof, iters, discriminant_size, 5)
-        is_valid, y_from_compression = verify_n_wesolowski_y_compressed(
+        b_hex = get_b_from_n_wesolowski(discriminant, initial_el, y + proof, iters, discriminant_size, 5)
+        is_valid, y_from_compression = verify_n_wesolowski_with_b(
             discriminant,
             b_hex,
             initial_el,
@@ -90,7 +90,7 @@ def test_prove_n_weso_and_verify():
         assert is_valid
         assert y_from_compression == y
         B = str(int(b_hex, 16))
-        is_valid, y_from_compression = verify_n_wesolowski_y_compressed(
+        is_valid, y_from_compression = verify_n_wesolowski_with_b(
             discriminant,
             B,
             initial_el,
@@ -102,7 +102,7 @@ def test_prove_n_weso_and_verify():
         assert is_valid
         assert y_from_compression == y
         B_wrong = str(int(b_hex, 16) + 1)
-        is_valid, y_from_compression = verify_n_wesolowski_y_compressed(
+        is_valid, y_from_compression = verify_n_wesolowski_with_b(
             discriminant,
             B_wrong,
             initial_el,

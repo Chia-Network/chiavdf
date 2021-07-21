@@ -47,7 +47,7 @@ PYBIND11_MODULE(chiavdf, m) {
     });
 
     // Checks an N wesolowski proof, given y is given by 'GetB()' instead of a form.
-    m.def("verify_n_wesolowski_y_compressed", [] (const string& discriminant,
+    m.def("verify_n_wesolowski_with_b", [] (const string& discriminant,
                                    const string& B,
                                    const string& x_s,
                                    const string& proof_blob,
@@ -56,13 +56,13 @@ PYBIND11_MODULE(chiavdf, m) {
         uint8_t *proof_blob_ptr = reinterpret_cast<uint8_t *>(proof_blob_str.data());
         int proof_blob_size = proof_blob.size();
         std::pair<bool, std::vector<uint8_t>> result;
-        result = CheckProofOfTimeNWesolowskiYCompressed(integer(discriminant), integer(B), (const uint8_t *)x_s.data(), proof_blob_ptr, proof_blob_size, num_iterations, disc_size_bits, recursion);
+        result = CheckProofOfTimeNWesolowskiWithB(integer(discriminant), integer(B), (const uint8_t *)x_s.data(), proof_blob_ptr, proof_blob_size, num_iterations, disc_size_bits, recursion);
         py::bytes res_bytes = py::bytes(reinterpret_cast<char*>(result.second.data()), result.second.size());
         py::tuple res_tuple = py::make_tuple(result.first, res_bytes);
         return res_tuple;
     });
 
-    m.def("compress_y_from_n_wesolowski", [] (const string& discriminant,
+    m.def("get_b_from_n_wesolowski", [] (const string& discriminant,
                                    const string& x_s,
                                    const string& proof_blob,
                                    const uint64_t num_iterations, const uint64_t disc_size_bits, const uint64_t recursion) {

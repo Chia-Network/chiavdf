@@ -101,7 +101,7 @@ std::pair<bool, std::vector<uint8_t>> CheckProofOfTimeNWesolowskiWithB(integer D
     }
     form proof = DeserializeForm(D, proof_blob, form_size);
     form y_result;
-    if (VerifyWesoSegment(D, x, proof, B, iterations, y_result) == -1) {
+    if (VerifyWesoSegment(D, x, proof, B, iterations, /*skip_check=*/false, y_result) == -1) {
         return {false, result};
     }
     int d_bits = D.num_bits();

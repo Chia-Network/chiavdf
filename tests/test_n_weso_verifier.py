@@ -25,21 +25,20 @@ def prove_n_weso(discriminant_challenge, x, discriminant_size, form_size, iters,
     y_result = result[:form_size]
     y_proof = result[form_size : 2 * form_size]
     assert verify_wesolowski(discriminant, x, y_result, y_proof, iters)
-    b_hex = get_b_from_n_wesolowski(discriminant, x, y_result + y_proof, iters, discriminant_size, 0)
+    b_hex = get_b_from_n_wesolowski(discriminant, x, y_result + y_proof, iters, 0)
     is_valid, y_from_compression = verify_n_wesolowski_with_b(
         discriminant,
         b_hex,
         x,
         y_proof,
         iters,
-        discriminant_size,
         0,
     )
     assert is_valid
     assert y_from_compression == y_result
     inner_proof = b""
     for x, y, proof in reversed(partials):
-        b_hex = get_b_from_n_wesolowski(discriminant, x, y + proof, iters_chunk, discriminant_size, 0)
+        b_hex = get_b_from_n_wesolowski(discriminant, x, y + proof, iters_chunk, 0)
         b = int(b_hex, 16)
         assert verify_wesolowski(discriminant, x, y, proof, iters_chunk)
         is_valid, y_from_compression = verify_n_wesolowski_with_b(
@@ -48,7 +47,6 @@ def prove_n_weso(discriminant_challenge, x, discriminant_size, form_size, iters,
             x,
             proof,
             iters_chunk,
-            discriminant_size,
             0,
         )
         assert is_valid
@@ -108,7 +106,6 @@ def test_prove_n_weso_and_verify():
             initial_el,
             proof,
             iters,
-            discriminant_size,
             5,
         )
         assert is_valid
@@ -120,7 +117,6 @@ def test_prove_n_weso_and_verify():
             initial_el,
             proof,
             iters,
-            discriminant_size,
             5,
         )
         assert is_valid
@@ -132,7 +128,6 @@ def test_prove_n_weso_and_verify():
             initial_el,
             proof,
             iters,
-            discriminant_size,
             5,
         )
         assert not is_valid
@@ -143,7 +138,6 @@ def test_prove_n_weso_and_verify():
             initial_el,
             proof_wrong,
             iters,
-            discriminant_size,
             10,
         )
         assert not is_valid

@@ -99,7 +99,7 @@ def test_prove_n_weso_and_verify():
             10,
         )
         assert not is_valid
-        b_hex = get_b_from_n_wesolowski(discriminant, initial_el, y + proof, iters, discriminant_size, 5)
+        b_hex = get_b_from_n_wesolowski(discriminant, initial_el, y + proof, iters, 5)
         is_valid, y_from_compression = verify_n_wesolowski_with_b(
             discriminant,
             b_hex,

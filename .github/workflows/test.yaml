@@ -20,6 +20,11 @@ jobs:
       if: startsWith(matrix.os, 'ubuntu')
       run: |
         sudo apt-get install libgmp-dev libboost-python-dev libpython3.8-dev libboost-system-dev build-essential -y
+        sudo fallocate -l 16G /swapfile
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile
+        sudo swapon /swapfile
+        swapon -s
         cd src
         make ${{ matrix.config }} -f Makefile.vdf-client
 

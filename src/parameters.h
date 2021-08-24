@@ -32,7 +32,7 @@ extern bool enable_all_instructions;
 bool bChecked=false;
 bool bAVX2=false;
 
-bool enable_avx512_ifma=false;
+bool enable_avx512_ifma=true;
 
 #if defined(__i386) || defined(_M_IX86)
     #define ARCH_X86

@@ -242,9 +242,11 @@ void repeated_square(form f, const integer& D, const integer& L,
 Proof ProveOneWesolowski(uint64_t iters, integer& D, form f, OneWesolowskiCallback* weso,
     std::atomic<bool>& stopped)
 {
-    while (weso->iterations < iters) {
+    while (!stopped && weso->iterations < iters) {
         this_thread::sleep_for(1s);
     }
+    if (stopped)
+        return Proof();
     Segment sg(
         /*start=*/0,
         /*length=*/iters,

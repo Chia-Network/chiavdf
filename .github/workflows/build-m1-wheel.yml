@@ -23,7 +23,7 @@ jobs:
 
     - name: Ensure dependencies are present
       run: |
-        brew install gmp boost
+        arch -arm64 brew install gmp boost
 
     - name: Lint source with flake8
       run: |

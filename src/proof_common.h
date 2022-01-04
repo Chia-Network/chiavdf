@@ -7,10 +7,10 @@ const int B_bits = 264;
 const int B_bytes = (B_bits + 7) / 8;
 
 
-// Generates a random psuedoprime using the hash and check method:
+// Generates a random pseudoprime using the hash and check method:
 // Randomly chooses x with bit-length `length`, then applies a mask
 //   (for b in bitmask) { x |= (1 << b) }.
-// Then return x if it is a psuedoprime, otherwise repeat.
+// Then return x if it is a pseudoprime, otherwise repeat.
 integer HashPrime(std::vector<uint8_t> seed, int length, vector<int> bitmask) {
     assert (length % 8 == 0);
     std::vector<uint8_t> hash(picosha2::k_digest_size);  // output of sha256

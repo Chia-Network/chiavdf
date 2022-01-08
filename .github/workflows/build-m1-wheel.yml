@@ -31,16 +31,16 @@ jobs:
       run: |
         export BUILD_VDF_CLIENT=N
         rm -rf venv
-        arch -arm64 $(brew --prefix python@3.9)/python -m venv venv
+        arch -arm64 $(brew --prefix python@3.9) -m venv venv
         . venv/bin/activate
-        arch -arm64 $(brew --prefix python@3.9)/pip wheel -w dist --no-deps .
+        arch -arm64 pip wheel -w dist --no-deps .
         arch -arm64 pip install delocate-wheel
         arch -arm64 delocate-wheel -v dist/*cp39*.whl
         deactivate
         rm -rf venv
-        arch -arm64 $(brew --prefix python@3.10)/python -m venv venv
+        arch -arm64 $(brew --prefix python@3.10) -m venv venv
         . venv/bin/activate
-        arch -arm64 $(brew --prefix python@3.10)/pip wheel -w dist --no-deps .
+        arch -arm64 pip wheel -w dist --no-deps .
         arch -arm64 pip install delocate-wheel
         arch -arm64 delocate-wheel -v dist/*cp310*.whl
         deactivate
@@ -49,14 +49,14 @@ jobs:
     - name: Test wheels
       run: |
         rm -rf venv
-        arch -arm64 $(brew --prefix python@3.9)/python -m venv venv
+        arch -arm64 $(brew --prefix python@3.9) -m venv venv
         . venv/bin/activate
         arch -arm64 pip install ./dist/*cp39*.whl
         arch -arm64 pip install pytest
         arch -arm64 ./venv/bin/pytest -v ./tests
         deactivate
         rm -rf venv
-        arch -arm64 $(brew --prefix python@3.10)/python -m venv venv
+        arch -arm64 $(brew --prefix python@3.10) -m venv venv
         . venv/bin/activate
         arch -arm64 pip install ./dist/*cp310*.whl
         arch -arm64 pip install pytest

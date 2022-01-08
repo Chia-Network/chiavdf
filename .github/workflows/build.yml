@@ -14,7 +14,7 @@ jobs:
     steps:
     - name: Cancel previous runs on the same branch
       if: ${{ github.ref != 'refs/heads/master' }}
-      uses: styfle/cancel-workflow-action@0.7.0
+      uses: styfle/cancel-workflow-action@0.9.1
       with:
         access_token: ${{ github.token }}
 
@@ -54,8 +54,8 @@ jobs:
         CIBW_BUILD_VERBOSITY_LINUX: 0
         CIBW_BUILD_VERBOSITY_WINDOWS: 0
         # build python 3.7 and 3.8
-        CIBW_BUILD: cp37-* cp38-* cp39-*
-        CIBW_SKIP: '*-manylinux_i686 *-win32'
+        CIBW_BUILD: cp37-* cp38-* cp39-* cp310-*
+        CIBW_SKIP: '*-manylinux_i686 *-win32 *-musllinux_*'
         # we need boost
         CIBW_MANYLINUX_X86_64_IMAGE: manylinux2010
         CIBW_ENVIRONMENT_LINUX: "PATH=/project/cmake-3.17.3-Linux-`uname -m`/bin:$PATH BUILD_VDF_CLIENT=N"

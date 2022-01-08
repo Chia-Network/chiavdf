@@ -51,14 +51,14 @@ jobs:
         . venv/bin/activate
         arch -arm64 pip install ./dist/*cp39*.whl
         arch -arm64 pip install pytest
-        arch -arm64 ./venv/bin/pytest -v ./python-bindings/test.py
+        arch -arm64 ./venv/bin/pytest -v ./tests
         deactivate
         rm -rf venv
         arch -arm64 /opt/homebrew/opt/python@3.10/libexec/bin/python -m venv venv
         . venv/bin/activate
         arch -arm64 pip install ./dist/*cp310*.whl
         arch -arm64 pip install pytest
-        arch -arm64 ./venv/bin/pytest -v ./python-bindings/test.py
+        arch -arm64 ./venv/bin/pytest -v ./tests
         deactivate
         rm -rf venv
 

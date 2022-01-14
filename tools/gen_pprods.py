@@ -73,6 +73,8 @@ def print_pprods_h(prods, factors):
 static const uint64_t pprods[] = {
 %s
 };
+
+static const uint32_t pprods_max_prime = %d;
 #endif // PPRODS_H
 """
     tmpl = tmpl.strip()
@@ -81,7 +83,7 @@ static const uint64_t pprods[] = {
         factors_str = "*".join(map(str, factors[i]))
         extra_spaces = " " * (16 - (pr.bit_length() + 3) // 4)
         prods_str += tab + "0x%x,  %s// %s\n" % (pr, extra_spaces, factors_str)
-    print(tmpl % (prods_str.rstrip(),))
+    print(tmpl % (prods_str.rstrip(), factors[-1][-1]))
 
 
 n = int(sys.argv[1])

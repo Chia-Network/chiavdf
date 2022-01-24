@@ -49,7 +49,7 @@ int main(int argc, char const* argv[]) try
     uint64_t iter = iter_multiplier;
     OneWesolowskiCallback weso(D, f, iter);
     FastStorage* fast_storage = nullptr;
-    std::thread vdf_worker(repeated_square, f, D, L, &weso, fast_storage, std::ref(stopped));
+    std::thread vdf_worker(repeated_square, iter, f, D, L, &weso, fast_storage, std::ref(stopped));
     Proof const proof = ProveOneWesolowski(iter, D, f, &weso, stopped);
     stopped = true;
     vdf_worker.join();

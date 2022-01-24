@@ -161,7 +161,7 @@ void SessionFastAlgorithm(tcp::socket& sock) {
             fast_storage = new FastStorage((FastAlgorithmCallback*)weso);
         }
         std::atomic<bool> stopped(false);
-        std::thread vdf_worker(repeated_square, f, std::ref(D), std::ref(L), weso, fast_storage, std::ref(stopped));
+        std::thread vdf_worker(repeated_square, 0, f, std::ref(D), std::ref(L), weso, fast_storage, std::ref(stopped));
         ProverManager pm(D, (FastAlgorithmCallback*)weso, fast_storage, segments, thread_count);
         pm.start();
 
@@ -211,7 +211,7 @@ void SessionOneWeso(tcp::socket& sock) {
         std::atomic<bool> stopped(false);
         WesolowskiCallback* weso = new OneWesolowskiCallback(D, f, iter);
         FastStorage* fast_storage = NULL;
-        std::thread vdf_worker(repeated_square, f, std::ref(D), std::ref(L), weso, fast_storage, std::ref(stopped));
+        std::thread vdf_worker(repeated_square, iter, f, std::ref(D), std::ref(L), weso, fast_storage, std::ref(stopped));
         std::thread th_prover(CreateAndWriteProofOneWeso, iter, std::ref(D), f, (OneWesolowskiCallback*)weso, std::ref(stopped), std::ref(sock));
         iter = ReadIteration(sock);
         while (iter != 0) {
@@ -247,7 +247,7 @@ void SessionTwoWeso(tcp::socket& sock) {
         std::set<std::pair<uint64_t, uint64_t> > seen_iterations;
         WesolowskiCallback* weso = new TwoWesolowskiCallback(D, f);
         FastStorage* fast_storage = NULL;
-        std::thread vdf_worker(repeated_square, f, std::ref(D), std::ref(L), weso, fast_storage, std::ref(stopped));
+        std::thread vdf_worker(repeated_square, 0, f, std::ref(D), std::ref(L), weso, fast_storage, std::ref(stopped));
 
         while (!stopped) {
             uint64_t iters = ReadIteration(sock);

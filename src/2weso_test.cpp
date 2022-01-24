@@ -55,7 +55,7 @@ int main(int argc, char const* argv[]) try
     two_weso = true;
     TwoWesolowskiCallback weso(D, f);
     FastStorage* fast_storage = NULL;
-    std::thread vdf_worker(repeated_square, f, D, L, &weso, fast_storage, std::ref(stopped));
+    std::thread vdf_worker(repeated_square, 0, f, D, L, &weso, fast_storage, std::ref(stopped));
     // Test 1 - 1 million iters.
     uint64_t iteration = 1 * iter_multiplier;
     Proof proof = ProveTwoWeso(D, f, iteration, 0, &weso, 0, stopped);

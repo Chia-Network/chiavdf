@@ -11,6 +11,7 @@ PYBIND11_MODULE(chiavdf, m) {
     // Creates discriminant.
     m.def("create_discriminant", [] (const py::bytes& challenge_hash, int discriminant_size_bits) {
         std::string challenge_hash_str(challenge_hash);
+        py::gil_scoped_release release;
         auto challenge_hash_bits = std::vector<uint8_t>(challenge_hash_str.begin(), challenge_hash_str.end());
         integer D = CreateDiscriminant(
             challenge_hash_bits,
@@ -24,6 +25,7 @@ PYBIND11_MODULE(chiavdf, m) {
                                    const string& x_s, const string& y_s,
                                    const string& proof_s,
                                    uint64_t num_iterations) {
+        py::gil_scoped_release release;
         integer D(discriminant);
         form x = DeserializeForm(D, (const uint8_t *)x_s.data(), x_s.size());
         form y = DeserializeForm(D, (const uint8_t *)y_s.data(), y_s.size());
@@ -39,6 +41,7 @@ PYBIND11_MODULE(chiavdf, m) {
                                    const string& x_s,
                                    const string& proof_blob,
                                    const uint64_t num_iterations, const uint64_t disc_size_bits, const uint64_t recursion) {
+        py::gil_scoped_release release;
         std::string proof_blob_str(proof_blob);
         uint8_t *proof_blob_ptr = reinterpret_cast<uint8_t *>(proof_blob_str.data());
         int proof_blob_size = proof_blob.size();
@@ -48,13 +51,17 @@ PYBIND11_MODULE(chiavdf, m) {
 
     m.def("prove", [] (const py::bytes& challenge_hash, const string& x_s, int discriminant_size_bits, uint64_t num_iterations) {
         std::string challenge_hash_str(challenge_hash);
-        std::vector<uint8_t> challenge_hash_bytes(challenge_hash_str.begin(), challenge_hash_str.end());
-        integer D = CreateDiscriminant(
-                challenge_hash_bytes,
-                discriminant_size_bits
-        );
-        form x = DeserializeForm(D, (const uint8_t *)x_s.data(), x_s.size());
-        auto result = ProveSlow(D, x, num_iterations);
+        std::vector<uint8_t> result;
+        {
+            py::gil_scoped_release release;
+            std::vector<uint8_t> challenge_hash_bytes(challenge_hash_str.begin(), challenge_hash_str.end());
+            integer D = CreateDiscriminant(
+                    challenge_hash_bytes,
+                    discriminant_size_bits
+            );
+            form x = DeserializeForm(D, (const uint8_t *) x_s.data(), x_s.size());
+            result = ProveSlow(D, x, num_iterations);
+        }
         py::bytes ret = py::bytes(reinterpret_cast<char*>(result.data()), result.size());
         return ret;
     });

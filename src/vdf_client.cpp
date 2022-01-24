@@ -21,6 +21,8 @@ char disc[350];
 char disc_size[5];
 int disc_int_size;
 
+uint8_t initial_form_s[BQFC_FORM_SIZE];
+
 void WriteProof(uint64_t iteration, Proof& result, tcp::socket& sock) {
     // Writes the number of iterations
     uint8_t int_bytes[8];
@@ -76,8 +78,6 @@ void CreateAndWriteProofTwoWeso(integer& D, form f, uint64_t iters, TwoWesolowsk
     }
     WriteProof(iters, result, sock);
 }
-
-uint8_t initial_form_s[BQFC_FORM_SIZE];
 
 void InitSession(tcp::socket& sock) {
     boost::system::error_code error;

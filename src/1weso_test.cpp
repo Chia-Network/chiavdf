@@ -1,9 +1,9 @@
 #include "vdf.h"
+#include "vdf_assert.h"
 #include "create_discriminant.h"
 #include "verifier.h"
 
 #include <atomic>
-#include <cassert>
 
 int segments = 7;
 int thread_count = 3;
@@ -60,7 +60,7 @@ int main(int argc, char const* argv[]) try
     form proof_form = DeserializeForm(D, proof.proof.data(), proof.proof.size());
     VerifyWesolowskiProof(D, x_init, y, proof_form, iter, is_valid);
     std::cout << "Verify result: " << is_valid << "\n";
-    assert(is_valid);
+    VDF_ASSERT(is_valid);
 }
 catch (std::exception const& e) {
     std::cerr << "Exception " << e.what() << '\n';

@@ -45,6 +45,8 @@ jobs:
         ./2weso_test
         echo "Running prover_test"
         ./prover_test
+        echo "Running primes_test"
+        ./primes_test
 
     - name: Test vdf-client
       if: matrix.config != 'optimized=1'

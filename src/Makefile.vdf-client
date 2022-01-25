@@ -27,7 +27,7 @@ endif
 
 .PHONY: all clean
 
-ALL = vdf_client prover_test 1weso_test 2weso_test vdf_bench
+ALL = vdf_client primes_test prover_test 1weso_test 2weso_test vdf_bench
 
 all: $(ALL)
 

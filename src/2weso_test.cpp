@@ -15,7 +15,7 @@ void CheckProof(integer& D, Proof& proof, uint64_t iteration) {
     std::vector<unsigned char> bytes;
     bytes.insert(bytes.end(), proof.y.begin(), proof.y.end());
     bytes.insert(bytes.end(), proof.proof.begin(), proof.proof.end());
-    if (CheckProofOfTimeNWesolowski(D, DEFAULT_ELEMENT, bytes.data(), bytes.size(), iteration, proof.witness_type)) {
+    if (CheckProofOfTimeNWesolowski(D, DEFAULT_ELEMENT, bytes.data(), bytes.size(), iteration, 1024, proof.witness_type)) {
         std::cout << "Correct proof\n";
     } else {
         std::cout << "Incorrect proof\n";

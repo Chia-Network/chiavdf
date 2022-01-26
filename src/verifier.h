@@ -62,6 +62,9 @@ bool CheckProofOfTimeNWesolowski(integer D, const uint8_t* x_s, const uint8_t* p
             return false;
 
         x = xnew;
+        if (segment_iters > iterations) {
+            return false;
+        }
         iterations -= segment_iters;
     }
 

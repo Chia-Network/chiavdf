@@ -43,34 +43,7 @@ PYBIND11_MODULE(chiavdf, m) {
         uint8_t *proof_blob_ptr = reinterpret_cast<uint8_t *>(proof_blob_str.data());
         int proof_blob_size = proof_blob.size();
 
-        return CheckProofOfTimeNWesolowski(integer(discriminant), (const uint8_t *)x_s.data(), proof_blob_ptr, proof_blob_size, num_iterations, recursion);
-    });
-
-    // Checks an N wesolowski proof, given y is given by 'GetB()' instead of a form.
-    m.def("verify_n_wesolowski_with_b", [] (const string& discriminant,
-                                   const string& B,
-                                   const string& x_s,
-                                   const string& proof_blob,
-                                   const uint64_t num_iterations, const uint64_t recursion) {
-        std::string proof_blob_str(proof_blob);
-        uint8_t *proof_blob_ptr = reinterpret_cast<uint8_t *>(proof_blob_str.data());
-        int proof_blob_size = proof_blob.size();
-        std::pair<bool, std::vector<uint8_t>> result;
-        result = CheckProofOfTimeNWesolowskiWithB(integer(discriminant), integer(B), (const uint8_t *)x_s.data(), proof_blob_ptr, proof_blob_size, num_iterations, recursion);
-        py::bytes res_bytes = py::bytes(reinterpret_cast<char*>(result.second.data()), result.second.size());
-        py::tuple res_tuple = py::make_tuple(result.first, res_bytes);
-        return res_tuple;
-    });
-
-    m.def("get_b_from_n_wesolowski", [] (const string& discriminant,
-                                   const string& x_s,
-                                   const string& proof_blob,
-                                   const uint64_t num_iterations, const uint64_t recursion) {
-        std::string proof_blob_str(proof_blob);
-        uint8_t *proof_blob_ptr = reinterpret_cast<uint8_t *>(proof_blob_str.data());
-        int proof_blob_size = proof_blob.size();
-        integer B = GetBFromProof(integer(discriminant), (const uint8_t *)x_s.data(), proof_blob_ptr, proof_blob_size, num_iterations, recursion);
-        return B.to_string();
+        return CheckProofOfTimeNWesolowski(integer(discriminant), (const uint8_t *)x_s.data(), proof_blob_ptr, proof_blob_size, num_iterations, disc_size_bits, recursion);
     });
 
     m.def("prove", [] (const py::bytes& challenge_hash, const string& x_s, int discriminant_size_bits, uint64_t num_iterations) {

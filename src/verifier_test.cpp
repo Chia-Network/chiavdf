@@ -34,6 +34,7 @@ std::copy(result.begin(), result.end(), arr);
             arr,
             result.size(),
             33554432,
+            1024,
             2);
 
     auto challenge_hash1 = HexToBytes(string("a4bb1461ade74ac602e9ae511af68bb254dfe65d61b7faf9fab82d0b4364a30b").data());

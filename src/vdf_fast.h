@@ -1004,7 +1004,7 @@ public:
 
 //this should never have an infinite loop
 //the gcd loops all have maximum counters after which they'll error out, and the thread_state loops also have a maximum spin counter
-void repeated_square_fast_work(square_state_type &square_state,bool is_slave, uint64 base, uint64 iterations, INUDUPLListener *nuduplListener) {
+void repeated_square_fast_work(square_state_type &square_state, bool is_slave, uint64 base, uint64 iterations, INUDUPLListener *nuduplListener) {
     c_thread_state.reset();
     c_thread_state.is_slave=is_slave;
     c_thread_state.pairindex=square_state.pairindex;

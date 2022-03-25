@@ -17,7 +17,7 @@ limitations under the License.
 class vdf_original
 {
 public:
-    
+
     struct form {
         // y = ax^2 + bxy + y^2
         mpz_t a;
@@ -321,6 +321,6 @@ public:
 
     ~vdf_original() {
         mpz_clears(negative_a, r, denom, old_a, old_b, ra, s, x, g, d, e, q, w, m,
-                   u, a, b, k, mu, v, sigma, lambda, f3.a, f3.b, f3.c, NULL); //,); 
+                   u, a, b, k, mu, v, sigma, lambda, f3.a, f3.b, f3.c, NULL); //,);
     }
 };

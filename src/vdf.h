@@ -451,7 +451,7 @@ class ProverManager {
         while (!valid_proof && !stopped) {
             std::unique_lock<std::mutex> lk(proof_mutex);
             proof_cv.wait(lk, [this, iteration] {
-                if (max_proving_iteration >= iteration - iteration % (1 << 16)) 
+                if (max_proving_iteration >= iteration - iteration % (1 << 16))
                     return true;
                 return stopped.load();
             });
@@ -562,8 +562,8 @@ class ProverManager {
                     if (provers[i].first->IsFinished()) {
                         provers[i].second.proof = provers[i].first->GetProof();
                         if (debug_mode) {
-                            std::cout << "Done segment: [" << provers[i].second.start 
-                                      << ", " << provers[i].second.start + provers[i].second.length 
+                            std::cout << "Done segment: [" << provers[i].second.start
+                                      << ", " << provers[i].second.start + provers[i].second.length
                                       << "]. Bucket: " << provers[i].second.GetSegmentBucket() << ".\n";
                         }
                         if (provers[i].second.length == (1 << 16)) {
@@ -571,7 +571,7 @@ class ProverManager {
                         }
                         int index = provers[i].second.GetSegmentBucket();
                         int position = provers[i].second.start / provers[i].second.length;
-                        while (done_segments[index].size() <= position)  
+                        while (done_segments[index].size() <= position)
                             done_segments[index].emplace_back(Segment());
                         done_segments[index][position] = provers[i].second;
                         if (provers[i].first->IsFullyFinished()) {
@@ -588,7 +588,7 @@ class ProverManager {
                         expected_proving_iters = done_segments[0][done_segments[0].size() - 1].start +
                                                  done_segments[0][done_segments[0].size() - 1].length;
                     }
-                    
+
                     if (pending_iters.size() > 0)
                         best_pending_iter = *pending_iters.begin();
                     if (pending_iters.size() > 0 && expected_proving_iters >= best_pending_iter - best_pending_iter % (1 << 16)) {
@@ -689,7 +689,7 @@ class ProverManager {
                     // Otherwise, pause one already running segment, if candidate is better.
                     Segment worst_running;
                     int worst_index;
-                    for (int i = 0; i < provers.size(); i++) 
+                    for (int i = 0; i < provers.size(); i++)
                         if (provers[i].first->IsRunning()) {
                             if (worst_running.is_empty == true || provers[i].second.IsWorseThan(worst_running)) {
                                 worst_running = provers[i].second;

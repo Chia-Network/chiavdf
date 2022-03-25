@@ -46,7 +46,7 @@ struct Segment {
         is_empty = true;
     }
 
-    Segment(uint64_t start, uint64_t length, form& x, form& y) {        
+    Segment(uint64_t start, uint64_t length, form& x, form& y) {
         this->start = start;
         this->length = length;
         this->x = x;
@@ -62,7 +62,7 @@ struct Segment {
         }
         if (length > other.length)
             return true;
-        if (length < other.length)  
+        if (length < other.length)
             return false;
         return start > other.start;
     }

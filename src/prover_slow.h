@@ -28,10 +28,10 @@ uint64_t GetBlock(uint64_t i, uint64_t k, uint64_t T, integer& B) {
     return res_vector[0];
 }
 
-form GenerateWesolowski(form &y, form &x_init, 
-                        integer &D, PulmarkReducer& reducer, 
+form GenerateWesolowski(form &y, form &x_init,
+                        integer &D, PulmarkReducer& reducer,
                         std::vector<form>& intermediates,
-                        uint64_t num_iterations, 
+                        uint64_t num_iterations,
                         uint64_t k, uint64_t l) {
     integer B = GetB(D, x_init, y);
     integer L=root(-D, 4);
@@ -95,7 +95,7 @@ std::vector<uint8_t> ProveSlow(integer& D, form& x, uint64_t num_iterations) {
         }
         nudupl_form(y, y, D, L);
         reducer.reduce(y);
-    } 
+    }
     form proof = GenerateWesolowski(y, x, D, reducer, intermediates, num_iterations, k, l);
     std::vector<uint8_t> result = SerializeForm(y, d_bits);
     std::vector<uint8_t> proof_bytes = SerializeForm(proof, d_bits);

@@ -89,7 +89,7 @@ class OneWesolowskiCallback: public WesolowskiCallback {
 
     void OnIteration(int type, void *data, uint64_t iteration) {
         iteration++;
-        if (iteration > wanted_iter) 
+        if (iteration > wanted_iter)
             return ;
 
         if (iteration % kl == 0) {
@@ -189,7 +189,7 @@ class FastAlgorithmCallback : public WesolowskiCallback {
         return &(forms[pos]);
     }
 
-    // We need to store: 
+    // We need to store:
     // 2^16 * k + 10 * l
     // 2^(18 + 2*m) * k + 12 * 2^(2*m) * l
     void OnIteration(int type, void *data, uint64_t iteration) {

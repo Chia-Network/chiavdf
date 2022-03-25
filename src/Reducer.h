@@ -45,10 +45,10 @@ unsigned int lzcnt64_hard(unsigned long long x) WEAK;
 namespace {
 const int_fast64_t THRESH{1ul << 31};
 const int_fast64_t EXP_THRESH{31};
-} 
+}
 
 /**
- * @brief The Reducer class that does custom reduce operation for VDF 
+ * @brief The Reducer class that does custom reduce operation for VDF
  * repeated squaring algorithm. The implementation is based on
  * Akashnil VDF competition entry and further optimized for speed.
  */
@@ -56,14 +56,14 @@ class alignas(64) Reducer {
 public:
   /**
    * @brief Reducer - constructs by using reference into cg context.
-   */  
+   */
   Reducer(ClassGroupContext &ctx_) : ctx(ctx_) {}
 
   ~Reducer() {}
 
   /**
    * @brief run - runs reduction algorithm for cg context params
-   */  
+   */
   inline void run() {
     while (!isReduced()) {
       int_fast64_t a, b, c;
@@ -140,7 +140,7 @@ bool bLZCHasHW=false;
         bLZCHasHW=has_lzcnt_hard();
         bLZCChecked=true;
     }
-    
+
     int_fast64_t lg2;
 
     if(bLZCHasHW)

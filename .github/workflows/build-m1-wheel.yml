@@ -23,7 +23,7 @@ jobs:
 
     - name: Ensure dependencies are present
       run: |
-        arch -arm64 brew install gmp boost
+        arch -arm64 brew install gmp boost cmake
         arch -arm64 brew install python@3.9
         arch -arm64 brew install python@3.10
 

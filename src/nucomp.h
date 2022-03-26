@@ -3,22 +3,22 @@
 
 /**
     Copyright (C) 2012 William Hart
-    
+
     Permission is hereby granted, free of charge, to any person obtaining a copy of this
-    software and associated documentation files (the "Software"), to deal in the Software 
-    without restriction, including without limitation the rights to use, copy, modify, merge, 
-    publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons 
+    software and associated documentation files (the "Software"), to deal in the Software
+    without restriction, including without limitation the rights to use, copy, modify, merge,
+    publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons
     to whom the Software is furnished to do so, subject to the following conditions:
     The above copyright notice and this permission notice shall be included in all copies or
     substantial portions of the Software.
-    
+
     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
     INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
     PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
     FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
     OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
     DEALINGS IN THE SOFTWARE.
-    
+
     MIT licensing permission obtained January 13, 2020 by Chia Network Inc. from William Hart
 
 Copyright 2020 Chia Network Inc
@@ -89,11 +89,11 @@ void qfb_nucomp(qfb_t r, const qfb_t f, const qfb_t g, mpz_t& D, mpz_t& L)
 
    mpz_mul(k, m, v1);
    mpz_fdiv_r(k, k, a1);
- 
+
    if (mpz_cmp_ui(sp, 1))
    {
       mpz_gcdext(s, v2, u2, ss, sp);
- 
+
       /* k = k*u2 - v2*c2 */
       mpz_mul(k, k, u2);
       mpz_mul(t, v2, c2);
@@ -163,7 +163,7 @@ void qfb_nucomp(qfb_t r, const qfb_t f, const qfb_t g, mpz_t& D, mpz_t& L)
       mpz_sub(cb, cb, g->b);
       mpz_mul_2exp(temp, ca, 1);
       mpz_fdiv_r(cb, cb, temp);
- 
+
       /* cc = (cb*cb - D) / (4*ca) */
       mpz_mul(cc, cb, cb);
       mpz_sub(cc, cc, D);

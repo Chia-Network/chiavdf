@@ -44,7 +44,7 @@ int main(int argc, char** argv) {
     set_rounding_mode();
 
     string filename="asm_compiled.s";
-    
+
     bool compile_avx512=false;
 
     if((argc==2)&&(strcmp(argv[1],"avx2")==0))

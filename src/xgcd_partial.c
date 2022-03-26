@@ -2,9 +2,9 @@
     Copyright (C) 2012 William Hart
 
     Permission is hereby granted, free of charge, to any person obtaining a copy of this
-    software and associated documentation files (the "Software"), to deal in the Software 
-    without restriction, including without limitation the rights to use, copy, modify, merge, 
-    publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons 
+    software and associated documentation files (the "Software"), to deal in the Software
+    without restriction, including without limitation the rights to use, copy, modify, merge,
+    publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons
     to whom the Software is furnished to do so, subject to the following conditions:
 
     The above copyright notice and this permission notice shall be included in all copies or
@@ -16,7 +16,7 @@
     FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
     OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
     DEALINGS IN THE SOFTWARE.
-    
+
     MIT licensing permission obtained January 13, 2020 by Chia Network Inc. from William Hart
     */
 
@@ -33,17 +33,17 @@ void mpz_xgcd_partial(mpz_t co2, mpz_t co1,
    mp_limb_signed_t bits, bits1, bits2;
 
    mpz_init(q); mpz_init(r);
-   
+
    mpz_set_ui(co2, 0);
    mpz_set_si(co1, -1);
-  
+
    while (mpz_cmp_ui(r1, 0) && mpz_cmp(r1, L) > 0)
    {
       bits2 = mpz_sizeinbase(r2, 2);
       bits1 = mpz_sizeinbase(r1, 2);
       bits = __GMP_MAX(bits2, bits1) - GMP_LIMB_BITS + 1;
       if (bits < 0) bits = 0;
-      
+
       mpz_tdiv_q_2exp(r, r2, bits);
       rr2 = mpz_get_ui(r);
       mpz_tdiv_q_2exp(r, r1, bits);
@@ -58,14 +58,14 @@ void mpz_xgcd_partial(mpz_t co2, mpz_t co1,
       {
          qq = rr2 / rr1;
 
-         t1 = rr2 - qq*rr1; 
-         t2 = aa2 - qq*aa1; 
-         t3 = bb2 - qq*bb1; 
+         t1 = rr2 - qq*rr1;
+         t2 = aa2 - qq*aa1;
+         t3 = bb2 - qq*bb1;
 
          if (i & 1)
          {
             if (t1 < -t3 || rr1 - t1 < t2 - aa1) break;
-         } else 
+         } else
          {
             if (t1 < -t2 || rr1 - t1 < t3 - bb1) break;
          }
@@ -114,7 +114,7 @@ void mpz_xgcd_partial(mpz_t co2, mpz_t co1,
    }
 
    if (mpz_sgn(r2) < 0)
-   { 
+   {
       mpz_neg(co2, co2); mpz_neg(co1, co1);
       mpz_neg(r2, r2);
    }

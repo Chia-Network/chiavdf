@@ -244,7 +244,7 @@ struct integer {
     string to_string_dec() const {
         string res_string;
         res_string.resize(mpz_sizeinbase(impl, 10));
-        
+
         mpz_get_str(&(res_string[0]), 10, impl);
 
         return res_string.c_str();

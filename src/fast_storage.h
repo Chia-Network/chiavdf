@@ -1,5 +1,5 @@
 
-// If 'FAST_MACHINE' is set to 1, the machine needs to have a high number 
+// If 'FAST_MACHINE' is set to 1, the machine needs to have a high number
 // of CPUs. This will optimize the runtime,
 // by not storing any intermediate values in main VDF worker loop.
 // Other threads will come back and redo the work, this
@@ -80,7 +80,7 @@ class FastStorage {
                 }
             }
             nudupl_form(y, y, D, L);
-            reducer.reduce(y);   
+            reducer.reduce(y);
         }
         AddIntermediates(iter_begin);
     }
@@ -99,7 +99,7 @@ class FastStorage {
                     intermediates_iter += (1 << 16);
                 }
         return intermediates_iter;
-    } 
+    }
 
     void CalculateIntermediatesThread() {
         while (!stopped) {

@@ -470,8 +470,8 @@ void gcd_unsigned(
 #else
         for (int end_index=0;end_index<int_size;++end_index) {
             int size=end_index+1;
-            
-            int mapped_size=size; 
+
+            int mapped_size=size;
             while (mapped_size==0 || mapped_size%4!=0) {
                 ++mapped_size;
             }

@@ -280,5 +280,4 @@ else:
             build_ext=CMakeBuild, install_hook=install_hook, build_hook=build_hook
         ),
         zip_safe=False,
-        use_scm_version={"fallback_version": "unknown-no-.git-directory"},
     )

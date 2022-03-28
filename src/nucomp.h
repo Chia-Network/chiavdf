@@ -1,5 +1,5 @@
-#ifndef VDF_NEW_H
-#define VDF_NEW_H
+#ifndef NUCOMP_H
+#define NUCOMP_H
 
 /**
     Copyright (C) 2012 William Hart
@@ -343,4 +343,4 @@ void nudupl_form(form &a, form &b, integer &D, integer &L)
     *a.c.impl = *fr.c;
 }
 
-#endif // VDF_NEW_H
+#endif // NUCOMP_H

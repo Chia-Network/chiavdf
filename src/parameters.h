@@ -1,27 +1,27 @@
 #ifndef PARAMETERS_H
 #define PARAMETERS_H
 
-//have to pass one of these in as a macro
+// have to pass one of these in as a macro
 //#define VDF_MODE 0 //used for the final submission and correctness testing
 //#define VDF_MODE 1 //used for performance or other testing
 
-//also have to pass in one of these
+// also have to pass in one of these
 //#define ENABLE_ALL_INSTRUCTIONS 1
 //#define ENABLE_ALL_INSTRUCTIONS 0
 
 //
 //
 
-//divide table
-const int divide_table_index_bits=11;
-const int gcd_num_quotient_bits=31; //excludes sign bit
-const int data_size=31;
-const int gcd_base_max_iter_divide_table=16;
+// divide table
+const int divide_table_index_bits = 11;
+const int gcd_num_quotient_bits = 31; // excludes sign bit
+const int data_size = 31;
+const int gcd_base_max_iter_divide_table = 16;
 
-//continued fraction table
-const int gcd_table_num_exponent_bits=3;
-const int gcd_table_num_fraction_bits=7;
-const int gcd_base_max_iter=5;
+// continued fraction table
+const int gcd_table_num_exponent_bits = 3;
+const int gcd_table_num_fraction_bits = 7;
+const int gcd_base_max_iter = 5;
 
 extern bool use_divide_table;
 extern int gcd_base_bits;
@@ -29,50 +29,51 @@ extern int gcd_128_max_iter;
 extern std::string asmprefix;
 extern bool enable_all_instructions;
 
-bool bChecked=false;
-bool bAVX2=false;
+bool bChecked = false;
+bool bAVX2 = false;
 
-bool enable_avx512_ifma=false;
+bool enable_avx512_ifma = false;
 
 #if defined(__i386) || defined(_M_IX86)
-    #define ARCH_X86
+#define ARCH_X86
 #elif defined(__x86_64__) || defined(_M_X64)
-    #define ARCH_X64
-#elif (defined(__arm__) && defined(__ARM_ARCH) && __ARM_ARCH >= 5) || (defined(_M_ARM) && _M_ARM >= 5) || defined(__ARM_FEATURE_CLZ) /* ARM (Architecture Version 5) */
-    #define ARCH_ARM
+#define ARCH_X64
+#elif (defined(__arm__) && defined(__ARM_ARCH) && __ARM_ARCH >= 5) ||          \
+    (defined(_M_ARM) && _M_ARM >= 5) ||                                        \
+    defined(__ARM_FEATURE_CLZ) /* ARM (Architecture Version 5) */
+#define ARCH_ARM
 #endif
 
 #if defined(_WIN64) || defined(_LP64) || defined(__LP64__)
-    #define ARCH_64BIT
+#define ARCH_64BIT
 #else
-    #define ARCH_32BIT
+#define ARCH_32BIT
 #endif
 
-inline bool hasAVX2()
-{
-  if(!bChecked)
-  {
-    bChecked=true;
+inline bool hasAVX2() {
+  if (!bChecked) {
+    bChecked = true;
 #if defined(ARCH_X86) || defined(ARCH_X64)
     int info[4] = {0};
 #if defined(_MSC_VER)
     __cpuid(info, 0x7);
 #elif defined(__GNUC__) || defined(__clang__)
 #if defined(ARCH_X86) && defined(__PIC__)
-    __asm__ __volatile__ (
-                "xchg{l} {%%}ebx, %k1;"
-                "cpuid;"
-                "xchg{l} {%%}ebx, %k1;"
-                : "=a"(info[0]), "=&r"(info[1]), "=c"(info[2]), "=d"(info[3]) : "a"(0x7), "c"(0)
-    );
+    __asm__ __volatile__("xchg{l} {%%}ebx, %k1;"
+                         "cpuid;"
+                         "xchg{l} {%%}ebx, %k1;"
+                         : "=a"(info[0]), "=&r"(info[1]), "=c"(info[2]),
+                           "=d"(info[3])
+                         : "a"(0x7), "c"(0));
 #else
-    __asm__ __volatile__ (
-                "cpuid" : "=a"(info[0]), "=b"(info[1]), "=c"(info[2]), "=d"(info[3]) : "a"(0x7), "c"(0)
-    );
+    __asm__ __volatile__("cpuid"
+                         : "=a"(info[0]), "=b"(info[1]), "=c"(info[2]),
+                           "=d"(info[3])
+                         : "a"(0x7), "c"(0));
 #endif
 #endif
-    const int AVX2 = 1<<5;
-    const int ADX = 1<<19;
+    const int AVX2 = 1 << 5;
+    const int ADX = 1 << 19;
 
     bool avx2bit = ((info[1] & AVX2) == AVX2);
     bool adxbit = ((info[1] & ADX) == ADX);
@@ -113,21 +114,23 @@ effect of scheduler:
 taskset 0,1     : 0m1.352s (63% speedup single thread, 37% over 0,2)
 taskset 0,2     : 0m1.850s
 default         : 0m1.348s (fastest)
-single threaded : 0m2.212s [this has gone down to 0m1.496s for some reason with the divide table]
+single threaded : 0m2.212s [this has gone down to 0m1.496s for some reason with
+the divide table]
 
 exponent    fraction    base_bits   base_iter   128_iter    seconds
-3           7           50          5           3           0m1.350s    [fastest with range checks enabled]
-3           7           52          5           3           0m1.318s    [range checks disabled; 2.4% faster]
+3           7           50          5           3           0m1.350s    [fastest
+with range checks enabled] 3           7           52          5           3
+0m1.318s    [range checks disabled; 2.4% faster]
 
 [this block with bmi and fma disabled]
 3           7           46          5           3           0m1.426s
 3           7           47          5           3           0m1.417s
 3           7           48          5           3           0m1.421s
 3           7           49          5           3           0m1.413s
-3           7           50          5           3           0m1.401s    [still fastest; bmi+fma is 3.8% faster]
-3           7           51          5           3           0m1.406s
-3           7           52          5           3           0m1.460s
-3           7           50          6           3           0m1.416s
+3           7           50          5           3           0m1.401s    [still
+fastest; bmi+fma is 3.8% faster] 3           7           51          5 3
+0m1.406s 3           7           52          5           3           0m1.460s 3
+7           50          6           3           0m1.416s
 
 3           7           49          6           3           0m1.376s
 
@@ -189,74 +192,82 @@ exponent    fraction    base_bits   base_iter   128_iter    seconds
 3           10          50          5           3           0m1.379s
 ***/
 
-const uint64 max_spin_counter=10000000;
+const uint64 max_spin_counter = 10000000;
 
-//this value makes square_original not be called in 100k iterations. with every iteration reduced, minimum value is 1
-const int num_extra_bits_ab=3;
+// this value makes square_original not be called in 100k iterations. with every
+// iteration reduced, minimum value is 1
+const int num_extra_bits_ab = 3;
 
-const bool calculate_k_repeated_mod=false;
-const bool calculate_k_repeated_mod_interval=1;
+const bool calculate_k_repeated_mod = false;
+const bool calculate_k_repeated_mod_interval = 1;
 
-const int validate_interval=1; //power of 2. will check the discriminant in the slave thread at this interval. -1 to disable. no effect on performance
-const int checkpoint_interval=10000; //at each checkpoint, the slave thread is restarted and the master thread calculates c
-//checkpoint_interval=100000: 39388
-//checkpoint_interval=10000:  39249 cycles per fast iteration
-//checkpoint_interval=1000:   38939
-//checkpoint_interval=100:    39988
-//no effect on performance (with track cycles enabled)
+const int validate_interval =
+    1; // power of 2. will check the discriminant in the slave thread at this
+       // interval. -1 to disable. no effect on performance
+const int checkpoint_interval =
+    10000; // at each checkpoint, the slave thread is restarted and the master
+           // thread calculates c
+// checkpoint_interval=100000: 39388
+// checkpoint_interval=10000:  39249 cycles per fast iteration
+// checkpoint_interval=1000:   38939
+// checkpoint_interval=100:    39988
+// no effect on performance (with track cycles enabled)
 
 // ==== test ====
-#if VDF_MODE==1
-    #define VDF_TEST
-    const bool is_vdf_test=true;
+#if VDF_MODE == 1
+#define VDF_TEST
+const bool is_vdf_test = true;
 
-    const bool enable_random_error_injection=false;
-    const double random_error_injection_rate=0; //0 to 1
+const bool enable_random_error_injection = false;
+const double random_error_injection_rate = 0; // 0 to 1
 
-    //#define GENERATE_ASM_TRACKING_DATA
-    //#define ENABLE_TRACK_CYCLES
-    const bool vdf_test_correctness=false;
-    const bool enable_threads=true;
+//#define GENERATE_ASM_TRACKING_DATA
+//#define ENABLE_TRACK_CYCLES
+const bool vdf_test_correctness = false;
+const bool enable_threads = true;
 #endif
 
 // ==== production ====
-#if VDF_MODE==0
-    const bool is_vdf_test=false;
+#if VDF_MODE == 0
+const bool is_vdf_test = false;
 
-    const bool enable_random_error_injection=false;
-    const double random_error_injection_rate=0; //0 to 1
+const bool enable_random_error_injection = false;
+const double random_error_injection_rate = 0; // 0 to 1
 
-    const bool vdf_test_correctness=false;
-    const bool enable_threads=true;
+const bool vdf_test_correctness = false;
+const bool enable_threads = true;
 
-    //#define ENABLE_TRACK_CYCLES
+//#define ENABLE_TRACK_CYCLES
 #endif
 
 //
 //
 
-//this doesn't do anything outside of test code
-//this doesn't work with the divide table currently
+// this doesn't do anything outside of test code
+// this doesn't work with the divide table currently
 #define TEST_ASM
 
-const int gcd_size=20; //multiple of 4. must be at least half the discriminant size in bits divided by 64
+const int gcd_size = 20; // multiple of 4. must be at least half the
+                         // discriminant size in bits divided by 64
 
-const int gcd_max_iterations=gcd_size*2; //typically 1 iteration per limb
+const int gcd_max_iterations = gcd_size * 2; // typically 1 iteration per limb
 
-const int max_bits_base=1024; //half the discriminant number of bits, rounded up
-const int reduce_max_iterations=10000;
+const int max_bits_base =
+    1024; // half the discriminant number of bits, rounded up
+const int reduce_max_iterations = 10000;
 
-const int num_asm_tracking_data=128;
+const int num_asm_tracking_data = 128;
 
-const int track_cycles_num_buckets=24; //each bucket is from 2^i to 2^(i+1) cycles
-const int track_cycles_max_num=128;
+const int track_cycles_num_buckets =
+    24; // each bucket is from 2^i to 2^(i+1) cycles
+const int track_cycles_max_num = 128;
 
 void mark_vdf_test() {
-    static bool did_warning=false;
-    if (!is_vdf_test && !did_warning) {
-        print( "test code enabled in production build" );
-        did_warning=true;
-    }
+  static bool did_warning = false;
+  if (!is_vdf_test && !did_warning) {
+    print("test code enabled in production build");
+    did_warning = true;
+  }
 }
 
 // end Headerguard PARAMETERS_H

@@ -2,11 +2,11 @@
 #define INCLUDE_H
 
 #ifdef NDEBUG
-    #undef NDEBUG
+#undef NDEBUG
 #endif
 
-#if VDF_MODE==0
-    #define NDEBUG
+#if VDF_MODE == 0
+#define NDEBUG
 #endif
 
 #include <iostream>

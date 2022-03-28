@@ -258,7 +258,6 @@ if platform.system() == "Windows":
         ext_modules=ext_modules,
         cmdclass={"build_ext": BuildExt},
         zip_safe=False,
-        use_scm_version={"fallback_version": "unknown-no-.git-directory"},
     )
 else:
     build.sub_commands.append(("build_hook", lambda x: True))  # type: ignore
@@ -280,5 +279,4 @@ else:
             build_ext=CMakeBuild, install_hook=install_hook, build_hook=build_hook
         ),
         zip_safe=False,
-        use_scm_version={"fallback_version": "unknown-no-.git-directory"},
     )

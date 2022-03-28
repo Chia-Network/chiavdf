@@ -27,8 +27,10 @@
     #ifdef assert
         #undef assert
     #endif
-    #define assert(v) if (!(v)) { std::cerr << "\n\nAssertion failed: " << __FILE__ << " : " << __LINE__ << "\n"; char* shared_generic_assert_char_123=nullptr; *shared_generic_assert_char_123=1; throw 0; } (void)0
-#endif
+    #define assert(v) if (!(v)) { std::cerr << "\n\nAssertion failed: " <<
+__FILE__ << " : " << __LINE__ << "\n"; char*
+shared_generic_assert_char_123=nullptr; *shared_generic_assert_char_123=1; throw
+0; } (void)0 #endif
 */
 
 #endif

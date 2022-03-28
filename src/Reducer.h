@@ -24,15 +24,15 @@ limitations under the License.
 #include "ClassGroup.h"
 
 #ifdef __has_attribute
-# define HAS_ATTRIBUTE(x) __has_attribute(x)
+#define HAS_ATTRIBUTE(x) __has_attribute(x)
 #else
-# define HAS_ATTRIBUTE(x) 0
+#define HAS_ATTRIBUTE(x) 0
 #endif
 
 #if HAS_ATTRIBUTE(weak)
-# define WEAK __attribute__((weak))
+#define WEAK __attribute__((weak))
 #else
-# define WEAK
+#define WEAK
 #endif
 
 extern "C" {
@@ -45,7 +45,7 @@ unsigned int lzcnt64_hard(unsigned long long x) WEAK;
 namespace {
 const int_fast64_t THRESH{1ul << 31};
 const int_fast64_t EXP_THRESH{31};
-}
+} // namespace
 
 /**
  * @brief The Reducer class that does custom reduce operation for VDF
@@ -114,7 +114,6 @@ public:
   }
 
 private:
-
   inline void signed_shift(uint64_t op, int64_t shift, int_fast64_t &r) {
     if (shift > 0)
       r = static_cast<int64_t>(op << shift);
@@ -124,8 +123,8 @@ private:
       r = static_cast<int64_t>(op >> (-shift));
   }
 
-bool bLZCChecked=false;
-bool bLZCHasHW=false;
+  bool bLZCChecked = false;
+  bool bLZCHasHW = false;
 
   inline void mpz_get_si_2exp(int_fast64_t &r, int_fast64_t &exp,
                               const mpz_t op) {
@@ -135,18 +134,17 @@ bool bLZCHasHW=false;
     int_fast64_t size(static_cast<long>(mpz_size(op)));
     uint_fast64_t last(mpz_getlimbn(op, (size - 1)));
 
-    if(!bLZCChecked)
-    {
-        bLZCHasHW=has_lzcnt_hard();
-        bLZCChecked=true;
+    if (!bLZCChecked) {
+      bLZCHasHW = has_lzcnt_hard();
+      bLZCChecked = true;
     }
 
     int_fast64_t lg2;
 
-    if(bLZCHasHW)
-        lg2 = exp = ((63 - lzcnt64_hard(last)) + 1);
+    if (bLZCHasHW)
+      lg2 = exp = ((63 - lzcnt64_hard(last)) + 1);
     else
-        lg2 = exp = ((63 - lzcnt64_soft(last)) + 1);
+      lg2 = exp = ((63 - lzcnt64_soft(last)) + 1);
 
     signed_shift(last, (63 - exp), r);
     if (size > 1) {
@@ -209,7 +207,7 @@ bool bLZCHasHW=false;
       w = w_;
       x = x_;
 
-      s = b >= 0 ? (b+c) / (c<<1) : - (-b+c) / (c<<1);
+      s = b >= 0 ? (b + c) / (c << 1) : -(-b + c) / (c << 1);
 
       a_ = a;
       b_ = b;

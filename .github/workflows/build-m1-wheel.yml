@@ -116,9 +116,3 @@ jobs:
         TWINE_NON_INTERACTIVE: 1
         TWINE_PASSWORD: ${{ secrets.test_pypi_password }}
       run: arch -arm64 twine upload --non-interactive --skip-existing --verbose 'dist/*'
-
-    - name: Clean up
-      run: |
-        deactivate
-        rm -rf venv
-        rm -rf dist

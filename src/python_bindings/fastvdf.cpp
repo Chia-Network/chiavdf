@@ -72,12 +72,12 @@ PYBIND11_MODULE(chiavdf, m) {
                                    const string& x_s,
                                    const string& proof_blob,
                                    const uint64_t num_iterations, const uint64_t recursion) {
+        std::pair<bool, std::vector<uint8_t>> result;
         {
             py::gil_scoped_release release;
             std::string proof_blob_str(proof_blob);
             uint8_t *proof_blob_ptr = reinterpret_cast<uint8_t *>(proof_blob_str.data());
             int proof_blob_size = proof_blob.size();
-            std::pair<bool, std::vector<uint8_t>> result;
             result = CheckProofOfTimeNWesolowskiWithB(integer(discriminant), integer(B), (const uint8_t *)x_s.data(), proof_blob_ptr, proof_blob_size, num_iterations, recursion);
         }
         py::bytes res_bytes = py::bytes(reinterpret_cast<char*>(result.second.data()), result.second.size());

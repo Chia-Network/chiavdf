@@ -80,14 +80,23 @@ bool CheckProofOfTimeNWesolowskiCommon(integer& D, form& x, const uint8_t* proof
     int form_size = BQFC_FORM_SIZE;
     int segment_len = 8 + B_bytes + form_size;
     int i = proof_blob_len - segment_len;
+    PulmarkReducer reducer;
 
     for (; i >= last_segment; i -= segment_len) {
         uint64_t segment_iters = BytesToInt64(&proof_blob[i]);
         form proof = DeserializeForm(D, &proof_blob[i + 8 + B_bytes], form_size);
         integer B(&proof_blob[i + 8], B_bytes);
         form xnew;
-        if (VerifyWesoSegment(D, x, proof, B, segment_iters, skip_check, xnew))
-            return false;
+        if (!skip_check) {
+            if (VerifyWesoSegment(D, x, proof, B, segment_iters, xnew))
+                return false;
+        } else {
+            integer L = root(-D, 4);
+            integer r = FastPow(2, segment_iters, B);
+            form f1 = FastPowFormNucomp(proof, D, B, L, reducer);
+            form f2 = FastPowFormNucomp(x, D, r, L, reducer);
+            xnew = f1 * f2;
+        }
 
         x = xnew;
         if (segment_iters > iterations) {

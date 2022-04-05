@@ -119,5 +119,6 @@ jobs:
 
     - name: Clean up
       run: |
+        deactivate
         rm -rf venv
         rm -rf dist

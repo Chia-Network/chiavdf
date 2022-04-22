@@ -35,6 +35,7 @@ jobs:
     - name: Build vdf-client on Windows
       if: startsWith(matrix.os, 'windows')
       run: |
+        choco install boost-msvc-14.2
         cd src
         make ${{ matrix.config }} -f Makefile.vdf-client
 

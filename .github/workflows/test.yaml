@@ -9,8 +9,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        os: [macos-latest, ubuntu-latest]
         config: [ optimized=1, TSAN=1, ASAN=1]
+        include:
+        - os: windows-latest
 
     steps:
     - name: Checkout code

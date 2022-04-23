@@ -1,6 +1,14 @@
 name: Build ARM64 wheels
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
 
 jobs:
   build_wheels:

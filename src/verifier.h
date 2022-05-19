@@ -130,15 +130,11 @@ std::pair<bool, std::vector<uint8_t>> CheckProofOfTimeNWesolowskiWithB(integer D
 }
 
 // TODO: Perhaps move?
-integer GetBFromProof(integer D, const uint8_t* x_s, const uint8_t* proof_blob, int32_t proof_blob_len, uint64_t iterations, int32_t depth) {
+integer GetBFromProof(integer D, const uint8_t* x_s, const uint8_t* proof_blob, int32_t proof_blob_len, int32_t depth) {
     int form_size = BQFC_FORM_SIZE;
     int segment_len = 8 + B_bytes + form_size;
     form x = DeserializeForm(D, x_s, form_size);
     if (proof_blob_len != 2 * form_size + depth * segment_len) {
-        throw std::runtime_error("Invalid proof.");
-    }
-    bool is_valid = CheckProofOfTimeNWesolowskiCommon(D, x, proof_blob, proof_blob_len, iterations, 2 * form_size, true);
-    if (is_valid == false) {
         throw std::runtime_error("Invalid proof.");
     }
     form y = DeserializeForm(D, proof_blob, form_size);

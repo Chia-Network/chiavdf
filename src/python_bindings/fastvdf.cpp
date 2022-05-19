@@ -88,12 +88,12 @@ PYBIND11_MODULE(chiavdf, m) {
     m.def("get_b_from_n_wesolowski", [] (const string& discriminant,
                                    const string& x_s,
                                    const string& proof_blob,
-                                   const uint64_t num_iterations, const uint64_t recursion) {
+                                   const uint64_t recursion) {
         py::gil_scoped_release release;
         std::string proof_blob_str(proof_blob);
         uint8_t *proof_blob_ptr = reinterpret_cast<uint8_t *>(proof_blob_str.data());
         int proof_blob_size = proof_blob.size();
-        integer B = GetBFromProof(integer(discriminant), (const uint8_t *)x_s.data(), proof_blob_ptr, proof_blob_size, num_iterations, recursion);
+        integer B = GetBFromProof(integer(discriminant), (const uint8_t *)x_s.data(), proof_blob_ptr, proof_blob_size, recursion);
         return B.to_string();
     });
 }

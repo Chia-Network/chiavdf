@@ -37,13 +37,25 @@ jobs:
             matrix: windows
             runs-on:
               intel: [windows-latest]
-        python:
-          - major_dot_minor: '3.9'
         arch:
           - name: ARM
             matrix: arm
           - name: Intel
             matrix: intel
+        exclude:
+          # Only partial entries are required here by GitHub Actions so generally I
+          # only specify the `matrix:` entry.  The super linter complains so for now
+          # all entries are included to avoid that.  Reported at
+          # https://github.com/github/super-linter/issues/3016
+          - os:
+              name: Windows
+              matrix: windows
+              runs-on:
+                intel: [windows-latest]
+            arch:
+              name: ARM
+              matrix: arm
+
     steps:
     - name: Clean workspace
       uses: Chia-Network/actions/clean-workspace@main
@@ -54,8 +66,21 @@ jobs:
         fetch-depth: 0
 
     - uses: Chia-Network/actions/setup-python@main
+      if: !( matrix.os.matrix == 'macos' && matrix.arch.matrix == 'arm' )
       with:
-        python-version: ${{ matrix.python.major_dot_minor }}
+        python-version: 3.7
+
+    - uses: Chia-Network/actions/setup-python@main
+      with:
+        python-version: 3.8
+
+    - uses: Chia-Network/actions/setup-python@main
+      with:
+        python-version: 3.9
+
+    - uses: Chia-Network/actions/setup-python@main
+      with:
+        python-version: 3.10
 
     - name: Lint source with flake8
       run: |
@@ -133,7 +158,6 @@ jobs:
           && delocate-wheel -v -i mpir_gc_x64/mpir_sandybridge.dll {wheel}
           && delocate-wheel -v -i mpir_gc_x64/mpir_skylake_avx.dll {wheel}
           && cp {wheel} {dest_dir}
-        CIBW_ENVIRONMENT_LINUX: "BUILD_VDF_CLIENT=${{ matrix.arch.matrix == 'arm' && 'N' || 'Y' }}"
         CIBW_TEST_REQUIRES: pytest
         CIBW_TEST_COMMAND: py.test -v {project}/tests
 

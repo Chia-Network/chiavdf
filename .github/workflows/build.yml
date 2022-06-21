@@ -28,6 +28,9 @@ jobs:
             runs-on:
               arm: [macOS, ARM64]
               intel: [macos-latest]
+            cibw-archs-macos:
+              arm: arm64
+              intel: x86_64
           - name: Ubuntu
             matrix: ubuntu
             runs-on:
@@ -144,9 +147,7 @@ jobs:
           && uname -a
         CIBW_BEFORE_BUILD_LINUX: >
           python -m pip install --upgrade pip
-        # CIBW_ARCHS_MACOS: x86_64 arm64 universal2
-        CIBW_ARCHS_MACOS: x86_64
-        CIBW_TEST_SKIP: '*_arm64 *_universal2:arm64'
+        CIBW_ARCHS_MACOS: ${{ matrix.cibw-archs-macos[matrix.arch.matrix] }}
         CIBW_BEFORE_ALL_MACOS: >
           brew install boost
         CIBW_BEFORE_BUILD_MACOS: >

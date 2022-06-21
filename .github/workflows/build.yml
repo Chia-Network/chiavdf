@@ -43,12 +43,16 @@ jobs:
         python:
           - major-dot-minor: '3.7'
             cibw-build: 'cp37-*'
+            matrix: '3.7'
           - major-dot-minor: '3.8'
             cibw-build: 'cp38-*'
+            matrix: '3.8'
           - major-dot-minor: '3.9'
             cibw-build: 'cp39-*'
+            matrix: '3.9'
           - major-dot-minor: '3.10'
             cibw-build: 'cp310-*'
+            matrix: '3.10'
         arch:
           - name: ARM
             matrix: arm
@@ -74,9 +78,9 @@ jobs:
                 arm: [macOS, ARM64]
                 intel: [macos-latest]
             python:
-              name: '3.7'
-              action: '3.7'
-              check: '3.7'
+              major-dot-minor: '3.7'
+              cibw-build: 'cp37-*'
+              matrix: '3.7'
             arch:
               name: ARM
               matrix: arm

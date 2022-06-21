@@ -3,38 +3,59 @@ name: Build Wheels
 on:
   push:
     branches:
-      - main
+    - main
     tags:
-      - '**'
+    - '**'
   pull_request:
     branches:
-      - '**'
+    - '**'
+
+concurrency:
+  # SHA is added to the end if on `main` to let all main workflows run
+  group: ${{ github.ref }}-${{ github.workflow }}-${{ github.event_name }}-${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/long_lived/')) && github.sha || '' }}
+  cancel-in-progress: true
 
 jobs:
   build_wheels:
-    name: Build wheel on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    name: Build wheel on ${{ matrix.os.name }} ${{ matrix.arch.name }}
+    runs-on: ${{ matrix.os.runs-on[matrix.arch.matrix] }}
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
-
+        os:
+          - name: macOS
+            matrix: macos
+            runs-on:
+              arm: [macOS, ARM64]
+              intel: [macos-latest]
+          - name: Ubuntu
+            matrix: ubuntu
+            runs-on:
+              arm: [Linux, ARM64]
+              intel: [ubuntu-latest]
+          - name: Windows
+            matrix: windows
+            runs-on:
+              intel: [windows-latest]
+        python:
+          - major_dot_minor: '3.9'
+        arch:
+          - name: ARM
+            matrix: arm
+          - name: Intel
+            matrix: intel
     steps:
-    - name: Cancel previous runs on the same branch
-      if: ${{ github.ref != 'refs/heads/master' }}
-      uses: styfle/cancel-workflow-action@0.9.1
-      with:
-        access_token: ${{ github.token }}
+    - name: Clean workspace
+      uses: Chia-Network/actions/clean-workspace@main
 
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
       with:
         fetch-depth: 0
 
-    - uses: actions/setup-python@v2
-      name: Install Python
+    - uses: Chia-Network/actions/setup-python@main
       with:
-        python-version: '3.8'
+        python-version: ${{ matrix.python.major_dot_minor }}
 
     - name: Lint source with flake8
       run: |
@@ -47,13 +68,13 @@ jobs:
         pip install mypy
         mypy --config-file mypi.ini setup.py tests
 
-    - name: Build source distribution with MacOS
-      if: startsWith(matrix.os, 'mac')
+    - name: Build source distribution with macOS
+      if: matrix.os.matrix == 'macos'
       run: |
         pip install build
         python -m build --sdist --outdir dist .
 
-    - name: Build ${{ matrix.os }} wheels and test
+    - name: Build ${{ matrix.os.name }} wheels and test
       uses: joerick/cibuildwheel@v2.3.1
       with:
         output-dir: dist
@@ -61,15 +82,14 @@ jobs:
         CIBW_BUILD_VERBOSITY_MACOS: 0
         CIBW_BUILD_VERBOSITY_LINUX: 0
         CIBW_BUILD_VERBOSITY_WINDOWS: 0
-        # build python 3.7 and 3.8
         CIBW_BUILD: cp37-* cp38-* cp39-* cp310-*
         CIBW_SKIP: '*-manylinux_i686 *-win32 *-musllinux_*'
-        # we need boost
+        CIBW_MANYLINUX_AARCH64_IMAGE: manylinux2014
         CIBW_MANYLINUX_X86_64_IMAGE: manylinux2010
         CIBW_ENVIRONMENT_LINUX: "PATH=/project/cmake-3.17.3-Linux-`uname -m`/bin:$PATH BUILD_VDF_CLIENT=N"
         CIBW_BEFORE_ALL_LINUX: >
           yum -y install epel-release
-          && echo "epel-relesase installed"
+          && echo "epel-release installed"
           && yum -y install boost-devel lzip
           && echo "boost-devel and lzip installed"
           && curl -L https://github.com/Kitware/CMake/releases/download/v3.17.3/cmake-3.17.3-Linux-`uname -m`.sh > cmake.sh
@@ -81,6 +101,8 @@ jobs:
           && cp src/lib/gmp-patch-6.2.1/mpz/inp_raw.c gmp-6.2.1/mpz
           && cd gmp-6.2.1 && ./configure --enable-fat --enable-cxx
           && make && make install && cd .. && rm -rf gmp-6.2.1
+          && cmake --version
+          && uname -a
         CIBW_BEFORE_BUILD_LINUX: >
           python -m pip install --upgrade pip
         # CIBW_ARCHS_MACOS: x86_64 arm64 universal2
@@ -111,6 +133,7 @@ jobs:
           && delocate-wheel -v -i mpir_gc_x64/mpir_sandybridge.dll {wheel}
           && delocate-wheel -v -i mpir_gc_x64/mpir_skylake_avx.dll {wheel}
           && cp {wheel} {dest_dir}
+        CIBW_ENVIRONMENT_LINUX: "BUILD_VDF_CLIENT=${{ matrix.arch.matrix == 'arm' && 'N' || 'Y' }}"
         CIBW_TEST_REQUIRES: pytest
         CIBW_TEST_COMMAND: py.test -v {project}/tests
 

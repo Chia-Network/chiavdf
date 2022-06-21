@@ -13,7 +13,7 @@ on:
 jobs:
   build_wheels:
     name: Build wheel on Mac M1
-    runs-on: [m1]
+    runs-on: [macOS, ARM64]
     strategy:
       fail-fast: false
 
@@ -31,59 +31,68 @@ jobs:
 
     - name: Ensure dependencies are present
       run: |
-        arch -arm64 brew install gmp boost cmake
-        arch -arm64 brew install python@3.9
-        arch -arm64 brew install python@3.10
-        arch -arm64 brew install python@3.11
+        brew install gmp boost cmake
+
+    - uses: Chia-Network/actions/setup-python@main
+      with:
+        python-version: '3.9'
+
+    - uses: Chia-Network/actions/setup-python@main
+      with:
+        python-version: '3.10'
+
+    - uses: Chia-Network/actions/setup-python@main
+      with:
+        python-version: '3.11'
 
     - name: Build m1 wheels
       run: |
         export BUILD_VDF_CLIENT=N
         rm -rf venv
-        arch -arm64 $(brew --prefix python@3.9)/libexec/bin/python -m venv venv
+        $(brew --prefix python@3.9)/libexec/bin/python -m venv venv
         . venv/bin/activate
-        arch -arm64 pip wheel -w dist --no-deps .
-        arch -arm64 pip install delocate
-        arch -arm64 delocate-wheel -v dist/*cp39*.whl
+        pip wheel -w dist --no-deps .
+        pip install delocate
+        delocate-wheel -v dist/*cp39*.whl
         deactivate
         rm -rf venv
-        arch -arm64 $(brew --prefix python@3.10)/libexec/bin/python -m venv venv
+        $(brew --prefix python@3.10)/libexec/bin/python -m venv venv
         . venv/bin/activate
-        arch -arm64 pip wheel -w dist --no-deps .
-        arch -arm64 pip install delocate
-        arch -arm64 delocate-wheel -v dist/*cp310*.whl
+        pip wheel -w dist --no-deps .
+        pip install delocate
+        delocate-wheel -v dist/*cp310*.whl
         deactivate
         rm -rf venv
-        arch -arm64 $(brew --prefix python@3.11)/libexec/bin/python -m venv venv
+        $(brew --prefix python@3.11)/libexec/bin/python -m venv venv
         . venv/bin/activate
-        arch -arm64 pip wheel -w dist --no-deps .
-        arch -arm64 pip install delocate
-        arch -arm64 delocate-wheel -v dist/*cp311*.whl
+        pip wheel -w dist --no-deps .
+        pip install delocate
+        delocate-wheel -v dist/*cp311*.whl
         deactivate
         rm -rf venv
 
     - name: Test wheels
       run: |
         rm -rf venv
-        arch -arm64 $(brew --prefix python@3.9)/libexec/bin/python -m venv venv
+        $(brew --prefix python@3.9)/libexec/bin/python -m venv venv
         . venv/bin/activate
-        arch -arm64 pip install ./dist/*cp39*.whl
-        arch -arm64 pip install pytest
-        arch -arm64 ./venv/bin/pytest -v ./tests
+        pip install ./dist/*cp39*.whl
+        pip install pytest
+        ./venv/bin/pytest -v ./tests
         deactivate
         rm -rf venv
-        arch -arm64 $(brew --prefix python@3.10)/libexec/bin/python -m venv venv
+        $(brew --prefix python@3.10)/libexec/bin/python -m venv venv
         . venv/bin/activate
-        arch -arm64 pip install ./dist/*cp310*.whl
-        arch -arm64 pip install pytest
-        arch -arm64 ./venv/bin/pytest -v ./tests
+        pip install ./dist/*cp310*.whl
+        pip install pytest
+        ./venv/bin/pytest -v ./tests
         deactivate
         rm -rf venv
-        arch -arm64 $(brew --prefix python@3.11)/libexec/bin/python -m venv venv
+        $(brew --prefix python@3.11)/libexec/bin/python -m venv venv
         . venv/bin/activate
-        arch -arm64 pip install ./dist/*cp311*.whl
-        arch -arm64 pip install pytest
-        arch -arm64 ./venv/bin/pytest -v ./tests
+        pip install ./dist/*cp311*.whl
+        pip install pytest
+        ./venv/bin/pytest -v ./tests
         deactivate
         rm -rf venv
 
@@ -117,7 +126,7 @@ jobs:
         SECRET: "${{ secrets.test_pypi_password }}"
 
     - name: Install twine
-      run: arch -arm64 pip install twine
+      run: pip install twine
 
     - name: Publish distribution to PyPI
       if: startsWith(github.event.ref, 'refs/tags') && steps.check_secrets.outputs.HAS_SECRET
@@ -125,7 +134,7 @@ jobs:
         TWINE_USERNAME: __token__
         TWINE_NON_INTERACTIVE: 1
         TWINE_PASSWORD: ${{ secrets.pypi_password }}
-      run: arch -arm64 twine upload --non-interactive --skip-existing --verbose 'dist/*'
+      run: twine upload --non-interactive --skip-existing --verbose 'dist/*'
 
     - name: Publish distribution to Test PyPI
       if: steps.check_secrets.outputs.HAS_SECRET
@@ -134,4 +143,4 @@ jobs:
         TWINE_USERNAME: __token__
         TWINE_NON_INTERACTIVE: 1
         TWINE_PASSWORD: ${{ secrets.test_pypi_password }}
-      run: arch -arm64 twine upload --non-interactive --skip-existing --verbose 'dist/*'
+      run: twine upload --non-interactive --skip-existing --verbose 'dist/*'

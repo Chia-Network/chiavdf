@@ -147,7 +147,7 @@ jobs:
           && uname -a
         CIBW_BEFORE_BUILD_LINUX: >
           python -m pip install --upgrade pip
-        CIBW_ARCHS_MACOS: ${{ matrix.cibw-archs-macos[matrix.arch.matrix] }}
+        CIBW_ARCHS_MACOS: ${{ matrix.os.cibw-archs-macos[matrix.arch.matrix] }}
         CIBW_BEFORE_ALL_MACOS: >
           brew install boost
         CIBW_BEFORE_BUILD_MACOS: >

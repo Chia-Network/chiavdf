@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   build_wheels:
-    name: Build wheel on ${{ matrix.os.name }} ${{ matrix.arch.name }}
+    name: Build wheel on ${{ matrix.os.name }} ${{ matrix.arch.name }} ${{ matrix.python.major-dot-minor }}
     runs-on: ${{ matrix.os.runs-on[matrix.arch.matrix] }}
     strategy:
       fail-fast: false

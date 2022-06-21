@@ -49,21 +49,21 @@ jobs:
       run: |
         export BUILD_VDF_CLIENT=N
         rm -rf venv
-        $(brew --prefix python@3.9)/libexec/bin/python -m venv venv
+        python3.9 -m venv venv
         . venv/bin/activate
         pip wheel -w dist --no-deps .
         pip install delocate
         delocate-wheel -v dist/*cp39*.whl
         deactivate
         rm -rf venv
-        $(brew --prefix python@3.10)/libexec/bin/python -m venv venv
+        python3.10 -m venv venv
         . venv/bin/activate
         pip wheel -w dist --no-deps .
         pip install delocate
         delocate-wheel -v dist/*cp310*.whl
         deactivate
         rm -rf venv
-        $(brew --prefix python@3.11)/libexec/bin/python -m venv venv
+        python3.11 -m venv venv
         . venv/bin/activate
         pip wheel -w dist --no-deps .
         pip install delocate
@@ -74,21 +74,21 @@ jobs:
     - name: Test wheels
       run: |
         rm -rf venv
-        $(brew --prefix python@3.9)/libexec/bin/python -m venv venv
+        python3.9 -m venv venv
         . venv/bin/activate
         pip install ./dist/*cp39*.whl
         pip install pytest
         ./venv/bin/pytest -v ./tests
         deactivate
         rm -rf venv
-        $(brew --prefix python@3.10)/libexec/bin/python -m venv venv
+        python3.10 -m venv venv
         . venv/bin/activate
         pip install ./dist/*cp310*.whl
         pip install pytest
         ./venv/bin/pytest -v ./tests
         deactivate
         rm -rf venv
-        $(brew --prefix python@3.11)/libexec/bin/python -m venv venv
+        python3.11 -m venv venv
         . venv/bin/activate
         pip install ./dist/*cp311*.whl
         pip install pytest

@@ -195,9 +195,9 @@ jobs:
         CIBW_TEST_COMMAND: py.test -v {project}/tests
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
-        name: wheels
+        name: packages
         path: ./dist
 
     - name: Test for secrets access
@@ -268,9 +268,9 @@ jobs:
         python -m build --sdist --outdir dist .
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
-        name: wheels
+        name: packages
         path: ./dist
 
   check:
@@ -352,9 +352,10 @@ jobs:
         python-version: ${{ matrix.python.major-dot-minor }}
 
     - name: Download artifacts
-      uses: actions/download-artifact@v2
+      uses: actions/download-artifact@v3
       with:
-        name: wheels
+        name: packages
+        path: ./dist
 
     - name: Test for secrets access
       id: check_secrets

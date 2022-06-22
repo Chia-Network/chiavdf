@@ -178,7 +178,7 @@ jobs:
         path: ./dist
 
   build-sdist:
-    name: sdist
+    name: sdist - ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }} ${{ matrix.arch.name }}
     runs-on: ${{ matrix.os.runs-on[matrix.arch.matrix] }}
     strategy:
       fail-fast: false
@@ -221,7 +221,7 @@ jobs:
         path: ./dist
 
   check:
-    name: Check
+    name: Check - ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }} ${{ matrix.arch.name }}
     runs-on: ${{ matrix.os.runs-on[matrix.arch.matrix] }}
     strategy:
       fail-fast: false
@@ -263,7 +263,7 @@ jobs:
         mypy --config-file mypi.ini setup.py tests
 
   upload:
-    name: Upload to PyPI
+    name: Upload to PyPI - ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }} ${{ matrix.arch.name }}
     runs-on: ${{ matrix.os.runs-on[matrix.arch.matrix] }}
     needs:
       - build-wheels

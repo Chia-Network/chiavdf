@@ -84,6 +84,19 @@ jobs:
             arch:
               name: ARM
               matrix: arm
+          - os:
+              name: macOS
+              matrix: macos
+              runs-on:
+                arm: [macOS, ARM64]
+                intel: [macos-latest]
+            python:
+              major-dot-minor: '3.8'
+              cibw-build: 'cp38-*'
+              matrix: '3.8'
+            arch:
+              name: ARM
+              matrix: arm
 
     steps:
     - name: Clean workspace
@@ -110,6 +123,7 @@ jobs:
         mypy --config-file mypi.ini setup.py tests
 
     - name: Build source distribution with macOS
+      # TODO: only do this once, probably same for linting etc
       if: matrix.os.matrix == 'macos'
       run: |
         pip install build

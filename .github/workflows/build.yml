@@ -122,13 +122,6 @@ jobs:
         pip install mypy
         mypy --config-file mypi.ini setup.py tests
 
-    - name: Build source distribution with macOS
-      # TODO: only do this once, probably same for linting etc
-      if: matrix.os.matrix == 'macos'
-      run: |
-        pip install build
-        python -m build --sdist --outdir dist .
-
     - name: Install pipx for cibuildwheel
       # TODO: shouldn't need this?
       run: |

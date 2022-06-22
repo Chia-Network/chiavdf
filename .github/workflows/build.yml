@@ -1,4 +1,4 @@
-name: Build Wheels
+name: Build, Check, and Upload
 
 on:
   push:
@@ -230,7 +230,7 @@ jobs:
         TWINE_PASSWORD: ${{ secrets.test_pypi_password }}
       run: twine upload --non-interactive --skip-existing --verbose 'dist/*'
 
-  build_sdist:
+  build-sdist:
     name: Build sdist on ${{ matrix.os.name }} ${{ matrix.arch.name }} ${{ matrix.python.major-dot-minor }}
     runs-on: ${{ matrix.os.runs-on[matrix.arch.matrix] }}
     strategy:

@@ -122,11 +122,6 @@ jobs:
         pip install mypy
         mypy --config-file mypi.ini setup.py tests
 
-    - name: Install pipx for cibuildwheel
-      # TODO: shouldn't need this?
-      run: |
-        pip install pipx
-
     - name: Build ${{ matrix.os.name }} wheels and test
       uses: pypa/cibuildwheel@v2.7.0
       with:

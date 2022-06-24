@@ -111,6 +111,10 @@ jobs:
       with:
         python-version: ${{ matrix.python.major-dot-minor }}
 
+    - name: Install pipx
+      run: |
+        pip install pipx
+
     - name: Build and test
       uses: pypa/cibuildwheel@v2.7.0
       with:

@@ -173,6 +173,7 @@ jobs:
           && cp {wheel} {dest_dir}
         CIBW_TEST_REQUIRES: pytest
         CIBW_TEST_COMMAND: py.test -v {project}/tests
+        CIBW_PRERELEASE_PYTHONS: True
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v3

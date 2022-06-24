@@ -4,11 +4,11 @@ import re
 import shutil
 import subprocess
 import sys
-from distutils.command.build import build  # type: ignore
 from distutils.command.install import install
 from distutils.version import LooseVersion
 
 from setuptools import Command, Extension, setup, setuptools
+from setuptools.command.build import build
 from setuptools.command.build_ext import build_ext
 
 BUILD_HOOKS = []

@@ -253,7 +253,7 @@ if platform.system() == "Windows":
         python_requires=">=3.7",
         long_description=open("README.md").read(),
         long_description_content_type="text/markdown",
-        build_requires=["pybind11"],
+        build_requires=["pybind11>=2.10.0"],
         url="https://github.com/Chia-Network/chiavdf",
         ext_modules=ext_modules,
         cmdclass={"build_ext": BuildExt},
@@ -273,7 +273,7 @@ else:
         long_description=open("README.md").read(),
         long_description_content_type="text/markdown",
         url="https://github.com/Chia-Network/chiavdf",
-        setup_requires=["pybind11>=2.5.0"],
+        setup_requires=["pybind11>=2.10.0"],
         ext_modules=[CMakeExtension("chiavdf", "src")],
         cmdclass=dict(
             build_ext=CMakeBuild, install_hook=install_hook, build_hook=build_hook

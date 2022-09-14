@@ -314,7 +314,7 @@ int gcd_128_max_iter=3;
 int main(int argc, char* argv[]) try
 {
     init_gmp();
-    if (argc != 4)
+    if (argc != 3)
     {
       std::cerr << "Usage: ./vdf_client <host> <port>\n";
       return 1;

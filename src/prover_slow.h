@@ -88,7 +88,7 @@ std::vector<uint8_t> ProveSlow(integer& D, form& x, uint64_t num_iterations) {
     ApproximateParameters(num_iterations, l, k);
     if (k <= 0) k = 1;
     if (l <= 0) l = 1;
-    int kl = k * l;
+    int const kl = k * l;
 
     uint64_t const size_vec = (num_iterations + kl - 1) / kl;
     std::vector<form> intermediates(size_vec);

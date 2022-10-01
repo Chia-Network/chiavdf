@@ -82,20 +82,25 @@ std::vector<uint8_t> ProveSlow(integer& D, form& x, uint64_t num_iterations) {
     integer L = root(-D, 4);
     PulmarkReducer reducer;
     form y = form::from_abd(x.a, x.b, D);
-    std::vector<form> intermediates;
-    int k, l;
     int d_bits = D.num_bits();
 
+    int k, l;
     ApproximateParameters(num_iterations, l, k);
     if (k <= 0) k = 1;
     if (l <= 0) l = 1;
-    for (int i = 0; i < num_iterations; i++) {
-        if (i % (k * l) == 0) {
-            intermediates.push_back(y);
+    int const kl = k * l;
+
+    uint64_t const size_vec = (num_iterations + kl - 1) / kl;
+    std::vector<form> intermediates(size_vec);
+    for (uint64_t i = 0; i < num_iterations; i++) {
+        if (i % kl == 0) {
+            uint64_t index = i / kl;
+            intermediates.at(index) = y;
         }
         nudupl_form(y, y, D, L);
         reducer.reduce(y);
     }
+
     form proof = GenerateWesolowski(y, x, D, reducer, intermediates, num_iterations, k, l);
     std::vector<uint8_t> result = SerializeForm(y, d_bits);
     std::vector<uint8_t> proof_bytes = SerializeForm(proof, d_bits);

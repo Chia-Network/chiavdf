@@ -28,6 +28,7 @@ set(GMPXX_VERSION_OK TRUE)
 #find_package(GMPXX REQUIRED)
 
 include_directories(
+  /opt/homebrew/include
   ${INCLUDE_DIRECTORIES}
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${GMP_INCLUDE_DIR}

@@ -18,7 +18,11 @@ set(CMAKE_MODULE_PATH
 
 set(GMP_INCLUDES /opt/homebrew/include)
 set(GMP_LIBRARIES /opt/homebrew/lib)
-set(GMP_VERSION_OK ON)
+set(GMP_VERSION_OK TRUE)
+
+set(GMPXX_INCLUDES /opt/homebrew/include)
+set(GMPXX_LIBRARIES /opt/homebrew/lib)
+set(GMPXX_VERSION_OK TRUE)
 
 #find_package(GMP REQUIRED)
 #find_package(GMPXX REQUIRED)

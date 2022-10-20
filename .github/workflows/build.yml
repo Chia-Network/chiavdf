@@ -180,6 +180,16 @@ jobs:
       run:
         pipx run --spec='cibuildwheel==2.9.0' cibuildwheel --output-dir dist 2>&1
 
+    - name: CMakeFiles/CMakeOutput.log
+      if: always()
+      run: |
+        cat CMakeFiles/CMakeOutput.log
+
+    - name: CMakeFiles/CMakeError.log
+      if: always()
+      run: |
+        cat CMakeFiles/CMakeError.log
+
     - name: Upload artifacts
       uses: actions/upload-artifact@v3
       with:

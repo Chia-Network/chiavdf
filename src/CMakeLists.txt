@@ -16,7 +16,7 @@ set(CMAKE_MODULE_PATH
     ${CMAKE_MODULE_PATH}
 )
 
-find_package(GMP REQUIRED)
+find_package(GMP REQUIRED PATHS /opt/homebrew)
 find_package(GMPXX REQUIRED)
 
 include_directories(

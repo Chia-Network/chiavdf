@@ -122,9 +122,9 @@ jobs:
 
     - name: Build and test
       env:
-        CIBW_BUILD_VERBOSITY_MACOS: 0
-        CIBW_BUILD_VERBOSITY_LINUX: 0
-        CIBW_BUILD_VERBOSITY_WINDOWS: 0
+        CIBW_BUILD_VERBOSITY_MACOS: 3
+        CIBW_BUILD_VERBOSITY_LINUX: 3
+        CIBW_BUILD_VERBOSITY_WINDOWS: 3
         CIBW_BUILD: ${{ matrix.python.cibw-build }}
         CIBW_SKIP: '*-manylinux_i686 *-win32 *-musllinux_*'
         CIBW_MANYLINUX_AARCH64_IMAGE: ${{ matrix.python.manylinux['arm'] }}

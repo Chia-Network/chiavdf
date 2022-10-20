@@ -24,8 +24,8 @@ set(CMAKE_MODULE_PATH
 # set(GMPXX_LIBRARIES /opt/homebrew/lib)
 # set(GMPXX_VERSION_OK TRUE)
 
-find_package(GMP REQUIRED)
-find_package(GMPXX REQUIRED)
+find_package(GMP REQUIRED PATHS /opt/homebrew/include /opt/homebrew/lib)
+find_package(GMPXX REQUIRED PATHS /opt/homebrew/include /opt/homebrew/lib)
 
 include_directories(
   # /opt/homebrew/include

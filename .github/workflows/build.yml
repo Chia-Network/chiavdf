@@ -183,12 +183,12 @@ jobs:
     - name: CMakeFiles/CMakeOutput.log
       if: always()
       run: |
-        cat CMakeFiles/CMakeOutput.log
+        cat CMakeFiles/CMakeOutput.log || true
 
     - name: CMakeFiles/CMakeError.log
       if: always()
       run: |
-        cat CMakeFiles/CMakeError.log
+        cat CMakeFiles/CMakeError.log || true
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v3

@@ -152,8 +152,7 @@ jobs:
         CIBW_BEFORE_ALL_MACOS: >
           brew install gmp boost cmake
         CIBW_BEFORE_BUILD_MACOS: >
-          python -m pip install --upgrade pip
-          python -m sysconfig
+          python -m pip install --upgrade pip && python -m sysconfig
         CIBW_ENVIRONMENT_MACOS: "MACOSX_DEPLOYMENT_TARGET=10.14 BUILD_VDF_CLIENT=N"
         CIBW_REPAIR_WHEEL_COMMAND_MACOS: >
           pip uninstall -y delocate && pip install git+https://github.com/Chia-Network/delocate.git

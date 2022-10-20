@@ -68,7 +68,7 @@ if(GMP_INCLUDES)
   endif()
 endif()
 
-find_library(GMP_LIBRARIES gmp PATHS $ENV{GMPDIR} ${LIB_INSTALL_DIR})
+find_library(GMP_LIBRARIES gmp PATHS $ENV{GMPDIR} /opt/homebrew/lib ${LIB_INSTALL_DIR})
 
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(GMP DEFAULT_MSG

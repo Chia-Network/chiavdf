@@ -15,7 +15,7 @@
 # Copyright (c) 2016 Jack Poulson, <jack.poulson@gmail.com>
 # Redistribution and use is allowed according to the terms of the BSD license.
 
-find_path(GMP_INCLUDES NAMES gmp.h PATHS $ENV{GMPDIR} /opt/homebrew/include ${INCLUDE_INSTALL_DIR})
+find_path(GMP_INCLUDES NAMES gmp.h PATHS $ENV{GMPDIR} ${INCLUDE_INSTALL_DIR})
 
 # Set GMP_FIND_VERSION to 5.1.0 if no minimum version is specified
 if(NOT GMP_FIND_VERSION)
@@ -68,7 +68,7 @@ if(GMP_INCLUDES)
   endif()
 endif()
 
-find_library(GMP_LIBRARIES gmp PATHS $ENV{GMPDIR} /opt/homebrew/lib ${LIB_INSTALL_DIR})
+find_library(GMP_LIBRARIES gmp PATHS $ENV{GMPDIR} ${LIB_INSTALL_DIR})
 
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(GMP DEFAULT_MSG

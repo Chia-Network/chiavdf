@@ -136,8 +136,6 @@ class CMakeBuild(build_ext):
         env["CXXFLAGS"] = '{} -DVERSION_INFO=\\"{}\\"'.format(
             env.get("CXXFLAGS", ""), self.distribution.get_version()
         )
-        # if platform.system() == "Darwin":
-        #     env["GMPDIR"] = "/opt/homebrew/include;/opt/homebrew/lib"
         subprocess.check_call(["cmake", ext.sourcedir] + cmake_args, env=env)
         subprocess.check_call(["cmake", "--build", "."] + build_args)
 

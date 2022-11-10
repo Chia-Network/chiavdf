@@ -19,12 +19,12 @@ if(GMP_FOUND)
   endif()
 
   find_path(GMPXX_INCLUDE_DIR NAMES gmpxx.h 
-            PATHS ${GMP_INCLUDE_DIR_SEARCH} /opt/homebrew/include
+            PATHS ${GMP_INCLUDE_DIR_SEARCH}
             DOC "The directory containing the GMPXX include files"
            )
 
   find_library(GMPXX_LIBRARIES NAMES gmpxx
-               PATHS ${GMP_LIBRARIES_DIR_SEARCH} /opt/homebrew/lib
+               PATHS ${GMP_LIBRARIES_DIR_SEARCH}
                DOC "Path to the GMPXX library"
                )
                

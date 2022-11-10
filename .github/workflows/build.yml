@@ -122,9 +122,9 @@ jobs:
 
     - name: Build and test
       env:
-        CIBW_BUILD_VERBOSITY_MACOS: 3
-        CIBW_BUILD_VERBOSITY_LINUX: 3
-        CIBW_BUILD_VERBOSITY_WINDOWS: 3
+        CIBW_BUILD_VERBOSITY_MACOS: 0
+        CIBW_BUILD_VERBOSITY_LINUX: 0
+        CIBW_BUILD_VERBOSITY_WINDOWS: 0
         CIBW_BUILD: ${{ matrix.python.cibw-build }}
         CIBW_SKIP: '*-manylinux_i686 *-win32 *-musllinux_*'
         CIBW_MANYLINUX_AARCH64_IMAGE: ${{ matrix.python.manylinux['arm'] }}
@@ -152,7 +152,7 @@ jobs:
         CIBW_BEFORE_ALL_MACOS: >
           brew install gmp boost cmake
         CIBW_BEFORE_BUILD_MACOS: >
-          python -m pip install --upgrade pip && python -m sysconfig
+          python -m pip install --upgrade pip
         CIBW_ENVIRONMENT_MACOS: "MACOSX_DEPLOYMENT_TARGET=10.14 BUILD_VDF_CLIENT=N"
         CIBW_REPAIR_WHEEL_COMMAND_MACOS: >
           pip uninstall -y delocate && pip install git+https://github.com/Chia-Network/delocate.git
@@ -179,16 +179,6 @@ jobs:
         CIBW_PRERELEASE_PYTHONS: True
       run:
         pipx run --spec='cibuildwheel==2.11.1' cibuildwheel --output-dir dist 2>&1
-
-    - name: CMakeFiles/CMakeOutput.log
-      if: always()
-      run: |
-        cat CMakeFiles/CMakeOutput.log || true
-
-    - name: CMakeFiles/CMakeError.log
-      if: always()
-      run: |
-        cat CMakeFiles/CMakeError.log || true
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v3

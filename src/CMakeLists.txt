@@ -1,7 +1,5 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 3.14 FATAL_ERROR)
 
-set(CMAKE_VERBOSE_MAKEFILE ON)
-set(CMAKE_FIND_DEBUG_MODE ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
@@ -16,19 +14,10 @@ set(CMAKE_MODULE_PATH
     ${CMAKE_MODULE_PATH}
 )
 
-# set(GMP_INCLUDES /opt/homebrew/include)
-# set(GMP_LIBRARIES /opt/homebrew/lib)
-# set(GMP_VERSION_OK TRUE)
-
-# set(GMPXX_INCLUDES /opt/homebrew/include)
-# set(GMPXX_LIBRARIES /opt/homebrew/lib)
-# set(GMPXX_VERSION_OK TRUE)
-
 find_package(GMP REQUIRED)
 find_package(GMPXX REQUIRED)
 
 include_directories(
-  # /opt/homebrew/include
   ${INCLUDE_DIRECTORIES}
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${GMP_INCLUDE_DIR}

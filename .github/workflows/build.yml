@@ -102,19 +102,6 @@ jobs:
             arch:
               name: ARM
               matrix: arm
-          - os:
-              name: macOS
-              matrix: macos
-              runs-on:
-                arm: [macOS, ARM64]
-                intel: [macos-latest]
-            python:
-              major-dot-minor: '3.8'
-              cibw-build: 'cp38-*'
-              matrix: '3.8'
-            arch:
-              name: ARM
-              matrix: arm
 
     steps:
     - name: Clean workspace
@@ -191,7 +178,7 @@ jobs:
         CIBW_TEST_COMMAND: py.test -v {project}/tests
         CIBW_PRERELEASE_PYTHONS: True
       run:
-        pipx run --spec='cibuildwheel==2.9.0' cibuildwheel --output-dir dist 2>&1
+        pipx run --spec='cibuildwheel==2.11.1' cibuildwheel --output-dir dist 2>&1
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v3

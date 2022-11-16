@@ -206,7 +206,6 @@ integer three_gcd(integer a, integer b, integer c) {
 
 gcd_res test_gcd(integer a_signed, integer b_signed, int index=0) {
     bool a_negative=a_signed<integer(0);
-    bool b_negative=b_signed<integer(0);
 
     integer a=abs(a_signed);
     integer b=abs(b_signed);

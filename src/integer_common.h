@@ -127,13 +127,17 @@ static bool allow_integer_constructor=false; //don't want static integers becaus
 struct integer {
     mpz_struct impl[1];
 
-    ~integer() {
+    inline ~integer() {
         mpz_clear(impl);
     }
 
-    integer() {
-        assert(allow_integer_constructor);
+    inline integer() {
+        //assert(allow_integer_constructor);
         mpz_init(impl);
+    }
+
+    inline integer(mpz_t t) {
+        mpz_init_set(impl, t);
     }
 
     integer(const integer& t) {
@@ -146,9 +150,20 @@ struct integer {
         mpz_swap(impl, t.impl);
     }
 
-    explicit integer(int64 i) {
-        mpz_init(impl);
-        mpz_set_si(impl, i);
+    explicit inline integer(int i) {
+        mpz_init_set_si(impl, i);
+    }
+
+    explicit inline integer(uint32_t i) {
+        mpz_init_set_ui(impl, i);
+    }
+
+    explicit inline integer(int64 i) {
+        mpz_init_set_si(impl, i);
+    }
+
+    explicit inline integer(uint64_t i) {
+        mpz_init_set_ui(impl, i);
     }
 
     explicit integer(const string& s) {

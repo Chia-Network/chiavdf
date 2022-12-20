@@ -64,7 +64,7 @@ public:
   /**
    * @brief run - runs reduction algorithm for cg context params
    */
-  inline void run() {
+  void run() {
     while (!isReduced()) {
       int_fast64_t a, b, c;
       {

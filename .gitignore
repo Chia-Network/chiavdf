@@ -25,6 +25,8 @@ src/vdf_client
 src/1weso_test
 src/2weso_test
 src/prover_test
+src/emu_hw_main
+src/hw_main
 /verifier
 /verifier_test
 /build/*

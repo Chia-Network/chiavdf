@@ -27,7 +27,7 @@ jobs:
     - name: Build vdf-client on Ubuntu
       if: startsWith(matrix.os, 'ubuntu')
       run: |
-        sudo apt-get install libgmp-dev libboost-python-dev libpython3.8-dev libboost-system-dev build-essential -y
+        sudo apt-get install libgmp-dev libboost-python-dev libpython3-dev libboost-system-dev build-essential -y
         cd src
         make ${{ matrix.config }} -f Makefile.vdf-client
 

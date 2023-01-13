@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <deque>
+#include <mutex>
 #include <thread>
 
 #define HW_VDF_VALUE_INTERVAL 4096
@@ -17,7 +18,8 @@ struct vdf_value {
 };
 
 struct vdf_work {
-    size_t raw_idx;
+    //size_t raw_idx;
+    struct vdf_value start_val;
     uint64_t start_iters;
     uint32_t n_steps;
 };
@@ -26,12 +28,14 @@ struct vdf_state {
     uint64_t target_iters;
     uint64_t cur_iters;
     std::atomic<uint64_t> done_values;
-    std::vector<struct vdf_value> raw_values;
+    //std::vector<struct vdf_value> raw_values;
+    struct vdf_value last_val;
     std::vector<struct vdf_value> values;
     std::vector<struct vdf_value> proofs;
     mpz_t d, l, a2;
     std::thread aux_threads[HW_VDF_MAX_AUX_THREADS];
-    std::deque<struct vdf_work> wq;
+    std::deque<struct vdf_work *> wq;
+    //std::mutex wq_mtx;
     uint32_t interval;
     std::atomic<uint8_t> aux_threads_busy;
     uint8_t idx;
@@ -40,6 +44,7 @@ struct vdf_state {
 
 void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_value *val, uint64_t next_iters, uint32_t n_steps, int thr_idx);
 void hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val);
+void hw_get_proof(struct vdf_state *vdf);
 void init_vdf_state(struct vdf_state *vdf, const char *d_str, uint64_t n_iters, uint8_t idx);
 void clear_vdf_state(struct vdf_state *vdf);
 

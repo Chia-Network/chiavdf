@@ -47,8 +47,8 @@ void add_vdf_value(struct vdf_state *vdf, mpz_t a, mpz_t f, uint64_t n_iters)
         return;
     }
 
-    if (vdf->raw_values.size()) {
-        last_iters = vdf->raw_values.back().iters;
+    if (vdf->last_val.iters) {
+        last_iters = vdf->last_val.iters;
         if (n_iters == last_iters) {
             fprintf(stderr, "VDF %d: Skipping iters=%lu\n", vdf->idx, n_iters);
             return;
@@ -82,9 +82,11 @@ int main(int argc, char **argv)
 {
     uint64_t n_iters = 100000;
     uint8_t n_vdfs = 2;
+    uint8_t n_completed = 0;
     uint8_t vdfs_mask;
     struct vdf_state vdfs[N_HW_VDFS];
     struct vdf_state *vdf_ptrs[N_HW_VDFS];
+    std::thread proof_threads[N_HW_VDFS];
     //std::thread vdf_threads[N_HW_VDFS];
     ChiaDriver *drv;
 
@@ -112,22 +114,30 @@ int main(int argc, char **argv)
     }
 
     vdfs_mask = (1 << n_vdfs) - 1;
-    while (1) {
+    while (vdfs_mask) {
         uint8_t i;
         read_hw_status(drv, vdf_ptrs, vdfs_mask);
         for (i = 0; i < n_vdfs; i++) {
             if (!vdfs[i].completed) {
                 break;
             }
+
+            if (vdfs[i].completed && (vdfs_mask & (1 << i))) {
+                stop_hw_vdf(drv, i);
+                vdfs_mask &= ~(1 << i);
+                n_completed++;
+                proof_threads[i] = std::thread(hw_get_proof, vdf_ptrs[i]);
+            }
         }
-        if (i == n_vdfs) {
-            fprintf(stderr, "Proofs completed: %d\n", (int)i);
-            break;
-        }
+        //if (i == n_vdfs) {
+            //fprintf(stderr, "Proofs completed: %d\n", (int)i);
+            //break;
+        //}
         usleep(50000);
     }
 
     for (uint8_t i = 0; i < n_vdfs; i++) {
+        proof_threads[i].join();
         clear_vdf_state(&vdfs[i]);
     }
     return 0;

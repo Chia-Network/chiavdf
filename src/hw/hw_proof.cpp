@@ -2,6 +2,18 @@
 //#include "vdf.h"
 
 #include <cstdlib>
+#include <unistd.h>
+
+void init_vdf_value(struct vdf_value *val)
+{
+    val->iters = 0;
+    mpz_inits(val->a, val->b, NULL);
+}
+
+void clear_vdf_value(struct vdf_value *val)
+{
+    mpz_clears(val->a, val->b, NULL);
+}
 
 void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_value *val, uint64_t next_iters, uint32_t n_steps, int thr_idx)
 {
@@ -11,6 +23,9 @@ void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_value *val, uint64_t
     uint64_t end_iters = next_iters + vdf->interval * n_steps;
     uint64_t iters = val->iters;
     PulmarkReducer reducer;
+
+    fprintf(stderr, " VDF %d: computing %lu iters (%u steps)\n", vdf->idx,
+            end_iters - iters, n_steps);
 
     do {
         nudupl_form(f, f, d, l);
@@ -39,7 +54,10 @@ void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_value *val, uint64_t
 
 void hw_proof_add_work(struct vdf_state *vdf, struct vdf_value *val, uint64_t next_iters, uint32_t n_steps)
 {
-    struct vdf_work work = {vdf->raw_values.size() - 1, next_iters, n_steps};
+    auto *work = new struct vdf_work;
+    work->start_val = vdf->last_val;
+    work->start_iters = next_iters;
+    work->n_steps = n_steps;
 
     vdf->wq.push_back(work);
 }
@@ -50,15 +68,20 @@ void hw_proof_process_work(struct vdf_state *vdf)
 
     for (int i = 0; i < HW_VDF_MAX_AUX_THREADS; i++) {
         if (!(busy & (1U << i))) {
+            struct vdf_work *work;
+            struct vdf_value *val;
+
             if (vdf->wq.empty()) {
                 break;
             }
 
-            struct vdf_work work = vdf->wq.back();
-            struct vdf_value *val = &vdf->raw_values[work.raw_idx];
+            work = vdf->wq.front();
+            vdf->wq.pop_front();
+            //struct vdf_value *val = &vdf->raw_values[work.raw_idx];
+            val = &work->start_val;
 
             vdf->aux_threads_busy |= 1U << i;
-            std::thread(hw_proof_calc_values, vdf, val, work.start_iters, work.n_steps, i).detach();
+            std::thread(hw_proof_calc_values, vdf, val, work->start_iters, work->n_steps, i).detach();
         }
     }
 
@@ -67,10 +90,23 @@ void hw_proof_process_work(struct vdf_state *vdf)
     }
 }
 
+void hw_proof_wait_values(struct vdf_state *vdf)
+{
+    while (!vdf->wq.empty()) {
+        usleep(100000);
+        hw_proof_process_work(vdf);
+    }
+
+    while (vdf->aux_threads_busy) {
+        usleep(100000);
+    }
+}
+
 void hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val)
 {
     uint64_t interval = vdf->interval;
-    uint64_t iters = vdf->raw_values.back().iters;
+    //uint64_t iters = vdf->raw_values.back().iters;
+    uint64_t iters = vdf->last_val.iters;
     //uint64_t start_iters = iters;
     //uint64_t end_iters = val->iters;
     //uint64_t mask = interval - 1;
@@ -84,14 +120,16 @@ void hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val)
     if (iters == end_iters) {
         vdf->values[iters / interval] = *val;
         vdf->done_values++;
-        end_iters -= interval;
+        if (end_iters) {
+            end_iters -= interval;
+        }
     }
     //iters = start_iters;
 
-    if (start_iters <= end_iters) {
+    if (end_iters && start_iters <= end_iters) {
         uint32_t n_steps = (end_iters - start_iters) / interval + 1;
-        fprintf(stderr, " VDF %d: computing target iters=%lu delta=%lu\n",
-                vdf->idx, end_iters, end_iters - iters);
+        //fprintf(stderr, "VDF %d: computing target iters=%lu delta=%lu\n",
+                //vdf->idx, end_iters, end_iters - iters);
         if (start_iters > vdf->target_iters) {
             fprintf(stderr, "VDF %d: Fail at iters=%lu end_iters=%lu\n",
                     vdf->idx, iters, end_iters);
@@ -99,14 +137,25 @@ void hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val)
         }
         //iters += interval;
         hw_proof_add_work(vdf, val, start_iters, n_steps);
+    } else {
+        clear_vdf_value(&vdf->last_val);
     }
 
-    vdf->raw_values.push_back(*val);
+    //vdf->raw_values.push_back(*val);
+    vdf->last_val = *val;
     vdf->cur_iters = val->iters;
 
     if (vdf->cur_iters >= vdf->target_iters) {
         vdf->completed = true;
     }
+
+    hw_proof_process_work(vdf);
+}
+
+void hw_get_proof(struct vdf_state *vdf)
+{
+    hw_proof_wait_values(vdf);
+    fprintf(stderr, "VDF %d: got all values\n", vdf->idx);
 }
 
 #if 0
@@ -147,13 +196,14 @@ class HwProver : public Prover {
 
 void init_vdf_state(struct vdf_state *vdf, const char *d_str, uint64_t n_iters, uint8_t idx)
 {
-    struct vdf_value initial;
+    //struct vdf_value initial;
     vdf->target_iters = n_iters;
     vdf->cur_iters = 0;
     vdf->done_values = 0;
     vdf->interval = HW_VDF_VALUE_INTERVAL;
     vdf->idx = idx;
     vdf->completed = false;
+    vdf->aux_threads_busy = 0;
 
     mpz_init_set_str(vdf->d, d_str, 0);
     mpz_init_set(vdf->l, vdf->d);
@@ -161,16 +211,20 @@ void init_vdf_state(struct vdf_state *vdf, const char *d_str, uint64_t n_iters, 
     mpz_root(vdf->l, vdf->l, 4);
     mpz_init(vdf->a2);
 
-    mpz_init_set_ui(initial.a, 2);
-    mpz_init_set_ui(initial.b, 1);
-    initial.iters = 0;
-    vdf->raw_values.push_back(initial);
+    //mpz_init_set_ui(initial.a, 2);
+    //mpz_init_set_ui(initial.b, 1);
+    //initial.iters = 0;
+    init_vdf_value(&vdf->last_val);
+    mpz_set_ui(vdf->last_val.a, 2);
+    mpz_set_ui(vdf->last_val.b, 1);
+    //vdf->raw_values.push_back(initial);
 }
 
 void clear_vdf_state(struct vdf_state *vdf)
 {
     mpz_clears(vdf->d, vdf->l, vdf->a2, NULL);
-    for (size_t i = 0; i < vdf->raw_values.size(); i++) {
-        mpz_clears(vdf->raw_values[i].a, vdf->raw_values[i].b, NULL);
-    }
+    //for (size_t i = 0; i < vdf->raw_values.size(); i++) {
+        //mpz_clears(vdf->raw_values[i].a, vdf->raw_values[i].b, NULL);
+    //}
+    mpz_clears(vdf->last_val.a, vdf->last_val.b, NULL);
 }

@@ -78,6 +78,13 @@ int start_hw_vdf(ChiaDriver *drv, mpz_t d, uint64_t n_iters, int idx)
     return 0;
 }
 
+void stop_hw_vdf(ChiaDriver *drv, int idx)
+{
+    uint32_t base_addr = CHIA_VDF_CONTROL_REG_OFFSET + CHIA_VDF_JOB_CSR_MULT * idx;
+
+    drv->DisableEngine(base_addr);
+}
+
 int read_hw_status(ChiaDriver *drv, struct vdf_state *vdfs[N_HW_VDFS], uint8_t idx_mask)
 {
     mpz_t a, f;

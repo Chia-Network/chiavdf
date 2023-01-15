@@ -109,7 +109,7 @@ int main(int argc, char **argv)
 
         //run_hw(vdf->d, n_iters, vdf);
         //vdf_threads[i] = std::thread(start_vdf_job, vdf, i);
-        start_hw_vdf(drv, vdf->d, n_iters, i);
+        start_hw_vdf(drv, vdf->d, vdf->target_iters, i);
         vdf_ptrs[i] = vdf;
     }
 

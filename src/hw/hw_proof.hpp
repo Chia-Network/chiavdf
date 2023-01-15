@@ -25,13 +25,14 @@ struct vdf_work {
 };
 
 struct vdf_state {
+    uint64_t proof_iters;
     uint64_t target_iters;
     uint64_t cur_iters;
     std::atomic<uint64_t> done_values;
     //std::vector<struct vdf_value> raw_values;
     struct vdf_value last_val;
-    std::vector<struct vdf_value> values;
-    std::vector<struct vdf_value> proofs;
+    std::vector<form> values;
+    //std::vector<struct vdf_value> proofs;
     mpz_t d, l, a2;
     std::thread aux_threads[HW_VDF_MAX_AUX_THREADS];
     std::deque<struct vdf_work *> wq;

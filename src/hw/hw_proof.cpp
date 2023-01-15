@@ -15,6 +15,21 @@ void clear_vdf_value(struct vdf_value *val)
     mpz_clears(val->a, val->b, NULL);
 }
 
+void hw_proof_get_form(form *f, struct vdf_state *vdf, struct vdf_value *val)
+{
+    integer a, b, d;
+
+    mpz_swap(a.impl, val->a);
+    mpz_swap(b.impl, val->b);
+    mpz_swap(d.impl, vdf->d);
+
+    *f = form::from_abd(a, b, d);
+
+    mpz_swap(a.impl, val->a);
+    mpz_swap(b.impl, val->b);
+    mpz_swap(d.impl, vdf->d);
+}
+
 void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_value *val, uint64_t next_iters, uint32_t n_steps, int thr_idx)
 {
     integer a(val->a), b(val->b), d(vdf->d), l(vdf->l);
@@ -35,12 +50,12 @@ void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_value *val, uint64_t
         if (iters == next_iters) {
             //mpz_t a2, b2;
             // TODO: vdf_value without 'iters'
-            struct vdf_value val2;
+            //struct vdf_value val2;
 
-            val2.iters = iters;
-            mpz_init_set(val2.a, f.a.impl);
-            mpz_init_set(val2.b, f.b.impl);
-            vdf->values[iters / vdf->interval] = val2;
+            //val2.iters = iters;
+            //mpz_init_set(val2.a, f.a.impl);
+            //mpz_init_set(val2.b, f.b.impl);
+            vdf->values[iters / vdf->interval] = f;
 
             vdf->done_values++;
             next_iters += vdf->interval;
@@ -116,9 +131,10 @@ void hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val)
     uint64_t end_iters = val->iters / interval * interval;
 
     // TODO: locking for 'values'
-    vdf->values.resize(end_iters / interval + 1);
+    //vdf->values.resize(end_iters / interval + 1);
     if (iters == end_iters) {
-        vdf->values[iters / interval] = *val;
+        //vdf->values[iters / interval] = *val;
+        hw_proof_get_form(&vdf->values[iters / interval], vdf, val);
         vdf->done_values++;
         if (end_iters) {
             end_iters -= interval;
@@ -152,12 +168,6 @@ void hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val)
     hw_proof_process_work(vdf);
 }
 
-void hw_get_proof(struct vdf_state *vdf)
-{
-    hw_proof_wait_values(vdf);
-    fprintf(stderr, "VDF %d: got all values\n", vdf->idx);
-}
-
 #if 0
 class HwProver : public Prover {
   public:
@@ -171,7 +181,8 @@ class HwProver : public Prover {
 
     form* GetForm(uint64_t iteration) {
         size_t pos = iteration / vdf->interval;
-        return NULL;
+
+        return &vdf->values[pos];
     }
 
     void start() {
@@ -194,13 +205,46 @@ class HwProver : public Prover {
 };
 #endif
 
+void hw_get_proof(struct vdf_state *vdf)
+{
+    form y, proof;
+    size_t pos = vdf->proof_iters / vdf->interval;
+    uint64_t iters = pos * vdf->interval;
+    integer d(vdf->d), l(vdf->l);
+    PulmarkReducer reducer;
+    uint64_t k = 8, proof_l = 512;
+
+    hw_proof_wait_values(vdf);
+    fprintf(stderr, "VDF %d: got all values\n", vdf->idx);
+
+    y = vdf->values[pos];
+    while (iters < vdf->proof_iters) {
+        nudupl_form(y, y, d, l);
+        reducer.reduce(y);
+        iters++;
+    }
+
+    //Segment seg(0, vdf->proof_iters, vdf->values[0], y);
+    //HwProver prover(seg, d, vdf);
+
+    //prover.start();
+    proof = GenerateWesolowski(y, vdf->values[0], d, reducer, vdf->values, vdf->proof_iters, k, proof_l);
+    fprintf(stderr, "VDF %d: Proof done\n", vdf->idx);
+    //if (prover.IsFinished()) {
+        //fprintf(stderr, "VDF %d: Proof done!\n", vdf->idx);
+    //} else {
+        //fprintf(stderr, "VDF %d: Could not finish proof\n", vdf->idx);
+    //}
+}
+
 void init_vdf_state(struct vdf_state *vdf, const char *d_str, uint64_t n_iters, uint8_t idx)
 {
     //struct vdf_value initial;
-    vdf->target_iters = n_iters;
+    vdf->proof_iters = n_iters;
     vdf->cur_iters = 0;
     vdf->done_values = 0;
     vdf->interval = HW_VDF_VALUE_INTERVAL;
+    vdf->target_iters = (n_iters + vdf->interval - 1) / vdf->interval * vdf->interval;
     vdf->idx = idx;
     vdf->completed = false;
     vdf->aux_threads_busy = 0;
@@ -210,6 +254,8 @@ void init_vdf_state(struct vdf_state *vdf, const char *d_str, uint64_t n_iters, 
     mpz_neg(vdf->l, vdf->l);
     mpz_root(vdf->l, vdf->l, 4);
     mpz_init(vdf->a2);
+
+    vdf->values.resize(10000);
 
     //mpz_init_set_ui(initial.a, 2);
     //mpz_init_set_ui(initial.b, 1);

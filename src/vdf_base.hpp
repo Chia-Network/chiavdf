@@ -47,9 +47,15 @@ public:
         mpz_init_set(impl, t);
     }
 
-    integer(const integer& t);
+    inline integer(const integer& t) {
+        mpz_init(impl);
+        mpz_set(impl, t.impl);
+    }
 
-    integer(integer&& t);
+    inline integer(integer&& t) {
+        mpz_init(impl);
+        mpz_swap(impl, t.impl);
+    }
 
     explicit inline integer(int i) {
         mpz_init_set_si(impl, i);
@@ -81,9 +87,15 @@ public:
 
     vector<uint8_t> to_bytes() const;
 
-    integer& operator=(const integer& t);
+    inline integer& operator=(const integer& t) {
+        mpz_set(impl, t.impl);
+        return *this;
+    }
 
-    integer& operator=(integer&& t);
+    inline integer& operator=(integer&& t) {
+        mpz_swap(impl, t.impl);
+        return *this;
+    }
 
     integer& operator=(int64 i);
 
@@ -221,4 +233,10 @@ class PulmarkReducer {
 };
 
 void nudupl_form(form &a, form &b, integer &D, integer &L);
+
+form GenerateWesolowski(form &y, form &x_init,
+                        integer &D, PulmarkReducer& reducer,
+                        std::vector<form>& intermediates,
+                        uint64_t num_iterations,
+                        uint64_t k, uint64_t l);
 #endif // VDF_BASE_H

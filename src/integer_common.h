@@ -140,12 +140,12 @@ struct integer {
         mpz_init_set(impl, t);
     }
 
-    integer(const integer& t) {
+    inline integer(const integer& t) {
         mpz_init(impl);
         mpz_set(impl, t.impl);
     }
 
-    integer(integer&& t) {
+    inline integer(integer&& t) {
         mpz_init(impl);
         mpz_swap(impl, t.impl);
     }
@@ -207,12 +207,12 @@ struct integer {
         return res;
     }
 
-    integer& operator=(const integer& t) {
+    inline integer& operator=(const integer& t) {
         mpz_set(impl, t.impl);
         return *this;
     }
 
-    integer& operator=(integer&& t) {
+    inline integer& operator=(integer&& t) {
         mpz_swap(impl, t.impl);
         return *this;
     }

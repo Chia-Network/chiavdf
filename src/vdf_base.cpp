@@ -1,4 +1,5 @@
 #include "verifier.h"
+#include "prover_slow.h"
 #include "alloc.hpp"
 
 void VdfBaseInit(void)

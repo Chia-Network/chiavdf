@@ -39,8 +39,8 @@ void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_value *val, uint64_t
     uint64_t iters = val->iters;
     PulmarkReducer reducer;
 
-    fprintf(stderr, " VDF %d: computing %lu iters (%u steps)\n", vdf->idx,
-            end_iters - iters, n_steps);
+    fprintf(stderr, " VDF %d: computing %lu iters (%lu -> %lu, %u steps)\n",
+            vdf->idx, end_iters - iters, iters, end_iters, n_steps);
 
     do {
         nudupl_form(f, f, d, l);
@@ -56,6 +56,10 @@ void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_value *val, uint64_t
             //mpz_init_set(val2.a, f.a.impl);
             //mpz_init_set(val2.b, f.b.impl);
             vdf->values[iters / vdf->interval] = f;
+            if (!f.check_valid(d)) {
+                fprintf(stderr, " VDF %d: bad form at iters=%lu\n", vdf->idx, iters);
+                abort();
+            }
 
             vdf->done_values++;
             next_iters += vdf->interval;
@@ -121,20 +125,20 @@ void hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val)
 {
     uint64_t interval = vdf->interval;
     //uint64_t iters = vdf->raw_values.back().iters;
-    uint64_t iters = vdf->last_val.iters;
+    uint64_t last_iters = vdf->last_val.iters;
     //uint64_t start_iters = iters;
     //uint64_t end_iters = val->iters;
     //uint64_t mask = interval - 1;
     //start_iters = (start_iters + mask) & ~mask;
     //end_iters &= ~mask;
-    uint64_t start_iters = (iters + interval - 1) / interval * interval;
+    uint64_t start_iters = last_iters / interval * interval + interval;
     uint64_t end_iters = val->iters / interval * interval;
 
     // TODO: locking for 'values'
     //vdf->values.resize(end_iters / interval + 1);
-    if (iters == end_iters) {
+    if (val->iters == end_iters) {
         //vdf->values[iters / interval] = *val;
-        hw_proof_get_form(&vdf->values[iters / interval], vdf, val);
+        hw_proof_get_form(&vdf->values[val->iters / interval], vdf, val);
         vdf->done_values++;
         if (end_iters) {
             end_iters -= interval;
@@ -143,12 +147,12 @@ void hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val)
     //iters = start_iters;
 
     if (end_iters && start_iters <= end_iters) {
-        uint32_t n_steps = (end_iters - start_iters) / interval + 1;
+        uint32_t n_steps = (end_iters - start_iters) / interval;
         //fprintf(stderr, "VDF %d: computing target iters=%lu delta=%lu\n",
                 //vdf->idx, end_iters, end_iters - iters);
         if (start_iters > vdf->target_iters) {
             fprintf(stderr, "VDF %d: Fail at iters=%lu end_iters=%lu\n",
-                    vdf->idx, iters, end_iters);
+                    vdf->idx, last_iters, end_iters);
             abort();
         }
         //iters += interval;
@@ -212,24 +216,43 @@ void hw_get_proof(struct vdf_state *vdf)
     uint64_t iters = pos * vdf->interval;
     integer d(vdf->d), l(vdf->l);
     PulmarkReducer reducer;
-    uint64_t k = 8, proof_l = 512;
+    uint64_t k = 8, proof_l = vdf->interval / k;
 
     hw_proof_wait_values(vdf);
-    fprintf(stderr, "VDF %d: got all values\n", vdf->idx);
+    fprintf(stderr, "VDF %d: got all values; proof_iters=%lu pos=%lu\n",
+            vdf->idx, vdf->proof_iters, pos);
 
     y = vdf->values[pos];
+    if (!y.check_valid(d)) {
+        fprintf(stderr, "VDF %d: invalid form at pos=%lu\n", vdf->idx, pos);
+        abort();
+    }
     while (iters < vdf->proof_iters) {
         nudupl_form(y, y, d, l);
         reducer.reduce(y);
         iters++;
     }
+    if (!y.check_valid(d)) {
+        fprintf(stderr, "VDF %d: invalid y\n", vdf->idx);
+        abort();
+    }
 
+    for (size_t i = 0; i <= vdf->target_iters / vdf->interval; i++) {
+        if (!vdf->values[i].check_valid(d)) {
+            fprintf(stderr, "VDF %d: invalid form at pos=%zu\n", vdf->idx, i);
+            abort();
+        }
+    }
     //Segment seg(0, vdf->proof_iters, vdf->values[0], y);
     //HwProver prover(seg, d, vdf);
 
     //prover.start();
     proof = GenerateWesolowski(y, vdf->values[0], d, reducer, vdf->values, vdf->proof_iters, k, proof_l);
     fprintf(stderr, "VDF %d: Proof done\n", vdf->idx);
+
+    bool is_valid;
+    VerifyWesolowskiProof(d, vdf->values[0], y, proof, vdf->proof_iters, is_valid);
+    fprintf(stderr, "VDF %d: Proof %s\n", vdf->idx, is_valid ? "valid" : "NOT VALID");
     //if (prover.IsFinished()) {
         //fprintf(stderr, "VDF %d: Proof done!\n", vdf->idx);
     //} else {
@@ -242,7 +265,7 @@ void init_vdf_state(struct vdf_state *vdf, const char *d_str, uint64_t n_iters, 
     //struct vdf_value initial;
     vdf->proof_iters = n_iters;
     vdf->cur_iters = 0;
-    vdf->done_values = 0;
+    vdf->done_values = 1;
     vdf->interval = HW_VDF_VALUE_INTERVAL;
     vdf->target_iters = (n_iters + vdf->interval - 1) / vdf->interval * vdf->interval;
     vdf->idx = idx;
@@ -255,7 +278,7 @@ void init_vdf_state(struct vdf_state *vdf, const char *d_str, uint64_t n_iters, 
     mpz_root(vdf->l, vdf->l, 4);
     mpz_init(vdf->a2);
 
-    vdf->values.resize(10000);
+    vdf->values.resize(vdf->target_iters / vdf->interval + 1);
 
     //mpz_init_set_ui(initial.a, 2);
     //mpz_init_set_ui(initial.b, 1);
@@ -263,6 +286,7 @@ void init_vdf_state(struct vdf_state *vdf, const char *d_str, uint64_t n_iters, 
     init_vdf_value(&vdf->last_val);
     mpz_set_ui(vdf->last_val.a, 2);
     mpz_set_ui(vdf->last_val.b, 1);
+    hw_proof_get_form(&vdf->values[0], vdf, &vdf->last_val);
     //vdf->raw_values.push_back(initial);
 }
 

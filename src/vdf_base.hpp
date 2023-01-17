@@ -239,4 +239,6 @@ form GenerateWesolowski(form &y, form &x_init,
                         std::vector<form>& intermediates,
                         uint64_t num_iterations,
                         uint64_t k, uint64_t l);
+
+void VerifyWesolowskiProof(integer &D, form x, form y, form proof, uint64_t iters, bool &is_valid);
 #endif // VDF_BASE_H

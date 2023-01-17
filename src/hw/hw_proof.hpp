@@ -8,7 +8,7 @@
 #include <mutex>
 #include <thread>
 
-#define HW_VDF_VALUE_INTERVAL 4096
+#define HW_VDF_VALUE_INTERVAL 4000
 #define HW_VDF_MAX_AUX_THREADS 4
 #define HW_VDF_MAX_WQ 100
 

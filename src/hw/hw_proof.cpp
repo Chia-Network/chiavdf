@@ -250,9 +250,12 @@ void hw_get_proof(struct vdf_state *vdf)
     proof = GenerateWesolowski(y, vdf->values[0], d, reducer, vdf->values, vdf->proof_iters, k, proof_l);
     fprintf(stderr, "VDF %d: Proof done\n", vdf->idx);
 
-    bool is_valid;
+    bool is_valid = false;
     VerifyWesolowskiProof(d, vdf->values[0], y, proof, vdf->proof_iters, is_valid);
     fprintf(stderr, "VDF %d: Proof %s\n", vdf->idx, is_valid ? "valid" : "NOT VALID");
+    if (!is_valid) {
+        abort();
+    }
     //if (prover.IsFinished()) {
         //fprintf(stderr, "VDF %d: Proof done!\n", vdf->idx);
     //} else {

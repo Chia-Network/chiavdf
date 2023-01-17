@@ -8,7 +8,7 @@
 #define HW_VDF_STATUS_SIZE 0xb4
 #define HW_VDF_BURST_START 0x300014
 
-extern const int chia_vdf_is_emu;
+extern int chia_vdf_is_emu;
 
 class ChiaDriver;
 ChiaDriver *init_hw(void);

@@ -10,7 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 
-const int chia_vdf_is_emu = 1;
+int chia_vdf_is_emu = 1;
 
 #define EMU_LOC_ID 0x88888
 #define SPI_FT_BASE 0x100

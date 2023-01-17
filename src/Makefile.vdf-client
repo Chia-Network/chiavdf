@@ -55,7 +55,7 @@ compile_asm: compile_asm.o
 
 HW_OBJS = $(addprefix hw/,hw_main.o hw_proof.o hw_interface.o chia_driver.o ftdi_driver.o vdf_driver.o) vdf_base.o lzcnt.o
 EMU_OBJS = hw/emu_funcs.o hw/emu_runner.o
-HW_LIB = hw_driver/libftd2xx/build-x86_64/libft4222.so
+HW_LIB = hw/libftd2xx/build-x86_64/libft4222.so
 
 hw_main: $(HW_OBJS) $(HW_LIB)
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
@@ -63,4 +63,4 @@ hw_main: $(HW_OBJS) $(HW_LIB)
 emu_hw_main: $(HW_OBJS) $(EMU_OBJS)
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-$(HW_OBJS) $(EMU_OBJS): CXXFLAGS += -I. -Ihw -Ihw_driver/libftd2xx $(OPT_CFLAGS) -Wall
+$(HW_OBJS) $(EMU_OBJS): CXXFLAGS += -I. -Ihw -Ihw/libftd2xx $(OPT_CFLAGS) -Wall

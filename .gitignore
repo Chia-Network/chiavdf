@@ -35,6 +35,9 @@ src/hw_main
 *.o
 *.s
 
+# external library
+/src/hw/libftd2xx
+
 # pyenv
 .python-version
 .eggs

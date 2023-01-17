@@ -133,7 +133,9 @@ int main(int argc, char **argv)
             //fprintf(stderr, "Proofs completed: %d\n", (int)i);
             //break;
         //}
-        usleep(50000);
+        if (chia_vdf_is_emu) {
+            usleep(50000);
+        }
     }
 
     for (uint8_t i = 0; i < n_vdfs; i++) {

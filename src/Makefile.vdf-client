@@ -57,7 +57,7 @@ HW_OBJS = $(addprefix hw/,hw_main.o hw_proof.o hw_interface.o chia_driver.o ftdi
 EMU_OBJS = hw/emu_funcs.o hw/emu_runner.o
 HW_LIB = hw/libftd2xx/build-x86_64/libft4222.so
 
-hw_main: $(HW_OBJS) $(HW_LIB)
+hw_main: $(HW_OBJS) $(HW_LIB) hw/real_hw.o
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 emu_hw_main: $(HW_OBJS) $(EMU_OBJS)

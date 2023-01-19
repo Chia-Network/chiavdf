@@ -24,11 +24,16 @@ struct vdf_work {
     uint32_t n_steps;
 };
 
+typedef std::chrono::time_point<std::chrono::high_resolution_clock> timepoint_t;
+
 struct vdf_state {
     uint64_t proof_iters;
     uint64_t target_iters;
     uint64_t cur_iters;
     std::atomic<uint64_t> done_values;
+    std::atomic<uint64_t> done_iters;
+    std::atomic<uint64_t> elapsed_us;
+    timepoint_t start_time;
     //std::vector<struct vdf_value> raw_values;
     struct vdf_value last_val;
     std::vector<form> values;

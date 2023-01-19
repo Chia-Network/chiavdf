@@ -30,6 +30,17 @@ void hw_proof_get_form(form *f, struct vdf_state *vdf, struct vdf_value *val)
     mpz_swap(d.impl, vdf->d);
 }
 
+timepoint_t hw_proof_get_cur_time(void)
+{
+    return std::chrono::high_resolution_clock::now();
+}
+
+uint64_t hw_proof_get_elapsed_us(timepoint_t &t1)
+{
+    auto t2 = hw_proof_get_cur_time();
+    return std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
+}
+
 void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_value *val, uint64_t next_iters, uint32_t n_steps, int thr_idx)
 {
     integer a(val->a), b(val->b), d(vdf->d), l(vdf->l);
@@ -38,10 +49,13 @@ void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_value *val, uint64_t
     uint64_t end_iters = next_iters + vdf->interval * n_steps;
     uint64_t iters = val->iters;
     PulmarkReducer reducer;
+    timepoint_t t1;
+    uint64_t total_iters = end_iters - iters;
 
     fprintf(stderr, " VDF %d: computing %lu iters (%lu -> %lu, %u steps)\n",
             vdf->idx, end_iters - iters, iters, end_iters, n_steps);
 
+    t1 = hw_proof_get_cur_time();
     do {
         nudupl_form(f, f, d, l);
         reducer.reduce(f);
@@ -67,8 +81,10 @@ void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_value *val, uint64_t
 
     } while (iters < end_iters);
 
-    fprintf(stderr, " VDF %d: aux thread %d done\n", vdf->idx, thr_idx);
     vdf->aux_threads_busy &= ~(1U << thr_idx);
+    vdf->done_iters += total_iters;
+    vdf->elapsed_us += hw_proof_get_elapsed_us(t1);
+    fprintf(stderr, " VDF %d: aux thread %d done\n", vdf->idx, thr_idx);
 }
 
 void hw_proof_add_work(struct vdf_state *vdf, struct vdf_value *val, uint64_t next_iters, uint32_t n_steps)
@@ -166,6 +182,10 @@ void hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val)
     vdf->cur_iters = val->iters;
 
     if (vdf->cur_iters >= vdf->target_iters) {
+        uint64_t elapsed_us = hw_proof_get_elapsed_us(vdf->start_time);
+        uint64_t ips = vdf->cur_iters * 1000000 / elapsed_us;
+        fprintf(stderr, "VDF %d: %lu iters done in %lus, HW speed: %lu ips\n",
+                vdf->idx, vdf->cur_iters, elapsed_us / 1000000, ips);
         vdf->completed = true;
     }
 
@@ -269,6 +289,9 @@ void init_vdf_state(struct vdf_state *vdf, const char *d_str, uint64_t n_iters, 
     vdf->proof_iters = n_iters;
     vdf->cur_iters = 0;
     vdf->done_values = 1;
+    vdf->done_iters = 0;
+    vdf->elapsed_us = 0;
+    vdf->start_time = hw_proof_get_cur_time();
     vdf->interval = HW_VDF_VALUE_INTERVAL;
     vdf->target_iters = (n_iters + vdf->interval - 1) / vdf->interval * vdf->interval;
     vdf->idx = idx;

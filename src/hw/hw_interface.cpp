@@ -1,14 +1,10 @@
 #include "hw_interface.hpp"
 #include "chia_driver.hpp"
-//#include "chia_vdf.hpp"
 
-//#include "verifier.h"
-//#include "create_discriminant.h"
 #include "vdf_base.hpp"
 
 #include "libft4222.h"
 
-//#include <cstdint>
 #include <stdexcept>
 #include <cstring>
 #include <unistd.h>
@@ -22,14 +18,7 @@
 
 void prepare_job(ChiaDriver *drv, uint64_t n_iters, uint8_t *buf, mpz_t d)
 {
-    uint32_t job_id = 0xaa;
-    //AsicForm *af = ChiaAllocForm();
-    //AsicForm *af = AsicForm::InitRandom(seed);
-    //std::vector<uint8_t> seed_v;
-    //for (int i = 0; i < 4; i++) {
-        //seed_v.push_back((seed >> (i * 8)) & 0xFF);
-    //}
-    //integer D = CreateDiscriminant(seed_v);
+    uint32_t job_id = 0xab;
     integer D;
     mpz_set(D.impl, d);
     form y = form::generator(D);
@@ -37,7 +26,6 @@ void prepare_job(ChiaDriver *drv, uint64_t n_iters, uint8_t *buf, mpz_t d)
 
     drv->SerializeJob(buf, job_id, n_iters,
             y.a.impl, y.b.impl, D.impl, L.impl);
-    //mpz_swap(d, D.impl);
 }
 
 ChiaDriver *init_hw(void)
@@ -51,9 +39,61 @@ ChiaDriver *init_hw(void)
     if (ftdi.OpenClk(sys_clk, clk_div, device)) {
         throw std::runtime_error("Failed to open device");
     }
-    ftdi.ToggleGPIO(FtdiDriver::GPIO2);
 
-    return new ChiaDriver(ftdi);
+    ChiaDriver* drv = new ChiaDriver(ftdi);
+
+    double freq = 1500.0;
+    bool set_status;
+
+    set_status = drv->SetPLLFrequency(freq);
+    if (set_status == false) {
+      fprintf(stderr, "Aborting since freq not set\n");
+      abort();
+    }
+
+    // Check frequency
+    double freq_read = drv->GetPLLFrequency();
+    printf("Frequency is %lf\n", freq_read);
+
+    //double brd_voltage = drv->GetBoardVoltage();
+    //printf("Board voltage is %1.3lf\n", brd_voltage);
+
+    //double set_brd_voltage = 0.80;
+    //int ret_val = drv->SetBoardVoltage(set_brd_voltage);
+    //if (ret_val != 0) {
+    //  fprintf(stderr, "Aborting since set voltage failed\n");
+    //  abort();
+    //}
+
+    //brd_voltage = drv->GetBoardVoltage();
+    //printf("Board voltage is now %1.3lf\n", brd_voltage);
+
+    //double brd_current = drv->GetBoardCurrent();
+    //printf("Board current is %2.3lf\n", brd_current);
+
+    //double brd_power = drv->GetPower();
+    //printf("Board power is %2.3lf\n", brd_power);
+
+    // Enable PVT sensor
+    drv->EnablePvt();
+
+    // Set external temperature alarm in PVT sensor
+    double external_alarm_temp = 100.0;
+    set_status = drv->SetTempAlarmExternal(external_alarm_temp);
+    if (set_status == false) {
+      fprintf(stderr, "Aborting since temp alarm not set\n");
+      abort();
+    }
+
+    // Set engine temperature alarm in PVT sensor
+    double engine_alarm_temp = 100.0;
+    set_status = drv->SetTempAlarmEngine(engine_alarm_temp);
+    if (set_status == false) {
+      fprintf(stderr, "Aborting since temp alarm not set\n");
+      abort();
+    }
+
+    return drv;
 }
 
 struct vdf_state;
@@ -62,10 +102,8 @@ void add_vdf_value(struct vdf_state *vdf, mpz_t a, mpz_t f, uint64_t n_iters);
 
 int start_hw_vdf(ChiaDriver *drv, mpz_t d, uint64_t n_iters, int idx)
 {
-    //ChiaDriver *drv = init_hw();
     uint8_t job[CHIA_VDF_JOB_SIZE];
     uint32_t base_addr = CHIA_VDF_CONTROL_REG_OFFSET + CHIA_VDF_JOB_CSR_MULT * idx;
-    //uint32_t job_id_addr = base_addr + CHIA_VDF_JOB_ID_OFFSET;
 
     prepare_job(drv, n_iters, job, d);
 
@@ -88,23 +126,24 @@ void stop_hw_vdf(ChiaDriver *drv, int idx)
 int read_hw_status(ChiaDriver *drv, struct vdf_state *vdfs[N_HW_VDFS], uint8_t idx_mask)
 {
     mpz_t a, f;
-    uint8_t burst_read_regs[HW_VDF_STATUS_SIZE * N_HW_VDFS];
+    //uint8_t burst_read_regs[HW_VDF_STATUS_SIZE * N_HW_VDFS];
+    uint8_t read_status[HW_VDF_STATUS_SIZE];
     uint32_t job_id;
     uint64_t done_iters = 0;
 
     mpz_inits(a, f, NULL);
 
-    memset(burst_read_regs, 0xa5, sizeof(burst_read_regs));
-    drv->ftdi.Read(HW_VDF_BURST_START, burst_read_regs, sizeof(burst_read_regs));
+
     for (int i = 0; i < N_HW_VDFS; i++) {
-        uint8_t *job = burst_read_regs + i * HW_VDF_STATUS_SIZE;
+        drv->ftdi.Read(CHIA_VDF_STATUS_JOB_ID_REG_OFFSET + (0x10000 * i),
+                       read_status, HW_VDF_STATUS_SIZE);
+        uint8_t *job = read_status;
         if (!(idx_mask & (1 << i))) {
             continue;
         }
         drv->DeserializeJob(job, job_id, done_iters, a, f);
 
         fprintf(stderr, "VDF %d: Got iters=%lu\n", i, done_iters);
-        //add_intermediate_form(a, f, d, done_iters);
         add_vdf_value(vdfs[i], a, f, done_iters);
     }
 

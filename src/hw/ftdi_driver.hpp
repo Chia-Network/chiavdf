@@ -1,10 +1,13 @@
-// Copyright Supranational
-
 #ifndef __FTDI_DRIVER_HPP__
 #define __FTDI_DRIVER_HPP__
 
 #include <stdint.h>
 #include <stdlib.h>
+
+extern "C" {
+#include "ftd2xx.h"
+#include "libft4222.h"
+}
 
 void print_buf(size_t offset, uint8_t *buf, size_t size);
 
@@ -16,6 +19,8 @@ public:
   
   FtdiDriver();
   ~FtdiDriver();
+
+  void eprintf(const char * format, ...);
 
   int List();
 
@@ -31,6 +36,16 @@ public:
   // Open a connection to a specific FTDI device
   // Returns status, 0 for success
   int Open(DWORD spi_loc_id, unsigned sys_clk, unsigned clk_div);
+
+  // Enumeration of FTDI statemachine operation modes 
+  typedef enum {
+    MODE_none,
+    MODE_spi,
+    MODE_i2c
+  } MODE_t;
+
+  // Select mode for FTDI state machine transfers
+  int SetMode(FtdiDriver::MODE_t mode);
 
   // Close the connection to the FTDI device
   int Close();
@@ -70,16 +85,66 @@ public:
   // TODO - Read/write abritrary sizes
 
   // Set GPIO output value
-  // Port must be GPIO2 or GPIO3.
-  int SetGPIO(int port, bool value);
+  // Port must be GPIO_PORT2 or GPIO_PORT3.
+  int SetGPIO(GPIO_Port port, bool value);
 
   // Get GPIO output value
-  // Port must be GPIO2 or GPIO3.
-  int GetGPIO(int port, bool &value);
+  // Port must be GPIO_PORT2 or GPIO_PORT3.
+  int GetGPIO(GPIO_Port port, bool &value);
+
+  // Tristate GPIO output
+  // Port must be GPIO_PORT2 or GPIO_PORT3.
+  int TriGPIO(GPIO_Port port);
 
   // Toggle GPIO
-  void ToggleGPIO(int port);
-  
+  void ToggleGPIO(GPIO_Port port);
+
+  typedef enum {
+    I2C_RETURN_CODE_success = 0,
+    I2C_RETURN_CODE_fail,
+    I2C_RETURN_CODE_timeout,
+    I2C_RETURN_CODE_sdaBadState,
+    I2C_RETURN_CODE_lostArbitration,
+    I2C_RETURN_CODE_nack,
+    I2C_RETURN_CODE_checkSumFail,
+    I2C_RETURN_CODE__last
+  } I2C_RETURN_CODE_t;
+
+  const char *i2c_error_string[32] =
+    {
+      "success",
+      "fail",
+      "timeout",
+      "sdaBadState",
+      "lostArbitration",
+      "nack",
+      "checkSumFail",
+      "(badErrorCode)"
+    };
+
+  int i2c_Init();
+
+  int SendStopCondition();
+
+  int i2c_TransmitX
+  ( int sendStartCondition,
+    int sendStopCondition,
+    int slaveAddress,
+    uint8_t *buf,
+    uint16_t bytesToXfer,
+    uint16_t &bytesXfered );
+
+  int i2c_ReceiveX
+  ( int sendStartCondition,
+    int sendStopCondition,
+    int slaveAddress,
+    uint8_t *buf,
+    uint16_t bytesToXfer,
+    uint16_t &bytesXfered );
+
+  const char *i2c_error
+  (int code);
+
 private:
   // Opaque pointer for the FTDI driver
   void *spi_ft_handle;
@@ -94,6 +159,16 @@ private:
   // Internal transaction buffer
   uint8_t *int_write_buf;
   uint8_t *int_read_buf;
-};
 
+  // detected FTDI4222 CNF MODE
+  int cnfmode;
+
+  GPIO_Dir gpio_dir[4];
+
+  // selected SPI clock divider
+  FT4222_SPIClock spi_clk_div;
+
+  // current state machine transfer mode
+  MODE_t active_mode = MODE_none;
+};
 #endif

@@ -186,9 +186,9 @@ void hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val)
         uint64_t ips = vdf->cur_iters * 1000000 / elapsed_us;
         uint64_t sw_iters = vdf->done_iters;
         uint64_t sw_ips = sw_iters * 1000000 / vdf->elapsed_us;
-        fprintf(stderr, "VDF %d: %lu HW iters done in %lus, HW speed: %lu ips\n",
+        fprintf(stderr, "**** VDF %d: %lu HW iters done in %lus, HW speed: %lu ips\n",
                 vdf->idx, vdf->cur_iters, elapsed_us / 1000000, ips);
-        fprintf(stderr, "VDF %d: %lu SW iters done in %lus, SW speed: %lu ips\n",
+        fprintf(stderr, "**** VDF %d: %lu SW iters done in %lus, SW speed: %lu ips\n",
                 vdf->idx, sw_iters, vdf->elapsed_us / 1000000, sw_ips);
         vdf->completed = true;
     }

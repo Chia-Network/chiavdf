@@ -1,21 +1,20 @@
-// Copyright Supranational
-
 #include <memory>
 #include <stdio.h>
+#include <stdarg.h>
 #include <string.h>
 #include <string>
 #include <assert.h>
-#include "ftdi_driver.hpp"
+#include <time.h>
 
-extern "C" {
-#include "ftd2xx.h"
-#include "libft4222.h"
-}
+#include <chrono>
+typedef std::chrono::high_resolution_clock Clock;
+
+#include "ftdi_driver.hpp"
 
 void print_buf(size_t offset, uint8_t *buf, size_t size) {
   uint32_t *buf32 = (uint32_t *)buf;
   for (unsigned i = 0; i < size / (32/8); i++) {
-    printf("%08zu: %08x\n", offset + i * (32/8), buf32[i]);
+    printf("%08lx: %08x\n", offset + i * (32/8), buf32[i]);
   }
 }
 
@@ -52,7 +51,7 @@ struct spi_cmd {
 #define CHECK(x) { \
   FT4222_STATUS stat = (FT4222_STATUS)x;               \
   if (FT4222_OK != stat) {                             \
-    printf("%s failed (error %d)\n", #x, (int)stat);   \
+    eprintf("%s failed (error %d)", #x, (int)stat);    \
     return stat;                                       \
   }                                                    \
 }
@@ -73,7 +72,25 @@ FtdiDriver::~FtdiDriver() {
   // int_read_buf  = NULL;
 }
 
+void FtdiDriver::eprintf(const char * format, ...) {
+  va_list argptr;
+  va_start(argptr, format);
+
+#ifdef USE_THROW
+  char buffer[1024];
+  vsnprintf(buffer, sizeof(buffer), format, argptr);
+  va_end(argptr);
+  throw(buffer);
+#else
+  vprintf(format, argptr);
+  printf("\n");
+  va_end(argptr);
+#endif
+}
+
 bool FtdiDriver::IsOpen() {
+  //printf("spi_ft_handle %x\n", spi_ft_handle);
+  //printf("gpio_ft_handle %x\n", gpio_ft_handle);
   return spi_ft_handle != NULL && gpio_ft_handle != NULL;
 }
 
@@ -91,7 +108,7 @@ int FtdiDriver::List() {
   CHECK(FT_CreateDeviceInfoList(&num_devs));
 
   if (num_devs == 0) {
-    printf("No FTDI devices connected.\n");
+    eprintf("No FTDI devices connected.");
     return -1;
   }
 
@@ -102,8 +119,8 @@ int FtdiDriver::List() {
     
   // Populate the list of info nodes
   if (FT_GetDeviceInfoList(dev_info, &num_devs) != FT4222_OK) {
-    printf("FT_GetDeviceInfoList failed\n");
     free(dev_info);
+    eprintf("FT_GetDeviceInfoList failed");
     return -1;
   }
 
@@ -113,6 +130,8 @@ int FtdiDriver::List() {
       // In mode 0, the FT4222H presents two interfaces: A and B.
       // In modes 1 and 2, it presents four interfaces: A, B, C and D.
       size_t descLen = strlen(dev_info[i].Description);
+      // printf("Device %d: '%s', loc %d\n", i,
+      //        dev_info[i].Description, dev_info[i].LocId);
       if ('A' == dev_info[i].Description[descLen - 1]) {
         printf("Device %d: '%s', loc %d\n", i,
                dev_info[i].Description, dev_info[i].LocId);
@@ -134,7 +153,7 @@ int FtdiDriver::OpenClk(unsigned sys_clk, unsigned clk_div, DWORD target_id) {
   CHECK(FT_CreateDeviceInfoList(&num_devs));
 
   if (num_devs == 0) {
-    printf("No FTDI devices connected.\n");
+    eprintf("No FTDI devices connected.");
     return -1;
   }
 
@@ -145,8 +164,8 @@ int FtdiDriver::OpenClk(unsigned sys_clk, unsigned clk_div, DWORD target_id) {
     
   // Populate the list of info nodes
   if (FT_GetDeviceInfoList(dev_info, &num_devs) != FT4222_OK) {
-    printf("FT_GetDeviceInfoList failed\n");
     free(dev_info);
+    eprintf("FT_GetDeviceInfoList failed");
     return -1;
   }
 
@@ -167,51 +186,105 @@ int FtdiDriver::OpenClk(unsigned sys_clk, unsigned clk_div, DWORD target_id) {
           break;
         }
       }
+      //printf("Dev %d:\n",i);
+      //printf(" Flags=0x%x\n",dev_info[i].Flags);
+      //printf(" Type=0x%x\n",dev_info[i].Type);
+      //printf(" ID=0x%x\n",dev_info[i].ID);
+      //printf(" LocId=0x%x\n",dev_info[i].LocId);
+      //printf(" SerialNumber=%s\n",dev_info[i].SerialNumber);
+      //printf(" Description=%s\n",dev_info[i].Description);
     }
   }
-  
+
   free(dev_info);
-  
+      
   if (!found) {
-    printf("No FT4222H detected.\n");
+    eprintf("No FT4222H detected.");
     return -1;
   }
   
   return Open(device_id, sys_clk, clk_div);
 }
 
+int FtdiDriver::SetMode(FtdiDriver::MODE_t mode)
+{
+  //printf("SetMode mode %d\n", mode);
+  if (mode == active_mode) {
+    return 0;
+  }
+
+  if (active_mode != MODE_none) {
+    CHECK(FT4222_UnInitialize(spi_ft_handle));
+    //printf("SetMode FT4222_UnInitialize\n");
+    active_mode = MODE_none;
+  }
+	
+  switch(mode) {
+
+  case MODE_spi:
+    //printf("SetMode(MODE_spi);\n");
+    CHECK(FT4222_SPIMaster_Init(spi_ft_handle, SPI_IO_QUAD, spi_clk_div,
+				CLK_IDLE_LOW, CLK_LEADING, 0x01));
+    CHECK(FT4222_SPIMaster_SetCS(spi_ft_handle, CS_ACTIVE_NEGTIVE));
+    CHECK(FT4222_SPI_SetDrivingStrength(spi_ft_handle,
+					// clk, io, sso
+					//DS_8MA, DS_8MA, DS_8MA));
+					//DS_4MA, DS_4MA, DS_8MA));
+					DS_4MA, DS_4MA, DS_4MA));
+    active_mode = mode;
+    break;
+
+  case MODE_i2c:
+    //printf("SetMode(MODE_i2c);\n");
+    CHECK(FT4222_I2CMaster_Init(spi_ft_handle, 100 /*kHz*/));
+    active_mode = mode;
+    break;
+
+  default:
+    active_mode = MODE_none;
+  }
+  
+  return 0;
+}
+
+
 int FtdiDriver::Open(DWORD loc_id, unsigned sys_clk, unsigned clk_div) {
   Close();
 
   // printf("Opening device %d\n", loc_id);
   spi_loc_id = loc_id;
-  gpio_loc_id = loc_id + 3;
 
   CHECK(FT_OpenEx((PVOID)(uintptr_t)spi_loc_id, FT_OPEN_BY_LOCATION,
                   &spi_ft_handle));
-  CHECK(FT_OpenEx((PVOID)(uintptr_t)gpio_loc_id, FT_OPEN_BY_LOCATION,
-                  &gpio_ft_handle));
 
-  // Init SPI, selection subordinate 0
-  CHECK(FT4222_SPIMaster_Init(spi_ft_handle, SPI_IO_QUAD,
-                              (FT4222_SPIClock)clk_div,
-                              CLK_IDLE_LOW, CLK_LEADING, 0x01));
-  CHECK(FT4222_SPIMaster_SetCS(spi_ft_handle, CS_ACTIVE_NEGTIVE));
+  // originally we set jumpers for CNFMODE1, which uses 4 USB interfaces with
+  // SPIM on "A,B,C" and GPIO on "D" (ie +3).  But it may be convenient to get
+  // more GPs by using CNFMODE0 which uses 2 USB interfaces with SPIM on "A"
+  // and GPIO on "B" (ie +1).  Try to open GP on both.
+  gpio_loc_id = loc_id + 3;
+  cnfmode = 1;
+  if (FT_OpenEx((PVOID)(uintptr_t)gpio_loc_id, FT_OPEN_BY_LOCATION,
+		&gpio_ft_handle)) {
+    gpio_loc_id = loc_id + 1;
+    cnfmode = 0;
+    CHECK(FT_OpenEx((PVOID)(uintptr_t)gpio_loc_id, FT_OPEN_BY_LOCATION,
+		    &gpio_ft_handle));
+  }
+
   CHECK(FT4222_SetClock(spi_ft_handle, (FT4222_ClockRate)sys_clk));
   CHECK(FT_SetUSBParameters(spi_ft_handle, 2048+16, 2048+16));
 
+  // save clock divide SPI
+  spi_clk_div = (FT4222_SPIClock)clk_div;
 
-  CHECK(FT4222_SPI_SetDrivingStrength(spi_ft_handle,
-                                      //DS_8MA, DS_8MA, DS_8MA));
-                                      //DS_4MA, DS_4MA, DS_8MA));
-                                      DS_4MA, DS_4MA, DS_12MA));
-    
+  // start with SPI mode
+  CHECK(SetMode(MODE_spi));
+
   // Init GPIO
-  GPIO_Dir gpio_dir[4];
-  gpio_dir[0] = GPIO_OUTPUT;
-  gpio_dir[1] = GPIO_OUTPUT;
-  gpio_dir[2] = GPIO_OUTPUT;
-  gpio_dir[3] = GPIO_OUTPUT;
+  gpio_dir[0] = GPIO_INPUT;
+  gpio_dir[1] = GPIO_INPUT;
+  gpio_dir[2] = GPIO_INPUT;
+  gpio_dir[3] = GPIO_INPUT;
   CHECK(FT4222_GPIO_Init(gpio_ft_handle, gpio_dir));
 
   // Set up GPIOs
@@ -225,11 +298,13 @@ int FtdiDriver::Open(DWORD loc_id, unsigned sys_clk, unsigned clk_div) {
 
 int FtdiDriver::Close() {
   if (spi_ft_handle != NULL) {
+    //printf("FtdiDriver::Close\n");
     CHECK(FT4222_UnInitialize(spi_ft_handle));
     CHECK(FT_Close(spi_ft_handle));
     spi_ft_handle = NULL;
   }
   if (gpio_ft_handle != NULL) {
+    //printf("FtdiDriver::Close\n");
     CHECK(FT4222_UnInitialize(gpio_ft_handle));
     CHECK(FT_Close(gpio_ft_handle));
     gpio_ft_handle = NULL;
@@ -336,6 +411,7 @@ int FtdiDriver::WriteRaw(uint8_t *write_buf, size_t size) {
   // print_buf(0x0, write_buf, size);
   
   uint32_t size_of_read;
+  CHECK(SetMode(MODE_spi));
   CHECK(FT4222_SPIMaster_MultiReadWrite(spi_ft_handle, NULL, write_buf,
                                         0,    // singleWriteBytes
                                         size, // multiWriteBytes
@@ -349,14 +425,15 @@ int FtdiDriver::ReadRaw(uint8_t *write_buf, size_t wsize,
   assert(IsOpen());
 
   uint32_t size_of_read;
+  CHECK(SetMode(MODE_spi));
   CHECK(FT4222_SPIMaster_MultiReadWrite(spi_ft_handle, read_buf, write_buf,
                                         0,     // singleWriteBytes
                                         wsize, // multiWriteBytes
                                         rsize, // multiReadBytes
                                         &size_of_read));
   if (size_of_read != rsize) {
-    printf("Size of read (%d) does not match expected (%zu)\n",
-           size_of_read, rsize);
+    eprintf("Size of read (%d) does not match expected (%zu)",
+            size_of_read, rsize);
     return -1;
   }
 
@@ -406,7 +483,7 @@ int FtdiDriver::WriteCmd(uint32_t addr, uint8_t *write_buf, size_t wsize) {
   assert(IsOpen());
   size_t padded_size = wsize;
   if (!round_size_up(padded_size)) {
-    printf("Unexpected wsize %zu, padded_size %zu\n", wsize, padded_size);
+    eprintf("Unexpected wsize %zu, padded_size %zu", wsize, padded_size);
     return -1;
   }
 
@@ -432,13 +509,14 @@ int FtdiDriver::WriteCmd(uint32_t addr, uint8_t *write_buf, size_t wsize) {
 }
 
 int FtdiDriver::ReadCmd(uint32_t addr, uint8_t *read_buf, size_t rsize) {
-  // printf("ReadCmd(%x, %p, %zu)\n", addr, read_buf, rsize);
+  //printf("ReadCmd(%x, %p, %zu)\n", addr, read_buf, rsize);
   assert(IsOpen());
   size_t padded_size = rsize;
   if (!round_size_up(padded_size)) {
-    printf("Unexpected read rsize %zu\n", rsize);
+    eprintf("Unexpected read rsize %zu", rsize);
     return -1;
   }
+  //printf("ReadCmd: addr %x, size %ld, padded size %ld)\n", addr, rsize, padded_size);
 
   spi_cmd cmd;
   cmd.write         = 0;
@@ -465,24 +543,482 @@ int FtdiDriver::ReadCmd(uint32_t addr, uint8_t *read_buf, size_t rsize) {
   return 0;
 }
 
-int FtdiDriver::SetGPIO(int port, bool value) {
+int FtdiDriver::SetGPIO(GPIO_Port port, bool value) {
   assert(IsOpen());
-  assert(port == GPIO_PORT2 || port == GPIO_PORT3);
-  CHECK(FT4222_GPIO_Write(gpio_ft_handle, (GPIO_Port)port, value));
+  assert((cnfmode==0 &&
+	  (port == GPIO_PORT0 || port == GPIO_PORT1 ||
+	   port == GPIO_PORT2 || port == GPIO_PORT3))
+	 ||
+	 (cnfmode==1 &&
+	  (port == GPIO_PORT2 || port == GPIO_PORT3)));
+  //FIXME: might this cause a glitch when going from tri to out?
+  if (gpio_dir[port] != GPIO_OUTPUT) {
+    gpio_dir[port] = GPIO_OUTPUT;
+    CHECK(FT4222_GPIO_Init(gpio_ft_handle, gpio_dir));
+  }
+  CHECK(FT4222_GPIO_Write(gpio_ft_handle, port, value));
   return 0;
 }
 
-int FtdiDriver::GetGPIO(int port, bool &value) {
+int FtdiDriver::GetGPIO(GPIO_Port port, bool &value) {
   assert(IsOpen());
-  assert(port == GPIO_PORT2 || port == GPIO_PORT3);
+  assert((cnfmode==0 &&
+	  (port == GPIO_PORT0 || port == GPIO_PORT1 ||
+	   port == GPIO_PORT2 || port == GPIO_PORT3))
+	 ||
+	 (cnfmode==1 &&
+	  (port == GPIO_PORT2 || port == GPIO_PORT3)));
   BOOL int_val;
-  CHECK(FT4222_GPIO_Read(gpio_ft_handle, (GPIO_Port)port, &int_val));
+  CHECK(FT4222_GPIO_Read(gpio_ft_handle, port, &int_val));
   value = int_val > 0;
   return 0;
 }
 
-void FtdiDriver::ToggleGPIO(int port) {
+int FtdiDriver::TriGPIO(GPIO_Port port)
+{
+  assert(IsOpen());
+  assert((cnfmode==0 &&
+	  (port == GPIO_PORT0 || port == GPIO_PORT1 ||
+	   port == GPIO_PORT2 || port == GPIO_PORT3))
+	 ||
+	 (cnfmode==1 &&
+	  (port == GPIO_PORT2 || port == GPIO_PORT3)));
+  if (gpio_dir[port] != GPIO_INPUT) {
+    gpio_dir[port] = GPIO_INPUT;
+    CHECK(FT4222_GPIO_Init(gpio_ft_handle, gpio_dir));
+  }
+  return 0;
+}
+
+void FtdiDriver::ToggleGPIO(GPIO_Port port) {
   bool val;
   GetGPIO(port, val);
   SetGPIO(port, !val);
+}
+
+#if USE_I2C_BITBANG
+
+// -----------------------------------------------------------------------------
+// Bitbang I2C
+
+void FtdiDriver::Delay()
+{
+  if (!delayDisable) {
+    uint64_t diff;
+    auto t0 = Clock::now();
+    do {
+      auto t1 = Clock::now();
+      diff = std::chrono::duration_cast<std::chrono::microseconds>(t1-t0).count();
+    } while (diff < 4);
+  }
+}
+
+void FtdiDriver::ClearSCL()
+{
+  if (gpio_dir[port_SCL] != GPIO_OUTPUT) {
+    gpio_dir[port_SCL] = GPIO_OUTPUT;
+    FT4222_GPIO_Init(gpio_ft_handle, gpio_dir);
+  }
+}
+
+void FtdiDriver::ClearSDA()
+{
+  if (gpio_dir[port_SDA] != GPIO_OUTPUT) {
+    gpio_dir[port_SDA] = GPIO_OUTPUT;
+    FT4222_GPIO_Init(gpio_ft_handle, gpio_dir);
+  }
+}
+
+int FtdiDriver::ReadSCL()
+{
+  if (gpio_dir[port_SCL] != GPIO_INPUT) {
+    gpio_dir[port_SCL] = GPIO_INPUT;
+    FT4222_GPIO_Init(gpio_ft_handle, gpio_dir);
+  }
+  bool val;
+  GetGPIO(port_SCL, val);
+  return val ? 1 : 0;
+}
+
+int FtdiDriver::ReadSDA()
+{
+  if (gpio_dir[port_SDA] != GPIO_INPUT) {
+    gpio_dir[port_SDA] = GPIO_INPUT;
+    FT4222_GPIO_Init(gpio_ft_handle, gpio_dir);
+  }
+  bool val;
+  GetGPIO(port_SDA, val);
+  return val ? 1 : 0;
+}
+
+int FtdiDriver::ReadBit(int *bit)
+{
+  // "ReadSDA" makes SDA an input - processor lets go of pin and internal
+  //  pull-up resistor makes it high.  Now slave can drive the pin.
+  ReadSDA();
+  
+  Delay();
+  
+  // Clock stretching - Makes SCL an input and pull-up resistor makes
+  //  the pin high.  Slave device can pull SCL low to extend clock cycle.
+  if (!clockStretchDisable) {
+    auto t0 = Clock::now();
+    while (!ReadSCL())
+      {
+	// Check for timeout
+	if (timeoutEnable) {
+	  auto t1 = Clock::now();
+	  uint64_t diff = std::chrono::duration_cast<std::chrono::milliseconds>(t1-t0).count();
+	  if (diff > 2000)
+	    return I2C_RETURN_CODE_timeout;
+	}
+      }
+  } else {
+    ReadSCL();
+  }
+  
+  // At this point, SCL is high and SDA is valid - so read the bit.
+  *bit = ReadSDA();
+ 
+  Delay();
+  
+  ClearSCL();     // Pull the serial clock line low ...
+  
+  return I2C_RETURN_CODE_success;     //  and return.
+}
+
+int FtdiDriver::WriteBit(int bit)
+{
+  if (bit)
+    {
+      ReadSDA();      // Make SDA an input ... so pin is pulled up.
+    }
+  else
+    {
+      ClearSDA();     // Make SDA an output ... so pin is pulled low.
+    }
+  
+  Delay();
+
+  // Clock stretching - Makes SCL an input and pull-up resistor makes
+  //  the pin high.  Slave device can pull SCL low to extend clock cycle.
+  if (!clockStretchDisable) {
+    auto t0 = Clock::now();
+    while (!ReadSCL())
+      {
+	// Check for timeout
+	if (timeoutEnable) {
+	  auto t1 = Clock::now();
+	  uint64_t diff = std::chrono::duration_cast<std::chrono::milliseconds>(t1-t0).count();
+	  if (diff > 2000)
+	    return I2C_RETURN_CODE_timeout;
+	}
+      }
+  } else {
+    ReadSCL();
+  }
+
+  // SCL is high and SDA is valid ...
+  //  Check that nobody else is driving SDA
+  if (bit && !ReadSDA())
+    {
+      return I2C_RETURN_CODE_lostArbitration;       // Lost arbitration
+    }
+  
+  Delay();
+  ClearSCL();
+  
+  return I2C_RETURN_CODE_success;           // Success!
+}
+
+int FtdiDriver::SendStartCondition()
+{
+  if (start)
+    {
+      // set SDA to 1 
+      ReadSDA();
+      Delay();
+
+      // Clock stretching - Makes SCL an input and pull-up resistor makes
+      //  the pin high.  Slave device can pull SCL low to extend clock cycle.
+      if (!clockStretchDisable) {
+	auto t0 = Clock::now();
+	while (!ReadSCL())
+	  {
+	    // Check for timeout
+	    if (timeoutEnable) {
+	      auto t1 = Clock::now();
+	      uint64_t diff = std::chrono::duration_cast<std::chrono::milliseconds>(t1-t0).count();
+	      if (diff > 2000)
+		return I2C_RETURN_CODE_timeout;
+	    }
+	  }
+      } else {
+	ReadSCL();
+      }
+    }
+  
+  if (!ReadSDA())
+    {
+      return I2C_RETURN_CODE_sdaBadState;
+    }
+  
+  // SCL is high, set SDA from 1 to 0 
+  ClearSDA();
+  Delay();
+  ClearSCL();
+  
+  start = 1;
+  
+  return I2C_RETURN_CODE_success;
+}
+
+int FtdiDriver::SendStopCondition()
+{
+  // set SDA to 0 
+  ClearSDA();
+  Delay();
+  
+  // Clock stretching - Makes SCL an input and pull-up resistor makes
+  //  the pin high.  Slave device can pull SCL low to extend clock cycle.
+  if (!clockStretchDisable) {
+    auto t0 = Clock::now();
+    while (!ReadSCL())
+      {
+	// Check for timeout
+	if (timeoutEnable) {
+	  auto t1 = Clock::now();
+	  uint64_t diff = std::chrono::duration_cast<std::chrono::milliseconds>(t1-t0).count();
+	  if (diff > 2000)
+	    return I2C_RETURN_CODE_timeout;
+	}
+      }
+  } else {
+    ReadSCL();
+  }
+
+  // SCL is high, set SDA from 0 to 1 
+  ReadSDA();
+  Delay();
+
+  start = 0;
+  
+  return I2C_RETURN_CODE_success;
+}
+
+#endif
+
+int FtdiDriver::i2c_Init()
+{
+#if USE_I2C_BITBANG
+  port_SCL = GPIO_PORT0;
+  port_SDA = GPIO_PORT1;
+
+  timeoutEnable = 1;
+  clockStretchDisable = 1;
+  delayDisable = 1;
+  start = 0;
+
+  if (!ReadSCL()) return I2C_RETURN_CODE_timeout;
+  if (!ReadSDA()) return I2C_RETURN_CODE_timeout;
+#endif
+  
+  return I2C_RETURN_CODE_success;
+}
+
+int FtdiDriver::i2c_TransmitX
+( int sendStartCondition, 
+  int sendStopCondition, 
+  int slaveAddress,
+  uint8_t *buf,
+  uint16_t bytesToXfer,
+  uint16_t &bytesXfered )
+{
+#if !USE_I2C_BITBANG
+
+  FT_STATUS s;
+  
+  s = SetMode(MODE_i2c);
+  if (s!=FT_OK)
+    return I2C_RETURN_CODE_fail;
+
+  s = FT4222_I2CMaster_WriteEx
+    (spi_ft_handle,
+     slaveAddress,
+     (sendStartCondition ? START : 0) | (sendStopCondition ? STOP : 0),
+     buf,
+     bytesToXfer,
+     &bytesXfered);
+
+  if (s!=FT_OK)
+    return I2C_RETURN_CODE_fail;
+
+  return I2C_RETURN_CODE_success;
+
+#else
+
+  int ret;
+  int bit, nack;
+
+  if (sendStartCondition) {
+    ret = SendStartCondition();
+    if (ret != I2C_RETURN_CODE_success)
+      goto transmitx_error;
+  }
+
+  // send slave address and write flag
+  {
+    uint8_t byteToSend = (slaveAddress<<1) | 0;
+    for (bit = 0; bit < 8; bit++) {
+      ret = WriteBit((byteToSend & 0x80) != 0);
+      if (ret != I2C_RETURN_CODE_success)
+	goto transmitx_error;
+      byteToSend <<= 1;
+    }
+    
+    ret = ReadBit(&nack);
+    if (ret != I2C_RETURN_CODE_success)
+      goto transmitx_error;
+  }
+
+  // send packet
+  if (!nack) {
+    for(bytesXfered = 0; bytesXfered < bytesToXfer; bytesXfered++) {
+
+      uint8_t byteToSend = buf[bytesXfered];
+      for (bit = 0; bit < 8; bit++) {
+	ret = WriteBit((byteToSend & 0x80) != 0);
+	if (ret != I2C_RETURN_CODE_success)
+	  goto transmitx_error;
+	byteToSend <<= 1;
+      }
+      
+      ret = ReadBit(&nack);
+      if (ret != I2C_RETURN_CODE_success)
+	goto transmitx_error;
+      
+      if (nack)
+	break;
+    }
+  }
+  
+  if (sendStopCondition) {
+    ret = SendStopCondition();
+    if (ret != I2C_RETURN_CODE_success)
+      goto transmitx_error;
+  }
+
+  return I2C_RETURN_CODE_success;
+
+ transmitx_error:
+  SendStopCondition();
+  ReadSDA();
+  Delay();  
+  start = 0;
+  return ret;
+
+#endif
+}
+
+int FtdiDriver::i2c_ReceiveX
+( int sendStartCondition,
+  int sendStopCondition, 
+  int slaveAddress,
+  uint8_t *buf,
+  uint16_t bytesToXfer,
+  uint16_t &bytesXfered )
+{
+#if !USE_I2C_BITBANG
+
+  FT_STATUS s;
+  
+  s = SetMode(MODE_i2c);
+  if (s!=FT_OK)
+    return I2C_RETURN_CODE_fail;
+
+  s = FT4222_I2CMaster_ReadEx
+    (spi_ft_handle,
+     slaveAddress,
+     (sendStartCondition ? Repeated_START : 0) | (sendStopCondition ? STOP : 0),
+     buf,
+     bytesToXfer,
+     &bytesXfered);
+  if (s!=FT_OK)
+    return I2C_RETURN_CODE_fail;
+
+  return I2C_RETURN_CODE_success;
+
+#else
+
+  int ret;
+  int b, bit, nack, sendAcknowledgeBit;
+  
+  if (sendStartCondition) {
+    ret = SendStartCondition();
+    if (ret != I2C_RETURN_CODE_success)
+      goto receivex_error;
+  }
+
+  // send slave address and read flag
+  {
+    uint8_t byteToSend = (slaveAddress<<1) | 1;
+    for (bit = 0; bit < 8; bit++) {
+      ret = WriteBit((byteToSend & 0x80) != 0);
+      if (ret != I2C_RETURN_CODE_success)
+	goto receivex_error;
+      byteToSend <<= 1;
+    }
+    
+    ret = ReadBit(&nack);
+    if (ret != I2C_RETURN_CODE_success)
+      goto receivex_error;
+  }
+
+  // receive packet
+  if (!nack) {
+    for(bytesXfered = 0; bytesXfered < bytesToXfer; ) {
+
+      uint8_t byte = 0;
+      for (bit = 0; bit < 8; bit++) {
+	byte <<= 1;
+	ret = ReadBit(&b);
+	if (ret != I2C_RETURN_CODE_success)
+	  goto receivex_error;
+	if (b)
+	  byte |= 1;
+      }
+      
+      buf[bytesXfered++] = byte;
+      sendAcknowledgeBit = bytesXfered < bytesToXfer;
+      
+      ret = WriteBit(!sendAcknowledgeBit);
+      if (ret != I2C_RETURN_CODE_success)
+	goto receivex_error;
+    }
+  }
+
+  if (sendStopCondition) {
+    ret = SendStopCondition();
+    if (ret != I2C_RETURN_CODE_success)
+      goto receivex_error;
+  }
+
+  return I2C_RETURN_CODE_success;
+
+ receivex_error:
+  SendStopCondition();
+  ReadSDA();
+  Delay();  
+  start = 0;
+  return ret;
+
+#endif
+}
+
+const char *FtdiDriver::i2c_error(int code)
+{
+  if ((int)code >= (int)I2C_RETURN_CODE__last) {
+    code = I2C_RETURN_CODE__last;
+  }
+  return i2c_error_string[(int)code];
 }

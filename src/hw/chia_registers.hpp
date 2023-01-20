@@ -1,8 +1,4 @@
 // Generated register defines for chia_vdf
-
-// Copyright information found in source file:
-// Copyright Supranational LLC
-
 #ifndef _CHIA_VDF_REG_DEFS_
 #define _CHIA_VDF_REG_DEFS_
 

@@ -1,10 +1,10 @@
-// Copyright Supranational LLC
-
 #ifndef VDF_DRIVER_HPP
 #define VDF_DRIVER_HPP
 
 #include <gmp.h>
 #include "ftdi_driver.hpp"
+#include "pvt.hpp"
+#include "clock.hpp"
 
 // Define the baseclass VDF driver
 class VdfDriver {
@@ -17,6 +17,10 @@ public:
   // CSR width
   static const unsigned REG_BITS  = 32;
   static const unsigned REG_BYTES = 32/8;
+  static const uint32_t RESET_BIT  = 0x10;
+  static const uint32_t CLOCK_BIT  = 0x01;
+  static const uint32_t BURST_ADDR = 0x300000;
+  static const uint32_t VDF_ENGINE_STRIDE = 0x10000;
 
   FtdiDriver ftdi;
 
@@ -49,31 +53,74 @@ public:
   // Returns the buffer size needed for a status
   virtual size_t StatusSize() = 0;
 
+  // Perform a single dword register write, return 0 on success
+  int RegWrite(uint32_t addr, uint32_t data) {
+    uint32_t buf;
+    int stat;
+    write_bytes(REG_BYTES, 0, (uint8_t *)&buf, data);
+    stat = ftdi.WriteCmd(addr, (uint8_t *)&buf, REG_BYTES);
+    if (stat) {
+      printf("ftdi.WriteCmd in RegWrite failed (error %d)\n",stat);
+      return stat;
+    };
+    return 0;
+  }
+
+  // Perform a single dword register read, return 0 on success
+  int RegRead(uint32_t addr, uint32_t &data) {
+    uint32_t buf;
+    int stat;
+    stat = ftdi.ReadCmd(addr, (uint8_t *)&buf, REG_BYTES);
+    if (stat) {
+      printf("ftdi.ReadCmd in RegRead failed (error %d)\n",stat);
+      return stat;
+    };
+    read_bytes(REG_BYTES, 0, (uint8_t *)&buf, data);
+    return 0;
+  }
+
   // Enable the engine at the provided address
   void EnableEngine(unsigned control_csr) {
-    uint32_t buf;
-    
-    // Clear reset
-    buf = 0x0;
-    ftdi.Write(control_csr, (uint8_t *)&buf, REG_BYTES);
-
-    // Enable clock
-    buf = 0x1;
-    ftdi.Write(control_csr, (uint8_t *)&buf, REG_BYTES);
+    RegWrite(control_csr, (uint32_t)0);  // Clear reset
+    RegWrite(control_csr, CLOCK_BIT);    // Enable clock
   }
 
   // Disable the engine at the provided address
   void DisableEngine(unsigned control_csr) {
-    uint32_t buf;
-    
-    // Disable clock
-    buf = 0x0;
-    ftdi.Write(control_csr, (uint8_t *)&buf, REG_BYTES);
-
-    // Set reset
-    buf = 0x10;
-    ftdi.Write(control_csr, (uint8_t *)&buf, REG_BYTES);
+    RegWrite(control_csr, (uint32_t)0);  // Disable clock
+    RegWrite(control_csr, RESET_BIT);    // Set reset
   }
-};
 
+  // Reset the engine at the provided address
+  void ResetEngine(unsigned control_csr) {
+    DisableEngine(control_csr);
+    EnableEngine(control_csr);
+  }
+
+  void EnablePvt();
+  double value_to_temp(uint32_t temp_code);
+  uint32_t temp_to_value(double temp);
+  double GetPvtTemp();
+  double GetPvtVoltage();
+  double GetTempAlarmExternal();
+  double GetTempAlarmEngine();
+  bool IsTempAlarmExternalSet();
+  bool IsTempAlarmEngineSet();
+  bool IsTempAlarmSet();
+  bool SetTempAlarmExternal(double temp);
+  bool SetTempAlarmEngine(double temp);
+  void ResetPLL();
+  bool SetPLLFrequency(double frequency);
+  double GetPLLFrequency();
+  int Reset(uint32_t sleep_duration);
+
+  void PrintVRRegs();
+  double GetBoardVoltage();
+  int SetBoardVoltage(double voltage);
+
+  void PrintCSRegs();
+  double GetBoardCurrent();
+
+  double GetPower();
+};
 #endif

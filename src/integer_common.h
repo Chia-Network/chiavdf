@@ -168,8 +168,7 @@ struct integer {
 
     explicit integer(const string& s) {
         mpz_init(impl);
-        int res=mpz_set_str(impl, s.c_str(), 0);
-        assert(res==0);
+        assert(mpz_set_str(impl, s.c_str(), 0) == 0);
     }
 
     explicit integer(const std::vector<uint8_t> v) {
@@ -223,8 +222,7 @@ struct integer {
     }
 
     integer& operator=(const string& s) {
-        int res=mpz_set_str(impl, s.c_str(), 0);
-        assert(res==0);
+        assert(mpz_set_str(impl, s.c_str(), 0) == 0);
         return *this;
     }
 

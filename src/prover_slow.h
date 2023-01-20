@@ -47,7 +47,7 @@ form GenerateWesolowski(form &y, form &x_init,
         x = FastPowFormNucomp(x, D, integer(1 << k), L, reducer);
 
         std::vector<form> ys((1 << k));
-        for (uint64_t i = 0; i < (1 << k); i++)
+        for (uint64_t i = 0; i < (uint64_t)(1 << k); i++)
             ys[i] = form::identity(D);
 
         for (uint64_t i = 0; i < ceil(double(num_iterations)  / (k * l)); i++) {
@@ -56,17 +56,17 @@ form GenerateWesolowski(form &y, form &x_init,
                 nucomp_form(ys[b], ys[b], intermediates[i], D, L);
             }
         }
-        for (uint64_t b1 = 0; b1 < (1 << k1); b1++) {
+        for (uint64_t b1 = 0; b1 < (uint64_t)(1 << k1); b1++) {
             form z = form::identity(D);
-            for (uint64_t b0 = 0; b0 < (1 << k0); b0++) {
+            for (uint64_t b0 = 0; b0 < (uint64_t)(1 << k0); b0++) {
                 nucomp_form(z, z, ys[b1 * (1 << k0) + b0], D, L);
             }
             z = FastPowFormNucomp(z, D, integer(b1 * (1 << k0)), L, reducer);
             nucomp_form(x, x, z, D, L);
         }
-        for (uint64_t b0 = 0; b0 < (1 << k0); b0++) {
+        for (uint64_t b0 = 0; b0 < (uint64_t)(1 << k0); b0++) {
             form z = form::identity(D);
-            for (uint64_t b1 = 0; b1 < (1 << k1); b1++) {
+            for (uint64_t b1 = 0; b1 < (uint64_t)(1 << k1); b1++) {
                 nucomp_form(z, z, ys[b1 * (1 << k0) + b0], D, L);
             }
             z = FastPowFormNucomp(z, D, integer(b0), L, reducer);
@@ -89,7 +89,7 @@ std::vector<uint8_t> ProveSlow(integer& D, form& x, uint64_t num_iterations) {
     ApproximateParameters(num_iterations, l, k);
     if (k <= 0) k = 1;
     if (l <= 0) l = 1;
-    for (int i = 0; i < num_iterations; i++) {
+    for (uint64_t i = 0; i < num_iterations; i++) {
         if (i % (k * l) == 0) {
             intermediates.push_back(y);
         }

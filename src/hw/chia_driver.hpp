@@ -12,7 +12,6 @@ public:
   const static unsigned NUM_2X_COEFFS = 34;
   const static unsigned NUM_3X_COEFFS = 52;
   const static unsigned NUM_4X_COEFFS = 68;
-  const static unsigned ITERATION_BITS = 48;
 
   ChiaDriver(FtdiDriver &_ftdi) :
     VdfDriver(16 /*WORD_BITS*/, 19 /*REDUNDANT_BITS*/, true, _ftdi) {

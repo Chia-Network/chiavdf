@@ -31,12 +31,7 @@ void prepare_job(ChiaDriver *drv, uint64_t n_iters, uint8_t *buf, mpz_t d)
 ChiaDriver *init_hw(void)
 {
     FtdiDriver ftdi;
-    unsigned sys_clk = SYS_CLK_24;
-    unsigned clk_div = CLK_DIV_2;
-    unsigned device = 0;
-
-    // Initialize the FTDI driver
-    if (ftdi.OpenClk(sys_clk, clk_div, device)) {
+    if (ftdi.Open()) {
         throw std::runtime_error("Failed to open device");
     }
 

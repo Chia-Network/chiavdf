@@ -30,10 +30,8 @@ void ChiaDriver::DeserializeJob(uint8_t *buf,
                                 mpz_t f) {
   size_t offset = 0;
   const size_t reg_size = REG_BYTES;
-  const uint64_t iteration_count_mask = (1ULL << ITERATION_BITS) - 1;
   offset += read_bytes(reg_size, offset, buf, job_id);
   offset += read_bytes(2 * reg_size, offset, buf, iteration_count);
-  iteration_count &= iteration_count_mask;
   offset += read_bytes(reg_size * CHIA_VDF_STATUS_A_MULTIREG_COUNT,
                        offset, buf, a, NUM_2X_COEFFS);
   offset += read_bytes(reg_size * CHIA_VDF_STATUS_F_MULTIREG_COUNT,

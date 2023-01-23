@@ -129,3 +129,30 @@ LIBFT4222_API FT4222_STATUS FT4222_GPIO_Read(FT_HANDLE ftHandle, GPIO_Port portN
 {
 	return FT4222_OK;
 }
+
+LIBFT4222_API FT4222_STATUS FT4222_I2CMaster_Init(FT_HANDLE ftHandle, uint32 kbps)
+{
+	return FT4222_OK;
+}
+
+LIBFT4222_API FT4222_STATUS FT4222_I2CMaster_ReadEx(FT_HANDLE ftHandle, uint16 deviceAddress, uint8 flag, uint8* buffer, uint16 bufferSize, uint16* sizeTransferred)
+{
+    int ret = emu_do_io_i2c(buffer, bufferSize, deviceAddress, 1);
+    if (!ret) {
+        *sizeTransferred = bufferSize;
+        return FT4222_OK;
+    } else {
+        return FT4222_IO_ERROR;
+    }
+}
+
+LIBFT4222_API FT4222_STATUS FT4222_I2CMaster_WriteEx(FT_HANDLE ftHandle, uint16 deviceAddress, uint8 flag, uint8* buffer, uint16 bufferSize, uint16* sizeTransferred)
+{
+    int ret = emu_do_io_i2c(buffer, bufferSize, deviceAddress, 0);
+    if (!ret) {
+        *sizeTransferred = bufferSize;
+        return FT4222_OK;
+    } else {
+        return FT4222_IO_ERROR;
+    }
+}

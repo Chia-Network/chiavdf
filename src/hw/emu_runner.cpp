@@ -3,6 +3,7 @@
 //#include "../src/chia/chia_registers.hpp"
 //#include "alloc.hpp"
 #include "vdf_base.hpp"
+#include "clock.hpp"
 
 #include <cstdint>
 #include <cstdio>
@@ -10,6 +11,7 @@
 #include <thread>
 #include <mutex>
 
+#include <arpa/inet.h>
 #include <unistd.h>
 
 #define LOG(msg, ...) fprintf(stderr, msg "\n", ##__VA_ARGS__)
@@ -172,13 +174,18 @@ void read_regs(uint32_t addr, uint8_t *buf, uint32_t size)
 		}
 	}
 	//}
-	if (addr >= job_status_base && addr < job_status_end) {
+	if (addr + size > job_status_base && addr < job_status_end) {
 		uint32_t i = (addr - job_status_base) / CHIA_VDF_JOB_CSR_MULT;
 		int32_t offset = addr - job_status_base - CHIA_VDF_JOB_CSR_MULT * i;
 		copy_regs(buf, g_status_regs, size, sizeof(g_status_regs[0]), offset);
-	} else if (addr >= burst_start && addr < burst_end) {
+	} else if (addr + size > burst_start && addr < burst_end) {
 		int32_t offset = addr - burst_start;
 		copy_regs(buf, g_status_regs, size, sizeof(g_status_regs), offset);
+	} else if (addr == CLOCK_STATUS_REG_OFFSET) {
+		// Emulate ACK of PLL freq setting
+		uint32_t val = htonl((1U << CLOCK_STATUS_DIVACK_BIT) |
+				(1U << CLOCK_STATUS_LOCK_BIT));
+		copy_regs(buf, &val, size, sizeof(val), 0);
 	} else {
 		memset(buf, 0, size);
 		LOG("Emu: No data");
@@ -229,5 +236,10 @@ int emu_do_io(uint8_t *buf_in, uint16_t size_in, uint8_t *buf_out, uint16_t size
 		//memcpy(buf_out, (uint8_t *)&status + offset, size_out);
 	}
 
+	return 0;
+}
+
+int emu_do_io_i2c(uint8_t *buf, uint16_t size, uint32_t addr, int is_out)
+{
 	return 0;
 }

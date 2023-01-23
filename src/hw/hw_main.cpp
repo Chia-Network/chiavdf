@@ -32,7 +32,7 @@ void verify_vdf_value(struct vdf_state *vdf, struct vdf_value *val)
     mpz_sub(vdf->a2, vdf->a2, vdf->d);
     /* Verify that c could be computed as c = (b^2 - d) / (4 * a) */
     if (!mpz_divisible_p(vdf->a2, val->a) || mpz_scan1(vdf->a2, 0) < mpz_scan1(val->a, 0) + 2) {
-        fprintf(stderr, "VDF %d: Bad VDF value at iters=%lu", vdf->idx, val->iters);
+        fprintf(stderr, "VDF %d: Bad VDF value at iters=%lu\n", vdf->idx, val->iters);
         abort();
     }
 }

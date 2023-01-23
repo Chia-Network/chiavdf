@@ -37,7 +37,7 @@ ChiaDriver *init_hw(void)
 
     ChiaDriver* drv = new ChiaDriver(ftdi);
 
-    double freq = 1500.0;
+    double freq = 1100.0;
     bool set_status;
 
     set_status = drv->SetPLLFrequency(freq);
@@ -48,26 +48,26 @@ ChiaDriver *init_hw(void)
 
     // Check frequency
     double freq_read = drv->GetPLLFrequency();
-    printf("Frequency is %lf\n", freq_read);
+    printf("Frequency is %lf MHz\n", freq_read);
 
-    //double brd_voltage = drv->GetBoardVoltage();
-    //printf("Board voltage is %1.3lf\n", brd_voltage);
+    double brd_voltage = drv->GetBoardVoltage();
+    printf("Board voltage is %1.3lf V\n", brd_voltage);
 
-    //double set_brd_voltage = 0.80;
-    //int ret_val = drv->SetBoardVoltage(set_brd_voltage);
-    //if (ret_val != 0) {
-    //  fprintf(stderr, "Aborting since set voltage failed\n");
-    //  abort();
-    //}
+    double set_brd_voltage = 0.80;
+    int ret_val = drv->SetBoardVoltage(set_brd_voltage);
+    if (ret_val != 0) {
+      fprintf(stderr, "Aborting since set voltage failed\n");
+      abort();
+    }
 
-    //brd_voltage = drv->GetBoardVoltage();
-    //printf("Board voltage is now %1.3lf\n", brd_voltage);
+    brd_voltage = drv->GetBoardVoltage();
+    printf("Board voltage is now %1.3lf V\n", brd_voltage);
 
-    //double brd_current = drv->GetBoardCurrent();
-    //printf("Board current is %2.3lf\n", brd_current);
+    double brd_current = drv->GetBoardCurrent();
+    printf("Board current is %2.3lf A\n", brd_current);
 
-    //double brd_power = drv->GetPower();
-    //printf("Board power is %2.3lf\n", brd_power);
+    double brd_power = drv->GetPower();
+    printf("Board power is %2.3lf W\n", brd_power);
 
     // Enable PVT sensor
     drv->EnablePvt();
@@ -121,21 +121,33 @@ void stop_hw_vdf(ChiaDriver *drv, int idx)
 int read_hw_status(ChiaDriver *drv, struct vdf_state *vdfs[N_HW_VDFS], uint8_t idx_mask)
 {
     mpz_t a, f;
-    //uint8_t burst_read_regs[HW_VDF_STATUS_SIZE * N_HW_VDFS];
-    uint8_t read_status[HW_VDF_STATUS_SIZE];
+    uint8_t read_status[HW_VDF_STATUS_SIZE + 20];
     uint32_t job_id;
     uint64_t done_iters = 0;
 
     mpz_inits(a, f, NULL);
 
-
     for (int i = 0; i < N_HW_VDFS; i++) {
-        drv->ftdi.Read(CHIA_VDF_STATUS_JOB_ID_REG_OFFSET + (0x10000 * i),
-                       read_status, HW_VDF_STATUS_SIZE);
-        uint8_t *job = read_status;
+        uint8_t *job;
+
+        if (i == 0) {
+            drv->ftdi.Read(0x300000, read_status, HW_VDF_STATUS_SIZE + 20);
+            job = read_status + 20;
+
+            uint32_t temp_code;
+            drv->read_bytes(4, 0, read_status, temp_code);
+            double temp = drv->ValueToTemp(temp_code);
+            fprintf(stderr, "ASIC Temp = %3.2f C\n", temp);
+        } else {
+            drv->ftdi.Read(CHIA_VDF_STATUS_JOB_ID_REG_OFFSET + (0x10000 * i),
+                           read_status, HW_VDF_STATUS_SIZE);
+            job = read_status;
+        }
+
         if (!(idx_mask & (1 << i))) {
             continue;
         }
+
         drv->DeserializeJob(job, job_id, done_iters, a, f);
 
         fprintf(stderr, "VDF %d: Got iters=%lu\n", i, done_iters);

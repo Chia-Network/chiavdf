@@ -98,8 +98,8 @@ public:
   }
 
   void EnablePvt();
-  double value_to_temp(uint32_t temp_code);
-  uint32_t temp_to_value(double temp);
+  double ValueToTemp(uint32_t temp_code);
+  uint32_t TempToValue(double temp);
   double GetPvtTemp();
   double GetPvtVoltage();
   double GetTempAlarmExternal();
@@ -113,14 +113,13 @@ public:
   bool SetPLLFrequency(double frequency);
   double GetPLLFrequency();
   int Reset(uint32_t sleep_duration);
-
-  void PrintVRRegs();
+  int TurnFanOn();
+  int TurnFanOff();
+  int I2CWriteReg(uint8_t i2c_addr, uint8_t reg_addr, uint8_t data);
+  int I2CReadReg(uint8_t i2c_addr, uint8_t reg_addr, size_t len, uint8_t* data);
   double GetBoardVoltage();
   int SetBoardVoltage(double voltage);
-
-  void PrintCSRegs();
   double GetBoardCurrent();
-
   double GetPower();
 };
 #endif

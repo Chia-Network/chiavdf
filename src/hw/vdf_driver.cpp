@@ -6,6 +6,9 @@
 #include "vdf_driver.hpp"
 #include "pll_freqs.hpp"
 
+#define VR_I2C_ADDR 0x38
+#define CS_I2C_ADDR 0x70
+
 size_t VdfDriver::write_bytes(size_t size, size_t offset, uint8_t *buf,
                               uint32_t val) {
   // Insert bytes from val in big endian order
@@ -157,7 +160,7 @@ void VdfDriver::EnablePvt() {
 }
 
 // Calculate temperature (C) from input code
-double VdfDriver::value_to_temp(uint32_t temp_code) {
+double VdfDriver::ValueToTemp(uint32_t temp_code) {
   double a4 = -0.000000000008929;
   double a3 = 0.000000065714;
   double a2 = -0.00018002;
@@ -174,7 +177,7 @@ double VdfDriver::value_to_temp(uint32_t temp_code) {
 }
 
 // Calculate code from temperature input (C)
-uint32_t VdfDriver::temp_to_value(double temp) {
+uint32_t VdfDriver::TempToValue(double temp) {
   double a4 = 0.000000027093;
   double a3 = 0.00002108;
   double a2 = 0.0076534;
@@ -202,7 +205,7 @@ double VdfDriver::GetPvtTemp() {
     return 0.0;
   }
 
-  double temp = value_to_temp(temp_data);
+  double temp = ValueToTemp(temp_data);
 
   return temp;
 }
@@ -238,7 +241,7 @@ double VdfDriver::GetTempAlarmExternal() {
 
   temp_data &= PVT_TEMP_ALARM_EXTERNAL_THRESHOLD_MASK;
 
-  double temp = value_to_temp(temp_data);
+  double temp = ValueToTemp(temp_data);
   return temp;
 }
 
@@ -255,7 +258,7 @@ double VdfDriver::GetTempAlarmEngine() {
 
   temp_data &= PVT_TEMP_ALARM_ENGINE_THRESHOLD_MASK;
 
-  double temp = value_to_temp(temp_data);
+  double temp = ValueToTemp(temp_data);
   return temp;
 }
 
@@ -295,7 +298,7 @@ bool VdfDriver::IsTempAlarmSet() {
 
 // Set the PVT temperature external alarm threshold
 bool VdfDriver::SetTempAlarmExternal(double temp) {
-  uint32_t temp_code = temp_to_value(temp);
+  uint32_t temp_code = TempToValue(temp);
   if ((temp_code < 0x0) || (temp_code > 0x3FF)) {
     fprintf(stderr, "SetTempAlarmExternal bad code %X from temp %lf\n",
             temp_code, temp);
@@ -307,7 +310,7 @@ bool VdfDriver::SetTempAlarmExternal(double temp) {
 
 // Set the PVT temperature engine alarm threshold
 bool VdfDriver::SetTempAlarmEngine(double temp) {
-  uint32_t temp_code = temp_to_value(temp);
+  uint32_t temp_code = TempToValue(temp);
   if ((temp_code < 0x0) || (temp_code > 0x3FF)) {
     fprintf(stderr, "SetTempAlarmEngine bad code %X from temp %lf\n",
             temp_code, temp);
@@ -451,7 +454,6 @@ int VdfDriver::Reset(uint32_t sleep_duration = 1000) {
   return ret_val;
 }
 
-/* Untested
 int VdfDriver::TurnFanOn() {
   int ret_val;
   ret_val = ftdi.SetGPIO(GPIO_PORT3, 1);
@@ -469,5 +471,128 @@ int VdfDriver::TurnFanOff() {
   }
   return ret_val;
 }
-*/
 
+int VdfDriver::I2CWriteReg(uint8_t i2c_addr, uint8_t reg_addr, uint8_t data) {
+  int ret;
+  uint8_t wbuf[2];
+  uint16_t bytesXfered;
+
+  wbuf[0] = reg_addr;
+  wbuf[1] = data;
+
+  ret = ftdi.i2c_TransmitX(1, 1, i2c_addr, wbuf, 2, bytesXfered );
+  if (ret != FtdiDriver::I2C_RETURN_CODE_success) {
+    fprintf(stderr, "I2CWriteReg reg %x failed %d\n", reg_addr, ret);
+    return ret;
+  } else if (bytesXfered != 2) {
+    fprintf(stderr, "I2CWriteReg reg %x nack b %d\n", reg_addr, bytesXfered);
+    return FtdiDriver::I2C_RETURN_CODE_nack;
+  }
+  //printf("I2CWriteReg %x %x with %x OK\n", i2c_addr, reg_addr, data);
+
+  return FtdiDriver::I2C_RETURN_CODE_success;
+}
+
+int VdfDriver::I2CReadReg(uint8_t i2c_addr, uint8_t reg_addr,
+                          size_t len, uint8_t* data) {
+  int ret;
+  uint8_t wbuf[1];
+  uint16_t bytesXfered;
+
+  wbuf[0] = reg_addr;
+
+  ret = ftdi.i2c_TransmitX(1, 0, i2c_addr, wbuf, 1, bytesXfered);
+  if (ret != FtdiDriver::I2C_RETURN_CODE_success) {
+    fprintf(stderr, "I2CReadReg wr reg %x failed %d\n", reg_addr, ret);
+    return ret;
+  } else if (bytesXfered != 1) {
+    fprintf(stderr, "I2CReadReg wr reg %x nack b %d\n", reg_addr, bytesXfered);
+    return FtdiDriver::I2C_RETURN_CODE_nack;
+  }
+
+  ret = ftdi.i2c_ReceiveX(1, 1, i2c_addr, data, len, bytesXfered);
+  if (ret != FtdiDriver::I2C_RETURN_CODE_success) {
+    fprintf(stderr, "I2CReadReg rd reg %x failed %d\n", reg_addr, ret);
+    return ret;
+  } else if (bytesXfered != len) {
+    fprintf(stderr, "I2CReadReg rd reg %x nack b %d\n", reg_addr, bytesXfered);
+    return FtdiDriver::I2C_RETURN_CODE_nack;
+  }
+
+  if (len == 2) {
+    uint16_t d = (((uint16_t)data[0]) << 4) | (((uint16_t)data[1]) >> 4);
+    data[0] = d & 0xFF;
+    data[1] = (d >> 8) & 0xFF;
+  }
+
+  return FtdiDriver::I2C_RETURN_CODE_success;
+}
+
+double VdfDriver::GetBoardVoltage() {
+  uint8_t vid;
+  int ret_val = I2CReadReg(VR_I2C_ADDR, 0x7, 1, &vid);
+  if (ret_val != 0) {
+    fprintf(stderr, "GetBoardVoltage failed to read reg, %d\n", ret_val);
+    return 0.0;
+  }
+
+  double vr_factor = 100000.0;
+  double vr_slope = 625.0;
+  double vr_intercept = 24375.0;
+  double voltage = (vr_intercept + (vid * vr_slope)) / vr_factor;
+  return voltage;
+}
+
+int VdfDriver::SetBoardVoltage(double voltage) {
+  uint8_t vid;
+  double vr_factor = 100000.0;
+  uint32_t vr_slope = 625;
+  uint32_t vr_intercept = 24375;
+  vid =
+    (uint8_t)((((uint32_t)(voltage * vr_factor)) - vr_intercept) / vr_slope);
+
+  if ((vid < 0x29) || (vid > 0x79)) {
+    fprintf(stderr, "SetBoardVoltage illegal vid %d for voltage %1.3f\n",
+            vid, voltage);
+    return 1;
+  }
+
+  int ret_val = I2CWriteReg(VR_I2C_ADDR, 0x7, vid);
+  if (ret_val != 0) {
+    fprintf(stderr, "SetBoardVoltage failed to write reg, %d\n", ret_val);
+  }
+
+  return ret_val;
+}
+
+double VdfDriver::GetBoardCurrent() {
+  uint16_t cs;
+
+  int ret_val = I2CWriteReg(CS_I2C_ADDR, 0xA, 0x2);
+  if (ret_val != 0) {
+    fprintf(stderr, "GetBoardCurrent failed to write reg, %d\n", ret_val);
+    return 0.0;
+  }
+
+  usleep(10000);
+
+  ret_val = I2CReadReg(CS_I2C_ADDR, 0x0, 2, (uint8_t*)(&cs));
+  if (ret_val != 0) {
+    fprintf(stderr, "GetBoardCurrent failed to read reg, %d\n", ret_val);
+    return 0.0;
+  }
+
+  double cs_vmax = 440.0; // mv
+  double cs_gain = 8.0;
+  double cs_adc_max = 4096.0;
+
+  double c = ((double)cs * cs_vmax) / (cs_gain * cs_adc_max);
+
+  return c;
+}
+
+double VdfDriver::GetPower() {
+  double current = GetBoardCurrent();
+  double voltage = GetBoardVoltage();
+  return (current * voltage);
+}

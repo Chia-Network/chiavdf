@@ -48,10 +48,10 @@ ChiaDriver *init_hw(void)
 
     // Check frequency
     double freq_read = drv->GetPLLFrequency();
-    printf("Frequency is %lf MHz\n", freq_read);
+    printf("Frequency is %f MHz\n", freq_read);
 
     double brd_voltage = drv->GetBoardVoltage();
-    printf("Board voltage is %1.3lf V\n", brd_voltage);
+    printf("Board voltage is %1.3f V\n", brd_voltage);
 
     double set_brd_voltage = 0.80;
     int ret_val = drv->SetBoardVoltage(set_brd_voltage);
@@ -61,13 +61,13 @@ ChiaDriver *init_hw(void)
     }
 
     brd_voltage = drv->GetBoardVoltage();
-    printf("Board voltage is now %1.3lf V\n", brd_voltage);
+    printf("Board voltage is now %1.3f V\n", brd_voltage);
 
     double brd_current = drv->GetBoardCurrent();
-    printf("Board current is %2.3lf A\n", brd_current);
+    printf("Board current is %2.3f A\n", brd_current);
 
     double brd_power = drv->GetPower();
-    printf("Board power is %2.3lf W\n", brd_power);
+    printf("Board power is %2.3f W\n", brd_power);
 
     // Enable PVT sensor
     drv->EnablePvt();

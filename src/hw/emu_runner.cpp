@@ -177,7 +177,7 @@ void read_regs(uint32_t addr, uint8_t *buf, uint32_t size)
 	if (addr + size > job_status_base && addr < job_status_end) {
 		uint32_t i = (addr - job_status_base) / CHIA_VDF_JOB_CSR_MULT;
 		int32_t offset = addr - job_status_base - CHIA_VDF_JOB_CSR_MULT * i;
-		copy_regs(buf, g_status_regs, size, sizeof(g_status_regs[0]), offset);
+		copy_regs(buf, &g_status_regs[i], size, sizeof(g_status_regs[0]), offset);
 	} else if (addr + size > burst_start && addr < burst_end) {
 		int32_t offset = addr - burst_start;
 		copy_regs(buf, g_status_regs, size, sizeof(g_status_regs), offset);

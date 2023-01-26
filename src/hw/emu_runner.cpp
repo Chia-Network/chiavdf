@@ -245,3 +245,13 @@ int emu_do_io_i2c(uint8_t *buf, uint16_t size, uint32_t addr, int is_out)
 	}
 	return 0;
 }
+
+__attribute__((destructor)) void emu_shutdown(void)
+{
+	for (int i = 0; i < N_VDFS; i++) {
+		if (states[i].init_done) {
+			states[i].init_done = false;
+			delete states[i].drv;
+		}
+	}
+}

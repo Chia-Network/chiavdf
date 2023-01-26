@@ -16,6 +16,24 @@
 #define CHIA_VDF_JOB_ID_OFFSET 0x1000
 #define CHIA_VDF_JOB_STATUS_OFFSET 0x2000
 
+void init_vdf_value(struct vdf_value *val)
+{
+    val->iters = 0;
+    mpz_inits(val->a, val->b, NULL);
+}
+
+void clear_vdf_value(struct vdf_value *val)
+{
+    mpz_clears(val->a, val->b, NULL);
+}
+
+void copy_vdf_value(struct vdf_value *dst, struct vdf_value *src)
+{
+    dst->iters = src->iters;
+    mpz_init_set(dst->a, src->a);
+    mpz_init_set(dst->b, src->b);
+}
+
 void prepare_job(ChiaDriver *drv, uint64_t n_iters, uint8_t *buf, mpz_t d)
 {
     uint32_t job_id = 0xab;
@@ -118,17 +136,14 @@ void stop_hw_vdf(ChiaDriver *drv, int idx)
     drv->DisableEngine(base_addr);
 }
 
-int read_hw_status(ChiaDriver *drv, struct vdf_state *vdfs[N_HW_VDFS], uint8_t idx_mask)
+int read_hw_status(ChiaDriver *drv, uint8_t idx_mask, struct vdf_value *values)
 {
-    mpz_t a, f;
     uint8_t read_status[HW_VDF_STATUS_SIZE + 20];
     uint32_t job_id;
-    uint64_t done_iters = 0;
-
-    mpz_inits(a, f, NULL);
 
     for (int i = 0; i < N_HW_VDFS; i++) {
         uint8_t *job;
+        struct vdf_value *val = &values[i];
 
         if (i == 0) {
             drv->ftdi.Read(0x300000, read_status, HW_VDF_STATUS_SIZE + 20);
@@ -148,13 +163,11 @@ int read_hw_status(ChiaDriver *drv, struct vdf_state *vdfs[N_HW_VDFS], uint8_t i
             continue;
         }
 
-        drv->DeserializeJob(job, job_id, done_iters, a, f);
+        drv->DeserializeJob(job, job_id, val->iters, val->a, val->b);
 
-        fprintf(stderr, "VDF %d: Got iters=%lu\n", i, done_iters);
-        add_vdf_value(vdfs[i], a, f, done_iters);
+        fprintf(stderr, "VDF %d: Got iters=%lu\n", i, val->iters);
     }
 
     //usleep(100000);
-    mpz_clears(a, f, NULL);
     return 0;
 }

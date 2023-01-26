@@ -26,45 +26,6 @@ static const char *discrs[] = {
     "-0xe03c07b6c9c1e24f8f3861e9ff17715a4e18501dee644ea0fcf10550787411c2f350eff666427ffd556557673928c5bc0fc088ac68da50aa39f62ff0e614ac0de4b2079b9b60b2087eb1779e9ba57ea2aafdf396871a530f4e7ff5c2fadb9050a54d4bf4ba3b25337b6ab12cc36bfd423274bf92c9307b4114cb1bbe87652eff"
 };
 
-void verify_vdf_value(struct vdf_state *vdf, struct vdf_value *val)
-{
-    mpz_mul(vdf->a2, val->b, val->b);
-    mpz_sub(vdf->a2, vdf->a2, vdf->d);
-    /* Verify that c could be computed as c = (b^2 - d) / (4 * a) */
-    if (!mpz_divisible_p(vdf->a2, val->a) || mpz_scan1(vdf->a2, 0) < mpz_scan1(val->a, 0) + 2) {
-        fprintf(stderr, "VDF %d: Bad VDF value at iters=%lu\n", vdf->idx, val->iters);
-        abort();
-    }
-}
-
-void add_vdf_value(struct vdf_state *vdf, mpz_t a, mpz_t f, uint64_t n_iters)
-{
-    struct vdf_value val;
-    uint64_t last_iters = 0;
-
-    if (!n_iters) {
-        fprintf(stderr, "VDF %d: Skipping iters=0\n", vdf->idx);
-        return;
-    }
-
-    if (vdf->last_val.iters) {
-        last_iters = vdf->last_val.iters;
-        if (n_iters == last_iters) {
-            fprintf(stderr, "VDF %d: Skipping iters=%lu\n", vdf->idx, n_iters);
-            return;
-        }
-    }
-    mpz_inits(val.a, val.b, NULL);
-    mpz_set(val.a, a);
-    mpz_mul_2exp(vdf->a2, a, 1);
-    mpz_mod(val.b, f, vdf->a2);
-    val.iters = n_iters;
-    verify_vdf_value(vdf, &val);
-    //vdf->raw_values.push_back(val);
-    //vdf->cur_iters = n_iters;
-    hw_proof_add_value(vdf, &val);
-}
-
 void init_chia(void)
 {
     VdfBaseInit();
@@ -73,11 +34,6 @@ void init_chia(void)
     //fesetround(FE_TOWARDZERO);
 }
 
-//static void start_vdf_job(struct vdf_state *vdf, int idx)
-//{
-    //run_hw(vdf->d, vdf->target_iters, vdf, idx);
-//}
-
 int main(int argc, char **argv)
 {
     uint64_t n_iters = 100000;
@@ -85,7 +41,7 @@ int main(int argc, char **argv)
     uint8_t n_completed = 0;
     uint8_t vdfs_mask;
     struct vdf_state vdfs[N_HW_VDFS];
-    struct vdf_state *vdf_ptrs[N_HW_VDFS];
+    struct vdf_value values[N_HW_VDFS];
     std::thread proof_threads[N_HW_VDFS];
     //std::thread vdf_threads[N_HW_VDFS];
     ChiaDriver *drv;
@@ -110,23 +66,22 @@ int main(int argc, char **argv)
         //run_hw(vdf->d, n_iters, vdf);
         //vdf_threads[i] = std::thread(start_vdf_job, vdf, i);
         start_hw_vdf(drv, vdf->d, vdf->target_iters, i);
-        vdf_ptrs[i] = vdf;
+        init_vdf_value(&values[i]);
     }
 
     vdfs_mask = (1 << n_vdfs) - 1;
     while (vdfs_mask) {
-        uint8_t i;
-        read_hw_status(drv, vdf_ptrs, vdfs_mask);
-        for (i = 0; i < n_vdfs; i++) {
-            if (!vdfs[i].completed) {
-                break;
+        read_hw_status(drv, vdfs_mask, values);
+        for (uint8_t i = 0; i < n_vdfs; i++) {
+            if (vdfs_mask & (1 << i)) {
+                hw_proof_add_value(&vdfs[i], &values[i]);
             }
 
             if (vdfs[i].completed && (vdfs_mask & (1 << i))) {
                 stop_hw_vdf(drv, i);
                 vdfs_mask &= ~(1 << i);
                 n_completed++;
-                proof_threads[i] = std::thread(hw_get_proof, vdf_ptrs[i]);
+                proof_threads[i] = std::thread(hw_get_proof, &vdfs[i]);
             }
         }
         //if (i == n_vdfs) {
@@ -141,6 +96,7 @@ int main(int argc, char **argv)
     for (uint8_t i = 0; i < n_vdfs; i++) {
         proof_threads[i].join();
         clear_vdf_state(&vdfs[i]);
+        clear_vdf_value(&values[i]);
     }
     return 0;
 }

@@ -1,18 +1,34 @@
 #include "hw_proof.hpp"
 //#include "vdf.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <unistd.h>
 
-void init_vdf_value(struct vdf_value *val)
+void verify_vdf_value(struct vdf_state *vdf, struct vdf_value *val)
 {
-    val->iters = 0;
-    mpz_inits(val->a, val->b, NULL);
+    mpz_mul(vdf->a2, val->b, val->b);
+    mpz_sub(vdf->a2, vdf->a2, vdf->d);
+    /* Verify that c could be computed as c = (b^2 - d) / (4 * a) */
+    if (!mpz_divisible_p(vdf->a2, val->a) || mpz_scan1(vdf->a2, 0) < mpz_scan1(val->a, 0) + 2) {
+        fprintf(stderr, "VDF %d: Bad VDF value at iters=%lu\n", vdf->idx, val->iters);
+        abort();
+    }
 }
 
-void clear_vdf_value(struct vdf_value *val)
+void hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val)
 {
-    mpz_clears(val->a, val->b, NULL);
+    if (!val->iters || vdf->last_val.iters == val->iters) {
+        fprintf(stderr, "VDF %d: Skipping iters=%lu\n", vdf->idx, val->iters);
+        return;
+    }
+
+    // b = b (mod 2*a)
+    mpz_mul_2exp(vdf->a2, val->a, 1);
+    mpz_mod(val->b, val->b, vdf->a2);
+
+    verify_vdf_value(vdf, val);
+    hw_proof_handle_value(vdf, val);
 }
 
 void hw_proof_get_form(form *f, struct vdf_state *vdf, struct vdf_value *val)
@@ -55,6 +71,7 @@ void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_value *val, uint64_t
     fprintf(stderr, " VDF %d: computing %lu iters (%lu -> %lu, %u steps)\n",
             vdf->idx, end_iters - iters, iters, end_iters, n_steps);
 
+    clear_vdf_value(val);
     t1 = hw_proof_get_cur_time();
     do {
         nudupl_form(f, f, d, l);
@@ -87,10 +104,11 @@ void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_value *val, uint64_t
     fprintf(stderr, " VDF %d: aux thread %d done\n", vdf->idx, thr_idx);
 }
 
-void hw_proof_add_work(struct vdf_state *vdf, struct vdf_value *val, uint64_t next_iters, uint32_t n_steps)
+void hw_proof_add_work(struct vdf_state *vdf, uint64_t next_iters, uint32_t n_steps)
 {
     auto *work = new struct vdf_work;
-    work->start_val = vdf->last_val;
+
+    copy_vdf_value(&work->start_val, &vdf->last_val);
     work->start_iters = next_iters;
     work->n_steps = n_steps;
 
@@ -137,7 +155,7 @@ void hw_proof_wait_values(struct vdf_state *vdf)
     }
 }
 
-void hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val)
+void hw_proof_handle_value(struct vdf_state *vdf, struct vdf_value *val)
 {
     uint64_t interval = vdf->interval;
     //uint64_t iters = vdf->raw_values.back().iters;
@@ -172,14 +190,12 @@ void hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val)
             abort();
         }
         //iters += interval;
-        hw_proof_add_work(vdf, val, start_iters, n_steps);
-    } else {
-        clear_vdf_value(&vdf->last_val);
+        hw_proof_add_work(vdf, start_iters, n_steps);
     }
 
     //vdf->raw_values.push_back(*val);
-    vdf->last_val = *val;
     vdf->cur_iters = val->iters;
+    std::swap(vdf->last_val, *val);
 
     if (vdf->cur_iters >= vdf->target_iters) {
         uint64_t elapsed_us = hw_proof_get_elapsed_us(vdf->start_time);

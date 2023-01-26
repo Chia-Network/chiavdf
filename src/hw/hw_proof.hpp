@@ -2,6 +2,7 @@
 #define HW_PROOF_H
 
 #include "vdf_base.hpp"
+#include "hw_interface.hpp"
 
 #include <atomic>
 #include <deque>
@@ -11,11 +12,6 @@
 #define HW_VDF_VALUE_INTERVAL 4000
 #define HW_VDF_MAX_AUX_THREADS 4
 #define HW_VDF_MAX_WQ 100
-
-struct vdf_value {
-    uint64_t iters;
-    mpz_t a, b;
-};
 
 struct vdf_work {
     //size_t raw_idx;
@@ -50,6 +46,7 @@ struct vdf_state {
 
 void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_value *val, uint64_t next_iters, uint32_t n_steps, int thr_idx);
 void hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val);
+void hw_proof_handle_value(struct vdf_state *vdf, struct vdf_value *val);
 void hw_get_proof(struct vdf_state *vdf);
 void init_vdf_state(struct vdf_state *vdf, const char *d_str, uint64_t n_iters, uint8_t idx);
 void clear_vdf_state(struct vdf_state *vdf);

@@ -65,11 +65,11 @@ FtdiDriver::FtdiDriver() {
 
 FtdiDriver::~FtdiDriver() {
   // TODO: Handle deletion from multiple references
-  // Close();
-  // delete [] int_write_buf;
-  // delete [] int_read_buf;
-  // int_write_buf = NULL;
-  // int_read_buf  = NULL;
+  Close();
+  delete [] int_write_buf;
+  delete [] int_read_buf;
+  int_write_buf = NULL;
+  int_read_buf  = NULL;
 }
 
 void FtdiDriver::eprintf(const char * format, ...) {

@@ -48,12 +48,10 @@ void prepare_job(ChiaDriver *drv, uint64_t n_iters, uint8_t *buf, mpz_t d)
 
 ChiaDriver *init_hw(void)
 {
-    FtdiDriver ftdi;
-    if (ftdi.Open()) {
+    ChiaDriver* drv = new ChiaDriver();
+    if (drv->ftdi.Open()) {
         throw std::runtime_error("Failed to open device");
     }
-
-    ChiaDriver* drv = new ChiaDriver(ftdi);
 
     double freq = 1100.0;
     bool set_status;

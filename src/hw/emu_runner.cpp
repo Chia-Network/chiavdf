@@ -63,8 +63,7 @@ void init_state(struct job_state *st, struct job_regs *r)
 	//size_t d_size = CHIA_VDF_CMD_D_MULTIREG_COUNT * 4;
 	//size_t l_size = CHIA_VDF_CMD_L_MULTIREG_COUNT * 4;
 	integer a, f;
-	FtdiDriver ftdi;
-	st->drv = new ChiaDriver(ftdi);
+	st->drv = new ChiaDriver();
 
 	st->cur_iter = 0;
 	st->drv->read_bytes(sizeof(r->iters), 0, (uint8_t *)r->iters, st->target_iter);

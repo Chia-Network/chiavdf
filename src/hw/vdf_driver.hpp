@@ -25,9 +25,9 @@ public:
   FtdiDriver ftdi;
 
   VdfDriver(unsigned _WORD_BITS, unsigned _REDUNDANT_BITS,
-            bool _SIGNED, FtdiDriver &_ftdi)
+            bool _SIGNED)
     : WORD_BITS(_WORD_BITS), REDUNDANT_BITS(_REDUNDANT_BITS),
-      SIGNED(_SIGNED), ftdi(_ftdi) {
+      SIGNED(_SIGNED) {
   }
   
   // Functions for serializing to buffers

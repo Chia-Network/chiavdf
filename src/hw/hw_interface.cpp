@@ -109,6 +109,11 @@ ChiaDriver *init_hw(void)
     return drv;
 }
 
+void stop_hw(ChiaDriver *drv)
+{
+    delete drv;
+}
+
 struct vdf_state;
 void add_vdf_value(struct vdf_state *vdf, mpz_t a, mpz_t f, uint64_t n_iters);
 

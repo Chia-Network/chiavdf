@@ -17,6 +17,7 @@ extern int chia_vdf_is_emu;
 
 class ChiaDriver;
 ChiaDriver *init_hw(void);
+void stop_hw(ChiaDriver *drv);
 
 struct vdf_state;
 //int run_hw(mpz_t d, uint64_t n_iters, struct vdf_state *vdf_p, int idx);

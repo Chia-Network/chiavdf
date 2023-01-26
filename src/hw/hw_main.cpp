@@ -98,5 +98,6 @@ int main(int argc, char **argv)
         clear_vdf_state(&vdfs[i]);
         clear_vdf_value(&values[i]);
     }
+    stop_hw(drv);
     return 0;
 }

@@ -42,13 +42,13 @@ struct vdf_state {
     std::atomic<uint8_t> aux_threads_busy;
     uint8_t idx;
     bool completed;
+    bool stopping;
 };
 
-void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_value *val, uint64_t next_iters, uint32_t n_steps, int thr_idx);
 void hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val);
 void hw_proof_handle_value(struct vdf_state *vdf, struct vdf_value *val);
 void hw_get_proof(struct vdf_state *vdf);
-void init_vdf_state(struct vdf_state *vdf, const char *d_str, uint64_t n_iters, uint8_t idx);
+void init_vdf_state(struct vdf_state *vdf, const char *d_str, const uint8_t *init_form, uint64_t n_iters, uint8_t idx);
 void clear_vdf_state(struct vdf_state *vdf);
 
 #endif /* HW_PROOF_H */

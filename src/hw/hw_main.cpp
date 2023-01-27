@@ -14,6 +14,7 @@
 #include "hw_interface.hpp"
 #include "hw_proof.hpp"
 #include "vdf_base.hpp"
+#include "bqfc.h"
 
 #include <cfenv>
 #include <thread>
@@ -40,6 +41,7 @@ int main(int argc, char **argv)
     uint8_t n_vdfs = 2;
     uint8_t n_completed = 0;
     uint8_t vdfs_mask;
+    uint8_t init_form[BQFC_FORM_SIZE] = { 0x08 };
     struct vdf_state vdfs[N_HW_VDFS];
     struct vdf_value values[N_HW_VDFS];
     std::thread proof_threads[N_HW_VDFS];
@@ -61,7 +63,7 @@ int main(int argc, char **argv)
     for (uint8_t i = 0; i < n_vdfs; i++) {
         struct vdf_state *vdf = &vdfs[i];
 
-        init_vdf_state(vdf, discrs[i], n_iters, i);
+        init_vdf_state(vdf, discrs[i], init_form, n_iters, i);
 
         //run_hw(vdf->d, n_iters, vdf);
         //vdf_threads[i] = std::thread(start_vdf_job, vdf, i);

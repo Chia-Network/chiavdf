@@ -1,4 +1,5 @@
 #include "hw_proof.hpp"
+#include "bqfc.h"
 //#include "vdf.h"
 
 #include <algorithm>
@@ -57,8 +58,12 @@ uint64_t hw_proof_get_elapsed_us(timepoint_t &t1)
     return std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
 }
 
-void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_value *val, uint64_t next_iters, uint32_t n_steps, int thr_idx)
+void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_work *work, int thr_idx)
 {
+    struct vdf_value *val = &work->start_val;
+    uint64_t next_iters = work->start_iters;
+    uint32_t n_steps = work->n_steps;
+
     integer a(val->a), b(val->b), d(vdf->d), l(vdf->l);
     //const integer a = {val->a}, b = {val->b}, d = {vdf->d}, l = {vdf->l};
     form f = form::from_abd(a, b, d);
@@ -66,14 +71,18 @@ void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_value *val, uint64_t
     uint64_t iters = val->iters;
     PulmarkReducer reducer;
     timepoint_t t1;
-    uint64_t total_iters = end_iters - iters;
+    uint64_t init_iters = iters;
 
     fprintf(stderr, " VDF %d: computing %lu iters (%lu -> %lu, %u steps)\n",
             vdf->idx, end_iters - iters, iters, end_iters, n_steps);
 
     clear_vdf_value(val);
+    delete work;
     t1 = hw_proof_get_cur_time();
     do {
+        if (vdf->stopping) {
+            break;
+        }
         nudupl_form(f, f, d, l);
         reducer.reduce(f);
         iters++;
@@ -98,10 +107,10 @@ void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_value *val, uint64_t
 
     } while (iters < end_iters);
 
-    vdf->aux_threads_busy &= ~(1U << thr_idx);
-    vdf->done_iters += total_iters;
+    vdf->done_iters += iters - init_iters;
     vdf->elapsed_us += hw_proof_get_elapsed_us(t1);
     fprintf(stderr, " VDF %d: aux thread %d done\n", vdf->idx, thr_idx);
+    vdf->aux_threads_busy &= ~(1U << thr_idx);
 }
 
 void hw_proof_add_work(struct vdf_state *vdf, uint64_t next_iters, uint32_t n_steps)
@@ -122,7 +131,6 @@ void hw_proof_process_work(struct vdf_state *vdf)
     for (int i = 0; i < HW_VDF_MAX_AUX_THREADS; i++) {
         if (!(busy & (1U << i))) {
             struct vdf_work *work;
-            struct vdf_value *val;
 
             if (vdf->wq.empty()) {
                 break;
@@ -131,10 +139,9 @@ void hw_proof_process_work(struct vdf_state *vdf)
             work = vdf->wq.front();
             vdf->wq.pop_front();
             //struct vdf_value *val = &vdf->raw_values[work.raw_idx];
-            val = &work->start_val;
 
             vdf->aux_threads_busy |= 1U << i;
-            std::thread(hw_proof_calc_values, vdf, val, work->start_iters, work->n_steps, i).detach();
+            std::thread(hw_proof_calc_values, vdf, work, i).detach();
         }
     }
 
@@ -143,15 +150,22 @@ void hw_proof_process_work(struct vdf_state *vdf)
     }
 }
 
-void hw_proof_wait_values(struct vdf_state *vdf)
+void hw_proof_wait_values(struct vdf_state *vdf, bool finish_work)
 {
-    while (!vdf->wq.empty()) {
-        usleep(100000);
-        hw_proof_process_work(vdf);
+    if (finish_work) {
+        while (!vdf->wq.empty()) {
+            usleep(100000);
+            hw_proof_process_work(vdf);
+        }
+    } else {
+        for (size_t i = 0; i < vdf->wq.size(); i++) {
+            clear_vdf_value(&vdf->wq[i]->start_val);
+            delete vdf->wq[i];
+        }
     }
 
     while (vdf->aux_threads_busy) {
-        usleep(100000);
+        usleep(10000);
     }
 }
 
@@ -218,6 +232,12 @@ void hw_proof_handle_value(struct vdf_state *vdf, struct vdf_value *val)
     hw_proof_process_work(vdf);
 }
 
+void hw_proof_stop(struct vdf_state *vdf)
+{
+    vdf->stopping = true;
+    hw_proof_wait_values(vdf, false);
+}
+
 #if 0
 class HwProver : public Prover {
   public:
@@ -264,7 +284,7 @@ void hw_get_proof(struct vdf_state *vdf)
     PulmarkReducer reducer;
     uint64_t k = 8, proof_l = vdf->interval / k;
 
-    hw_proof_wait_values(vdf);
+    hw_proof_wait_values(vdf, true);
     fprintf(stderr, "VDF %d: got all values; proof_iters=%lu pos=%lu\n",
             vdf->idx, vdf->proof_iters, pos);
 
@@ -309,8 +329,9 @@ void hw_get_proof(struct vdf_state *vdf)
     //}
 }
 
-void init_vdf_state(struct vdf_state *vdf, const char *d_str, uint64_t n_iters, uint8_t idx)
+void init_vdf_state(struct vdf_state *vdf, const char *d_str, const uint8_t *init_form, uint64_t n_iters, uint8_t idx)
 {
+    //int ret;
     //struct vdf_value initial;
     vdf->proof_iters = n_iters;
     vdf->cur_iters = 0;
@@ -322,6 +343,7 @@ void init_vdf_state(struct vdf_state *vdf, const char *d_str, uint64_t n_iters, 
     vdf->target_iters = (n_iters + vdf->interval - 1) / vdf->interval * vdf->interval;
     vdf->idx = idx;
     vdf->completed = false;
+    vdf->stopping = false;
     vdf->aux_threads_busy = 0;
 
     mpz_init_set_str(vdf->d, d_str, 0);
@@ -336,8 +358,9 @@ void init_vdf_state(struct vdf_state *vdf, const char *d_str, uint64_t n_iters, 
     //mpz_init_set_ui(initial.b, 1);
     //initial.iters = 0;
     init_vdf_value(&vdf->last_val);
-    mpz_set_ui(vdf->last_val.a, 2);
-    mpz_set_ui(vdf->last_val.b, 1);
+    // TODO: verify validity of initial form
+    bqfc_deserialize(vdf->last_val.a, vdf->last_val.b, vdf->d, init_form,
+            BQFC_FORM_SIZE, BQFC_MAX_D_BITS);
     hw_proof_get_form(&vdf->values[0], vdf, &vdf->last_val);
     //vdf->raw_values.push_back(initial);
 }

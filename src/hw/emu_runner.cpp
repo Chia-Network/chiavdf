@@ -50,6 +50,7 @@ struct job_state {
 	integer d, l;
 	form qf;
 	bool init_done;
+	bool stopping;
 	ChiaDriver *drv;
 	std::mutex mtx;
 };
@@ -74,6 +75,8 @@ void init_state(struct job_state *st, struct job_regs *r)
 	st->drv->read_bytes(sizeof(r->l), 0, (uint8_t *)r->l, st->l.impl, st->drv->NUM_1X_COEFFS);
 
 	st->qf = form::from_abd(a, f, st->d);
+	st->init_done = true;
+	st->stopping = false;
 }
 
 void run_job(int i)
@@ -83,9 +86,8 @@ void run_job(int i)
 	form qf2;
 
 	LOG("Emu %d: Starting run for %lu iters", i, st->target_iter);
-	st->init_done = true;
 
-	while (st->cur_iter < st->target_iter) {
+	while (!st->stopping && st->cur_iter < st->target_iter) {
 		nudupl_form(qf2, st->qf, st->d, st->l);
 		reducer.reduce(qf2);
 
@@ -113,13 +115,23 @@ static void start_job(int i)
 	//usleep(100000);
 }
 
+static void stop_job(int i)
+{
+	LOG("Emu %d: Stopping job", i);
+	states[i].stopping = true;
+}
+
 void update_status(struct job_status *stat, struct job_state *st)
 {
-	st->mtx.lock();
-	st->drv->write_bytes(sizeof(stat->iters), 0, (uint8_t *)stat->iters, st->cur_iter);
-	st->drv->write_bytes(sizeof(stat->a), 0, (uint8_t *)stat->a, st->qf.a.impl, st->drv->NUM_2X_COEFFS);
-	st->drv->write_bytes(sizeof(stat->f), 0, (uint8_t *)stat->f, st->qf.b.impl, st->drv->NUM_2X_COEFFS);
-	st->mtx.unlock();
+	if (!st->stopping) {
+		st->mtx.lock();
+		st->drv->write_bytes(sizeof(stat->iters), 0, (uint8_t *)stat->iters, st->cur_iter);
+		st->drv->write_bytes(sizeof(stat->a), 0, (uint8_t *)stat->a, st->qf.a.impl, st->drv->NUM_2X_COEFFS);
+		st->drv->write_bytes(sizeof(stat->f), 0, (uint8_t *)stat->f, st->qf.b.impl, st->drv->NUM_2X_COEFFS);
+		st->mtx.unlock();
+	} else {
+		memset(stat, 0, sizeof(*stat));
+	}
 }
 
 void copy_regs(void *dst, void *src, uint32_t size, uint32_t max_size, int32_t offset)
@@ -196,6 +208,7 @@ void read_regs(uint32_t addr, uint8_t *buf, uint32_t size)
 
 int emu_do_io(uint8_t *buf_in, uint16_t size_in, uint8_t *buf_out, uint16_t size_out)
 {
+	uint32_t job_control = CHIA_VDF_CONTROL_REG_OFFSET;
 	uint32_t job_csr = CHIA_VDF_CMD_JOB_ID_REG_OFFSET;
 	//uint32_t job_status = CHIA_VDF_STATUS_JOB_ID_REG_OFFSET;
 	//uint32_t job_status_end = CHIA_VDF_STATUS_END_REG_OFFSET;
@@ -215,9 +228,19 @@ int emu_do_io(uint8_t *buf_in, uint16_t size_in, uint8_t *buf_out, uint16_t size
 
 			if (regs[i].start_flag & (1 << 24)) {
 				start_job(i);
+				regs[i].start_flag = 0;
+			}
+		}
+		if (addr == job_control) {
+			uint32_t data;
+			memcpy(&data, buf_in, 4);
+			data = ntohl(data);
+			if (!(data & (1U << CHIA_VDF_CONTROL_CLK_ENABLE_BIT))) {
+				stop_job(i);
 			}
 		}
 		job_csr += CHIA_VDF_JOB_CSR_MULT;
+		job_control += CHIA_VDF_JOB_CSR_MULT;
 	}
 
 	if (!size_in && size_out) {

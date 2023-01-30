@@ -29,6 +29,8 @@ public:
     : WORD_BITS(_WORD_BITS), REDUNDANT_BITS(_REDUNDANT_BITS),
       SIGNED(_SIGNED) {
   }
+
+  virtual ~VdfDriver() {}
   
   // Functions for serializing to buffers
   // Append size bytes to 'buf' starting at offset. Returns size.

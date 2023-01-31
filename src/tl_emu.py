@@ -1,6 +1,6 @@
 import chiavdf
 
-import asyncio, random
+import asyncio, random, sys
 
 # Overview of Timelord <-> VDF client protocol
 
@@ -98,6 +98,10 @@ async def conn_wrapper(r, w):
     clear_conn_idx(idx)
 
 async def main():
+    seed = 1
+    if len(sys.argv) > 1:
+        seed = int(sys.argv[1])
+    random.seed(seed)
     server = await asyncio.start_server(conn_wrapper, '127.0.0.1', 8000)
 
     addrs = ', '.join(str(sock.getsockname()) for sock in server.sockets)

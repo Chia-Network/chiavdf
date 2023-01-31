@@ -62,7 +62,7 @@ class Prover {
             x = FastPowFormNucomp(x, D, integer(1 << k), L, reducer);
 
             std::vector<form> ys((1 << k));
-            for (uint64_t i = 0; i < (1 << k); i++)
+            for (uint64_t i = 0; i < (1UL << k); i++)
                 ys[i] = id;
 
             form *tmp;
@@ -78,9 +78,9 @@ class Prover {
                 }
             }
 
-            for (uint64_t b1 = 0; b1 < (1 << k1); b1++) {
+            for (uint64_t b1 = 0; b1 < (1UL << k1); b1++) {
                 form z = id;
-                for (uint64_t b0 = 0; b0 < (1 << k0); b0++) {
+                for (uint64_t b0 = 0; b0 < (1UL << k0); b0++) {
                     if (!PerformExtraStep()) return;
                     nucomp_form(z, z, ys[b1 * (1 << k0) + b0], D, L);
                 }
@@ -88,9 +88,9 @@ class Prover {
                 nucomp_form(x, x, z, D, L);
             }
 
-            for (uint64_t b0 = 0; b0 < (1 << k0); b0++) {
+            for (uint64_t b0 = 0; b0 < (1UL << k0); b0++) {
                 form z = id;
-                for (uint64_t b1 = 0; b1 < (1 << k1); b1++) {
+                for (uint64_t b1 = 0; b1 < (1UL << k1); b1++) {
                     if (!PerformExtraStep()) return;
                     nucomp_form(z, z, ys[b1 * (1 << k0) + b0], D, L);
                 }

@@ -11,6 +11,7 @@
 //#include <cstdint>
 //#include "include.h"
 
+#include <atomic>
 #include <string>
 #include <vector>
 #include <cstdint>
@@ -230,6 +231,68 @@ class PulmarkReducer {
         mpz_set(f.b.impl, t->b);
         mpz_set(f.c.impl, t->c);
     }
+};
+
+struct Segment {
+    uint64_t start;
+    uint64_t length;
+    form x;
+    form y;
+    form proof;
+    bool is_empty;
+
+    Segment() {
+        is_empty = true;
+    }
+
+    Segment(uint64_t start, uint64_t length, form& x, form& y) {
+        this->start = start;
+        this->length = length;
+        this->x = x;
+        this->y = y;
+        is_empty = false;
+    }
+
+    bool IsWorseThan(Segment& other);
+
+    int GetSegmentBucket();
+};
+
+class Prover {
+  public:
+    Prover(Segment segm, integer D) {
+        this->segm = segm;
+        this->D = D;
+        this->num_iterations = segm.length;
+        is_finished = false;
+    }
+
+    virtual form* GetForm(uint64_t iteration) = 0;
+    virtual void start() = 0;
+    virtual void stop() = 0;
+    virtual bool PerformExtraStep() = 0;
+    virtual void OnFinish() = 0;
+
+    bool IsFinished() {
+        return is_finished;
+    }
+
+    form GetProof() {
+        return proof;
+    }
+
+    uint64_t GetBlock(uint64_t i, uint64_t k, uint64_t T, integer& B);
+
+    void GenerateProof();
+
+  protected:
+    Segment segm;
+    integer D;
+    form proof;
+    uint64_t num_iterations;
+    uint32_t k;
+    uint32_t l;
+    std::atomic<bool> is_finished;
 };
 
 void nudupl_form(form &a, form &b, integer &D, integer &L);

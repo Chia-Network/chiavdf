@@ -157,15 +157,18 @@ void hw_proof_wait_values(struct vdf_state *vdf, bool finish_work)
             usleep(100000);
             hw_proof_process_work(vdf);
         }
-    } else {
-        for (size_t i = 0; i < vdf->wq.size(); i++) {
-            clear_vdf_value(&vdf->wq[i]->start_val);
-            delete vdf->wq[i];
-        }
     }
 
     while (vdf->aux_threads_busy) {
         usleep(10000);
+    }
+
+    if (!finish_work) {
+        for (size_t i = 0; i < vdf->wq.size(); i++) {
+            clear_vdf_value(&vdf->wq[i]->start_val);
+            delete vdf->wq[i];
+        }
+        vdf->wq.clear();
     }
 }
 

@@ -39,6 +39,7 @@ struct vdf_state {
     std::deque<struct vdf_work *> wq;
     //std::mutex wq_mtx;
     uint32_t interval;
+    uint32_t n_bad;
     std::atomic<uint8_t> aux_threads_busy;
     uint8_t idx;
     bool completed;

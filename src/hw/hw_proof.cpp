@@ -6,15 +6,20 @@
 #include <cstdlib>
 #include <unistd.h>
 
-void verify_vdf_value(struct vdf_state *vdf, struct vdf_value *val)
+int verify_vdf_value(struct vdf_state *vdf, struct vdf_value *val)
 {
     mpz_mul(vdf->a2, val->b, val->b);
     mpz_sub(vdf->a2, vdf->a2, vdf->d);
     /* Verify that c could be computed as c = (b^2 - d) / (4 * a) */
     if (!mpz_divisible_p(vdf->a2, val->a) || mpz_scan1(vdf->a2, 0) < mpz_scan1(val->a, 0) + 2) {
-        fprintf(stderr, "VDF %d: Bad VDF value at iters=%lu\n", vdf->idx, val->iters);
-        abort();
+        vdf->n_bad++;
+        fprintf(stderr, "VDF %d: Warning: Bad VDF value at iters=%lu n_bad=%u\n",
+                vdf->idx, val->iters, vdf->n_bad);
+        gmp_fprintf(stderr, " a = %#Zx\n b = %#Zx\n d = %#Zx\n",
+                val->a, val->b, vdf->d);
+        return -1;
     }
+    return 0;
 }
 
 void hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val)
@@ -28,7 +33,9 @@ void hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val)
     mpz_mul_2exp(vdf->a2, val->a, 1);
     mpz_mod(val->b, val->b, vdf->a2);
 
-    verify_vdf_value(vdf, val);
+    if (verify_vdf_value(vdf, val)) {
+        return;
+    }
     hw_proof_handle_value(vdf, val);
 }
 
@@ -348,6 +355,7 @@ void init_vdf_state(struct vdf_state *vdf, const char *d_str, const uint8_t *ini
     vdf->completed = false;
     vdf->stopping = false;
     vdf->aux_threads_busy = 0;
+    vdf->n_bad = 0;
 
     mpz_init_set_str(vdf->d, d_str, 0);
     mpz_init_set(vdf->l, vdf->d);

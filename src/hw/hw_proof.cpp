@@ -1,4 +1,5 @@
 #include "hw_proof.hpp"
+#include "hw_util.hpp"
 #include "bqfc.h"
 //#include "vdf.h"
 
@@ -13,7 +14,7 @@ int verify_vdf_value(struct vdf_state *vdf, struct vdf_value *val)
     /* Verify that c could be computed as c = (b^2 - d) / (4 * a) */
     if (!mpz_divisible_p(vdf->a2, val->a) || mpz_scan1(vdf->a2, 0) < mpz_scan1(val->a, 0) + 2) {
         vdf->n_bad++;
-        fprintf(stderr, "VDF %d: Warning: Bad VDF value at iters=%lu n_bad=%u\n",
+        LOG_INFO("VDF %d: Warning: Bad VDF value at iters=%lu n_bad=%u",
                 vdf->idx, val->iters, vdf->n_bad);
         gmp_fprintf(stderr, " a = %#Zx\n b = %#Zx\n d = %#Zx\n",
                 val->a, val->b, vdf->d);
@@ -25,7 +26,7 @@ int verify_vdf_value(struct vdf_state *vdf, struct vdf_value *val)
 void hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val)
 {
     if (!val->iters || vdf->last_val.iters == val->iters) {
-        fprintf(stderr, "VDF %d: Skipping iters=%lu\n", vdf->idx, val->iters);
+        LOG_INFO("VDF %d: Skipping iters=%lu", vdf->idx, val->iters);
         return;
     }
 
@@ -80,7 +81,7 @@ void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_work *work, int thr_
     timepoint_t t1;
     uint64_t init_iters = iters;
 
-    fprintf(stderr, " VDF %d: computing %lu iters (%lu -> %lu, %u steps)\n",
+    LOG_INFO(" VDF %d: computing %lu iters (%lu -> %lu, %u steps)",
             vdf->idx, end_iters - iters, iters, end_iters, n_steps);
 
     clear_vdf_value(val);
@@ -104,7 +105,7 @@ void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_work *work, int thr_
             //mpz_init_set(val2.b, f.b.impl);
             vdf->values[iters / vdf->interval] = f;
             if (!f.check_valid(d)) {
-                fprintf(stderr, " VDF %d: bad form at iters=%lu\n", vdf->idx, iters);
+                LOG_ERROR(" VDF %d: bad form at iters=%lu", vdf->idx, iters);
                 abort();
             }
 
@@ -116,7 +117,7 @@ void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_work *work, int thr_
 
     vdf->done_iters += iters - init_iters;
     vdf->elapsed_us += hw_proof_get_elapsed_us(t1);
-    fprintf(stderr, " VDF %d: aux thread %d done\n", vdf->idx, thr_idx);
+    LOG_INFO(" VDF %d: aux thread %d done", vdf->idx, thr_idx);
     vdf->aux_threads_busy &= ~(1U << thr_idx);
 }
 
@@ -153,7 +154,7 @@ void hw_proof_process_work(struct vdf_state *vdf)
     }
 
     if (!vdf->wq.empty()) {
-        fprintf(stderr, "VDF %d: Warning: too much work for VDF aux threads\n", vdf->idx);
+        LOG_INFO("VDF %d: Warning: too much work for VDF aux threads", vdf->idx);
     }
 }
 
@@ -209,7 +210,7 @@ void hw_proof_handle_value(struct vdf_state *vdf, struct vdf_value *val)
         //fprintf(stderr, "VDF %d: computing target iters=%lu delta=%lu\n",
                 //vdf->idx, end_iters, end_iters - iters);
         if (start_iters > vdf->target_iters) {
-            fprintf(stderr, "VDF %d: Fail at iters=%lu end_iters=%lu\n",
+            LOG_ERROR("VDF %d: Fail at iters=%lu end_iters=%lu",
                     vdf->idx, last_iters, end_iters);
             abort();
         }
@@ -232,9 +233,9 @@ void hw_proof_handle_value(struct vdf_state *vdf, struct vdf_value *val)
         ips = vdf->cur_iters * 1000000 / elapsed_us;
         sw_ips = sw_iters * 1000000 / sw_elapsed_us;
 
-        fprintf(stderr, "\nVDF %d: %lu HW iters done in %lus, HW speed: %lu ips\n",
+        LOG_INFO("\nVDF %d: %lu HW iters done in %lus, HW speed: %lu ips",
                 vdf->idx, vdf->cur_iters, elapsed_us / 1000000, ips);
-        fprintf(stderr, "VDF %d: %lu SW iters done in %lus, SW speed: %lu ips\n\n",
+        LOG_INFO("VDF %d: %lu SW iters done in %lus, SW speed: %lu ips\n",
                 vdf->idx, sw_iters, sw_elapsed_us / 1000000, sw_ips);
         vdf->completed = true;
     }
@@ -295,12 +296,12 @@ void hw_get_proof(struct vdf_state *vdf)
     uint64_t k = 8, proof_l = vdf->interval / k;
 
     hw_proof_wait_values(vdf, true);
-    fprintf(stderr, "VDF %d: got all values; proof_iters=%lu pos=%lu\n",
+    LOG_INFO("VDF %d: got all values; proof_iters=%lu pos=%lu",
             vdf->idx, vdf->proof_iters, pos);
 
     y = vdf->values[pos];
     if (!y.check_valid(d)) {
-        fprintf(stderr, "VDF %d: invalid form at pos=%lu\n", vdf->idx, pos);
+        LOG_ERROR("VDF %d: invalid form at pos=%lu", vdf->idx, pos);
         abort();
     }
     while (iters < vdf->proof_iters) {
@@ -309,13 +310,13 @@ void hw_get_proof(struct vdf_state *vdf)
         iters++;
     }
     if (!y.check_valid(d)) {
-        fprintf(stderr, "VDF %d: invalid y\n", vdf->idx);
+        LOG_ERROR("VDF %d: invalid y", vdf->idx);
         abort();
     }
 
     for (size_t i = 0; i <= vdf->target_iters / vdf->interval; i++) {
         if (!vdf->values[i].check_valid(d)) {
-            fprintf(stderr, "VDF %d: invalid form at pos=%zu\n", vdf->idx, i);
+            LOG_ERROR("VDF %d: invalid form at pos=%zu", vdf->idx, i);
             abort();
         }
     }
@@ -324,11 +325,11 @@ void hw_get_proof(struct vdf_state *vdf)
 
     //prover.start();
     proof = GenerateWesolowski(y, vdf->values[0], d, reducer, vdf->values, vdf->proof_iters, k, proof_l);
-    fprintf(stderr, "VDF %d: Proof done\n", vdf->idx);
+    LOG_INFO("VDF %d: Proof done", vdf->idx);
 
     bool is_valid = false;
     VerifyWesolowskiProof(d, vdf->values[0], y, proof, vdf->proof_iters, is_valid);
-    fprintf(stderr, "VDF %d: Proof %s\n", vdf->idx, is_valid ? "valid" : "NOT VALID");
+    LOG_INFO("VDF %d: Proof %s", vdf->idx, is_valid ? "valid" : "NOT VALID");
     if (!is_valid) {
         abort();
     }

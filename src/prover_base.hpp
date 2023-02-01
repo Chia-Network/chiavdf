@@ -112,4 +112,4 @@ class Prover {
     uint32_t l;
     std::atomic<bool> is_finished;
 };
-#endif /* PROVER_BASE_H */
+#endif // PROVER_BASE_H

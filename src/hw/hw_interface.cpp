@@ -1,5 +1,6 @@
 #include "hw_interface.hpp"
 #include "chia_driver.hpp"
+#include "hw_util.hpp"
 
 #include "vdf_base.hpp"
 
@@ -58,7 +59,7 @@ ChiaDriver *init_hw(void)
 
     set_status = drv->SetPLLFrequency(freq);
     if (set_status == false) {
-      fprintf(stderr, "Aborting since freq not set\n");
+      LOG_ERROR("Aborting since freq not set");
       abort();
     }
 
@@ -72,7 +73,7 @@ ChiaDriver *init_hw(void)
     double set_brd_voltage = 0.80;
     int ret_val = drv->SetBoardVoltage(set_brd_voltage);
     if (ret_val != 0) {
-      fprintf(stderr, "Aborting since set voltage failed\n");
+      LOG_ERROR("Aborting since set voltage failed");
       abort();
     }
 
@@ -92,7 +93,7 @@ ChiaDriver *init_hw(void)
     double external_alarm_temp = 100.0;
     set_status = drv->SetTempAlarmExternal(external_alarm_temp);
     if (set_status == false) {
-      fprintf(stderr, "Aborting since temp alarm not set\n");
+      LOG_ERROR("Aborting since temp alarm not set");
       abort();
     }
 
@@ -100,7 +101,7 @@ ChiaDriver *init_hw(void)
     double engine_alarm_temp = 100.0;
     set_status = drv->SetTempAlarmEngine(engine_alarm_temp);
     if (set_status == false) {
-      fprintf(stderr, "Aborting since temp alarm not set\n");
+      LOG_ERROR("Aborting since temp alarm not set");
       abort();
     }
 
@@ -155,7 +156,7 @@ int read_hw_status(ChiaDriver *drv, uint8_t idx_mask, struct vdf_value *values)
             uint32_t temp_code;
             drv->read_bytes(4, 0, read_status, temp_code);
             double temp = drv->ValueToTemp(temp_code);
-            fprintf(stderr, "ASIC Temp = %3.2f C\n", temp);
+            LOG_INFO("ASIC Temp = %3.2f C", temp);
         } else {
             drv->ftdi.Read(CHIA_VDF_STATUS_JOB_ID_REG_OFFSET + (0x10000 * i),
                            read_status, HW_VDF_STATUS_SIZE);
@@ -168,7 +169,7 @@ int read_hw_status(ChiaDriver *drv, uint8_t idx_mask, struct vdf_value *values)
 
         drv->DeserializeJob(job, job_id, val->iters, val->a, val->b);
 
-        fprintf(stderr, "VDF %d: Got iters=%lu\n", i, val->iters);
+        LOG_DEBUG("VDF %d: Got iters=%lu", i, val->iters);
     }
 
     //usleep(100000);

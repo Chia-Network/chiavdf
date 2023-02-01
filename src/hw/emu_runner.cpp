@@ -4,6 +4,7 @@
 //#include "alloc.hpp"
 #include "vdf_base.hpp"
 #include "clock.hpp"
+#include "hw_util.hpp"
 
 #include <cstdint>
 #include <cstdio>
@@ -13,15 +14,6 @@
 
 #include <arpa/inet.h>
 #include <unistd.h>
-
-#define EMU_ENABLE_LOG_DEBUG 0
-
-#if EMU_ENABLE_LOG_DEBUG
-#define LOG_DEBUG(msg, ...) fprintf(stderr, msg "\n", ##__VA_ARGS__)
-#else
-#define LOG_DEBUG(msg, ...) ((void)msg)
-#endif
-#define LOG_INFO(msg, ...) fprintf(stderr, msg "\n", ##__VA_ARGS__)
 
 #define N_VDFS 3
 

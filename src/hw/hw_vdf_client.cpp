@@ -1,5 +1,6 @@
 #include "hw_interface.hpp"
 #include "hw_proof.hpp"
+#include "hw_util.hpp"
 #include "vdf_base.hpp"
 
 #include <cstdio>
@@ -107,7 +108,7 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
         memcpy(d_str, &buf[4], d_size);
         d_str[d_size] = '\0';
         if ((uint64_t)bytes != 4 + d_size + 1 + buf[4 + d_size]) {
-            fprintf(stderr, "Bad data size: %zd\n", bytes);
+            LOG_ERROR("Bad data size: %zd", bytes);
             throw std::runtime_error("Bad data size");
         }
 
@@ -128,7 +129,7 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
         memcpy(iters_size_buf, buf, 2);
         iters_size = strtoul(iters_size_buf, NULL, 10);
         if ((uint64_t)bytes != 2 + iters_size) {
-            fprintf(stderr, "Bad iters data size: %zd\n", bytes);
+            LOG_ERROR("Bad iters data size: %zd", bytes);
             throw std::runtime_error("Bad data size");
         }
         buf[2 + iters_size] = '\0';
@@ -151,7 +152,7 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
             conn->sock = -1;
             conn->state = CLOSED;
         } else if (bytes >= 0) {
-            fprintf(stderr, "Bad data size after stop: %zd\n", bytes);
+            LOG_ERROR("Bad data size after stop: %zd", bytes);
             throw std::runtime_error("Bad data size");
         }
     } else if (conn->state == CLOSED) {
@@ -196,7 +197,7 @@ int main(int argc, char **argv)
     struct vdf_client client;
 
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s PORT [N_VDFS]\n", argv[0]);
+        LOG_INFO("Usage: %s PORT [N_VDFS]", argv[0]);
         return 1;
     }
 

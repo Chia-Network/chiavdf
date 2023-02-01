@@ -14,7 +14,14 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 
-#define LOG(msg, ...) fprintf(stderr, msg "\n", ##__VA_ARGS__)
+#define EMU_ENABLE_LOG_DEBUG 0
+
+#if EMU_ENABLE_LOG_DEBUG
+#define LOG_DEBUG(msg, ...) fprintf(stderr, msg "\n", ##__VA_ARGS__)
+#else
+#define LOG_DEBUG(msg, ...) ((void)msg)
+#endif
+#define LOG_INFO(msg, ...) fprintf(stderr, msg "\n", ##__VA_ARGS__)
 
 #define N_VDFS 3
 
@@ -85,7 +92,7 @@ void run_job(int i)
 	PulmarkReducer reducer;
 	form qf2;
 
-	LOG("Emu %d: Starting run for %lu iters", i, st->target_iter);
+	LOG_INFO("Emu %d: Starting run for %lu iters", i, st->target_iter);
 
 	while (!st->stopping && st->cur_iter < st->target_iter) {
 		nudupl_form(qf2, st->qf, st->d, st->l);
@@ -98,31 +105,31 @@ void run_job(int i)
 		st->mtx.lock();
 		st->cur_iter++;
 		st->qf = qf2;
-		//LOG("iters=%lu", st->cur_iter);
 		st->mtx.unlock();
 	}
 	//st->running = false;
-	LOG("Emu %d: job ended", i);
+	LOG_INFO("Emu %d: job ended", i);
 }
 
 void job_thread(int i)
 {
 	init_state(&states[i], &regs[i]);
 	run_job(i);
-	//LOG("Job %d running", i);
 }
 
 static void start_job(int i)
 {
-	LOG("Emu %d: Starting job", i);
+	LOG_INFO("Emu %d: Starting job", i);
 	std::thread(job_thread, i).detach();
 	//usleep(100000);
 }
 
 static void stop_job(int i)
 {
-	LOG("Emu %d: Stopping job", i);
-	states[i].stopping = true;
+	if (states[i].init_done && !states[i].stopping) {
+		LOG_INFO("Emu %d: Stopping job", i);
+		states[i].stopping = true;
+	}
 }
 
 void update_status(struct job_status *stat, struct job_state *st)
@@ -184,7 +191,7 @@ void read_regs(uint32_t addr, uint8_t *buf, uint32_t size)
 		if ((job_id_addr >= addr && job_id_addr < addr + size) ||
 			(job_id_addr2 >= addr && job_id_addr2 < addr + size))
 		{
-			LOG("Emu: Updating vdf %d", i);
+			LOG_DEBUG("Emu: Updating vdf %d", i);
 			update_status(&g_status_regs[i], &states[i]);
 		}
 	}
@@ -203,7 +210,7 @@ void read_regs(uint32_t addr, uint8_t *buf, uint32_t size)
 		copy_regs(buf, &val, size, sizeof(val), 0);
 	} else {
 		memset(buf, 0, size);
-		LOG("Emu: No data");
+		LOG_INFO("Emu: No data at addr=0x%x size=%u", addr, size);
 	}
 }
 
@@ -223,12 +230,12 @@ int emu_do_io(uint8_t *buf_in, uint16_t size_in, uint8_t *buf_out, uint16_t size
 	// skip address bytes
 	buf_in += CMD_SIZE;
 	size_in -= CMD_SIZE;
-	LOG("Emu: addr=0x%x in=%hu bytes out=%hu bytes", addr, size_in, size_out);
+	LOG_DEBUG("Emu: addr=0x%x in=%hu bytes out=%hu bytes", addr, size_in, size_out);
 	for (i = 0; i < N_VDFS; i++) {
 		if (addr >= job_csr && addr < job_csr + sizeof(regs[0])) {
 			uint32_t offset = addr - job_csr;
 			memcpy((uint8_t *)&regs[i] + offset, buf_in, size_in);
-			LOG("Emu: offset=0x%x start_flag=0x%x", offset, regs[i].start_flag);
+			LOG_DEBUG("Emu: offset=0x%x start_flag=0x%x", offset, regs[i].start_flag);
 
 			if (regs[i].start_flag & (1 << 24)) {
 				start_job(i);

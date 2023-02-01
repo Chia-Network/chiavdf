@@ -91,6 +91,10 @@ void run_job(int i)
 		nudupl_form(qf2, st->qf, st->d, st->l);
 		reducer.reduce(qf2);
 
+		if (!(st->cur_iter % 4096)) {
+			usleep(10);
+		}
+
 		st->mtx.lock();
 		st->cur_iter++;
 		st->qf = qf2;

@@ -50,6 +50,7 @@ struct job_state {
 	form qf;
 	bool init_done;
 	bool stopping;
+	bool running;
 	ChiaDriver *drv;
 	std::mutex mtx;
 };
@@ -86,6 +87,7 @@ void run_job(int i)
 
 	LOG_INFO("Emu %d: Starting run for %lu iters", i, st->target_iter);
 
+	st->running = true;
 	while (!st->stopping && st->cur_iter < st->target_iter) {
 		nudupl_form(qf2, st->qf, st->d, st->l);
 		reducer.reduce(qf2);
@@ -99,7 +101,7 @@ void run_job(int i)
 		st->qf = qf2;
 		st->mtx.unlock();
 	}
-	//st->running = false;
+	st->running = false;
 	LOG_INFO("Emu %d: job ended", i);
 }
 
@@ -112,6 +114,11 @@ void job_thread(int i)
 static void start_job(int i)
 {
 	LOG_INFO("Emu %d: Starting job", i);
+	while (states[i]->running) {
+		states[i]->stopping = true;
+		LOG_INFO("Emu %d: Waiting for the old thread to finish", i);
+		usleep(1000);
+	}
 	std::thread(job_thread, i).detach();
 	//usleep(100000);
 }
@@ -130,6 +137,7 @@ static void enable_engine(int i)
 		states[i] = new job_state;
 		states[i]->init_done = false;
 		states[i]->stopping = true;
+		states[i]->running = false;
 	}
 	if (states[i]->stopping) {
 		states[i]->stopping = false;

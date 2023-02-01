@@ -62,7 +62,7 @@ struct job_state {
 	std::mutex mtx;
 };
 
-static struct job_state states[N_VDFS];
+static struct job_state *states[N_VDFS];
 
 void init_state(struct job_state *st, struct job_regs *r)
 {
@@ -88,7 +88,7 @@ void init_state(struct job_state *st, struct job_regs *r)
 
 void run_job(int i)
 {
-	struct job_state *st = &states[i];
+	struct job_state *st = states[i];
 	PulmarkReducer reducer;
 	form qf2;
 
@@ -113,7 +113,7 @@ void run_job(int i)
 
 void job_thread(int i)
 {
-	init_state(&states[i], &regs[i]);
+	init_state(states[i], &regs[i]);
 	run_job(i);
 }
 
@@ -124,11 +124,24 @@ static void start_job(int i)
 	//usleep(100000);
 }
 
-static void stop_job(int i)
+static void disable_engine(int i)
 {
-	if (states[i].init_done && !states[i].stopping) {
-		LOG_INFO("Emu %d: Stopping job", i);
-		states[i].stopping = true;
+	if (states[i] && states[i]->init_done && !states[i]->stopping) {
+		LOG_INFO("Emu %d: Disabling engine", i);
+		states[i]->stopping = true;
+	}
+}
+
+static void enable_engine(int i)
+{
+	if (!states[i]) {
+		states[i] = new job_state;
+		states[i]->init_done = false;
+		states[i]->stopping = true;
+	}
+	if (states[i]->stopping) {
+		states[i]->stopping = false;
+		LOG_INFO("Emu %d: Enabling engine", i);
 	}
 }
 
@@ -184,7 +197,7 @@ void read_regs(uint32_t addr, uint8_t *buf, uint32_t size)
 		uint32_t job_id_addr2 = job_status_base +
 			CHIA_VDF_JOB_CSR_MULT * i;
 
-		if (!states[i].init_done) {
+		if (!states[i] || !states[i]->init_done) {
 			continue;
 		}
 		/* Reading the job ID register triggers job status update. */
@@ -192,7 +205,7 @@ void read_regs(uint32_t addr, uint8_t *buf, uint32_t size)
 			(job_id_addr2 >= addr && job_id_addr2 < addr + size))
 		{
 			LOG_DEBUG("Emu: Updating vdf %d", i);
-			update_status(&g_status_regs[i], &states[i]);
+			update_status(&g_status_regs[i], states[i]);
 		}
 	}
 	//}
@@ -246,8 +259,10 @@ int emu_do_io(uint8_t *buf_in, uint16_t size_in, uint8_t *buf_out, uint16_t size
 			uint32_t data;
 			memcpy(&data, buf_in, 4);
 			data = ntohl(data);
-			if (!(data & (1U << CHIA_VDF_CONTROL_CLK_ENABLE_BIT))) {
-				stop_job(i);
+			if (data & (1U << CHIA_VDF_CONTROL_CLK_ENABLE_BIT)) {
+				enable_engine(i);
+			} else {
+				disable_engine(i);
 			}
 		}
 		job_csr += CHIA_VDF_JOB_CSR_MULT;
@@ -283,9 +298,13 @@ int emu_do_io_i2c(uint8_t *buf, uint16_t size, uint32_t addr, int is_out)
 __attribute__((destructor)) void emu_shutdown(void)
 {
 	for (int i = 0; i < N_VDFS; i++) {
-		if (states[i].init_done) {
-			states[i].init_done = false;
-			delete states[i].drv;
+		if (states[i]) {
+			if (states[i]->init_done) {
+				states[i]->init_done = false;
+				delete states[i]->drv;
+			}
+			delete states[i];
+			states[i] = NULL;
 		}
 	}
 }

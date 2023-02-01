@@ -51,6 +51,7 @@ void init_conn(struct vdf_conn *conn, int port)
         throw std::runtime_error("Failed to set O_NONBLOCK");
     }
     conn->state = WAITING;
+    LOG_INFO("VDF %d: Connected to timelord, waiting for challenge", conn->vdf.idx);
 }
 
 void init_vdf_client(struct vdf_client *client)
@@ -117,6 +118,7 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
         start_hw_vdf(client->drv, conn->vdf.d, conn->vdf.target_iters, conn->vdf.idx);
         write_data(conn, "OK", 2);
         conn->state = RUNNING;
+        LOG_INFO("VDF %d: Received challenge, running", conn->vdf.idx);
     } else if (conn->state == RUNNING || conn->state == IDLING) {
         char iters_size_buf[3] = {0};
         uint64_t iters_size, iters;
@@ -138,11 +140,13 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
         if (iters) {
             // TODO: request proof with given iters
         } else {
+            LOG_INFO("VDF %d: Stop requested", conn->vdf.idx);
             write_data(conn, "STOP", 4);
             hw_proof_stop(&conn->vdf);
             clear_vdf_state(&conn->vdf);
             stop_hw_vdf(client->drv, conn->vdf.idx);
             conn->state = STOPPED;
+            LOG_INFO("VDF %d: Stopped at iters=%lu", conn->vdf.idx, conn->vdf.cur_iters);
         }
     }
     if (conn->state == STOPPED) {
@@ -151,6 +155,7 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
             close(conn->sock);
             conn->sock = -1;
             conn->state = CLOSED;
+            LOG_INFO("VDF %d: Connection closed", conn->vdf.idx);
         } else if (bytes >= 0) {
             LOG_ERROR("Bad data size after stop: %zd", bytes);
             throw std::runtime_error("Bad data size");

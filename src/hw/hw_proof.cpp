@@ -66,6 +66,25 @@ uint64_t hw_proof_get_elapsed_us(timepoint_t &t1)
     return std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
 }
 
+void hw_proof_print_stats(struct vdf_state *vdf)
+{
+    uint64_t elapsed_us = hw_proof_get_elapsed_us(vdf->start_time);
+    uint64_t sw_elapsed_us = vdf->elapsed_us;
+    uint64_t sw_iters = vdf->done_iters;
+    uint64_t ips, sw_ips;
+
+    elapsed_us = elapsed_us ? elapsed_us : 1;
+    sw_elapsed_us = sw_elapsed_us ? sw_elapsed_us : 1;
+    ips = vdf->cur_iters * 1000000 / elapsed_us;
+    sw_ips = sw_iters * 1000000 / sw_elapsed_us;
+
+    LOG_INFO("\nVDF %d: %lu HW iters done in %lus, HW speed: %lu ips",
+            vdf->idx, vdf->cur_iters, elapsed_us / 1000000, ips);
+    LOG_INFO("VDF %d: %lu SW iters done in %lus, SW speed: %lu ips\n",
+            vdf->idx, sw_iters, sw_elapsed_us / 1000000, sw_ips);
+    vdf->completed = true;
+}
+
 void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_work *work, int thr_idx)
 {
     struct vdf_value *val = &work->start_val;
@@ -81,8 +100,8 @@ void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_work *work, int thr_
     timepoint_t t1;
     uint64_t init_iters = iters;
 
-    LOG_INFO(" VDF %d: computing %lu iters (%lu -> %lu, %u steps)",
-            vdf->idx, end_iters - iters, iters, end_iters, n_steps);
+    LOG_INFO(" VDF %d: computing %lu iters (%lu -> %lu, %u steps) in aux thread %d",
+            vdf->idx, end_iters - iters, iters, end_iters, n_steps, thr_idx);
 
     clear_vdf_value(val);
     delete work;
@@ -223,21 +242,7 @@ void hw_proof_handle_value(struct vdf_state *vdf, struct vdf_value *val)
     std::swap(vdf->last_val, *val);
 
     if (vdf->cur_iters >= vdf->target_iters) {
-        uint64_t elapsed_us = hw_proof_get_elapsed_us(vdf->start_time);
-        uint64_t sw_elapsed_us = vdf->elapsed_us;
-        uint64_t sw_iters = vdf->done_iters;
-        uint64_t ips, sw_ips;
-
-        elapsed_us = elapsed_us ? elapsed_us : 1;
-        sw_elapsed_us = sw_elapsed_us ? sw_elapsed_us : 1;
-        ips = vdf->cur_iters * 1000000 / elapsed_us;
-        sw_ips = sw_iters * 1000000 / sw_elapsed_us;
-
-        LOG_INFO("\nVDF %d: %lu HW iters done in %lus, HW speed: %lu ips",
-                vdf->idx, vdf->cur_iters, elapsed_us / 1000000, ips);
-        LOG_INFO("VDF %d: %lu SW iters done in %lus, SW speed: %lu ips\n",
-                vdf->idx, sw_iters, sw_elapsed_us / 1000000, sw_ips);
-        vdf->completed = true;
+        hw_proof_print_stats(vdf);
     }
 
     hw_proof_process_work(vdf);
@@ -246,6 +251,7 @@ void hw_proof_handle_value(struct vdf_state *vdf, struct vdf_value *val)
 void hw_proof_stop(struct vdf_state *vdf)
 {
     vdf->stopping = true;
+    hw_proof_print_stats(vdf);
     hw_proof_wait_values(vdf, false);
 }
 

@@ -65,7 +65,10 @@ def decode_resp(data):
 async def init_conn(reader, writer, idx):
     d = get_discr(idx, cnts[idx]).encode()
 
-    msg = b"N%03d%s%c%s" % (len(d), d, len(INIT_FORM), INIT_FORM)
+    await send_msg(writer, b"N")
+    msg = b"%03d%s" % (len(d), d)
+    await send_msg(writer, msg)
+    msg = b"%c%s" % (len(INIT_FORM), INIT_FORM)
     await send_msg(writer, msg)
     print("Sent initial value for VDF %d, cnt %d" % (idx, cnts[idx]))
     print(" d = %s" % (d.decode(),))

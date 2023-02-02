@@ -138,6 +138,7 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
         iters = strtoul(&buf[2], NULL, 10);
 
         if (iters) {
+            LOG_INFO("VDF %d: Requested proof for iters=%lu", conn->vdf.idx, iters);
             // TODO: request proof with given iters
         } else {
             LOG_INFO("VDF %d: Stop requested", conn->vdf.idx);

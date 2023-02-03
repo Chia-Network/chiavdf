@@ -3,6 +3,7 @@
 
 #include "vdf_base.hpp"
 #include "hw_interface.hpp"
+#include "hw_util.hpp"
 
 #include <atomic>
 #include <deque>
@@ -19,8 +20,6 @@ struct vdf_work {
     uint64_t start_iters;
     uint32_t n_steps;
 };
-
-typedef std::chrono::time_point<std::chrono::high_resolution_clock> timepoint_t;
 
 struct vdf_state {
     uint64_t proof_iters;
@@ -40,6 +39,7 @@ struct vdf_state {
     //std::mutex wq_mtx;
     uint32_t interval;
     uint32_t n_bad;
+    uint32_t log_cnt;
     std::atomic<uint8_t> aux_threads_busy;
     uint8_t idx;
     bool completed;

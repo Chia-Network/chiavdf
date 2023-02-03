@@ -1,5 +1,4 @@
 #include "hw_proof.hpp"
-#include "hw_util.hpp"
 #include "bqfc.h"
 //#include "vdf.h"
 
@@ -55,20 +54,8 @@ void hw_proof_get_form(form *f, struct vdf_state *vdf, struct vdf_value *val)
     mpz_swap(d.impl, vdf->d);
 }
 
-timepoint_t hw_proof_get_cur_time(void)
+void hw_proof_print_stats(struct vdf_state *vdf, uint64_t elapsed_us)
 {
-    return std::chrono::high_resolution_clock::now();
-}
-
-uint64_t hw_proof_get_elapsed_us(timepoint_t &t1)
-{
-    auto t2 = hw_proof_get_cur_time();
-    return std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
-}
-
-void hw_proof_print_stats(struct vdf_state *vdf)
-{
-    uint64_t elapsed_us = hw_proof_get_elapsed_us(vdf->start_time);
     uint64_t sw_elapsed_us = vdf->elapsed_us;
     uint64_t sw_iters = vdf->done_iters;
     uint64_t ips, sw_ips;
@@ -82,7 +69,6 @@ void hw_proof_print_stats(struct vdf_state *vdf)
             vdf->idx, vdf->cur_iters, elapsed_us / 1000000, ips);
     LOG_INFO("VDF %d: %lu SW iters done in %lus, SW speed: %lu ips\n",
             vdf->idx, sw_iters, sw_elapsed_us / 1000000, sw_ips);
-    vdf->completed = true;
 }
 
 void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_work *work, int thr_idx)
@@ -100,12 +86,12 @@ void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_work *work, int thr_
     timepoint_t t1;
     uint64_t init_iters = iters;
 
-    LOG_INFO(" VDF %d: computing %lu iters (%lu -> %lu, %u steps) in aux thread %d",
+    LOG_DEBUG(" VDF %d: computing %lu iters (%lu -> %lu, %u steps) in aux thread %d",
             vdf->idx, end_iters - iters, iters, end_iters, n_steps, thr_idx);
 
     clear_vdf_value(val);
     delete work;
-    t1 = hw_proof_get_cur_time();
+    t1 = vdf_get_cur_time();
     do {
         if (vdf->stopping) {
             break;
@@ -135,8 +121,8 @@ void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_work *work, int thr_
     } while (iters < end_iters);
 
     vdf->done_iters += iters - init_iters;
-    vdf->elapsed_us += hw_proof_get_elapsed_us(t1);
-    LOG_INFO(" VDF %d: aux thread %d done", vdf->idx, thr_idx);
+    vdf->elapsed_us += vdf_get_elapsed_us(t1);
+    LOG_DEBUG(" VDF %d: aux thread %d done", vdf->idx, thr_idx);
     vdf->aux_threads_busy &= ~(1U << thr_idx);
 }
 
@@ -173,7 +159,8 @@ void hw_proof_process_work(struct vdf_state *vdf)
     }
 
     if (!vdf->wq.empty()) {
-        LOG_INFO("VDF %d: Warning: too much work for VDF aux threads", vdf->idx);
+        LOG_INFO("VDF %d: Warning: too much work for VDF aux threads; qlen=%zu",
+                vdf->idx, vdf->wq.size());
     }
 }
 
@@ -211,6 +198,9 @@ void hw_proof_handle_value(struct vdf_state *vdf, struct vdf_value *val)
     //end_iters &= ~mask;
     uint64_t start_iters = last_iters / interval * interval + interval;
     uint64_t end_iters = val->iters / interval * interval;
+    uint64_t elapsed_us;
+    uint64_t log_interval = 10 * 1000000;
+    bool print_stats = false;
 
     // TODO: locking for 'values'
     //vdf->values.resize(end_iters / interval + 1);
@@ -241,8 +231,16 @@ void hw_proof_handle_value(struct vdf_state *vdf, struct vdf_value *val)
     vdf->cur_iters = val->iters;
     std::swap(vdf->last_val, *val);
 
+    elapsed_us = vdf_get_elapsed_us(vdf->start_time);
+    if (elapsed_us / log_interval > vdf->log_cnt) {
+        vdf->log_cnt = elapsed_us / log_interval;
+        print_stats = true;
+    }
+    if (print_stats || vdf->cur_iters >= vdf->target_iters) {
+        hw_proof_print_stats(vdf, elapsed_us);
+    }
     if (vdf->cur_iters >= vdf->target_iters) {
-        hw_proof_print_stats(vdf);
+        vdf->completed = true;
     }
 
     hw_proof_process_work(vdf);
@@ -251,7 +249,7 @@ void hw_proof_handle_value(struct vdf_state *vdf, struct vdf_value *val)
 void hw_proof_stop(struct vdf_state *vdf)
 {
     vdf->stopping = true;
-    hw_proof_print_stats(vdf);
+    hw_proof_print_stats(vdf, vdf_get_elapsed_us(vdf->start_time));
     hw_proof_wait_values(vdf, false);
 }
 
@@ -355,7 +353,7 @@ void init_vdf_state(struct vdf_state *vdf, const char *d_str, const uint8_t *ini
     vdf->done_values = 1;
     vdf->done_iters = 0;
     vdf->elapsed_us = 0;
-    vdf->start_time = hw_proof_get_cur_time();
+    vdf->start_time = vdf_get_cur_time();
     vdf->interval = HW_VDF_VALUE_INTERVAL;
     vdf->target_iters = (n_iters + vdf->interval - 1) / vdf->interval * vdf->interval;
     vdf->idx = idx;
@@ -363,6 +361,7 @@ void init_vdf_state(struct vdf_state *vdf, const char *d_str, const uint8_t *ini
     vdf->stopping = false;
     vdf->aux_threads_busy = 0;
     vdf->n_bad = 0;
+    vdf->log_cnt = 0;
 
     mpz_init_set_str(vdf->d, d_str, 0);
     mpz_init_set(vdf->l, vdf->d);

@@ -7,6 +7,7 @@
 #define N_HW_VDFS 3
 #define HW_VDF_STATUS_SIZE 0xb4
 #define HW_VDF_BURST_START 0x300014
+#define HW_VDF_TEMP_FLAG (1 << 3)
 
 struct vdf_value {
     uint64_t iters;

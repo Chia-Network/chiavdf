@@ -149,21 +149,21 @@ int read_hw_status(ChiaDriver *drv, uint8_t idx_mask, struct vdf_value *values)
         uint8_t *job;
         struct vdf_value *val = &values[i];
 
-        if (i == 0) {
+        if (i == 0 && idx_mask & (HW_VDF_TEMP_FLAG | (1 << i))) {
             drv->ftdi.Read(0x300000, read_status, HW_VDF_STATUS_SIZE + 20);
             job = read_status + 20;
 
-            uint32_t temp_code;
-            drv->read_bytes(4, 0, read_status, temp_code);
-            double temp = drv->ValueToTemp(temp_code);
-            LOG_INFO("ASIC Temp = %3.2f C", temp);
-        } else {
+            if (idx_mask & HW_VDF_TEMP_FLAG) {
+                uint32_t temp_code;
+                drv->read_bytes(4, 0, read_status, temp_code);
+                double temp = drv->ValueToTemp(temp_code);
+                LOG_INFO("ASIC Temp = %3.2f C", temp);
+            }
+        } else if (idx_mask & (1 << i)) {
             drv->ftdi.Read(CHIA_VDF_STATUS_JOB_ID_REG_OFFSET + (0x10000 * i),
                            read_status, HW_VDF_STATUS_SIZE);
             job = read_status;
-        }
-
-        if (!(idx_mask & (1 << i))) {
+        } else {
             continue;
         }
 

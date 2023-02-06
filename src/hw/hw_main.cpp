@@ -47,6 +47,8 @@ int main(int argc, char **argv)
     std::thread proof_threads[N_HW_VDFS];
     //std::thread vdf_threads[N_HW_VDFS];
     ChiaDriver *drv;
+    uint64_t read_cnt = 0;
+    uint32_t temp_period = chia_vdf_is_emu ? 200 : 2000;
 
     if (argc > 1) {
         n_vdfs = strtoul(argv[1], NULL, 0);
@@ -73,7 +75,8 @@ int main(int argc, char **argv)
 
     vdfs_mask = (1 << n_vdfs) - 1;
     while (vdfs_mask) {
-        read_hw_status(drv, vdfs_mask, values);
+        uint8_t temp_flag = read_cnt % temp_period ? 0 : HW_VDF_TEMP_FLAG;
+        read_hw_status(drv, vdfs_mask | temp_flag, values);
         for (uint8_t i = 0; i < n_vdfs; i++) {
             if (vdfs_mask & (1 << i)) {
                 hw_proof_add_value(&vdfs[i], &values[i]);
@@ -93,6 +96,7 @@ int main(int argc, char **argv)
         if (chia_vdf_is_emu) {
             usleep(50000);
         }
+        read_cnt++;
     }
 
     for (uint8_t i = 0; i < n_vdfs; i++) {

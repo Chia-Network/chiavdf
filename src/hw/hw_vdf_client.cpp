@@ -168,8 +168,11 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
 
 void event_loop(struct vdf_client *client)
 {
+    uint64_t loop_cnt = 0;
+    uint32_t temp_period = chia_vdf_is_emu ? 200 : 2000;
     while(true) {
         uint8_t vdfs_mask = 0;
+        uint8_t temp_flag = loop_cnt % temp_period ? 0 : HW_VDF_TEMP_FLAG;
 
         for (uint8_t i = 0; i < client->n_vdfs; i++) {
             handle_conn(client, &client->conns[i]);
@@ -179,7 +182,7 @@ void event_loop(struct vdf_client *client)
         }
 
         if (vdfs_mask) {
-            read_hw_status(client->drv, vdfs_mask, client->values);
+            read_hw_status(client->drv, vdfs_mask | temp_flag, client->values);
         }
 
         for (uint8_t i = 0; i < client->n_vdfs; i++) {
@@ -195,6 +198,7 @@ void event_loop(struct vdf_client *client)
         if (chia_vdf_is_emu) {
             usleep(50000);
         }
+        loop_cnt++;
     }
 }
 

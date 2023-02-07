@@ -5,6 +5,7 @@
 
 #include <cstdio>
 #include <fcntl.h>
+#include <signal.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/ip.h>
@@ -33,6 +34,13 @@ struct vdf_client {
     uint8_t n_vdfs;
 };
 
+static volatile bool g_stopping = false;
+
+void signal_handler(int sig)
+{
+    LOG_INFO("Interrupted");
+    g_stopping = true;
+}
 
 void init_conn(struct vdf_conn *conn, int port)
 {
@@ -85,10 +93,29 @@ void write_data(struct vdf_conn *conn, const char *buf, size_t size)
     }
 }
 
+void stop_conn(struct vdf_client *client, struct vdf_conn *conn)
+{
+    LOG_INFO("VDF %d: Stop requested", conn->vdf.idx);
+    if (conn->sock >= 0) {
+        write_data(conn, "STOP", 4);
+    }
+    if (conn->vdf.init_done) {
+        hw_proof_stop(&conn->vdf);
+        clear_vdf_state(&conn->vdf);
+        stop_hw_vdf(client->drv, conn->vdf.idx);
+    }
+    conn->state = STOPPED;
+    LOG_INFO("VDF %d: Stopped at iters=%lu", conn->vdf.idx, conn->vdf.cur_iters);
+}
+
 void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
 {
     ssize_t bytes;
     char *buf = conn->read_buf;
+
+    if (g_stopping && conn->state != CLOSED && conn->state != STOPPED) {
+        stop_conn(client, conn);
+    }
 
     if (conn->state == WAITING) {
         uint64_t d_size;
@@ -141,13 +168,7 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
             LOG_INFO("VDF %d: Requested proof for iters=%lu", conn->vdf.idx, iters);
             // TODO: request proof with given iters
         } else {
-            LOG_INFO("VDF %d: Stop requested", conn->vdf.idx);
-            write_data(conn, "STOP", 4);
-            hw_proof_stop(&conn->vdf);
-            clear_vdf_state(&conn->vdf);
-            stop_hw_vdf(client->drv, conn->vdf.idx);
-            conn->state = STOPPED;
-            LOG_INFO("VDF %d: Stopped at iters=%lu", conn->vdf.idx, conn->vdf.cur_iters);
+            stop_conn(client, conn);
         }
     }
     if (conn->state == STOPPED) {
@@ -161,7 +182,7 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
             LOG_ERROR("Bad data size after stop: %zd", bytes);
             throw std::runtime_error("Bad data size");
         }
-    } else if (conn->state == CLOSED) {
+    } else if (conn->state == CLOSED && !g_stopping) {
         init_conn(conn, client->port);
     }
 }
@@ -183,6 +204,17 @@ void event_loop(struct vdf_client *client)
 
         if (vdfs_mask) {
             read_hw_status(client->drv, vdfs_mask | temp_flag, client->values);
+        } else if (g_stopping) {
+            uint8_t n_closed = 0;
+            for (uint8_t i = 0; i < client->n_vdfs; i++) {
+                if (client->conns[i].state == CLOSED) {
+                    n_closed++;
+                }
+            }
+            if (n_closed == client->n_vdfs) {
+                LOG_INFO("All VDFs stopped, exiting");
+                break;
+            }
         }
 
         for (uint8_t i = 0; i < client->n_vdfs; i++) {
@@ -205,6 +237,7 @@ void event_loop(struct vdf_client *client)
 int main(int argc, char **argv)
 {
     struct vdf_client client;
+    struct sigaction sa = {0};
 
     if (argc < 2) {
         LOG_INFO("Usage: %s PORT [N_VDFS]", argv[0]);
@@ -221,8 +254,11 @@ int main(int argc, char **argv)
     }
     init_vdf_client(&client);
 
+    sa.sa_handler = signal_handler;
+    sigaction(SIGINT, &sa, NULL);
+
     event_loop(&client);
 
-    //clear_conns(conns);
+    stop_hw(client.drv);
     return 0;
 }

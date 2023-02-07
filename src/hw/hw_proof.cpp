@@ -380,6 +380,7 @@ void init_vdf_state(struct vdf_state *vdf, const char *d_str, const uint8_t *ini
             BQFC_FORM_SIZE, BQFC_MAX_D_BITS);
     hw_proof_get_form(&vdf->values[0], vdf, &vdf->last_val);
     //vdf->raw_values.push_back(initial);
+    vdf->init_done = true;
 }
 
 void clear_vdf_state(struct vdf_state *vdf)
@@ -389,4 +390,5 @@ void clear_vdf_state(struct vdf_state *vdf)
         //mpz_clears(vdf->raw_values[i].a, vdf->raw_values[i].b, NULL);
     //}
     mpz_clears(vdf->last_val.a, vdf->last_val.b, NULL);
+    vdf->init_done = false;
 }

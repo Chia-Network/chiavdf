@@ -44,6 +44,7 @@ struct vdf_state {
     uint8_t idx;
     bool completed;
     bool stopping;
+    bool init_done;
 };
 
 void hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val);

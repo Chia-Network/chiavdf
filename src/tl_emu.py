@@ -62,6 +62,17 @@ async def send_msg(w, msg):
 def decode_resp(data):
     return data.decode(errors="replace")
 
+async def read_conn(reader, writer, idx, task):
+    ret = decode_resp(await reader.read(4))
+    if ret != "STOP":
+        task.cancel()
+        raise ValueError("STOP not seen (read %d bytes)" % (len(ret),))
+    await send_msg(writer, b"ACK")
+
+    print("Closing connection for VDF %d" % (idx,))
+    writer.close()
+    task.cancel()
+
 async def init_conn(reader, writer, idx):
     d = get_discr(idx, cnts[idx]).encode()
 
@@ -77,21 +88,20 @@ async def init_conn(reader, writer, idx):
     if ok != "OK":
         raise ValueError("Bad response from VDF client: %s" % (ok,))
 
+    task = asyncio.current_task()
+    read_task = asyncio.create_task(read_conn(reader, writer, idx, task))
     wait_sec = random.randint(MIN_WAIT, MAX_WAIT)
     print("Waiting %d sec for VDF %d, cnt %d" % (wait_sec, idx, cnts[idx]))
-    await asyncio.sleep(wait_sec)
-
-    await send_msg(writer, b"010")
-    print("Stopping VDF", idx)
-
-    ret = decode_resp(await reader.read(4))
-    if ret != "STOP":
-        raise ValueError("STOP not seen (read %d bytes)" % (len(ret),))
-    await send_msg(writer, b"ACK")
-
-    print("Closing connection for VDF %d" % (idx,))
     cnts[idx] += 1
-    writer.close()
+    try:
+        await asyncio.sleep(wait_sec)
+
+        await send_msg(writer, b"010")
+        print("Stopping VDF", idx)
+    except asyncio.CancelledError:
+        print("VDF %d task cancelled" % (idx,))
+
+    await read_task
 
 async def conn_wrapper(r, w):
     idx = get_conn_idx()

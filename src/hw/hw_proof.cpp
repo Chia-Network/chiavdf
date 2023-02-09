@@ -290,6 +290,12 @@ class HwProver : public Prover {
 };
 #endif
 
+void hw_request_proof(struct vdf_state *vdf, uint64_t iters)
+{
+    vdf->req_proofs.push_back(iters);
+    std::sort(vdf->req_proofs.begin(), vdf->req_proofs.end());
+}
+
 void hw_get_proof(struct vdf_state *vdf)
 {
     form y, proof;

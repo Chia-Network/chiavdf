@@ -23,6 +23,7 @@ struct vdf_conn {
     struct vdf_state vdf;
     int sock;
     char read_buf[512];
+    uint32_t buf_pos;
     enum conn_state state;
 };
 
@@ -69,6 +70,7 @@ void init_vdf_client(struct vdf_client *client)
         client->conns[i].state = CLOSED;
         client->conns[i].sock = -1;
         memset(client->conns[i].read_buf, 0, sizeof(client->conns[i].read_buf));
+        client->conns[i].buf_pos = 0;
 
         init_vdf_value(&client->values[i]);
     }
@@ -80,6 +82,9 @@ ssize_t read_data(struct vdf_conn *conn)
     if (bytes < 0 && errno != EAGAIN) {
         perror("read");
         throw std::runtime_error("Read error");
+    }
+    if (bytes >= 0) {
+        conn->buf_pos = bytes;
     }
     return bytes;
 }
@@ -106,6 +111,39 @@ void stop_conn(struct vdf_client *client, struct vdf_conn *conn)
     }
     conn->state = STOPPED;
     LOG_INFO("VDF %d: Stopped at iters=%lu", conn->vdf.idx, conn->vdf.cur_iters);
+}
+
+void handle_iters(struct vdf_client *client, struct vdf_conn *conn)
+{
+    char *buf = conn->read_buf;
+    char iters_size_buf[3] = {0}, iters_buf[16];
+    uint64_t iters;
+    uint32_t bytes = conn->buf_pos, iters_size;
+
+    while (bytes) {
+        memcpy(iters_size_buf, buf, 2);
+        iters_size = strtoul(iters_size_buf, NULL, 10);
+        if (iters_size > sizeof(iters_buf) || bytes < 2 + iters_size) {
+            LOG_ERROR("Bad iters data size: %u", bytes);
+            throw std::runtime_error("Bad data size");
+        }
+        //buf[2 + iters_size] = '\0';
+        memcpy(iters_buf, &buf[2], iters_size);
+        iters_buf[iters_size] = '\0';
+        iters = strtoul(iters_buf, NULL, 10);
+
+        if (iters) {
+            LOG_INFO("VDF %d: Requested proof for iters=%lu", conn->vdf.idx, iters);
+            hw_request_proof(&conn->vdf, iters);
+        } else {
+            stop_conn(client, conn);
+            return;
+        }
+
+        // add iters to req_proofs
+        bytes -= 2 + iters_size;
+        buf += 2 + iters_size;
+    }
 }
 
 void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
@@ -147,29 +185,12 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
         conn->state = RUNNING;
         LOG_INFO("VDF %d: Received challenge, running", conn->vdf.idx);
     } else if (conn->state == RUNNING || conn->state == IDLING) {
-        char iters_size_buf[3] = {0};
-        uint64_t iters_size, iters;
-
         bytes = read_data(conn);
         if (bytes < 0) {
             return;
         }
 
-        memcpy(iters_size_buf, buf, 2);
-        iters_size = strtoul(iters_size_buf, NULL, 10);
-        if ((uint64_t)bytes != 2 + iters_size) {
-            LOG_ERROR("Bad iters data size: %zd", bytes);
-            throw std::runtime_error("Bad data size");
-        }
-        buf[2 + iters_size] = '\0';
-        iters = strtoul(&buf[2], NULL, 10);
-
-        if (iters) {
-            LOG_INFO("VDF %d: Requested proof for iters=%lu", conn->vdf.idx, iters);
-            // TODO: request proof with given iters
-        } else {
-            stop_conn(client, conn);
-        }
+        handle_iters(client, conn);
     }
     if (conn->state == STOPPED) {
         bytes = read_data(conn);

@@ -32,6 +32,7 @@ struct vdf_state {
     //std::vector<struct vdf_value> raw_values;
     struct vdf_value last_val;
     std::vector<form> values;
+    std::vector<uint64_t> req_proofs;
     //std::vector<struct vdf_value> proofs;
     mpz_t d, l, a2;
     std::thread aux_threads[HW_VDF_MAX_AUX_THREADS];
@@ -50,6 +51,7 @@ struct vdf_state {
 void hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val);
 void hw_proof_handle_value(struct vdf_state *vdf, struct vdf_value *val);
 void hw_proof_stop(struct vdf_state *vdf);
+void hw_request_proof(struct vdf_state *vdf, uint64_t iters);
 void hw_get_proof(struct vdf_state *vdf);
 void init_vdf_state(struct vdf_state *vdf, const char *d_str, const uint8_t *init_form, uint64_t n_iters, uint8_t idx);
 void clear_vdf_state(struct vdf_state *vdf);

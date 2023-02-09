@@ -25,7 +25,7 @@ struct vdf_state;
 void init_vdf_value(struct vdf_value *val);
 void clear_vdf_value(struct vdf_value *val);
 void copy_vdf_value(struct vdf_value *dst, struct vdf_value *src);
-int start_hw_vdf(ChiaDriver *drv, mpz_t d, uint64_t n_iters, int idx);
+int start_hw_vdf(ChiaDriver *drv, mpz_t d, mpz_t a, mpz_t b, uint64_t n_iters, int idx);
 void stop_hw_vdf(ChiaDriver *drv, int idx);
 int read_hw_status(ChiaDriver *drv, uint8_t idx_mask, struct vdf_value *values);
 

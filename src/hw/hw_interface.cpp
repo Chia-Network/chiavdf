@@ -35,16 +35,14 @@ void copy_vdf_value(struct vdf_value *dst, struct vdf_value *src)
     mpz_init_set(dst->b, src->b);
 }
 
-void prepare_job(ChiaDriver *drv, uint64_t n_iters, uint8_t *buf, mpz_t d)
+void prepare_job(ChiaDriver *drv, uint64_t n_iters, uint8_t *buf, mpz_t d, mpz_t a, mpz_t b)
 {
     uint32_t job_id = 0xab;
     integer D;
     mpz_set(D.impl, d);
-    form y = form::generator(D);
     integer L(root(-D, 4));
 
-    drv->SerializeJob(buf, job_id, n_iters,
-            y.a.impl, y.b.impl, D.impl, L.impl);
+    drv->SerializeJob(buf, job_id, n_iters, a, b, D.impl, L.impl);
 }
 
 ChiaDriver *init_hw(void)
@@ -117,12 +115,12 @@ struct vdf_state;
 void add_vdf_value(struct vdf_state *vdf, mpz_t a, mpz_t f, uint64_t n_iters);
 
 
-int start_hw_vdf(ChiaDriver *drv, mpz_t d, uint64_t n_iters, int idx)
+int start_hw_vdf(ChiaDriver *drv, mpz_t d, mpz_t a, mpz_t b, uint64_t n_iters, int idx)
 {
     uint8_t job[CHIA_VDF_JOB_SIZE];
     uint32_t base_addr = CHIA_VDF_CONTROL_REG_OFFSET + CHIA_VDF_JOB_CSR_MULT * idx;
 
-    prepare_job(drv, n_iters, job, d);
+    prepare_job(drv, n_iters, job, d, a, b);
 
     // Enable the engine and write in the job
     drv->EnableEngine(base_addr);

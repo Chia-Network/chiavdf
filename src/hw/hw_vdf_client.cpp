@@ -150,6 +150,7 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
 {
     ssize_t bytes;
     char *buf = conn->read_buf;
+    struct vdf_state *vdf = &conn->vdf;
 
     if (g_stopping && conn->state != CLOSED && conn->state != STOPPED) {
         stop_conn(client, conn);
@@ -179,11 +180,12 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
         }
 
         init_form = (uint8_t *)&buf[4 + d_size + 1];
-        init_vdf_state(&conn->vdf, d_str, init_form, n_iters, conn->vdf.idx);
-        start_hw_vdf(client->drv, conn->vdf.d, conn->vdf.target_iters, conn->vdf.idx);
+        init_vdf_state(vdf, d_str, init_form, n_iters, vdf->idx);
+        start_hw_vdf(client->drv, vdf->d, vdf->last_val.a, vdf->last_val.b,
+                vdf->target_iters, vdf->idx);
         write_data(conn, "OK", 2);
         conn->state = RUNNING;
-        LOG_INFO("VDF %d: Received challenge, running", conn->vdf.idx);
+        LOG_INFO("VDF %d: Received challenge, running", vdf->idx);
     } else if (conn->state == RUNNING || conn->state == IDLING) {
         bytes = read_data(conn);
         if (bytes < 0) {
@@ -198,7 +200,7 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
             close(conn->sock);
             conn->sock = -1;
             conn->state = CLOSED;
-            LOG_INFO("VDF %d: Connection closed", conn->vdf.idx);
+            LOG_INFO("VDF %d: Connection closed", vdf->idx);
         } else if (bytes >= 0) {
             LOG_ERROR("Bad data size after stop: %zd", bytes);
             throw std::runtime_error("Bad data size");

@@ -36,6 +36,7 @@ MIN_ITERS = 500 * 1000
 MAX_ITERS = 10 * 1000**2
 MIN_WAIT = 5
 MAX_WAIT = 100
+N_PROOFS = 4
 
 def get_discr(conn_idx, cnt):
     s = (top_seed << 16) + (conn_idx << 14) + cnt
@@ -63,15 +64,16 @@ def decode_resp(data):
     return data.decode(errors="replace")
 
 async def read_conn(reader, writer, idx, task):
-    ret = decode_resp(await reader.read(4))
-    if ret != "STOP":
+    data = await reader.read(4)
+    if data == b"STOP":
+        await send_msg(writer, b"ACK")
+        print("Closing connection for VDF %d" % (idx,))
+        writer.close()
         task.cancel()
-        raise ValueError("STOP not seen (read %d bytes)" % (len(ret),))
-    await send_msg(writer, b"ACK")
-
-    print("Closing connection for VDF %d" % (idx,))
-    writer.close()
-    task.cancel()
+    else:
+        size = int.from_bytes(data, 'big')
+        data = await reader.readexactly(size)
+        print("Got proof!")
 
 async def init_conn(reader, writer, idx):
     d = get_discr(idx, cnts[idx]).encode()
@@ -94,6 +96,12 @@ async def init_conn(reader, writer, idx):
     print("Waiting %d sec for VDF %d, cnt %d" % (wait_sec, idx, cnts[idx]))
     cnts[idx] += 1
     try:
+        await asyncio.sleep(1)
+        iters_list = [random.randint(MIN_ITERS, MAX_ITERS) for _ in range(N_PROOFS)]
+        iters_enc = "".join("%02d%d" % (len(str(n)), n) for n in iters_list)
+        print("Requesting proofs for iters:", iters_list)
+        await send_msg(writer, iters_enc.encode())
+
         await asyncio.sleep(wait_sec)
 
         await send_msg(writer, b"010")

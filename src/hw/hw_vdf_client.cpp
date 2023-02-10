@@ -1,6 +1,7 @@
 #include "hw_interface.hpp"
 #include "hw_proof.hpp"
 #include "hw_util.hpp"
+#include "bqfc.h"
 #include "vdf_base.hpp"
 
 #include <cstdio>
@@ -105,7 +106,7 @@ void stop_conn(struct vdf_client *client, struct vdf_conn *conn)
         write_data(conn, "STOP", 4);
     }
     if (conn->vdf.init_done) {
-        hw_proof_stop(&conn->vdf);
+        hw_stop_proof(&conn->vdf);
         clear_vdf_state(&conn->vdf);
         stop_hw_vdf(client->drv, conn->vdf.idx);
     }
@@ -143,6 +144,31 @@ void handle_iters(struct vdf_client *client, struct vdf_conn *conn)
         // add iters to req_proofs
         bytes -= 2 + iters_size;
         buf += 2 + iters_size;
+    }
+}
+
+void handle_proofs(struct vdf_client *client, struct vdf_conn *conn)
+{
+    struct vdf_proof *proof;
+    while (hw_retrieve_proof(&conn->vdf, &proof) >= 0) {
+        uint8_t data[8 + 8 + 1 + BQFC_FORM_SIZE * 2];
+        char tl_data[sizeof(data) * 2 + 5] = {0};
+
+        LOG_INFO("VDF %d: Proof retrieved for iters=%lu", conn->vdf.idx, proof->iters);
+
+        Int64ToBytes(&data[0], proof->iters);
+        Int64ToBytes(&data[8], BQFC_FORM_SIZE);
+        memcpy(&data[16], proof->y, BQFC_FORM_SIZE);
+        data[16 + BQFC_FORM_SIZE] = 0;
+        memcpy(&data[17 + BQFC_FORM_SIZE], proof->proof, BQFC_FORM_SIZE);
+        delete proof;
+
+        for (size_t i = 0; i < sizeof(data); i++) {
+            // Hex encode proof data for timelord
+            snprintf(&tl_data[4 + i * 2], 3, "%02hhx", data[i]);
+        }
+        Int32ToBytes((uint8_t *)tl_data, sizeof(data) * 2);
+        write_data(conn, tl_data, sizeof(tl_data) - 1);
     }
 }
 
@@ -187,6 +213,7 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
         conn->state = RUNNING;
         LOG_INFO("VDF %d: Received challenge, running", vdf->idx);
     } else if (conn->state == RUNNING || conn->state == IDLING) {
+        handle_proofs(client, conn);
         bytes = read_data(conn);
         if (bytes < 0) {
             return;

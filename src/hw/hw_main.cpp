@@ -86,7 +86,7 @@ int main(int argc, char **argv)
                 stop_hw_vdf(drv, i);
                 vdfs_mask &= ~(1 << i);
                 n_completed++;
-                proof_threads[i] = std::thread(hw_get_proof, &vdfs[i]);
+                proof_threads[i] = std::thread(hw_compute_proof, &vdfs[i], n_iters, (struct vdf_proof *)NULL, 255);
             }
         }
         //if (i == n_vdfs) {

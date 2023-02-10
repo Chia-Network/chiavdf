@@ -304,4 +304,7 @@ form GenerateWesolowski(form &y, form &x_init,
                         uint64_t k, uint64_t l);
 
 void VerifyWesolowskiProof(integer &D, form x, form y, form proof, uint64_t iters, bool &is_valid);
+
+void Int64ToBytes(uint8_t *result, uint64_t input);
+void Int32ToBytes(uint8_t *result, uint32_t input);
 #endif // VDF_BASE_H

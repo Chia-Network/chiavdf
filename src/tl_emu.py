@@ -21,6 +21,7 @@ import asyncio, random, sys
 # "<proof size>" (4 bytes, big endian)
 # "<proof>" (hex encoded)
 # Proof items (bytes): iters (8), y size (8), y, witness type (1), proof
+# proof for witness type=0: proof value (100 bytes as compressed form)
 
 # VDF client -> Timelord
 # "STOP"
@@ -33,7 +34,7 @@ DISCR_BITS = 1024
 MAX_CONNS = 3
 INIT_FORM = b"\x08" + b"\x00" * 99
 MIN_ITERS = 500 * 1000
-MAX_ITERS = 10 * 1000**2
+MAX_ITERS = 50 * 1000**2
 MIN_WAIT = 5
 MAX_WAIT = 100
 N_PROOFS = 4
@@ -63,22 +64,50 @@ async def send_msg(w, msg):
 def decode_resp(data):
     return data.decode(errors="replace")
 
-async def read_conn(reader, writer, idx, task):
-    data = await reader.read(4)
-    if data == b"STOP":
-        await send_msg(writer, b"ACK")
-        print("Closing connection for VDF %d" % (idx,))
+async def read_conn(reader, writer, d, idx, task):
+    try:
+        while True:
+            data = await reader.read(4)
+            if data == b"STOP":
+                await send_msg(writer, b"ACK")
+                print("Closing connection for VDF %d" % (idx,))
+                writer.close()
+                task.cancel()
+                break
+
+            size = int.from_bytes(data, 'big')
+            if not size:
+                raise ValueError("Empty proof!")
+
+            data = await reader.readexactly(size)
+            data = bytes.fromhex(data.decode())
+            iters = int.from_bytes(data[:8], 'big')
+            y_size = int.from_bytes(data[8:16], 'big')
+            y = data[16:16+y_size]
+            w_type = int.from_bytes(data[16+y_size:17+y_size], 'big')
+            proof = data[17+y_size:]
+
+            try:
+                is_valid = chiavdf.verify_n_wesolowski(d, INIT_FORM, y + proof, iters, 1024, w_type)
+            except Exception as e:
+                print("Proof verification failed for VDF %d, iters=%d" % (idx, iters))
+                print(e)
+                is_valid = False
+            if is_valid:
+                print("Proof for VDF %d, iters=%d is VALID" % (idx, iters))
+            else:
+                print("\n!!!!!\nInvalid proof for VDF %d, iters=%d!\n!!!!!" %
+                        (idx, iters))
+
+    except Exception as e:
+        print(e)
         writer.close()
         task.cancel()
-    else:
-        size = int.from_bytes(data, 'big')
-        data = await reader.readexactly(size)
-        print("Got proof!")
 
 async def init_conn(reader, writer, idx):
     d = get_discr(idx, cnts[idx]).encode()
 
-    await send_msg(writer, b"N")
+    await send_msg(writer, b"T")
     msg = b"%03d%s" % (len(d), d)
     await send_msg(writer, msg)
     msg = b"%c%s" % (len(INIT_FORM), INIT_FORM)
@@ -91,7 +120,7 @@ async def init_conn(reader, writer, idx):
         raise ValueError("Bad response from VDF client: %s" % (ok,))
 
     task = asyncio.current_task()
-    read_task = asyncio.create_task(read_conn(reader, writer, idx, task))
+    read_task = asyncio.create_task(read_conn(reader, writer, d, idx, task))
     wait_sec = random.randint(MIN_WAIT, MAX_WAIT)
     print("Waiting %d sec for VDF %d, cnt %d" % (wait_sec, idx, cnts[idx]))
     cnts[idx] += 1

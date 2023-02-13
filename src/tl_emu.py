@@ -100,7 +100,7 @@ async def read_conn(reader, writer, d, idx, task):
                         (idx, iters))
 
     except Exception as e:
-        print(e)
+        print("VDF %d error (read_conn):" % (idx,), e)
         writer.close()
         task.cancel()
 
@@ -135,17 +135,18 @@ async def init_conn(reader, writer, idx):
 
         await send_msg(writer, b"010")
         print("Stopping VDF", idx)
+
+        await read_task
     except asyncio.CancelledError:
         print("VDF %d task cancelled" % (idx,))
 
-    await read_task
 
 async def conn_wrapper(r, w):
     idx = get_conn_idx()
     try:
         await init_conn(r, w, idx)
     except Exception as e:
-        print(e)
+        print("VDF %d error:" % (idx,), e)
     clear_conn_idx(idx)
 
 async def main():

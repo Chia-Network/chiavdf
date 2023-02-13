@@ -71,6 +71,7 @@ async def read_conn(reader, writer, d, idx, task):
             if data == b"STOP":
                 await send_msg(writer, b"ACK")
                 print("Closing connection for VDF %d" % (idx,))
+                clear_conn_idx(idx)
                 writer.close()
                 task.cancel()
                 break
@@ -101,6 +102,7 @@ async def read_conn(reader, writer, d, idx, task):
 
     except Exception as e:
         print("VDF %d error (read_conn):" % (idx,), e)
+        clear_conn_idx(idx)
         writer.close()
         task.cancel()
 
@@ -147,7 +149,6 @@ async def conn_wrapper(r, w):
         await init_conn(r, w, idx)
     except Exception as e:
         print("VDF %d error:" % (idx,), e)
-    clear_conn_idx(idx)
 
 async def main():
     seed = 1

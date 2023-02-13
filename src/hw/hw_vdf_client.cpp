@@ -61,6 +61,7 @@ void init_conn(struct vdf_conn *conn, int port)
         throw std::runtime_error("Failed to set O_NONBLOCK");
     }
     conn->state = WAITING;
+    conn->buf_pos = 0;
     LOG_INFO("VDF %d: Connected to timelord, waiting for challenge", conn->vdf.idx);
 }
 
@@ -79,13 +80,15 @@ void init_vdf_client(struct vdf_client *client)
 
 ssize_t read_data(struct vdf_conn *conn)
 {
-    ssize_t bytes = read(conn->sock, conn->read_buf, sizeof(conn->read_buf));
+    ssize_t bytes = read(conn->sock, conn->read_buf + conn->buf_pos,
+            sizeof(conn->read_buf) - conn->buf_pos);
     if (bytes < 0 && errno != EAGAIN) {
         perror("read");
         throw std::runtime_error("Read error");
     }
     if (bytes >= 0) {
-        conn->buf_pos = bytes;
+        conn->buf_pos += bytes;
+        return conn->buf_pos;
     }
     return bytes;
 }
@@ -138,12 +141,15 @@ void handle_iters(struct vdf_client *client, struct vdf_conn *conn)
             hw_request_proof(&conn->vdf, iters);
         } else {
             stop_conn(client, conn);
-            return;
+            bytes -= 2 + iters_size;
+            break;
         }
 
-        // add iters to req_proofs
         bytes -= 2 + iters_size;
         buf += 2 + iters_size;
+    }
+    if (!bytes) {
+        conn->buf_pos = 0;
     }
 }
 
@@ -189,7 +195,8 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
         uint8_t *init_form;
 
         bytes = read_data(conn);
-        if (bytes < 0) {
+        if (bytes < 5) {
+            /* Expecting discr size and discriminant */
             return;
         }
 
@@ -198,6 +205,10 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
         }
 
         d_size = strtoul(&buf[1], NULL, 10);
+        if ((uint64_t)bytes < 4 + d_size + 1) {
+            /* Expecting initial form after discriminant */
+            return;
+        }
         memcpy(d_str, &buf[4], d_size);
         d_str[d_size] = '\0';
         if ((uint64_t)bytes != 4 + d_size + 1 + buf[4 + d_size]) {
@@ -211,6 +222,7 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
                 vdf->target_iters, vdf->idx);
         write_data(conn, "OK", 2);
         conn->state = RUNNING;
+        conn->buf_pos = 0;
         LOG_INFO("VDF %d: Received challenge, running", vdf->idx);
     } else if (conn->state == RUNNING || conn->state == IDLING) {
         handle_proofs(client, conn);

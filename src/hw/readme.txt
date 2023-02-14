@@ -37,24 +37,24 @@ Alternatively, run with the emulated HW:
 
 To run the hardware VDF client with a Chia timelord in testnet:
 
-Install Chia blockchain:
+Install Chia blockchain (skip the GUI part as it won't be needed):
 https://github.com/Chia-Network/chia-blockchain/wiki/INSTALL
 
 Configure testnet10 (or a different testnet as needed):
 https://github.com/Chia-Network/chia-blockchain/wiki/How-to-Connect-to-the-Testnet
 
-Start a local full node (in chia-blockchain directory):
-venv/bin/chia start node
+Start a local full node (in chia-blockchain directory; Python venv should be already activated):
+chia start node
 
 Change log level in config file (it is likely located in ~/.chia/mainnet/config/config.yaml):
 ...
     log_level: INFO
 
 Start timelord (in chia-blockchain directory):
-venv/bin/chia start timelord-only
+chia start timelord-only
 
 Start HW VDF client (in chiavdf/src directory):
-./hw_vdf_client 8000 3
+./hw_vdf_client 8000
 
 Watch timelord logs, the following lines would indicate the proofs are coming:
 tail -f ~/.chia/mainnet/log/debug.log
@@ -63,4 +63,4 @@ tail -f ~/.chia/mainnet/log/debug.log
 2023-02-10T17:54:48.581 timelord chia.timelord.timelord   : INFO     Finished PoT chall:7ea19c8a61ee0691c1d6.. 1720038 iters, Estimated IPS: 50785.0, Chain: Chain.REWARD_CHAIN
 
 To stop running hardware VDF client and timelord, first stop the VDF client using Ctrl-C, then shut down the timelord:
-venv/bin/chia stop timelord-only
+chia stop timelord-only

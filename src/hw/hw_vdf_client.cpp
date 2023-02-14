@@ -252,7 +252,7 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
 void event_loop(struct vdf_client *client)
 {
     uint64_t loop_cnt = 0;
-    uint32_t temp_period = chia_vdf_is_emu ? 200 : 2000;
+    uint32_t temp_period = chia_vdf_is_emu ? 200 : 20000;
     while(true) {
         uint8_t vdfs_mask = 0;
         uint8_t temp_flag = loop_cnt % temp_period ? 0 : HW_VDF_TEMP_FLAG;

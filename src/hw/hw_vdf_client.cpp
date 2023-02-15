@@ -137,7 +137,7 @@ void handle_iters(struct vdf_client *client, struct vdf_conn *conn)
         iters = strtoul(iters_buf, NULL, 10);
 
         if (iters) {
-            LOG_INFO("VDF %d: Requested proof for iters=%lu", conn->vdf.idx, iters);
+            LOG_DEBUG("VDF %d: Requested proof for iters=%lu", conn->vdf.idx, iters);
             hw_request_proof(&conn->vdf, iters);
         } else {
             stop_conn(client, conn);
@@ -150,6 +150,20 @@ void handle_iters(struct vdf_client *client, struct vdf_conn *conn)
     }
     if (!bytes) {
         conn->buf_pos = 0;
+    }
+    if (!conn->vdf.req_proofs.empty()) {
+        size_t n_proofs = conn->vdf.req_proofs.size();
+        char iters_str[100];
+        size_t pos = 0;
+
+        for (size_t i = 0; i < n_proofs; i++) {
+            pos += snprintf(&iters_str[pos], sizeof(iters_str) - pos, "%s%lu",
+                    i ? ", " : "", conn->vdf.req_proofs[i]);
+            if (pos >= sizeof(iters_str) - 1) {
+                break;
+            }
+        }
+        LOG_INFO("VDF %d: Queued proofs for iters: [%s]", conn->vdf.idx, iters_str);
     }
 }
 

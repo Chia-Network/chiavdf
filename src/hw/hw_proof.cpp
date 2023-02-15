@@ -300,9 +300,9 @@ class HwProver : public Prover {
     HwProver(Segment segm, integer D, struct vdf_state *vdf)
         : Prover(segm, D)
     {
-        k = 8;
-        l = vdf->interval / k;
         this->vdf = vdf;
+        k = FindK(segm.length);
+        l = vdf->interval / k;
     }
 
     form* GetForm(uint64_t pos) {
@@ -330,6 +330,25 @@ class HwProver : public Prover {
 
     bool IsFinished() {
         return is_finished;
+    }
+
+    uint32_t FindK(uint64_t iters) {
+        uint8_t d = 1;
+        const uint8_t divisors[] = HW_VDF_VALUE_INTERVAL_DIVISORS;
+        uint64_t interval = vdf->interval;
+        uint64_t n_steps = iters + interval * 4, n_steps2;
+        size_t i;
+
+        for (i = 0; i < sizeof(divisors) / sizeof(*divisors); i++) {
+            d = divisors[i];
+            n_steps2 = iters / d + ((interval / d) << (d + 1));
+
+            if (n_steps2 > n_steps) {
+                return i ? divisors[i - 1] : 1;
+            }
+            n_steps = n_steps2;
+        }
+        return divisors[i - 1];
     }
 
   private:

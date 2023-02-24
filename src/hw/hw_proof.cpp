@@ -13,10 +13,12 @@ int verify_vdf_value(struct vdf_state *vdf, struct vdf_value *val)
     /* Verify that c could be computed as c = (b^2 - d) / (4 * a) */
     if (!mpz_divisible_p(vdf->a2, val->a) || mpz_scan1(vdf->a2, 0) < mpz_scan1(val->a, 0) + 2) {
         vdf->n_bad++;
-        LOG_INFO("VDF %d: Warning: Bad VDF value at iters=%lu n_bad=%u",
-                vdf->idx, val->iters, vdf->n_bad);
-        gmp_fprintf(stderr, " a = %#Zx\n b = %#Zx\n d = %#Zx\n",
-                val->a, val->b, vdf->d);
+        if (vdf->n_bad > 1) {
+            LOG_INFO("VDF %d: Warning: Bad VDF value at iters=%lu n_bad=%u",
+                    vdf->idx, val->iters, vdf->n_bad);
+            gmp_fprintf(stderr, " a = %#Zx\n b = %#Zx\n d = %#Zx\n",
+                    val->a, val->b, vdf->d);
+        }
         return -1;
     }
     return 0;

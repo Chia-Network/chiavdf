@@ -404,19 +404,19 @@ class HwProver : public Prover {
 
 void hw_compute_proof(struct vdf_state *vdf, uint64_t start_iters, uint64_t proof_iters, struct vdf_proof *out_proof, uint8_t thr_idx)
 {
-    form y, proof;
+    form x, y, proof;
     size_t start_pos = start_iters / vdf->interval;
-    form x = vdf->values[start_pos];
     size_t pos = proof_iters / vdf->interval;
     uint64_t iters = pos * vdf->interval;
     integer d(vdf->d), l(vdf->l);
     PulmarkReducer reducer;
     timepoint_t start_time = vdf_get_cur_time();
 
-    if (hw_proof_wait_value(vdf, pos)) {
+    if (hw_proof_wait_value(vdf, start_pos) || hw_proof_wait_value(vdf, pos)) {
         LOG_INFO("VDF %d: Proof stopped", vdf->idx);
         goto out;
     }
+    x = vdf->values[start_pos];
     y = vdf->values[pos];
     if (!y.check_valid(d)) {
         LOG_ERROR("VDF %d: invalid form at pos=%lu", vdf->idx, pos);

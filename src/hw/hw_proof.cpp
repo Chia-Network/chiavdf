@@ -411,6 +411,7 @@ void hw_compute_proof(struct vdf_state *vdf, uint64_t start_iters, uint64_t proo
     uint64_t iters = pos * vdf->interval;
     integer d(vdf->d), l(vdf->l);
     PulmarkReducer reducer;
+    timepoint_t start_time = vdf_get_cur_time();
 
     if (hw_proof_wait_value(vdf, pos)) {
         LOG_INFO("VDF %d: Proof stopped", vdf->idx);
@@ -438,13 +439,15 @@ void hw_compute_proof(struct vdf_state *vdf, uint64_t start_iters, uint64_t proo
         prover.start();
 
         if (prover.IsFinished()) {
+            uint64_t elapsed_us = vdf_get_elapsed_us(start_time);
             proof = prover.GetProof();
-            LOG_INFO("VDF %d: Proof done for iters=%lu", vdf->idx, proof_iters);
+            LOG_INFO("VDF %d: Proof done for iters=%lu in %.3fs",
+                    vdf->idx, proof_iters, (double)elapsed_us / 1000000);
 
             bool is_valid = false;
             VerifyWesolowskiProof(d, x, y, proof, seg.length, is_valid);
-            LOG_INFO("VDF %d: Proof %s", vdf->idx, is_valid ? "valid" : "NOT VALID");
             if (!is_valid) {
+                LOG_ERROR("VDF %d: Proof NOT VALID", vdf->idx);
                 abort();
             }
 

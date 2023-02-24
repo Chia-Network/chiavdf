@@ -206,8 +206,8 @@ void hw_proof_process_work(struct vdf_state *vdf)
             proof->B[0] = (uint8_t)is_chkp;
             vdf->req_proofs.erase(vdf->req_proofs.begin());
 
-            LOG_INFO("VDF %d: Starting proof thread %d for iters=%lu",
-                    vdf->idx, i, iters);
+            LOG_INFO("VDF %d: Starting proof thread %d for iters=%lu%s",
+                    vdf->idx, i, iters, is_chkp ? " [checkpoint]" : "");
             vdf->aux_threads_busy |= 1U << i;
             std::thread(hw_compute_proof, vdf, start_iters, iters, proof, i).detach();
         }

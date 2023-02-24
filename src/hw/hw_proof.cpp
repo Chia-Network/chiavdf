@@ -134,6 +134,20 @@ void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_work *work, int thr_
     vdf->aux_threads_busy &= ~(1U << thr_idx);
 }
 
+bool hw_proof_req_cmp(struct vdf_proof_req &a, struct vdf_proof_req &b)
+{
+    return a.iters < b.iters;
+}
+
+void hw_request_proof(struct vdf_state *vdf, uint64_t iters, bool is_chkp)
+{
+    vdf->req_proofs.push_back({iters, is_chkp});
+    std::sort(vdf->req_proofs.begin(), vdf->req_proofs.end(), hw_proof_req_cmp);
+    if (is_chkp) {
+        vdf->n_chkpts++;
+    }
+}
+
 void hw_proof_add_work(struct vdf_state *vdf, uint64_t next_iters, uint32_t n_steps)
 {
     auto *work = new struct vdf_work;
@@ -145,29 +159,55 @@ void hw_proof_add_work(struct vdf_state *vdf, uint64_t next_iters, uint32_t n_st
     vdf->wq.push_back(work);
 }
 
+size_t hw_proof_thread_cnt(struct vdf_state *vdf)
+{
+    size_t cnt = 0;
+    for (size_t i = 0; i < vdf->proofs.size(); i++) {
+        if (!vdf->proofs[i]->iters) {
+            cnt++;
+        }
+    }
+    for (size_t i = 0; i < vdf->chkp_proofs.size(); i++) {
+        if (!vdf->chkp_proofs[i]->iters) {
+            cnt++;
+        }
+    }
+    return cnt;
+}
+
 void hw_proof_process_work(struct vdf_state *vdf)
 {
     uint8_t busy = vdf->aux_threads_busy;
 
     for (int i = 0; i < HW_VDF_MAX_AUX_THREADS; i++) {
         if (vdf->req_proofs.empty() ||
-                vdf->last_val.iters < vdf->req_proofs[0] ||
-                vdf->proofs.size() >= HW_VDF_MAX_PROOF_THREADS) {
+                vdf->last_val.iters < vdf->req_proofs[0].iters ||
+                hw_proof_thread_cnt(vdf) >= HW_VDF_MAX_PROOF_THREADS) {
             break;
         }
 
         if (!(busy & (1U << i))) {
-            uint64_t iters = vdf->req_proofs[0];
+            uint64_t iters = vdf->req_proofs[0].iters;
+            bool is_chkp = vdf->req_proofs[0].is_chkp;
+            uint64_t start_iters;
             auto *proof = new struct vdf_proof;
 
             proof->iters = 0;
-            vdf->proofs.push_back(proof);
+            if (is_chkp) {
+                vdf->chkp_proofs.push_back(proof);
+                start_iters = iters - vdf->chkp_interval;
+            } else {
+                vdf->proofs.push_back(proof);
+                start_iters = iters - iters % vdf->chkp_interval;
+            }
+            // Indicate whether B should be populated in its zeroth byte
+            proof->B[0] = (uint8_t)is_chkp;
             vdf->req_proofs.erase(vdf->req_proofs.begin());
 
             LOG_INFO("VDF %d: Starting proof thread %d for iters=%lu",
                     vdf->idx, i, iters);
             vdf->aux_threads_busy |= 1U << i;
-            std::thread(hw_compute_proof, vdf, iters, proof, i).detach();
+            std::thread(hw_compute_proof, vdf, start_iters, iters, proof, i).detach();
         }
     }
 
@@ -269,6 +309,10 @@ void hw_proof_handle_value(struct vdf_state *vdf, struct vdf_value *val)
         hw_proof_add_work(vdf, start_iters, n_steps);
     }
 
+    if (val->iters / vdf->chkp_interval > vdf->n_chkpts) {
+        hw_request_proof(vdf, val->iters / vdf->chkp_interval * vdf->chkp_interval, true);
+    }
+
     //vdf->raw_values.push_back(*val);
     vdf->cur_iters = val->iters;
     std::swap(vdf->last_val, *val);
@@ -303,9 +347,11 @@ class HwProver : public Prover {
         this->vdf = vdf;
         k = FindK(segm.length);
         l = vdf->interval / k;
+        pos_offset = segm.start / vdf->interval;
     }
 
     form* GetForm(uint64_t pos) {
+        pos += pos_offset;
         if (hw_proof_wait_value(vdf, pos)) {
             // Provide arbitrary value when stopping - proof won't be computed
             return &vdf->values[0];
@@ -353,17 +399,14 @@ class HwProver : public Prover {
 
   private:
     struct vdf_state *vdf;
+    uint32_t pos_offset;
 };
 
-void hw_request_proof(struct vdf_state *vdf, uint64_t iters)
-{
-    vdf->req_proofs.push_back(iters);
-    std::sort(vdf->req_proofs.begin(), vdf->req_proofs.end());
-}
-
-void hw_compute_proof(struct vdf_state *vdf, uint64_t proof_iters, struct vdf_proof *out_proof, uint8_t thr_idx)
+void hw_compute_proof(struct vdf_state *vdf, uint64_t start_iters, uint64_t proof_iters, struct vdf_proof *out_proof, uint8_t thr_idx)
 {
     form y, proof;
+    size_t start_pos = start_iters / vdf->interval;
+    form x = vdf->values[start_pos];
     size_t pos = proof_iters / vdf->interval;
     uint64_t iters = pos * vdf->interval;
     integer d(vdf->d), l(vdf->l);
@@ -389,7 +432,7 @@ void hw_compute_proof(struct vdf_state *vdf, uint64_t proof_iters, struct vdf_pr
     }
 
     {
-        Segment seg(0, proof_iters, vdf->values[0], y);
+        Segment seg(start_iters, proof_iters - start_iters, x, y);
         HwProver prover(seg, d, vdf);
 
         prover.start();
@@ -399,7 +442,7 @@ void hw_compute_proof(struct vdf_state *vdf, uint64_t proof_iters, struct vdf_pr
             LOG_INFO("VDF %d: Proof done for iters=%lu", vdf->idx, proof_iters);
 
             bool is_valid = false;
-            VerifyWesolowskiProof(d, vdf->values[0], y, proof, proof_iters, is_valid);
+            VerifyWesolowskiProof(d, x, y, proof, seg.length, is_valid);
             LOG_INFO("VDF %d: Proof %s", vdf->idx, is_valid ? "valid" : "NOT VALID");
             if (!is_valid) {
                 abort();
@@ -409,7 +452,13 @@ void hw_compute_proof(struct vdf_state *vdf, uint64_t proof_iters, struct vdf_pr
                 size_t d_bits = mpz_sizeinbase(d.impl, 2);
                 bqfc_serialize(out_proof->y, y.a.impl, y.b.impl, d_bits);
                 bqfc_serialize(out_proof->proof, proof.a.impl, proof.b.impl, d_bits);
-                out_proof->iters = proof_iters;
+                if (out_proof->B[0]) {
+                    integer B = GetB(d, x, y);
+                    mpz_export(out_proof->B, NULL, 1, 1, 0, 0, B.impl);
+                    out_proof->iters = seg.length;
+                } else {
+                    out_proof->iters = proof_iters;
+                }
             }
         } else {
             LOG_INFO("VDF %d: Proof stopped", vdf->idx);
@@ -426,10 +475,12 @@ int hw_retrieve_proof(struct vdf_state *vdf, struct vdf_proof **proof)
 {
     if (!vdf->proofs.empty()) {
         for (size_t i = 0; i < vdf->proofs.size(); i++) {
-            if (vdf->proofs[i]->iters) {
+            uint64_t iters = vdf->proofs[i]->iters;
+            size_t last_chkp = iters / vdf->chkp_interval;
+            if (iters && (!last_chkp || vdf->chkp_proofs[last_chkp - 1]->iters)) {
                 *proof = vdf->proofs[i];
                 vdf->proofs.erase(vdf->proofs.begin() + i);
-                return 0;
+                return last_chkp;
             }
         }
     }
@@ -448,11 +499,13 @@ void init_vdf_state(struct vdf_state *vdf, const char *d_str, const uint8_t *ini
     vdf->elapsed_us = 0;
     vdf->start_time = vdf_get_cur_time();
     vdf->interval = HW_VDF_VALUE_INTERVAL;
+    vdf->chkp_interval = HW_VDF_CHKP_INTERVAL;
     vdf->target_iters = (n_iters + vdf->interval - 1) / vdf->interval * vdf->interval;
     vdf->idx = idx;
     vdf->completed = false;
     vdf->stopping = false;
     vdf->aux_threads_busy = 0;
+    vdf->n_chkpts = 0;
     vdf->n_bad = 0;
     vdf->log_cnt = 0;
 
@@ -486,6 +539,10 @@ void clear_vdf_state(struct vdf_state *vdf)
         delete vdf->proofs[i];
     }
     vdf->proofs.clear();
+    for (size_t i = 0; i < vdf->chkp_proofs.size(); i++) {
+        delete vdf->chkp_proofs[i];
+    }
+    vdf->chkp_proofs.clear();
     vdf->req_proofs.clear();
     vdf->values.clear();
     vdf->valid_values.clear();

@@ -297,6 +297,8 @@ class Prover {
 
 void nudupl_form(form &a, form &b, integer &D, integer &L);
 
+integer GetB(const integer& D, form &x, form& y);
+
 form GenerateWesolowski(form &y, form &x_init,
                         integer &D, PulmarkReducer& reducer,
                         std::vector<form>& intermediates,

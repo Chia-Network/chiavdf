@@ -36,6 +36,12 @@ struct vdf_client {
     uint8_t n_vdfs;
 };
 
+struct vdf_proof_segm {
+    uint8_t iters[sizeof(uint64_t)];
+    uint8_t B[HW_VDF_B_SIZE];
+    uint8_t proof[BQFC_FORM_SIZE];
+};
+
 static volatile bool g_stopping = false;
 
 void signal_handler(int sig)
@@ -138,7 +144,7 @@ void handle_iters(struct vdf_client *client, struct vdf_conn *conn)
 
         if (iters) {
             LOG_DEBUG("VDF %d: Requested proof for iters=%lu", conn->vdf.idx, iters);
-            hw_request_proof(&conn->vdf, iters);
+            hw_request_proof(&conn->vdf, iters, false);
         } else {
             stop_conn(client, conn);
             bytes -= 2 + iters_size;
@@ -158,7 +164,7 @@ void handle_iters(struct vdf_client *client, struct vdf_conn *conn)
 
         for (size_t i = 0; i < n_proofs; i++) {
             pos += snprintf(&iters_str[pos], sizeof(iters_str) - pos, "%s%lu",
-                    i ? ", " : "", conn->vdf.req_proofs[i]);
+                    i ? ", " : "", conn->vdf.req_proofs[i].iters);
             if (pos >= sizeof(iters_str) - 1) {
                 break;
             }
@@ -167,10 +173,19 @@ void handle_iters(struct vdf_client *client, struct vdf_conn *conn)
     }
 }
 
+void tl_enc_hex(char *out_data, uint8_t *data, size_t size)
+{
+    // Hex encode proof data for timelord
+    for (size_t i = 0; i < size; i++) {
+        snprintf(&out_data[i * 2], 3, "%02hhx", data[i]);
+    }
+}
+
 void handle_proofs(struct vdf_client *client, struct vdf_conn *conn)
 {
     struct vdf_proof *proof;
-    while (hw_retrieve_proof(&conn->vdf, &proof) >= 0) {
+    int i;
+    while ((i = hw_retrieve_proof(&conn->vdf, &proof)) >= 0) {
         uint8_t data[8 + 8 + 1 + BQFC_FORM_SIZE * 2];
         char tl_data[sizeof(data) * 2 + 5] = {0};
 
@@ -179,16 +194,25 @@ void handle_proofs(struct vdf_client *client, struct vdf_conn *conn)
         Int64ToBytes(&data[0], proof->iters);
         Int64ToBytes(&data[8], BQFC_FORM_SIZE);
         memcpy(&data[16], proof->y, BQFC_FORM_SIZE);
-        data[16 + BQFC_FORM_SIZE] = 0;
+        data[16 + BQFC_FORM_SIZE] = i;
         memcpy(&data[17 + BQFC_FORM_SIZE], proof->proof, BQFC_FORM_SIZE);
         delete proof;
 
-        for (size_t i = 0; i < sizeof(data); i++) {
-            // Hex encode proof data for timelord
-            snprintf(&tl_data[4 + i * 2], 3, "%02hhx", data[i]);
-        }
-        Int32ToBytes((uint8_t *)tl_data, sizeof(data) * 2);
+        tl_enc_hex(&tl_data[4], data, sizeof(data));
+        Int32ToBytes((uint8_t *)tl_data, (sizeof(data) + i * sizeof(vdf_proof_segm)) * 2);
         write_data(conn, tl_data, sizeof(tl_data) - 1);
+        while (i) {
+            struct vdf_proof_segm *segm = (struct vdf_proof_segm *)data;
+
+            i--;
+            proof = conn->vdf.chkp_proofs[i];
+            Int64ToBytes(segm->iters, proof->iters);
+            memcpy(segm->B, proof->B, sizeof(proof->B));
+            memcpy(segm->proof, proof->proof, sizeof(proof->proof));
+
+            tl_enc_hex(tl_data, data, sizeof(*segm));
+            write_data(conn, tl_data, sizeof(*segm) * 2);
+        }
     }
 }
 

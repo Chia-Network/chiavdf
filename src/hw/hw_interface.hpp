@@ -17,7 +17,7 @@ struct vdf_value {
 extern int chia_vdf_is_emu;
 
 class ChiaDriver;
-ChiaDriver *init_hw(void);
+ChiaDriver *init_hw(double freq, double brd_voltage);
 void stop_hw(ChiaDriver *drv);
 
 struct vdf_state;

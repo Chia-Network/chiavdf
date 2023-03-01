@@ -6,6 +6,7 @@
 
 #include <cstdio>
 #include <fcntl.h>
+#include <getopt.h>
 #include <signal.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -40,6 +41,13 @@ struct vdf_proof_segm {
     uint8_t iters[sizeof(uint64_t)];
     uint8_t B[HW_VDF_B_SIZE];
     uint8_t proof[BQFC_FORM_SIZE];
+};
+
+struct vdf_client_opts {
+    double freq;
+    double voltage;
+    int port;
+    int n_vdfs;
 };
 
 static volatile bool g_stopping = false;
@@ -334,24 +342,69 @@ void event_loop(struct vdf_client *client)
     }
 }
 
+int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
+{
+    const struct option long_opts[] = {
+        {"freq", required_argument, NULL, 1},
+        {"voltage", required_argument, NULL, 1},
+        {0}
+    };
+    int long_idx = -1;
+    int ret;
+
+    opts->voltage = 0.8;
+    opts->freq = 1100.0;
+    opts->port = 0;
+    opts->n_vdfs = 3;
+
+    while ((ret = getopt_long(argc, argv, "", long_opts, &long_idx)) == 1) {
+        if (long_idx == 0) {
+            opts->freq = strtod(optarg, NULL);
+        } else if (long_idx == 1) {
+            opts->voltage = strtod(optarg, NULL);
+        }
+    }
+    if (ret != -1) {
+        LOG_ERROR("Invalid option");
+        return -1;
+    }
+    if (opts->voltage == 0.0 || opts->freq == 0.0) {
+        LOG_ERROR("Invalid freq or voltage specified");
+        return -1;
+    }
+
+    if (optind == argc) {
+        return -1;
+    }
+    opts->port = atoi(argv[optind]);
+    if (argc > optind + 1) {
+        opts->n_vdfs = atoi(argv[optind + 1]);
+    }
+    if (!opts->port || opts->n_vdfs < 1 || opts->n_vdfs > 3) {
+        LOG_ERROR("Invalid port or VDF count");
+        return -1;
+    }
+
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     struct vdf_client client;
     struct sigaction sa = {0};
+    struct vdf_client_opts opts;
 
-    if (argc < 2) {
-        LOG_INFO("Usage: %s PORT [N_VDFS]", argv[0]);
+    if (parse_opts(argc, argv, &opts) < 0) {
+        LOG_INFO("Usage: %s [--freq N] [--voltage N] PORT [N_VDFS]", argv[0]);
         return 1;
     }
 
     VdfBaseInit();
-    client.drv = init_hw();
+    client.drv = init_hw(opts.freq, opts.voltage);
 
-    client.port = atoi(argv[1]);
-    client.n_vdfs = 3;
-    if (argc > 2) {
-        client.n_vdfs = atoi(argv[2]);
-    }
+    client.port = opts.port;
+    client.n_vdfs = opts.n_vdfs;
+
     init_vdf_client(&client);
 
     sa.sa_handler = signal_handler;

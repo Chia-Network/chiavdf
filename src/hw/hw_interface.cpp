@@ -45,16 +45,16 @@ void prepare_job(ChiaDriver *drv, uint64_t n_iters, uint8_t *buf, mpz_t d, mpz_t
     drv->SerializeJob(buf, job_id, n_iters, a, b, D.impl, L.impl);
 }
 
-ChiaDriver *init_hw(void)
+ChiaDriver *init_hw(double freq, double set_brd_voltage)
 {
     ChiaDriver* drv = new ChiaDriver();
     if (drv->ftdi.Open()) {
         throw std::runtime_error("Failed to open device");
     }
 
-    double freq = 1100.0;
     bool set_status;
 
+    printf("Setting frequency to %f MHz\n", freq);
     set_status = drv->SetPLLFrequency(freq);
     if (set_status == false) {
       LOG_ERROR("Aborting since freq not set");
@@ -68,7 +68,7 @@ ChiaDriver *init_hw(void)
     double brd_voltage = drv->GetBoardVoltage();
     printf("Board voltage is %1.3f V\n", brd_voltage);
 
-    double set_brd_voltage = 0.80;
+    printf("Setting voltage to %1.3f V\n", set_brd_voltage);
     int ret_val = drv->SetBoardVoltage(set_brd_voltage);
     if (ret_val != 0) {
       LOG_ERROR("Aborting since set voltage failed");

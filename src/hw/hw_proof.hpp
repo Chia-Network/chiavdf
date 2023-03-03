@@ -16,7 +16,7 @@
 #define HW_VDF_CHKP_INTERVAL 1000000
 #define HW_VDF_MAX_AUX_THREADS 4
 #define HW_VDF_MAX_PROOF_THREADS 3
-#define HW_VDF_MAX_WQ 100
+#define HW_VDF_WQ_WARN_MULT 2
 #define HW_VDF_B_SIZE 33
 
 struct vdf_work {
@@ -57,6 +57,7 @@ struct vdf_state {
     mpz_t d, l, a2;
     std::thread aux_threads[HW_VDF_MAX_AUX_THREADS];
     std::deque<struct vdf_work *> wq;
+    uint32_t wq_warn_thres[2];
     //std::mutex wq_mtx;
     uint32_t interval;
     uint32_t chkp_interval;

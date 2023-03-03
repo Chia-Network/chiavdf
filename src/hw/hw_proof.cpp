@@ -180,6 +180,7 @@ size_t hw_proof_thread_cnt(struct vdf_state *vdf)
 void hw_proof_process_work(struct vdf_state *vdf)
 {
     uint8_t busy = vdf->aux_threads_busy;
+    uint32_t qlen;
 
     for (int i = 0; i < HW_VDF_MAX_AUX_THREADS; i++) {
         if (vdf->req_proofs.empty() ||
@@ -232,9 +233,17 @@ void hw_proof_process_work(struct vdf_state *vdf)
         }
     }
 
-    if (!vdf->wq.empty()) {
-        LOG_INFO("VDF %d: Warning: too much work for VDF aux threads; qlen=%zu",
-                vdf->idx, vdf->wq.size());
+    qlen = vdf->wq.size();
+    if (qlen >= vdf->wq_warn_thres[1]) {
+        vdf->wq_warn_thres[0] *= HW_VDF_WQ_WARN_MULT;
+        vdf->wq_warn_thres[1] *= HW_VDF_WQ_WARN_MULT;
+        LOG_INFO("VDF %d: Warning: too much work for VDF aux threads; qlen=%u",
+                vdf->idx, qlen);
+    } else if (vdf->wq_warn_thres[0] != 1 && qlen < vdf->wq_warn_thres[0]) {
+        vdf->wq_warn_thres[0] /= HW_VDF_WQ_WARN_MULT;
+        vdf->wq_warn_thres[1] /= HW_VDF_WQ_WARN_MULT;
+        LOG_INFO("VDF %d: Work queue for VDF aux threads reduced; qlen=%u",
+                vdf->idx, qlen);
     }
 }
 
@@ -513,6 +522,8 @@ void init_vdf_state(struct vdf_state *vdf, const char *d_str, const uint8_t *ini
     vdf->n_chkpts = 0;
     vdf->n_bad = 0;
     vdf->log_cnt = 0;
+    vdf->wq_warn_thres[0] = 1;
+    vdf->wq_warn_thres[1] = HW_VDF_WQ_WARN_MULT * HW_VDF_WQ_WARN_MULT;
 
     mpz_init_set_str(vdf->d, d_str, 0);
     mpz_init_set(vdf->l, vdf->d);

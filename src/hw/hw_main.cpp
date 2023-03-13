@@ -44,6 +44,7 @@ int main(int argc, char **argv)
     uint8_t init_form[BQFC_FORM_SIZE] = { 0x08 };
     struct vdf_state vdfs[N_HW_VDFS];
     struct vdf_value values[N_HW_VDFS];
+    struct vdf_proof proofs[N_HW_VDFS];
     std::thread proof_threads[N_HW_VDFS];
     //std::thread vdf_threads[N_HW_VDFS];
     ChiaDriver *drv;
@@ -86,7 +87,9 @@ int main(int argc, char **argv)
                 stop_hw_vdf(drv, i);
                 vdfs_mask &= ~(1 << i);
                 n_completed++;
-                proof_threads[i] = std::thread(hw_compute_proof, &vdfs[i], 0, n_iters, (struct vdf_proof *)NULL, 255);
+                proofs[i].iters = n_iters;
+                proofs[i].seg_iters = n_iters;
+                proof_threads[i] = std::thread(hw_compute_proof, &vdfs[i], SIZE_MAX, &proofs[i], 255);
             }
         }
         //if (i == n_vdfs) {

@@ -19,6 +19,10 @@
 #define HW_VDF_WQ_WARN_MULT 2
 #define HW_VDF_B_SIZE 33
 
+#define HW_VDF_PROOF_FLAG_DONE 1
+#define HW_VDF_PROOF_FLAG_IS_REQ 2
+#define HW_VDF_PROOF_NONE ((uint16_t)0xffff)
+
 struct vdf_work {
     //size_t raw_idx;
     struct vdf_value start_val;
@@ -33,9 +37,13 @@ struct vdf_proof_req {
 
 struct vdf_proof {
     uint64_t iters;
+    uint64_t seg_iters;
     uint8_t y[BQFC_FORM_SIZE];
     uint8_t proof[BQFC_FORM_SIZE];
     uint8_t B[HW_VDF_B_SIZE];
+
+    uint8_t flags;
+    uint16_t prev;
 };
 
 struct vdf_state {
@@ -52,8 +60,11 @@ struct vdf_state {
     std::vector<uint8_t> valid_values;
     std::mutex valid_values_mtx;
     std::deque<struct vdf_proof_req> req_proofs;
-    std::vector<struct vdf_proof *> proofs;
-    std::vector<struct vdf_proof *> chkp_proofs;
+    std::vector<struct vdf_proof> proofs;
+    std::mutex proofs_resize_mtx;
+    std::vector<uint16_t> chkp_proofs; /* sorted checkpoint proofs */
+    std::vector<uint16_t> queued_proofs; /* sorted queued proofs */
+    std::vector<uint16_t> done_proofs; /* requested and not sent */
     mpz_t d, l, a2;
     std::thread aux_threads[HW_VDF_MAX_AUX_THREADS];
     std::deque<struct vdf_work *> wq;
@@ -61,10 +72,10 @@ struct vdf_state {
     //std::mutex wq_mtx;
     uint32_t interval;
     uint32_t chkp_interval;
-    uint32_t n_chkpts;
     uint32_t n_bad;
     uint32_t log_cnt;
     std::atomic<uint8_t> aux_threads_busy;
+    std::atomic<uint8_t> n_proof_threads;
     uint8_t idx;
     bool completed;
     bool stopping;
@@ -75,7 +86,7 @@ void hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val);
 void hw_proof_handle_value(struct vdf_state *vdf, struct vdf_value *val);
 void hw_stop_proof(struct vdf_state *vdf);
 void hw_request_proof(struct vdf_state *vdf, uint64_t iters, bool is_chkp);
-void hw_compute_proof(struct vdf_state *vdf, uint64_t start_iters, uint64_t proof_iters, struct vdf_proof *out_proof, uint8_t thr_idx);
+void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof *out_proof, uint8_t thr_idx);
 int hw_retrieve_proof(struct vdf_state *vdf, struct vdf_proof **proof);
 void init_vdf_state(struct vdf_state *vdf, const char *d_str, const uint8_t *init_form, uint64_t n_iters, uint8_t idx);
 void clear_vdf_state(struct vdf_state *vdf);

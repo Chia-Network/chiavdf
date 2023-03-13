@@ -136,6 +136,104 @@ void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_work *work, int thr_
     vdf->aux_threads_busy &= ~(1U << thr_idx);
 }
 
+class ProofCmp {
+public:
+    ProofCmp(std::vector<struct vdf_proof> &p)
+    {
+        proofs = p.data();
+    }
+
+    bool operator() (uint16_t a, uint16_t b)
+    {
+        return proofs[a].iters < proofs[b].iters;
+    }
+
+private:
+    struct vdf_proof *proofs;
+};
+
+uint16_t hw_queue_proof(struct vdf_state *vdf, uint64_t seg_iters, uint16_t prev, uint8_t flags)
+{
+    uint16_t pos;
+    struct vdf_proof proof;
+
+    proof.iters = seg_iters;
+    if (prev != HW_VDF_PROOF_NONE) {
+        proof.iters += vdf->proofs[prev].iters;
+    }
+    proof.seg_iters = seg_iters;
+    proof.flags = flags;
+    proof.prev = prev;
+    pos = vdf->proofs.size();
+
+    vdf->proofs_resize_mtx.lock();
+    vdf->proofs.push_back(proof);
+    vdf->proofs_resize_mtx.unlock();
+
+    vdf->queued_proofs.push_back(pos);
+    if (!(flags & HW_VDF_PROOF_FLAG_IS_REQ)) {
+        vdf->chkp_proofs.push_back(pos);
+    }
+
+    return pos;
+}
+
+static const uint32_t g_chkp_thres = 500000;
+
+void hw_proof_process_req(struct vdf_state *vdf)
+{
+    uint64_t iters;
+    uint64_t req_iters;
+    uint64_t base_iters = 0;
+    uint64_t chkp_iters;
+    uint32_t chkp_div = 3, chkp_mul = 2;
+    int i;
+    uint16_t prev = HW_VDF_PROOF_NONE;
+
+    if (vdf->req_proofs.empty()) {
+        return;
+    }
+
+    req_iters = vdf->req_proofs[0].iters;
+    vdf->req_proofs.erase(vdf->req_proofs.begin());
+    for (i = vdf->chkp_proofs.size() - 1; i >= 0; i--) {
+        uint16_t idx = vdf->chkp_proofs[i];
+        iters = vdf->proofs[idx].iters;
+        if (iters <= req_iters) {
+            base_iters = iters;
+            prev = idx;
+            break;
+        }
+    }
+
+    iters = req_iters - base_iters;
+
+    if (iters > g_chkp_thres) {
+        chkp_iters = iters * chkp_mul / chkp_div;
+        if (iters - chkp_iters > g_chkp_thres) {
+            // Split iters as [58%, 29%, 13%]; 29 * 100 / (29 + 13) == 69
+            uint32_t chkp2_div[] = { 100, 100 }, chkp2_mul[] = { 58, 69 };
+
+            chkp_iters = iters * chkp2_mul[0] / chkp2_div[0];
+            chkp_iters = chkp_iters / vdf->interval * vdf->interval;
+            prev = hw_queue_proof(vdf, chkp_iters, prev, 0);
+            iters -= chkp_iters;
+
+            chkp_iters = iters * chkp2_mul[1] / chkp2_div[1];
+        }
+        chkp_iters = chkp_iters / vdf->interval * vdf->interval;
+        prev = hw_queue_proof(vdf, chkp_iters, prev, 0);
+        iters -= chkp_iters;
+    }
+    hw_queue_proof(vdf, iters, prev, HW_VDF_PROOF_FLAG_IS_REQ);
+
+    {
+        ProofCmp cmp(vdf->proofs);
+        std::sort(vdf->queued_proofs.begin(), vdf->queued_proofs.end(), cmp);
+        std::sort(vdf->chkp_proofs.begin(), vdf->chkp_proofs.end(), cmp);
+    }
+}
+
 bool hw_proof_req_cmp(struct vdf_proof_req &a, struct vdf_proof_req &b)
 {
     return a.iters < b.iters;
@@ -145,9 +243,6 @@ void hw_request_proof(struct vdf_state *vdf, uint64_t iters, bool is_chkp)
 {
     vdf->req_proofs.push_back({iters, is_chkp});
     std::sort(vdf->req_proofs.begin(), vdf->req_proofs.end(), hw_proof_req_cmp);
-    if (is_chkp) {
-        vdf->n_chkpts++;
-    }
 }
 
 void hw_proof_add_work(struct vdf_state *vdf, uint64_t next_iters, uint32_t n_steps)
@@ -163,18 +258,7 @@ void hw_proof_add_work(struct vdf_state *vdf, uint64_t next_iters, uint32_t n_st
 
 size_t hw_proof_thread_cnt(struct vdf_state *vdf)
 {
-    size_t cnt = 0;
-    for (size_t i = 0; i < vdf->proofs.size(); i++) {
-        if (!vdf->proofs[i]->iters) {
-            cnt++;
-        }
-    }
-    for (size_t i = 0; i < vdf->chkp_proofs.size(); i++) {
-        if (!vdf->chkp_proofs[i]->iters) {
-            cnt++;
-        }
-    }
-    return cnt;
+    return vdf->n_proof_threads;
 }
 
 void hw_proof_process_work(struct vdf_state *vdf)
@@ -182,35 +266,35 @@ void hw_proof_process_work(struct vdf_state *vdf)
     uint8_t busy = vdf->aux_threads_busy;
     uint32_t qlen;
 
+    while (!vdf->req_proofs.empty() && vdf->queued_proofs.size() < 3) {
+        hw_proof_process_req(vdf);
+    }
+
     for (int i = 0; i < HW_VDF_MAX_AUX_THREADS; i++) {
-        if (vdf->req_proofs.empty() ||
-                vdf->last_val.iters < vdf->req_proofs[0].iters ||
+        uint64_t iters;
+        struct vdf_proof *proof;
+        size_t idx;
+
+        if (vdf->queued_proofs.empty()) {
+            break;
+        }
+        idx = vdf->queued_proofs[0];
+        proof = &vdf->proofs[idx];
+        iters = proof->iters;
+        if (vdf->last_val.iters < iters ||
                 hw_proof_thread_cnt(vdf) >= HW_VDF_MAX_PROOF_THREADS) {
             break;
         }
 
         if (!(busy & (1U << i))) {
-            uint64_t iters = vdf->req_proofs[0].iters;
-            bool is_chkp = vdf->req_proofs[0].is_chkp;
-            uint64_t start_iters;
-            auto *proof = new struct vdf_proof;
+            bool is_chkp = !(proof->flags & HW_VDF_PROOF_FLAG_IS_REQ);
 
-            proof->iters = 0;
-            if (is_chkp) {
-                vdf->chkp_proofs.push_back(proof);
-                start_iters = iters - vdf->chkp_interval;
-            } else {
-                vdf->proofs.push_back(proof);
-                start_iters = iters - iters % vdf->chkp_interval;
-            }
-            // Indicate whether B should be populated in its zeroth byte
-            proof->B[0] = (uint8_t)is_chkp;
-            vdf->req_proofs.erase(vdf->req_proofs.begin());
-
-            LOG_INFO("VDF %d: Starting proof thread %d for iters=%lu%s",
-                    vdf->idx, i, iters, is_chkp ? " [checkpoint]" : "");
+            LOG_INFO("VDF %d: Starting proof thread %d for iters=%lu, length=%lu%s",
+                    vdf->idx, i, iters, proof->seg_iters, is_chkp ? " [checkpoint]" : "");
+            vdf->queued_proofs.erase(vdf->queued_proofs.begin());
             vdf->aux_threads_busy |= 1U << i;
-            std::thread(hw_compute_proof, vdf, start_iters, iters, proof, i).detach();
+            vdf->n_proof_threads++;
+            std::thread(hw_compute_proof, vdf, idx, proof, i).detach();
         }
     }
 
@@ -320,10 +404,6 @@ void hw_proof_handle_value(struct vdf_state *vdf, struct vdf_value *val)
         hw_proof_add_work(vdf, start_iters, n_steps);
     }
 
-    if (val->iters / vdf->chkp_interval > vdf->n_chkpts) {
-        hw_request_proof(vdf, val->iters / vdf->chkp_interval * vdf->chkp_interval, true);
-    }
-
     //vdf->raw_values.push_back(*val);
     vdf->cur_iters = val->iters;
     std::swap(vdf->last_val, *val);
@@ -413,15 +493,29 @@ class HwProver : public Prover {
     uint32_t pos_offset;
 };
 
-void hw_compute_proof(struct vdf_state *vdf, uint64_t start_iters, uint64_t proof_iters, struct vdf_proof *out_proof, uint8_t thr_idx)
+void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof *out_proof, uint8_t thr_idx)
 {
-    form x, y, proof;
-    size_t start_pos = start_iters / vdf->interval;
-    size_t pos = proof_iters / vdf->interval;
-    uint64_t iters = pos * vdf->interval;
+    form x, y, proof_val;
+    uint64_t proof_iters, start_iters, iters;
+    size_t pos, start_pos;
     integer d(vdf->d), l(vdf->l);
     PulmarkReducer reducer;
+    bool is_chkp;
     timepoint_t start_time = vdf_get_cur_time();
+
+    vdf->proofs_resize_mtx.lock();
+    if (proof_idx != SIZE_MAX) {
+        out_proof = &vdf->proofs[proof_idx];
+    }
+
+    proof_iters = out_proof->iters;
+    start_iters = proof_iters - out_proof->seg_iters;
+    is_chkp = !(out_proof->flags & HW_VDF_PROOF_FLAG_IS_REQ);
+    vdf->proofs_resize_mtx.unlock();
+
+    start_pos = start_iters / vdf->interval;
+    pos = proof_iters / vdf->interval;
+    iters = pos * vdf->interval;
 
     if (hw_proof_wait_value(vdf, start_pos) || hw_proof_wait_value(vdf, pos)) {
         LOG_INFO("VDF %d: Proof stopped", vdf->idx);
@@ -443,37 +537,54 @@ void hw_compute_proof(struct vdf_state *vdf, uint64_t start_iters, uint64_t proo
         abort();
     }
 
+
     {
         Segment seg(start_iters, proof_iters - start_iters, x, y);
         HwProver prover(seg, d, vdf);
 
+        if (out_proof->flags & HW_VDF_PROOF_FLAG_IS_REQ &&
+                seg.length > g_chkp_thres) {
+            LOG_INFO("VDF %d: Warning: too long final proof segment length=%lu",
+                    vdf->idx, seg.length);
+        }
+
         prover.start();
 
         if (prover.IsFinished()) {
+            size_t d_bits;
             uint64_t elapsed_us = vdf_get_elapsed_us(start_time);
-            proof = prover.GetProof();
-            LOG_INFO("VDF %d: Proof done for iters=%lu in %.3fs",
-                    vdf->idx, proof_iters, (double)elapsed_us / 1000000);
-
             bool is_valid = false;
-            VerifyWesolowskiProof(d, x, y, proof, seg.length, is_valid);
+            proof_val = prover.GetProof();
+
+            LOG_INFO("VDF %d: Proof done for iters=%lu, length=%lu in %.3fs%s",
+                    vdf->idx, proof_iters, seg.length,
+                    (double)elapsed_us / 1000000, is_chkp ? " [checkpoint]" : "");
+
+            VerifyWesolowskiProof(d, x, y, proof_val, seg.length, is_valid);
             if (!is_valid) {
                 LOG_ERROR("VDF %d: Proof NOT VALID", vdf->idx);
                 abort();
             }
 
-            if (out_proof) {
-                size_t d_bits = mpz_sizeinbase(d.impl, 2);
-                bqfc_serialize(out_proof->y, y.a.impl, y.b.impl, d_bits);
-                bqfc_serialize(out_proof->proof, proof.a.impl, proof.b.impl, d_bits);
-                if (out_proof->B[0]) {
-                    integer B = GetB(d, x, y);
-                    mpz_export(out_proof->B, NULL, 1, 1, 0, 0, B.impl);
-                    out_proof->iters = seg.length;
-                } else {
-                    out_proof->iters = proof_iters;
-                }
+            d_bits = mpz_sizeinbase(d.impl, 2);
+
+            vdf->proofs_resize_mtx.lock();
+            if (proof_idx != SIZE_MAX) {
+                out_proof = &vdf->proofs[proof_idx];
             }
+
+            bqfc_serialize(out_proof->y, y.a.impl, y.b.impl, d_bits);
+            bqfc_serialize(out_proof->proof, proof_val.a.impl, proof_val.b.impl, d_bits);
+
+            if (out_proof->flags & HW_VDF_PROOF_FLAG_IS_REQ) {
+                vdf->done_proofs.push_back((uint16_t)proof_idx);
+            } else {
+                integer B = GetB(d, x, y);
+
+                mpz_export(out_proof->B, NULL, 1, 1, 0, 0, B.impl);
+            }
+            out_proof->flags |= HW_VDF_PROOF_FLAG_DONE;
+            vdf->proofs_resize_mtx.unlock();
         } else {
             LOG_INFO("VDF %d: Proof stopped", vdf->idx);
         }
@@ -482,11 +593,13 @@ void hw_compute_proof(struct vdf_state *vdf, uint64_t start_iters, uint64_t proo
 out:
     if (thr_idx < HW_VDF_MAX_AUX_THREADS) {
         vdf->aux_threads_busy &= ~(1U << thr_idx);
+        vdf->n_proof_threads--;
     }
 }
 
-int hw_retrieve_proof(struct vdf_state *vdf, struct vdf_proof **proof)
+int hw_retrieve_proof(struct vdf_state *vdf, struct vdf_proof **out_proof)
 {
+#if 0
     if (!vdf->proofs.empty()) {
         for (size_t i = 0; i < vdf->proofs.size(); i++) {
             uint64_t iters = vdf->proofs[i]->iters;
@@ -495,6 +608,31 @@ int hw_retrieve_proof(struct vdf_state *vdf, struct vdf_proof **proof)
                 *proof = vdf->proofs[i];
                 vdf->proofs.erase(vdf->proofs.begin() + i);
                 return last_chkp;
+            }
+        }
+    }
+#endif
+    if (!vdf->done_proofs.empty()) {
+        for (size_t i = 0; i < vdf->done_proofs.size(); i++) {
+            uint16_t idx = vdf->done_proofs[i];
+            struct vdf_proof *proof = &vdf->proofs[idx];
+            uint16_t j = proof->prev;
+            int cnt = 0;
+            bool done = true;
+
+            while (j != HW_VDF_PROOF_NONE) {
+                if (!(vdf->proofs[j].flags & HW_VDF_PROOF_FLAG_DONE)) {
+                    done = false;
+                    break;
+                }
+                j = vdf->proofs[j].prev;
+                cnt++;
+            }
+
+            if (done) {
+                *out_proof = proof;
+                vdf->done_proofs.erase(vdf->done_proofs.begin() + i);
+                return cnt;
             }
         }
     }
@@ -519,7 +657,7 @@ void init_vdf_state(struct vdf_state *vdf, const char *d_str, const uint8_t *ini
     vdf->completed = false;
     vdf->stopping = false;
     vdf->aux_threads_busy = 0;
-    vdf->n_chkpts = 0;
+    vdf->n_proof_threads = 0;
     vdf->n_bad = 0;
     vdf->log_cnt = 0;
     vdf->wq_warn_thres[0] = 1;
@@ -551,15 +689,13 @@ void init_vdf_state(struct vdf_state *vdf, const char *d_str, const uint8_t *ini
 void clear_vdf_state(struct vdf_state *vdf)
 {
     mpz_clears(vdf->d, vdf->l, vdf->a2, NULL);
-    for (size_t i = 0; i < vdf->proofs.size(); i++) {
-        delete vdf->proofs[i];
-    }
+
     vdf->proofs.clear();
-    for (size_t i = 0; i < vdf->chkp_proofs.size(); i++) {
-        delete vdf->chkp_proofs[i];
-    }
-    vdf->chkp_proofs.clear();
     vdf->req_proofs.clear();
+    vdf->chkp_proofs.clear();
+    vdf->queued_proofs.clear();
+    vdf->done_proofs.clear();
+
     vdf->values.clear();
     vdf->valid_values.clear();
     mpz_clears(vdf->last_val.a, vdf->last_val.b, NULL);

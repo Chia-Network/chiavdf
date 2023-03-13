@@ -204,7 +204,6 @@ void handle_proofs(struct vdf_client *client, struct vdf_conn *conn)
         memcpy(&data[16], proof->y, BQFC_FORM_SIZE);
         data[16 + BQFC_FORM_SIZE] = i;
         memcpy(&data[17 + BQFC_FORM_SIZE], proof->proof, BQFC_FORM_SIZE);
-        delete proof;
 
         tl_enc_hex(&tl_data[4], data, sizeof(data));
         Int32ToBytes((uint8_t *)tl_data, (sizeof(data) + i * sizeof(vdf_proof_segm)) * 2);
@@ -213,8 +212,9 @@ void handle_proofs(struct vdf_client *client, struct vdf_conn *conn)
             struct vdf_proof_segm *segm = (struct vdf_proof_segm *)data;
 
             i--;
-            proof = conn->vdf.chkp_proofs[i];
-            Int64ToBytes(segm->iters, proof->iters);
+            //proof = conn->vdf.chkp_proofs[i];
+            proof = &conn->vdf.proofs[proof->prev];
+            Int64ToBytes(segm->iters, proof->seg_iters);
             memcpy(segm->B, proof->B, sizeof(proof->B));
             memcpy(segm->proof, proof->proof, sizeof(proof->proof));
 

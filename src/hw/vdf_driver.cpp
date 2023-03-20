@@ -557,7 +557,8 @@ int VdfDriver::SetBoardVoltage(double voltage) {
     return 1;
   }
 
-  int ret_val = I2CWriteReg(VR_I2C_ADDR, 0x7, vid);
+  int ret_val = I2CWriteReg(VR_I2C_ADDR, 0x8, 0xe4); // Fixed compensation value
+  ret_val |= I2CWriteReg(VR_I2C_ADDR, 0x7, vid);     // Voltage value
   if (ret_val != 0) {
     fprintf(stderr, "SetBoardVoltage failed to write reg, %d\n", ret_val);
   }

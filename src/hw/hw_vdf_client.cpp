@@ -4,6 +4,7 @@
 #include "bqfc.h"
 #include "vdf_base.hpp"
 
+#include <arpa/inet.h>
 #include <cstdio>
 #include <fcntl.h>
 #include <getopt.h>
@@ -32,6 +33,7 @@ struct vdf_conn {
 struct vdf_client_opts {
     double freq;
     double voltage;
+    uint32_t ip;
     int port;
     int n_vdfs;
 };
@@ -62,6 +64,7 @@ void init_conn(struct vdf_conn *conn, uint32_t ip, int port)
     int ret;
     struct sockaddr_in sa = { AF_INET, htons(port), { htonl(ip) } };
     conn->sock = socket(AF_INET, SOCK_STREAM, 0);
+    LOG_INFO("Connecting to %s", inet_ntoa(sa.sin_addr));
     ret = connect(conn->sock, (struct sockaddr *)&sa, sizeof(sa));
     if (ret < 0) {
         perror("connect");
@@ -290,7 +293,7 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
             throw std::runtime_error("Bad data size");
         }
     } else if (conn->state == CLOSED && !g_stopping) {
-        init_conn(conn, INADDR_LOOPBACK, client->opts.port);
+        init_conn(conn, client->opts.ip, client->opts.port);
     }
 }
 
@@ -346,6 +349,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     const struct option long_opts[] = {
         {"freq", required_argument, NULL, 1},
         {"voltage", required_argument, NULL, 1},
+        {"ip", required_argument, NULL, 1},
         {0}
     };
     int long_idx = -1;
@@ -353,6 +357,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
 
     opts->voltage = 0.8;
     opts->freq = 1100.0;
+    opts->ip = INADDR_LOOPBACK;
     opts->port = 0;
     opts->n_vdfs = 3;
 
@@ -361,6 +366,8 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
             opts->freq = strtod(optarg, NULL);
         } else if (long_idx == 1) {
             opts->voltage = strtod(optarg, NULL);
+        } else if (long_idx == 2) {
+            opts->ip = ntohl(inet_addr(optarg));
         }
     }
     if (ret != -1) {
@@ -369,6 +376,10 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     }
     if (opts->voltage == 0.0 || opts->freq == 0.0) {
         LOG_ERROR("Invalid freq or voltage specified");
+        return -1;
+    }
+    if (opts->ip == INADDR_NONE) {
+        LOG_ERROR("Invalid IP address specified");
         return -1;
     }
 

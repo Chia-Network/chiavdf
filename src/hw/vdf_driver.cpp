@@ -446,6 +446,31 @@ int VdfDriver::Reset(uint32_t sleep_duration = 1000) {
     return ret_val;
   }
   usleep(sleep_duration);
+  // Some boards will contain FT4222H chips with the OTP programmed such
+  // that GPIO2 (VDF_RST_N) is configured as an open drain output.  In
+  // this case, GPIO2 powers up actively driving out low.  In order to
+  // release reset, the GPIO2 needs to not be actively driven so the 1.8V
+  // 10Kohm pullup on the board causes VDF_RST_N to be high thus removing
+  // the reset condition.  This is accomplished not by the method
+  // TriGPIO(port=2) but by SetGPIO(port=2, value=1).
+  //
+  // Other boards may not have their OTP programmed in which case, GPIO2
+  // acts as a generic GPIO whose output enable and output value are
+  // fully under the control of software.  In this case TriGPIO(port=2)
+  // removes the reset condition.  Using SetGPIO(port=2, value=1) would
+  // actively drive high which could cause contention between low and
+  // high drivers in the event that another reset initiator (voltage
+  // regulator or reset button for instance) were driving reset low.
+  //
+  // A compromise here is to issue SetGPIO(port=2, value=1) followed
+  // immediately by TriGPIO(2).  The hope is that the amount of potential
+  // low/high contention is limited in the event that the FT4222H has
+  // not had its OTP programmed.
+  ret_val = ftdi.SetGPIO(GPIO_PORT2, 1);
+  if (ret_val != 0) {
+    fprintf(stderr, "Reset failed to set gpio, %d\n", ret_val);
+    return ret_val;
+  }
   ret_val = ftdi.TriGPIO(GPIO_PORT2);
   if (ret_val != 0) {
     fprintf(stderr, "Reset failed to tri-state gpio, %d\n", ret_val);

@@ -4,6 +4,7 @@
 #include "bqfc.h"
 #include "vdf_base.hpp"
 
+#include <arpa/inet.h>
 #include <cstdio>
 #include <fcntl.h>
 #include <getopt.h>
@@ -29,25 +30,25 @@ struct vdf_conn {
     enum conn_state state;
 };
 
+struct vdf_client_opts {
+    double freq;
+    double voltage;
+    uint32_t ip;
+    int port;
+    int n_vdfs;
+};
+
 struct vdf_client {
     struct vdf_conn conns[N_HW_VDFS];
     struct vdf_value values[N_HW_VDFS];
+    struct vdf_client_opts opts;
     ChiaDriver *drv;
-    int port;
-    uint8_t n_vdfs;
 };
 
 struct vdf_proof_segm {
     uint8_t iters[sizeof(uint64_t)];
     uint8_t B[HW_VDF_B_SIZE];
     uint8_t proof[BQFC_FORM_SIZE];
-};
-
-struct vdf_client_opts {
-    double freq;
-    double voltage;
-    int port;
-    int n_vdfs;
 };
 
 static volatile bool g_stopping = false;
@@ -58,11 +59,12 @@ void signal_handler(int sig)
     g_stopping = true;
 }
 
-void init_conn(struct vdf_conn *conn, int port)
+void init_conn(struct vdf_conn *conn, uint32_t ip, int port)
 {
     int ret;
-    struct sockaddr_in sa = { AF_INET, htons(port), { htonl(INADDR_LOOPBACK) } };
+    struct sockaddr_in sa = { AF_INET, htons(port), { htonl(ip) } };
     conn->sock = socket(AF_INET, SOCK_STREAM, 0);
+    LOG_INFO("Connecting to %s", inet_ntoa(sa.sin_addr));
     ret = connect(conn->sock, (struct sockaddr *)&sa, sizeof(sa));
     if (ret < 0) {
         perror("connect");
@@ -81,7 +83,7 @@ void init_conn(struct vdf_conn *conn, int port)
 
 void init_vdf_client(struct vdf_client *client)
 {
-    for (uint8_t i = 0; i < client->n_vdfs; i++) {
+    for (uint8_t i = 0; i < client->opts.n_vdfs; i++) {
         client->conns[i].vdf.idx = i;
         client->conns[i].state = CLOSED;
         client->conns[i].sock = -1;
@@ -291,7 +293,7 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
             throw std::runtime_error("Bad data size");
         }
     } else if (conn->state == CLOSED && !g_stopping) {
-        init_conn(conn, client->port);
+        init_conn(conn, client->opts.ip, client->opts.port);
     }
 }
 
@@ -303,7 +305,7 @@ void event_loop(struct vdf_client *client)
         uint8_t vdfs_mask = 0;
         uint8_t temp_flag = loop_cnt % temp_period ? 0 : HW_VDF_TEMP_FLAG;
 
-        for (uint8_t i = 0; i < client->n_vdfs; i++) {
+        for (uint8_t i = 0; i < client->opts.n_vdfs; i++) {
             handle_conn(client, &client->conns[i]);
             if (client->conns[i].state == RUNNING) {
                 vdfs_mask |= 1 << i;
@@ -314,18 +316,18 @@ void event_loop(struct vdf_client *client)
             read_hw_status(client->drv, vdfs_mask | temp_flag, client->values);
         } else if (g_stopping) {
             uint8_t n_closed = 0;
-            for (uint8_t i = 0; i < client->n_vdfs; i++) {
+            for (uint8_t i = 0; i < client->opts.n_vdfs; i++) {
                 if (client->conns[i].state == CLOSED) {
                     n_closed++;
                 }
             }
-            if (n_closed == client->n_vdfs) {
+            if (n_closed == client->opts.n_vdfs) {
                 LOG_INFO("All VDFs stopped, exiting");
                 break;
             }
         }
 
-        for (uint8_t i = 0; i < client->n_vdfs; i++) {
+        for (uint8_t i = 0; i < client->opts.n_vdfs; i++) {
             if (vdfs_mask & (1 << i)) {
                 hw_proof_add_value(&client->conns[i].vdf, &client->values[i]);
                 if (client->conns[i].vdf.completed) {
@@ -347,6 +349,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     const struct option long_opts[] = {
         {"freq", required_argument, NULL, 1},
         {"voltage", required_argument, NULL, 1},
+        {"ip", required_argument, NULL, 1},
         {0}
     };
     int long_idx = -1;
@@ -354,6 +357,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
 
     opts->voltage = 0.8;
     opts->freq = 1100.0;
+    opts->ip = INADDR_LOOPBACK;
     opts->port = 0;
     opts->n_vdfs = 3;
 
@@ -362,6 +366,8 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
             opts->freq = strtod(optarg, NULL);
         } else if (long_idx == 1) {
             opts->voltage = strtod(optarg, NULL);
+        } else if (long_idx == 2) {
+            opts->ip = ntohl(inet_addr(optarg));
         }
     }
     if (ret != -1) {
@@ -370,6 +376,10 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     }
     if (opts->voltage == 0.0 || opts->freq == 0.0) {
         LOG_ERROR("Invalid freq or voltage specified");
+        return -1;
+    }
+    if (opts->ip == INADDR_NONE) {
+        LOG_ERROR("Invalid IP address specified");
         return -1;
     }
 
@@ -392,18 +402,14 @@ int main(int argc, char **argv)
 {
     struct vdf_client client;
     struct sigaction sa = {0};
-    struct vdf_client_opts opts;
 
-    if (parse_opts(argc, argv, &opts) < 0) {
+    if (parse_opts(argc, argv, &client.opts) < 0) {
         LOG_INFO("Usage: %s [--freq N] [--voltage N] PORT [N_VDFS]", argv[0]);
         return 1;
     }
 
     VdfBaseInit();
-    client.drv = init_hw(opts.freq, opts.voltage);
-
-    client.port = opts.port;
-    client.n_vdfs = opts.n_vdfs;
+    client.drv = init_hw(client.opts.freq, client.opts.voltage);
 
     init_vdf_client(&client);
 

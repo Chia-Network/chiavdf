@@ -256,11 +256,6 @@ void hw_proof_add_work(struct vdf_state *vdf, uint64_t next_iters, uint32_t n_st
     vdf->wq.push_back(work);
 }
 
-size_t hw_proof_thread_cnt(struct vdf_state *vdf)
-{
-    return vdf->n_proof_threads;
-}
-
 void hw_proof_process_work(struct vdf_state *vdf)
 {
     uint8_t busy = vdf->aux_threads_busy;
@@ -270,7 +265,7 @@ void hw_proof_process_work(struct vdf_state *vdf)
         hw_proof_process_req(vdf);
     }
 
-    for (int i = 0; i < HW_VDF_MAX_AUX_THREADS; i++) {
+    for (int i = 0; i < vdf->max_aux_threads; i++) {
         uint64_t iters;
         struct vdf_proof *proof;
         size_t idx;
@@ -282,7 +277,7 @@ void hw_proof_process_work(struct vdf_state *vdf)
         proof = &vdf->proofs[idx];
         iters = proof->iters;
         if (vdf->last_val.iters < iters ||
-                hw_proof_thread_cnt(vdf) >= HW_VDF_MAX_PROOF_THREADS) {
+                vdf->n_proof_threads >= vdf->max_proof_threads) {
             break;
         }
 
@@ -300,7 +295,7 @@ void hw_proof_process_work(struct vdf_state *vdf)
 
     busy = vdf->aux_threads_busy;
 
-    for (int i = 0; i < HW_VDF_MAX_AUX_THREADS; i++) {
+    for (int i = 0; i < vdf->max_aux_threads; i++) {
         if (!(busy & (1U << i))) {
             struct vdf_work *work;
 
@@ -591,7 +586,7 @@ void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof 
     }
 
 out:
-    if (thr_idx < HW_VDF_MAX_AUX_THREADS) {
+    if (thr_idx < vdf->max_aux_threads) {
         vdf->aux_threads_busy &= ~(1U << thr_idx);
         vdf->n_proof_threads--;
     }
@@ -639,7 +634,7 @@ int hw_retrieve_proof(struct vdf_state *vdf, struct vdf_proof **out_proof)
     return -1;
 }
 
-void init_vdf_state(struct vdf_state *vdf, const char *d_str, const uint8_t *init_form, uint64_t n_iters, uint8_t idx)
+void init_vdf_state(struct vdf_state *vdf, struct vdf_proof_opts *opts, const char *d_str, const uint8_t *init_form, uint64_t n_iters, uint8_t idx)
 {
     //int ret;
     //struct vdf_value initial;
@@ -662,6 +657,15 @@ void init_vdf_state(struct vdf_state *vdf, const char *d_str, const uint8_t *ini
     vdf->log_cnt = 0;
     vdf->wq_warn_thres[0] = 1;
     vdf->wq_warn_thres[1] = HW_VDF_WQ_WARN_MULT * HW_VDF_WQ_WARN_MULT;
+
+    vdf->max_aux_threads = HW_VDF_DEFAULT_MAX_AUX_THREADS;
+    if (opts && opts->max_aux_threads) {
+        vdf->max_aux_threads = opts->max_aux_threads;
+    }
+    vdf->max_proof_threads = vdf->max_aux_threads - 1;
+    if (opts && opts->max_proof_threads) {
+        vdf->max_proof_threads = opts->max_proof_threads;
+    }
 
     mpz_init_set_str(vdf->d, d_str, 0);
     mpz_init_set(vdf->l, vdf->d);

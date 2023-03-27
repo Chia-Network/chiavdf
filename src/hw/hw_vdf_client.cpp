@@ -36,6 +36,7 @@ struct vdf_client_opts {
     uint32_t ip;
     int port;
     int n_vdfs;
+    struct vdf_proof_opts vpo;
 };
 
 struct vdf_client {
@@ -265,7 +266,7 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
         }
 
         init_form = (uint8_t *)&buf[4 + d_size + 1];
-        init_vdf_state(vdf, d_str, init_form, n_iters, vdf->idx);
+        init_vdf_state(vdf, &client->opts.vpo, d_str, init_form, n_iters, vdf->idx);
         start_hw_vdf(client->drv, vdf->d, vdf->last_val.a, vdf->last_val.b,
                 vdf->target_iters, vdf->idx);
         write_data(conn, "OK", 2);
@@ -350,6 +351,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
         {"freq", required_argument, NULL, 1},
         {"voltage", required_argument, NULL, 1},
         {"ip", required_argument, NULL, 1},
+        {"vdf-threads", required_argument, NULL, 1},
         {0}
     };
     int long_idx = -1;
@@ -360,6 +362,8 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     opts->ip = INADDR_LOOPBACK;
     opts->port = 0;
     opts->n_vdfs = 3;
+    opts->vpo.max_aux_threads = HW_VDF_DEFAULT_MAX_AUX_THREADS;
+    opts->vpo.max_proof_threads = 0;
 
     while ((ret = getopt_long(argc, argv, "", long_opts, &long_idx)) == 1) {
         if (long_idx == 0) {
@@ -368,6 +372,8 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
             opts->voltage = strtod(optarg, NULL);
         } else if (long_idx == 2) {
             opts->ip = ntohl(inet_addr(optarg));
+        } else if (long_idx == 3) {
+            opts->vpo.max_aux_threads = strtoul(optarg, NULL, 0);
         }
     }
     if (ret != -1) {
@@ -380,6 +386,11 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     }
     if (opts->ip == INADDR_NONE) {
         LOG_ERROR("Invalid IP address specified");
+        return -1;
+    }
+    if (opts->vpo.max_aux_threads < 2 || opts->vpo.max_aux_threads > HW_VDF_MAX_AUX_THREADS) {
+        LOG_ERROR("Number of VDF threads must be between 2 and %d",
+                HW_VDF_MAX_AUX_THREADS);
         return -1;
     }
 

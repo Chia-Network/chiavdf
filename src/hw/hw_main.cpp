@@ -66,7 +66,7 @@ int main(int argc, char **argv)
     for (uint8_t i = 0; i < n_vdfs; i++) {
         struct vdf_state *vdf = &vdfs[i];
 
-        init_vdf_state(vdf, discrs[i], init_form, n_iters, i);
+        init_vdf_state(vdf, NULL, discrs[i], init_form, n_iters, i);
 
         //run_hw(vdf->d, n_iters, vdf);
         //vdf_threads[i] = std::thread(start_vdf_job, vdf, i);

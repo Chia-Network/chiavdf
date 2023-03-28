@@ -415,7 +415,13 @@ int main(int argc, char **argv)
     struct sigaction sa = {0};
 
     if (parse_opts(argc, argv, &client.opts) < 0) {
-        LOG_INFO("Usage: %s [--freq N] [--voltage N] PORT [N_VDFS]", argv[0]);
+        LOG_INFO("\nUsage: %s [OPTIONS] PORT [N_VDFS]\n"
+                "List of options [default, min - max]:\n"
+                "  --freq N - set ASIC frequency [1100, 200 - 2200]\n"
+                "  --voltage N - set board voltage [0.8, 0.7 - 1.0]\n"
+                "  --ip A.B.C.D - timelord IP address [localhost]\n"
+                "  --vdf-threads N - number of extra threads per VDF engine [4, 2 - 12]",
+                argv[0]);
         return 1;
     }
 

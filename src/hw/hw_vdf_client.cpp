@@ -384,6 +384,14 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
         LOG_ERROR("Invalid freq or voltage specified");
         return -1;
     }
+    if (opts->freq < 200 || opts->freq > 2200) {
+        LOG_ERROR("Frequency is outside the allowed range");
+        return -1;
+    }
+    if (opts->voltage < 0.7 || opts->voltage > 1.0) {
+        LOG_ERROR("Voltage is outside the allowed range");
+        return -1;
+    }
     if (opts->ip == INADDR_NONE) {
         LOG_ERROR("Invalid IP address specified");
         return -1;

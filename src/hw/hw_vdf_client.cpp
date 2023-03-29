@@ -36,6 +36,7 @@ struct vdf_client_opts {
     uint32_t ip;
     int port;
     int n_vdfs;
+    bool do_list;
     struct vdf_proof_opts vpo;
 };
 
@@ -353,6 +354,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
         {"ip", required_argument, NULL, 1},
         {"vdf-threads", required_argument, NULL, 1},
         {"proof-threads", required_argument, NULL, 1},
+        {"list", no_argument, NULL, 1},
         {0}
     };
     int long_idx = -1;
@@ -363,6 +365,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     opts->ip = INADDR_LOOPBACK;
     opts->port = 0;
     opts->n_vdfs = 3;
+    opts->do_list = false;
     opts->vpo.max_aux_threads = HW_VDF_DEFAULT_MAX_AUX_THREADS;
     opts->vpo.max_proof_threads = 0;
 
@@ -377,11 +380,16 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
             opts->vpo.max_aux_threads = strtoul(optarg, NULL, 0);
         } else if (long_idx == 4) {
             opts->vpo.max_proof_threads = strtoul(optarg, NULL, 0);
+        } else if (long_idx == 5) {
+            opts->do_list = true;
         }
     }
     if (ret != -1) {
         LOG_ERROR("Invalid option");
         return -1;
+    }
+    if (opts->do_list) {
+        return 0;
     }
     if (opts->voltage == 0.0 || opts->freq == 0.0) {
         LOG_ERROR("Invalid freq or voltage specified");
@@ -436,9 +444,15 @@ int main(int argc, char **argv)
                 "  --voltage N - set board voltage [0.8, 0.7 - 1.0]\n"
                 "  --ip A.B.C.D - timelord IP address [localhost]\n"
                 "  --vdf-threads N - number of extra threads per VDF engine [4, 2 - 12]\n"
-                "  --proof-threads N - number of proof threads per VDF engine",
+                "  --proof-threads N - number of proof threads per VDF engine\n"
+                "  --list - list available devices",
                 argv[0]);
         return 1;
+    }
+
+    if (client.opts.do_list) {
+        LOG_INFO("List of available devices:");
+        return list_hw() ? 1 : 0;
     }
 
     VdfBaseInit();

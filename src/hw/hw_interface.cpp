@@ -35,6 +35,12 @@ void copy_vdf_value(struct vdf_value *dst, struct vdf_value *src)
     mpz_init_set(dst->b, src->b);
 }
 
+int list_hw(void)
+{
+    FtdiDriver ftdi;
+    return ftdi.List();
+}
+
 void prepare_job(ChiaDriver *drv, uint64_t n_iters, uint8_t *buf, mpz_t d, mpz_t a, mpz_t b)
 {
     uint32_t job_id = 0xab;

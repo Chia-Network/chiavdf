@@ -352,6 +352,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
         {"voltage", required_argument, NULL, 1},
         {"ip", required_argument, NULL, 1},
         {"vdf-threads", required_argument, NULL, 1},
+        {"proof-threads", required_argument, NULL, 1},
         {0}
     };
     int long_idx = -1;
@@ -374,6 +375,8 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
             opts->ip = ntohl(inet_addr(optarg));
         } else if (long_idx == 3) {
             opts->vpo.max_aux_threads = strtoul(optarg, NULL, 0);
+        } else if (long_idx == 4) {
+            opts->vpo.max_proof_threads = strtoul(optarg, NULL, 0);
         }
     }
     if (ret != -1) {
@@ -399,6 +402,10 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     if (opts->vpo.max_aux_threads < 2 || opts->vpo.max_aux_threads > HW_VDF_MAX_AUX_THREADS) {
         LOG_ERROR("Number of VDF threads must be between 2 and %d",
                 HW_VDF_MAX_AUX_THREADS);
+        return -1;
+    }
+    if (opts->vpo.max_proof_threads >= opts->vpo.max_aux_threads) {
+        LOG_ERROR("Number of proof threads must be less than VDF threads");
         return -1;
     }
 
@@ -428,7 +435,8 @@ int main(int argc, char **argv)
                 "  --freq N - set ASIC frequency [1100, 200 - 2200]\n"
                 "  --voltage N - set board voltage [0.8, 0.7 - 1.0]\n"
                 "  --ip A.B.C.D - timelord IP address [localhost]\n"
-                "  --vdf-threads N - number of extra threads per VDF engine [4, 2 - 12]",
+                "  --vdf-threads N - number of extra threads per VDF engine [4, 2 - 12]\n"
+                "  --proof-threads N - number of proof threads per VDF engine",
                 argv[0]);
         return 1;
     }

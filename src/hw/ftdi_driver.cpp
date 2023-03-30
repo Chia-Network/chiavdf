@@ -225,7 +225,9 @@ int FtdiDriver::SetMode(FtdiDriver::MODE_t mode)
     //printf("SetMode(MODE_spi);\n");
     CHECK(FT4222_SPIMaster_Init(spi_ft_handle, SPI_IO_QUAD, spi_clk_div,
 				CLK_IDLE_LOW, CLK_LEADING, 0x01));
-    CHECK(FT4222_SPIMaster_SetCS(spi_ft_handle, CS_ACTIVE_NEGTIVE));
+    // The SPI_ChipSelect value is named either CS_ACTIVE_NEGTIVE or
+    // CS_ACTIVE_LOW depending on libftd2xx version, but it's 0 in any case
+    CHECK(FT4222_SPIMaster_SetCS(spi_ft_handle, (SPI_ChipSelect)0));
     CHECK(FT4222_SPI_SetDrivingStrength(spi_ft_handle,
 					// clk, io, sso
 					//DS_8MA, DS_8MA, DS_8MA));

@@ -56,7 +56,7 @@ void hw_proof_get_form(form *f, struct vdf_state *vdf, struct vdf_value *val)
     mpz_swap(d.impl, vdf->d);
 }
 
-void hw_proof_print_stats(struct vdf_state *vdf, uint64_t elapsed_us)
+void hw_proof_print_stats(struct vdf_state *vdf, uint64_t elapsed_us, bool detail)
 {
     uint64_t sw_elapsed_us = vdf->elapsed_us;
     uint64_t sw_iters = vdf->done_iters;
@@ -69,8 +69,14 @@ void hw_proof_print_stats(struct vdf_state *vdf, uint64_t elapsed_us)
 
     LOG_INFO("\nVDF %d: %lu HW iters done in %lus, HW speed: %lu ips",
             vdf->idx, vdf->cur_iters, elapsed_us / 1000000, ips);
-    LOG_INFO("VDF %d: %lu SW iters done in %lus, SW speed: %lu ips\n",
+    LOG_INFO("VDF %d: %lu SW iters done in %lus, SW speed: %lu ips",
             vdf->idx, sw_iters, sw_elapsed_us / 1000000, sw_ips);
+    if (detail) {
+        uint64_t done_values = vdf->done_values;
+        LOG_INFO("VDF %d: Avg iters per intermediate: %lu",
+                vdf->idx, sw_iters / done_values);
+    }
+    LOG_INFO("");
 }
 
 void hw_proof_add_intermediate(struct vdf_state *vdf, struct vdf_value *val, size_t pos)
@@ -409,7 +415,7 @@ void hw_proof_handle_value(struct vdf_state *vdf, struct vdf_value *val)
         print_stats = true;
     }
     if (print_stats || vdf->cur_iters >= vdf->target_iters) {
-        hw_proof_print_stats(vdf, elapsed_us);
+        hw_proof_print_stats(vdf, elapsed_us, false);
     }
     if (vdf->cur_iters >= vdf->target_iters) {
         vdf->completed = true;
@@ -421,7 +427,7 @@ void hw_proof_handle_value(struct vdf_state *vdf, struct vdf_value *val)
 void hw_stop_proof(struct vdf_state *vdf)
 {
     vdf->stopping = true;
-    hw_proof_print_stats(vdf, vdf_get_elapsed_us(vdf->start_time));
+    hw_proof_print_stats(vdf, vdf_get_elapsed_us(vdf->start_time), true);
     hw_proof_wait_values(vdf, false);
 }
 

@@ -360,7 +360,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     int long_idx = -1;
     int ret;
 
-    opts->voltage = 0.8;
+    opts->voltage = 0.88;
     opts->freq = 1100.0;
     opts->ip = INADDR_LOOPBACK;
     opts->port = 0;
@@ -441,7 +441,7 @@ int main(int argc, char **argv)
         LOG_INFO("\nUsage: %s [OPTIONS] PORT [N_VDFS]\n"
                 "List of options [default, min - max]:\n"
                 "  --freq N - set ASIC frequency [1100, 200 - 2200]\n"
-                "  --voltage N - set board voltage [0.8, 0.7 - 1.0]\n"
+                "  --voltage N - set board voltage [0.88, 0.7 - 1.0]\n"
                 "  --ip A.B.C.D - timelord IP address [localhost]\n"
                 "  --vdf-threads N - number of extra threads per VDF engine [4, 2 - 12]\n"
                 "  --proof-threads N - number of proof threads per VDF engine\n"

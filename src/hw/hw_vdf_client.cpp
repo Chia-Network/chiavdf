@@ -38,6 +38,7 @@ struct vdf_client_opts {
     int n_vdfs;
     bool do_list;
     struct vdf_proof_opts vpo;
+    uint8_t vdfs_mask;
 };
 
 struct vdf_client {
@@ -85,9 +86,17 @@ void init_conn(struct vdf_conn *conn, uint32_t ip, int port)
 
 void init_vdf_client(struct vdf_client *client)
 {
-    for (uint8_t i = 0; i < client->opts.n_vdfs; i++) {
-        client->conns[i].vdf.idx = i;
+    if (!client->opts.vdfs_mask) {
+        for (uint8_t i = 0; i < client->opts.n_vdfs; i++) {
+            client->opts.vdfs_mask |= 1 << i;
+        }
+    }
+    for (uint8_t i = 0; i < N_HW_VDFS; i++) {
         client->conns[i].state = CLOSED;
+        if (!(client->opts.vdfs_mask & (1 << i))) {
+            continue;
+        }
+        client->conns[i].vdf.idx = i;
         client->conns[i].sock = -1;
         memset(client->conns[i].read_buf, 0, sizeof(client->conns[i].read_buf));
         client->conns[i].buf_pos = 0;
@@ -304,33 +313,36 @@ void event_loop(struct vdf_client *client)
     uint64_t loop_cnt = 0;
     uint32_t temp_period = chia_vdf_is_emu ? 200 : 20000;
     while(true) {
-        uint8_t vdfs_mask = 0;
+        uint8_t running_mask = 0;
         uint8_t temp_flag = loop_cnt % temp_period ? 0 : HW_VDF_TEMP_FLAG;
 
-        for (uint8_t i = 0; i < client->opts.n_vdfs; i++) {
+        for (uint8_t i = 0; i < N_HW_VDFS; i++) {
+            if (!(client->opts.vdfs_mask & (1 << i))) {
+                continue;
+            }
             handle_conn(client, &client->conns[i]);
             if (client->conns[i].state == RUNNING) {
-                vdfs_mask |= 1 << i;
+                running_mask |= 1 << i;
             }
         }
 
-        if (vdfs_mask) {
-            read_hw_status(client->drv, vdfs_mask | temp_flag, client->values);
+        if (running_mask) {
+            read_hw_status(client->drv, running_mask | temp_flag, client->values);
         } else if (g_stopping) {
             uint8_t n_closed = 0;
-            for (uint8_t i = 0; i < client->opts.n_vdfs; i++) {
+            for (uint8_t i = 0; i < N_HW_VDFS; i++) {
                 if (client->conns[i].state == CLOSED) {
                     n_closed++;
                 }
             }
-            if (n_closed == client->opts.n_vdfs) {
+            if (n_closed == N_HW_VDFS) {
                 LOG_INFO("All VDFs stopped, exiting");
                 break;
             }
         }
 
-        for (uint8_t i = 0; i < client->opts.n_vdfs; i++) {
-            if (vdfs_mask & (1 << i)) {
+        for (uint8_t i = 0; i < N_HW_VDFS; i++) {
+            if (running_mask & (1 << i)) {
                 hw_proof_add_value(&client->conns[i].vdf, &client->values[i]);
                 if (client->conns[i].vdf.completed) {
                     stop_hw_vdf(client->drv, i);
@@ -352,6 +364,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
         {"freq", required_argument, NULL, 1},
         {"voltage", required_argument, NULL, 1},
         {"ip", required_argument, NULL, 1},
+        {"vdfs-mask", required_argument, NULL, 1},
         {"vdf-threads", required_argument, NULL, 1},
         {"proof-threads", required_argument, NULL, 1},
         {"list", no_argument, NULL, 1},
@@ -368,6 +381,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     opts->do_list = false;
     opts->vpo.max_aux_threads = HW_VDF_DEFAULT_MAX_AUX_THREADS;
     opts->vpo.max_proof_threads = 0;
+    opts->vdfs_mask = 0;
 
     while ((ret = getopt_long(argc, argv, "", long_opts, &long_idx)) == 1) {
         if (long_idx == 0) {
@@ -377,10 +391,12 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
         } else if (long_idx == 2) {
             opts->ip = ntohl(inet_addr(optarg));
         } else if (long_idx == 3) {
-            opts->vpo.max_aux_threads = strtoul(optarg, NULL, 0);
+            opts->vdfs_mask = strtoul(optarg, NULL, 0);
         } else if (long_idx == 4) {
-            opts->vpo.max_proof_threads = strtoul(optarg, NULL, 0);
+            opts->vpo.max_aux_threads = strtoul(optarg, NULL, 0);
         } else if (long_idx == 5) {
+            opts->vpo.max_proof_threads = strtoul(optarg, NULL, 0);
+        } else if (long_idx == 6) {
             opts->do_list = true;
         }
     }
@@ -405,6 +421,10 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     }
     if (opts->ip == INADDR_NONE) {
         LOG_ERROR("Invalid IP address specified");
+        return -1;
+    }
+    if (opts->vdfs_mask > 7) {
+        LOG_ERROR("Invalid VDFs mask");
         return -1;
     }
     if (opts->vpo.max_aux_threads < 2 || opts->vpo.max_aux_threads > HW_VDF_MAX_AUX_THREADS) {
@@ -443,6 +463,7 @@ int main(int argc, char **argv)
                 "  --freq N - set ASIC frequency [1100, 200 - 2200]\n"
                 "  --voltage N - set board voltage [0.88, 0.7 - 1.0]\n"
                 "  --ip A.B.C.D - timelord IP address [localhost]\n"
+                "  --vdfs-mask - mask for enabling VDF engines [7, 1 - 7]\n"
                 "  --vdf-threads N - number of extra threads per VDF engine [4, 2 - 12]\n"
                 "  --proof-threads N - number of proof threads per VDF engine\n"
                 "  --list - list available devices",

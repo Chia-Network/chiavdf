@@ -64,3 +64,21 @@ tail -f ~/.chia/mainnet/log/debug.log
 
 To stop running hardware VDF client and timelord, first stop the VDF client using Ctrl-C, then shut down the timelord:
 chia stop timelord-only
+
+---
+
+Arguments and options for hw_vdf_client and emu_hw_vdf_client:
+
+Usage: ./hw_vdf_client [OPTIONS] PORT [N_VDFS]
+List of options [default, min - max]:
+  --freq N - set ASIC frequency [1100, 200 - 2200]
+  --voltage N - set board voltage [0.88, 0.7 - 1.0]
+  --ip A.B.C.D - timelord IP address [localhost]
+        Allows connecting to a timelord running on a remote host. Useful when running multiple machines with VDF hardware connecting to a single timelord.
+  --vdfs-mask - mask for enabling VDF engines [7, 1 - 7]
+        The ASIC has 3 VDF engines numbered 0, 1, 2. If not running all 3 engines, the mask can be specified to enable specific engines. It must be the result of bitwise OR of the engine bits (1, 2, 4 for engines 0, 1, 2).
+  --vdf-threads N - number of software threads per VDF engine [4, 2 - 28]
+        Number of software threads computing intermediate values and proofs per VDF engine.
+  --proof-threads N - number of proof threads per VDF engine
+        Number of software threads only computing proofs per VDF engine. Must be less than --vdf-threads.
+  --list - list available devices

@@ -464,7 +464,7 @@ int main(int argc, char **argv)
                 "  --voltage N - set board voltage [0.88, 0.7 - 1.0]\n"
                 "  --ip A.B.C.D - timelord IP address [localhost]\n"
                 "  --vdfs-mask - mask for enabling VDF engines [7, 1 - 7]\n"
-                "  --vdf-threads N - number of extra threads per VDF engine [4, 2 - 12]\n"
+                "  --vdf-threads N - number of extra threads per VDF engine [4, 2 - 28]\n"
                 "  --proof-threads N - number of proof threads per VDF engine\n"
                 "  --list - list available devices",
                 argv[0]);

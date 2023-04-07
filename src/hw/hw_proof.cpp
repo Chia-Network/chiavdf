@@ -668,7 +668,7 @@ void init_vdf_state(struct vdf_state *vdf, struct vdf_proof_opts *opts, const ch
     if (opts && opts->max_aux_threads) {
         vdf->max_aux_threads = opts->max_aux_threads;
     }
-    vdf->max_proof_threads = vdf->max_aux_threads - 1;
+    vdf->max_proof_threads = vdf->max_aux_threads - (vdf->max_aux_threads + 7) / 8;
     if (opts && opts->max_proof_threads) {
         vdf->max_proof_threads = opts->max_proof_threads;
     }

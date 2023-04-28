@@ -373,8 +373,8 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     int long_idx = -1;
     int ret;
 
-    opts->voltage = 0.88;
-    opts->freq = 1100.0;
+    opts->voltage = HW_VDF_DEF_VOLTAGE;
+    opts->freq = HW_VDF_DEF_FREQ;
     opts->ip = INADDR_LOOPBACK;
     opts->port = 0;
     opts->n_vdfs = 3;
@@ -460,14 +460,14 @@ int main(int argc, char **argv)
     if (parse_opts(argc, argv, &client.opts) < 0) {
         LOG_INFO("\nUsage: %s [OPTIONS] PORT [N_VDFS]\n"
                 "List of options [default, min - max]:\n"
-                "  --freq N - set ASIC frequency [1100, 200 - 2200]\n"
-                "  --voltage N - set board voltage [0.88, 0.7 - 1.0]\n"
+                "  --freq N - set ASIC frequency [%d, 200 - 2200]\n"
+                "  --voltage N - set board voltage [%.2f, 0.7 - 1.0]\n"
                 "  --ip A.B.C.D - timelord IP address [localhost]\n"
                 "  --vdfs-mask - mask for enabling VDF engines [7, 1 - 7]\n"
                 "  --vdf-threads N - number of software threads per VDF engine [4, 2 - 28]\n"
                 "  --proof-threads N - number of proof threads per VDF engine\n"
                 "  --list - list available devices",
-                argv[0]);
+                argv[0], (int)HW_VDF_DEF_FREQ, HW_VDF_DEF_VOLTAGE);
         return 1;
     }
 

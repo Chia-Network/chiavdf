@@ -61,7 +61,7 @@ int main(int argc, char **argv)
         n_iters = strtoul(argv[2], NULL, 0);
     }
     init_chia();
-    drv = init_hw(1100.0, 0.8);
+    drv = init_hw(HW_VDF_DEF_FREQ, HW_VDF_DEF_VOLTAGE);
 
     for (uint8_t i = 0; i < n_vdfs; i++) {
         struct vdf_state *vdf = &vdfs[i];

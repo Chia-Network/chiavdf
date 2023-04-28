@@ -9,6 +9,9 @@
 #define HW_VDF_BURST_START 0x300014
 #define HW_VDF_TEMP_FLAG (1 << 3)
 
+#define HW_VDF_DEF_FREQ 1100.0
+#define HW_VDF_DEF_VOLTAGE 0.88
+
 struct vdf_value {
     uint64_t iters;
     mpz_t a, b;

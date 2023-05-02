@@ -60,7 +60,7 @@ ChiaDriver *init_hw(double freq, double set_brd_voltage)
 
     bool set_status;
 
-    printf("Setting frequency to %f MHz\n", freq);
+    LOG_INFO("Setting frequency to %f MHz", freq);
     set_status = drv->SetPLLFrequency(freq);
     if (set_status == false) {
       LOG_ERROR("Aborting since freq not set");
@@ -69,12 +69,12 @@ ChiaDriver *init_hw(double freq, double set_brd_voltage)
 
     // Check frequency
     double freq_read = drv->GetPLLFrequency();
-    printf("Frequency is %f MHz\n", freq_read);
+    LOG_INFO("Frequency is %f MHz", freq_read);
 
     double brd_voltage = drv->GetBoardVoltage();
-    printf("Board voltage is %1.3f V\n", brd_voltage);
+    LOG_INFO("Board voltage is %1.3f V", brd_voltage);
 
-    printf("Setting voltage to %1.3f V\n", set_brd_voltage);
+    LOG_INFO("Setting voltage to %1.3f V", set_brd_voltage);
     int ret_val = drv->SetBoardVoltage(set_brd_voltage);
     if (ret_val != 0) {
       LOG_ERROR("Aborting since set voltage failed");
@@ -82,13 +82,13 @@ ChiaDriver *init_hw(double freq, double set_brd_voltage)
     }
 
     brd_voltage = drv->GetBoardVoltage();
-    printf("Board voltage is now %1.3f V\n", brd_voltage);
+    LOG_INFO("Board voltage is now %1.3f V", brd_voltage);
 
     double brd_current = drv->GetBoardCurrent();
-    printf("Board current is %2.3f A\n", brd_current);
+    LOG_INFO("Board current is %2.3f A", brd_current);
 
     double brd_power = drv->GetPower();
-    printf("Board power is %2.3f W\n", brd_power);
+    LOG_INFO("Board power is %2.3f W", brd_power);
 
     // Enable PVT sensor
     drv->EnablePvt();

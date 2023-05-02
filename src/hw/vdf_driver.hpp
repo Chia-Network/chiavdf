@@ -62,7 +62,7 @@ public:
     write_bytes(REG_BYTES, 0, (uint8_t *)&buf, data);
     stat = ftdi.WriteCmd(addr, (uint8_t *)&buf, REG_BYTES);
     if (stat) {
-      printf("ftdi.WriteCmd in RegWrite failed (error %d)\n",stat);
+      fprintf(stderr, "ftdi.WriteCmd in RegWrite failed (error %d)\n",stat);
       return stat;
     };
     return 0;
@@ -74,7 +74,7 @@ public:
     int stat;
     stat = ftdi.ReadCmd(addr, (uint8_t *)&buf, REG_BYTES);
     if (stat) {
-      printf("ftdi.ReadCmd in RegRead failed (error %d)\n",stat);
+      fprintf(stderr, "ftdi.ReadCmd in RegRead failed (error %d)\n",stat);
       return stat;
     };
     read_bytes(REG_BYTES, 0, (uint8_t *)&buf, data);

@@ -14,7 +14,7 @@ typedef std::chrono::high_resolution_clock Clock;
 void print_buf(size_t offset, uint8_t *buf, size_t size) {
   uint32_t *buf32 = (uint32_t *)buf;
   for (unsigned i = 0; i < size / (32/8); i++) {
-    printf("%08lx: %08x\n", offset + i * (32/8), buf32[i]);
+    fprintf(stderr, "%08lx: %08x\n", offset + i * (32/8), buf32[i]);
   }
 }
 
@@ -82,8 +82,8 @@ void FtdiDriver::eprintf(const char * format, ...) {
   va_end(argptr);
   throw(buffer);
 #else
-  vprintf(format, argptr);
-  printf("\n");
+  vfprintf(stderr, format, argptr);
+  fprintf(stderr, "\n");
   va_end(argptr);
 #endif
 }
@@ -130,10 +130,10 @@ int FtdiDriver::List() {
       // In mode 0, the FT4222H presents two interfaces: A and B.
       // In modes 1 and 2, it presents four interfaces: A, B, C and D.
       size_t descLen = strlen(dev_info[i].Description);
-      // printf("Device %d: '%s', loc %d\n", i,
+      // fprintf(stderr, "Device %d: '%s', loc %d\n", i,
       //        dev_info[i].Description, dev_info[i].LocId);
       if ('A' == dev_info[i].Description[descLen - 1]) {
-        printf("Device %d: '%s', loc %d\n", i,
+        fprintf(stderr, "Device %d: '%s', loc %d\n", i,
                dev_info[i].Description, dev_info[i].LocId);
       }
     }
@@ -253,7 +253,7 @@ int FtdiDriver::SetMode(FtdiDriver::MODE_t mode)
 int FtdiDriver::Open(DWORD loc_id, unsigned sys_clk, unsigned clk_div) {
   Close();
 
-  // printf("Opening device %d\n", loc_id);
+  // fprintf(stderr, "Opening device %d\n", loc_id);
   spi_loc_id = loc_id;
 
   CHECK(FT_OpenEx((PVOID)(uintptr_t)spi_loc_id, FT_OPEN_BY_LOCATION,
@@ -328,7 +328,7 @@ void FtdiDriver::ParseParams(unsigned &sys_clk, unsigned &clk_div,
       } else if (strcmp(argv[i], "80") == 0) {
         sys_clk = SYS_CLK_80;
       } else {
-        printf("Invalid clk %s\n", argv[i]);
+        fprintf(stderr, "Invalid clk %s\n", argv[i]);
         exit(1);
       }
     } else if (strcmp(argv[i], "-div") == 0) {
@@ -352,7 +352,7 @@ void FtdiDriver::ParseParams(unsigned &sys_clk, unsigned &clk_div,
       } else if (strcmp(argv[i], "512") == 0) {
         clk_div = CLK_DIV_512;
       } else {
-        printf("Invalid clk div %s\n", argv[i]);
+        fprintf(stderr, "Invalid clk div %s\n", argv[i]);
         exit(1);
       }
     }
@@ -402,14 +402,14 @@ static int encode_size(size_t size) {
   case 256:
     return 5;
   default:
-    printf("Unexpected size %zu\n", size);
+    fprintf(stderr, "Unexpected size %zu\n", size);
     exit(1);
   }
 }
 
 int FtdiDriver::WriteRaw(uint8_t *write_buf, size_t size) {
   assert(IsOpen());
-  // printf("WriteRaw\n");
+  // fprintf(stderr, "WriteRaw\n");
   // print_buf(0x0, write_buf, size);
   
   uint32_t size_of_read;

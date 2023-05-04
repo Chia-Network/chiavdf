@@ -67,7 +67,8 @@ void hw_proof_print_stats(struct vdf_state *vdf, uint64_t elapsed_us, bool detai
     ips = vdf->cur_iters * 1000000 / elapsed_us;
     sw_ips = sw_iters * 1000000 / sw_elapsed_us;
 
-    LOG_INFO("\nVDF %d: %lu HW iters done in %lus, HW speed: %lu ips",
+    LOG_INFO("");
+    LOG_INFO("VDF %d: %lu HW iters done in %lus, HW speed: %lu ips",
             vdf->idx, vdf->cur_iters, elapsed_us / 1000000, ips);
     LOG_INFO("VDF %d: %lu SW iters done in %lus, SW speed: %lu ips",
             vdf->idx, sw_iters, sw_elapsed_us / 1000000, sw_ips);

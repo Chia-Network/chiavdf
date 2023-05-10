@@ -44,6 +44,7 @@ struct vdf_proof {
 
     uint8_t flags;
     uint16_t prev;
+    uint16_t ref_cnt;
 };
 
 struct vdf_proof_opts {
@@ -67,7 +68,6 @@ struct vdf_state {
     std::deque<struct vdf_proof_req> req_proofs;
     std::vector<struct vdf_proof> proofs;
     std::mutex proofs_resize_mtx;
-    std::vector<uint16_t> chkp_proofs; /* sorted checkpoint proofs */
     std::vector<uint16_t> queued_proofs; /* sorted queued proofs */
     std::vector<uint16_t> done_proofs; /* requested and not sent */
     mpz_t d, l, a2;

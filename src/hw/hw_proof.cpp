@@ -171,6 +171,7 @@ uint16_t hw_queue_proof(struct vdf_state *vdf, uint64_t seg_iters, uint16_t prev
     proof.seg_iters = seg_iters;
     proof.flags = flags;
     proof.prev = prev;
+    proof.ref_cnt = 1;
     pos = vdf->proofs.size();
 
     vdf->proofs_resize_mtx.lock();
@@ -178,11 +179,50 @@ uint16_t hw_queue_proof(struct vdf_state *vdf, uint64_t seg_iters, uint16_t prev
     vdf->proofs_resize_mtx.unlock();
 
     vdf->queued_proofs.push_back(pos);
-    if (!(flags & HW_VDF_PROOF_FLAG_IS_REQ)) {
-        vdf->chkp_proofs.push_back(pos);
-    }
 
     return pos;
+}
+
+void hw_proof_inc_ref(struct vdf_state *vdf, uint16_t idx)
+{
+    do {
+        vdf->proofs[idx].ref_cnt++;
+        idx = vdf->proofs[idx].prev;
+    } while (idx != HW_VDF_PROOF_NONE);
+}
+
+void hw_proof_dec_ref(struct vdf_state *vdf, std::vector<uint16_t> &idxs)
+{
+    std::vector<uint16_t> proofs_to_del;
+    int len = idxs.size();
+    int last_proof_idx = vdf->proofs.size() - 1;
+
+    for (int i = 0; i < len; i++) {
+        uint16_t idx = idxs[i];
+        vdf->proofs[idx].ref_cnt--;
+        if (!vdf->proofs[idx].ref_cnt) {
+            proofs_to_del.push_back(idx);
+        }
+    }
+
+    std::sort(proofs_to_del.begin(), proofs_to_del.end());
+
+    for (int i = proofs_to_del.size() - 1; i >= 0; i--) {
+        uint16_t idx = proofs_to_del[i];
+        if (idx == last_proof_idx) {
+            last_proof_idx--;
+        }
+        memset(&vdf->proofs[idx], 0xff, sizeof(vdf->proofs[idx]));
+    }
+    LOG_INFO("VDF %d: Removed %d queued proofs; total proofs reduced by %zu",
+            vdf->idx, proofs_to_del.size(), vdf->proofs.size() - last_proof_idx - 1);
+    vdf->proofs.resize(last_proof_idx + 1);
+}
+
+bool hw_proof_needs_change(struct vdf_state *vdf, uint64_t iters)
+{
+    uint16_t last_queued_idx = vdf->queued_proofs.back();
+    return iters < vdf->proofs[last_queued_idx].iters;
 }
 
 static const uint32_t g_chkp_thres = 500000;
@@ -203,12 +243,30 @@ void hw_proof_process_req(struct vdf_state *vdf)
 
     req_iters = vdf->req_proofs[0].iters;
     vdf->req_proofs.erase(vdf->req_proofs.begin());
-    for (i = vdf->chkp_proofs.size() - 1; i >= 0; i--) {
-        uint16_t idx = vdf->chkp_proofs[i];
+    if (!vdf->queued_proofs.empty() && hw_proof_needs_change(vdf, req_iters)) {
+        std::vector<uint16_t> proofs_to_del;
+        for (i = 0; i < (int)vdf->queued_proofs.size(); i++) {
+            uint16_t idx = vdf->queued_proofs[i];
+            bool is_chkp = !(vdf->proofs[idx].flags & HW_VDF_PROOF_FLAG_IS_REQ);
+            if (is_chkp || req_iters > vdf->proofs[idx].iters) {
+                continue;
+            }
+            proofs_to_del.push_back(idx);
+            hw_request_proof(vdf, vdf->proofs[idx].iters, false);
+        }
+        hw_proof_dec_ref(vdf, proofs_to_del);
+    }
+
+    for (i = vdf->queued_proofs.size() - 1; i >= 0; i--) {
+        uint16_t idx = vdf->queued_proofs[i];
+        if (vdf->proofs[idx].flags & HW_VDF_PROOF_FLAG_IS_REQ) {
+            continue;
+        }
         iters = vdf->proofs[idx].iters;
         if (iters <= req_iters) {
             base_iters = iters;
             prev = idx;
+            hw_proof_inc_ref(vdf, prev);
             break;
         }
     }
@@ -237,7 +295,6 @@ void hw_proof_process_req(struct vdf_state *vdf)
     {
         ProofCmp cmp(vdf->proofs);
         std::sort(vdf->queued_proofs.begin(), vdf->queued_proofs.end(), cmp);
-        std::sort(vdf->chkp_proofs.begin(), vdf->chkp_proofs.end(), cmp);
     }
 }
 
@@ -268,7 +325,8 @@ void hw_proof_process_work(struct vdf_state *vdf)
     uint8_t busy = vdf->aux_threads_busy;
     uint32_t qlen;
 
-    while (!vdf->req_proofs.empty() && vdf->queued_proofs.size() < 3) {
+    while (!vdf->req_proofs.empty() && (vdf->queued_proofs.size() < 3 ||
+                hw_proof_needs_change(vdf, vdf->req_proofs[0].iters))) {
         hw_proof_process_req(vdf);
     }
 
@@ -703,7 +761,6 @@ void clear_vdf_state(struct vdf_state *vdf)
 
     vdf->proofs.clear();
     vdf->req_proofs.clear();
-    vdf->chkp_proofs.clear();
     vdf->queued_proofs.clear();
     vdf->done_proofs.clear();
 

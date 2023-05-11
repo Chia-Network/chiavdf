@@ -322,7 +322,7 @@ void hw_proof_add_work(struct vdf_state *vdf, uint64_t next_iters, uint32_t n_st
 
 void hw_proof_process_work(struct vdf_state *vdf)
 {
-    uint8_t busy = vdf->aux_threads_busy;
+    uint32_t busy = vdf->aux_threads_busy;
     uint32_t qlen;
 
     while (!vdf->req_proofs.empty() && (vdf->queued_proofs.size() < 3 ||

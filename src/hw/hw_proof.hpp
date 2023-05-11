@@ -78,7 +78,7 @@ struct vdf_state {
     uint32_t chkp_interval;
     uint32_t n_bad;
     uint32_t log_cnt;
-    std::atomic<uint8_t> aux_threads_busy;
+    std::atomic<uint32_t> aux_threads_busy;
     std::atomic<uint8_t> n_proof_threads;
     uint8_t idx;
     uint8_t max_aux_threads;

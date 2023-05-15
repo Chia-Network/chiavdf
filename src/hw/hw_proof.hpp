@@ -21,6 +21,7 @@
 
 #define HW_VDF_PROOF_FLAG_DONE 1
 #define HW_VDF_PROOF_FLAG_IS_REQ 2
+#define HW_VDF_PROOF_FLAG_STARTED 4
 #define HW_VDF_PROOF_NONE ((uint16_t)0xffff)
 
 struct vdf_work {

@@ -199,10 +199,18 @@ void hw_proof_dec_ref(struct vdf_state *vdf, std::vector<uint16_t> &idxs)
 
     for (int i = 0; i < len; i++) {
         uint16_t idx = idxs[i];
-        vdf->proofs[idx].ref_cnt--;
-        if (!vdf->proofs[idx].ref_cnt) {
-            proofs_to_del.push_back(idx);
-        }
+        struct vdf_proof *proof;
+        do {
+            proof = &vdf->proofs[idx];
+            if (proof->flags & HW_VDF_PROOF_FLAG_STARTED) {
+                break;
+            }
+            proof->ref_cnt--;
+            if (!proof->ref_cnt) {
+                proofs_to_del.push_back(idx);
+            }
+            idx = proof->prev;
+        } while (idx != HW_VDF_PROOF_NONE);
     }
 
     std::sort(proofs_to_del.begin(), proofs_to_del.end());
@@ -213,13 +221,20 @@ void hw_proof_dec_ref(struct vdf_state *vdf, std::vector<uint16_t> &idxs)
             last_proof_idx--;
         }
         memset(&vdf->proofs[idx], 0xff, sizeof(vdf->proofs[idx]));
+
+        for (int j = 0; j < (int)vdf->queued_proofs.size(); j++) {
+            if (vdf->queued_proofs[j] == idx) {
+                vdf->queued_proofs.erase(vdf->queued_proofs.begin() + j);
+            }
+        }
     }
     LOG_INFO("VDF %d: Removed %d queued proofs; total proofs reduced by %zu",
             vdf->idx, proofs_to_del.size(), vdf->proofs.size() - last_proof_idx - 1);
     vdf->proofs.resize(last_proof_idx + 1);
+    LOG_DEBUG("VDF %d: Proofs %zu, queued %zu", vdf->idx, vdf->proofs.size(), vdf->queued_proofs.size());
 }
 
-bool hw_proof_needs_change(struct vdf_state *vdf, uint64_t iters)
+bool hw_proof_should_queue(struct vdf_state *vdf, uint64_t iters)
 {
     uint16_t last_queued_idx = vdf->queued_proofs.back();
     return iters < vdf->proofs[last_queued_idx].iters;
@@ -243,7 +258,7 @@ void hw_proof_process_req(struct vdf_state *vdf)
 
     req_iters = vdf->req_proofs[0].iters;
     vdf->req_proofs.erase(vdf->req_proofs.begin());
-    if (!vdf->queued_proofs.empty() && hw_proof_needs_change(vdf, req_iters)) {
+    if (!vdf->queued_proofs.empty() && hw_proof_should_queue(vdf, req_iters)) {
         std::vector<uint16_t> proofs_to_del;
         for (i = 0; i < (int)vdf->queued_proofs.size(); i++) {
             uint16_t idx = vdf->queued_proofs[i];
@@ -326,7 +341,7 @@ void hw_proof_process_work(struct vdf_state *vdf)
     uint32_t qlen;
 
     while (!vdf->req_proofs.empty() && (vdf->queued_proofs.size() < 3 ||
-                hw_proof_needs_change(vdf, vdf->req_proofs[0].iters))) {
+                hw_proof_should_queue(vdf, vdf->req_proofs[0].iters))) {
         hw_proof_process_req(vdf);
     }
 
@@ -354,6 +369,7 @@ void hw_proof_process_work(struct vdf_state *vdf)
             vdf->queued_proofs.erase(vdf->queued_proofs.begin());
             vdf->aux_threads_busy |= 1U << i;
             vdf->n_proof_threads++;
+            proof->flags |= HW_VDF_PROOF_FLAG_STARTED;
             std::thread(hw_compute_proof, vdf, idx, proof, i).detach();
         }
     }

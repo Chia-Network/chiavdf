@@ -8,16 +8,16 @@
 
 int verify_vdf_value(struct vdf_state *vdf, struct vdf_value *val)
 {
-    mpz_mul(vdf->a2, val->b, val->b);
-    mpz_sub(vdf->a2, vdf->a2, vdf->d);
+    mpz_mul(vdf->a2.impl, val->b, val->b);
+    mpz_sub(vdf->a2.impl, vdf->a2.impl, vdf->D.impl);
     /* Verify that c could be computed as c = (b^2 - d) / (4 * a) */
-    if (!mpz_divisible_p(vdf->a2, val->a) || mpz_scan1(vdf->a2, 0) < mpz_scan1(val->a, 0) + 2) {
+    if (!mpz_divisible_p(vdf->a2.impl, val->a) || mpz_scan1(vdf->a2.impl, 0) < mpz_scan1(val->a, 0) + 2) {
         vdf->n_bad++;
         if (vdf->n_bad > 1) {
             LOG_INFO("VDF %d: Warning: Bad VDF value at iters=%lu n_bad=%u",
                     vdf->idx, val->iters, vdf->n_bad);
             gmp_fprintf(stderr, " a = %#Zx\n b = %#Zx\n d = %#Zx\n",
-                    val->a, val->b, vdf->d);
+                    val->a, val->b, vdf->D.impl);
         }
         return -1;
     }
@@ -32,8 +32,8 @@ void hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val)
     }
 
     // b = b (mod 2*a)
-    mpz_mul_2exp(vdf->a2, val->a, 1);
-    mpz_mod(val->b, val->b, vdf->a2);
+    mpz_mul_2exp(vdf->a2.impl, val->a, 1);
+    mpz_mod(val->b, val->b, vdf->a2.impl);
 
     if (verify_vdf_value(vdf, val)) {
         return;
@@ -43,17 +43,15 @@ void hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val)
 
 void hw_proof_get_form(form *f, struct vdf_state *vdf, struct vdf_value *val)
 {
-    integer a, b, d;
+    integer a, b;
 
     mpz_swap(a.impl, val->a);
     mpz_swap(b.impl, val->b);
-    mpz_swap(d.impl, vdf->d);
 
-    *f = form::from_abd(a, b, d);
+    *f = form::from_abd(a, b, vdf->D);
 
     mpz_swap(a.impl, val->a);
     mpz_swap(b.impl, val->b);
-    mpz_swap(d.impl, vdf->d);
 }
 
 void hw_proof_print_stats(struct vdf_state *vdf, uint64_t elapsed_us, bool detail)
@@ -95,9 +93,9 @@ void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_work *work, int thr_
     uint64_t next_iters = work->start_iters;
     uint32_t n_steps = work->n_steps;
 
-    integer a(val->a), b(val->b), d(vdf->d), l(vdf->l);
+    integer a(val->a), b(val->b);
     //const integer a = {val->a}, b = {val->b}, d = {vdf->d}, l = {vdf->l};
-    form f = form::from_abd(a, b, d);
+    form f = form::from_abd(a, b, vdf->D);
     uint64_t end_iters = next_iters + vdf->interval * n_steps;
     uint64_t iters = val->iters;
     PulmarkReducer reducer;
@@ -114,14 +112,14 @@ void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_work *work, int thr_
         if (vdf->stopping) {
             break;
         }
-        nudupl_form(f, f, d, l);
+        nudupl_form(f, f, vdf->D, vdf->L);
         reducer.reduce(f);
         iters++;
 
         if (iters == next_iters) {
             size_t pos = iters / vdf->interval;
 
-            if (!f.check_valid(d)) {
+            if (!f.check_valid(vdf->D)) {
                 LOG_ERROR(" VDF %d: bad form at iters=%lu", vdf->idx, iters);
                 abort();
             }
@@ -574,7 +572,6 @@ void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof 
     form x, y, proof_val;
     uint64_t proof_iters, start_iters, iters;
     size_t pos, start_pos;
-    integer d(vdf->d), l(vdf->l);
     PulmarkReducer reducer;
     bool is_chkp;
     timepoint_t start_time = vdf_get_cur_time();
@@ -599,16 +596,16 @@ void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof 
     }
     x = vdf->values[start_pos];
     y = vdf->values[pos];
-    if (!y.check_valid(d)) {
+    if (!y.check_valid(vdf->D)) {
         LOG_ERROR("VDF %d: invalid form at pos=%lu", vdf->idx, pos);
         abort();
     }
     while (iters < proof_iters) {
-        nudupl_form(y, y, d, l);
+        nudupl_form(y, y, vdf->D, vdf->L);
         reducer.reduce(y);
         iters++;
     }
-    if (!y.check_valid(d)) {
+    if (!y.check_valid(vdf->D)) {
         LOG_ERROR("VDF %d: invalid y", vdf->idx);
         abort();
     }
@@ -616,7 +613,7 @@ void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof 
 
     {
         Segment seg(start_iters, proof_iters - start_iters, x, y);
-        HwProver prover(seg, d, vdf);
+        HwProver prover(seg, vdf->D, vdf);
 
         if (out_proof->flags & HW_VDF_PROOF_FLAG_IS_REQ &&
                 seg.length > g_chkp_thres) {
@@ -636,13 +633,13 @@ void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof 
                     vdf->idx, proof_iters, seg.length,
                     (double)elapsed_us / 1000000, is_chkp ? " [checkpoint]" : "");
 
-            VerifyWesolowskiProof(d, x, y, proof_val, seg.length, is_valid);
+            VerifyWesolowskiProof(vdf->D, x, y, proof_val, seg.length, is_valid);
             if (!is_valid) {
                 LOG_ERROR("VDF %d: Proof NOT VALID", vdf->idx);
                 abort();
             }
 
-            d_bits = mpz_sizeinbase(d.impl, 2);
+            d_bits = mpz_sizeinbase(vdf->D.impl, 2);
 
             vdf->proofs_resize_mtx.lock();
             if (proof_idx != SIZE_MAX) {
@@ -655,7 +652,7 @@ void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof 
             if (out_proof->flags & HW_VDF_PROOF_FLAG_IS_REQ) {
                 vdf->done_proofs.push_back((uint16_t)proof_idx);
             } else {
-                integer B = GetB(d, x, y);
+                integer B = GetB(vdf->D, x, y);
 
                 mpz_export(out_proof->B, NULL, 1, 1, 0, 0, B.impl);
             }
@@ -748,11 +745,10 @@ void init_vdf_state(struct vdf_state *vdf, struct vdf_proof_opts *opts, const ch
         vdf->max_proof_threads = opts->max_proof_threads;
     }
 
-    mpz_init_set_str(vdf->d, d_str, 0);
-    mpz_init_set(vdf->l, vdf->d);
-    mpz_neg(vdf->l, vdf->l);
-    mpz_root(vdf->l, vdf->l, 4);
-    mpz_init(vdf->a2);
+    mpz_set_str(vdf->D.impl, d_str, 0);
+    mpz_set(vdf->L.impl, vdf->D.impl);
+    mpz_neg(vdf->L.impl, vdf->L.impl);
+    mpz_root(vdf->L.impl, vdf->L.impl, 4);
 
     num_values = vdf->target_iters / vdf->interval + 1;
     vdf->values.resize(num_values);
@@ -763,7 +759,7 @@ void init_vdf_state(struct vdf_state *vdf, struct vdf_proof_opts *opts, const ch
     //initial.iters = 0;
     init_vdf_value(&vdf->last_val);
     // TODO: verify validity of initial form
-    bqfc_deserialize(vdf->last_val.a, vdf->last_val.b, vdf->d, init_form,
+    bqfc_deserialize(vdf->last_val.a, vdf->last_val.b, vdf->D.impl, init_form,
             BQFC_FORM_SIZE, BQFC_MAX_D_BITS);
     hw_proof_get_form(&vdf->values[0], vdf, &vdf->last_val);
     vdf->valid_values[0] = 1 << 0;
@@ -773,8 +769,6 @@ void init_vdf_state(struct vdf_state *vdf, struct vdf_proof_opts *opts, const ch
 
 void clear_vdf_state(struct vdf_state *vdf)
 {
-    mpz_clears(vdf->d, vdf->l, vdf->a2, NULL);
-
     vdf->proofs.clear();
     vdf->req_proofs.clear();
     vdf->queued_proofs.clear();

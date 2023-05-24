@@ -277,7 +277,7 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
 
         init_form = (uint8_t *)&buf[4 + d_size + 1];
         init_vdf_state(vdf, &client->opts.vpo, d_str, init_form, n_iters, vdf->idx);
-        start_hw_vdf(client->drv, vdf->d, vdf->last_val.a, vdf->last_val.b,
+        start_hw_vdf(client->drv, vdf->D.impl, vdf->last_val.a, vdf->last_val.b,
                 vdf->target_iters, vdf->idx);
         write_data(conn, "OK", 2);
         conn->state = RUNNING;

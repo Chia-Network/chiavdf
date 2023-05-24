@@ -70,7 +70,7 @@ int main(int argc, char **argv)
 
         //run_hw(vdf->d, n_iters, vdf);
         //vdf_threads[i] = std::thread(start_vdf_job, vdf, i);
-        start_hw_vdf(drv, vdf->d, vdf->last_val.a, vdf->last_val.b, vdf->target_iters, i);
+        start_hw_vdf(drv, vdf->D.impl, vdf->last_val.a, vdf->last_val.b, vdf->target_iters, i);
         init_vdf_value(&values[i]);
     }
 

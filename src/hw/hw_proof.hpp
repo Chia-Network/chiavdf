@@ -71,7 +71,7 @@ struct vdf_state {
     std::mutex proofs_resize_mtx;
     std::vector<uint16_t> queued_proofs; /* sorted queued proofs */
     std::vector<uint16_t> done_proofs; /* requested and not sent */
-    mpz_t d, l, a2;
+    integer D, L, a2;
     std::deque<struct vdf_work *> wq;
     uint32_t wq_warn_thres[2];
     //std::mutex wq_mtx;

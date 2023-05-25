@@ -18,6 +18,8 @@ void vdf_do_log(const char *msg, ...);
 #define LOG_INFO(msg, ...) vdf_do_log(msg "\n", ##__VA_ARGS__)
 #define LOG_ERROR(msg, ...) vdf_do_log(msg "\n", ##__VA_ARGS__)
 
+#define LOG_SIMPLE(msg, ...) fprintf(stderr, msg "\n", ##__VA_ARGS__)
+
 typedef std::chrono::time_point<std::chrono::high_resolution_clock> timepoint_t;
 
 static inline timepoint_t vdf_get_cur_time(void)

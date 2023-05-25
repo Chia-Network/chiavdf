@@ -401,39 +401,39 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
         }
     }
     if (ret != -1) {
-        LOG_ERROR("Invalid option");
+        LOG_SIMPLE("Invalid option");
         return -1;
     }
     if (opts->do_list) {
         return 0;
     }
     if (opts->voltage == 0.0 || opts->freq == 0.0) {
-        LOG_ERROR("Invalid freq or voltage specified");
+        LOG_SIMPLE("Invalid freq or voltage specified");
         return -1;
     }
     if (opts->freq < 200 || opts->freq > 2200) {
-        LOG_ERROR("Frequency is outside the allowed range");
+        LOG_SIMPLE("Frequency is outside the allowed range");
         return -1;
     }
     if (opts->voltage < 0.7 || opts->voltage > 1.0) {
-        LOG_ERROR("Voltage is outside the allowed range");
+        LOG_SIMPLE("Voltage is outside the allowed range");
         return -1;
     }
     if (opts->ip == INADDR_NONE) {
-        LOG_ERROR("Invalid IP address specified");
+        LOG_SIMPLE("Invalid IP address specified");
         return -1;
     }
     if (opts->vdfs_mask > 7) {
-        LOG_ERROR("Invalid VDFs mask");
+        LOG_SIMPLE("Invalid VDFs mask");
         return -1;
     }
     if (opts->vpo.max_aux_threads < 2 || opts->vpo.max_aux_threads > HW_VDF_MAX_AUX_THREADS) {
-        LOG_ERROR("Number of VDF threads must be between 2 and %d",
+        LOG_SIMPLE("Number of VDF threads must be between 2 and %d",
                 HW_VDF_MAX_AUX_THREADS);
         return -1;
     }
     if (opts->vpo.max_proof_threads >= opts->vpo.max_aux_threads) {
-        LOG_ERROR("Number of proof threads must be less than VDF threads");
+        LOG_SIMPLE("Number of proof threads must be less than VDF threads");
         return -1;
     }
 
@@ -445,7 +445,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
         opts->n_vdfs = atoi(argv[optind + 1]);
     }
     if (!opts->port || opts->n_vdfs < 1 || opts->n_vdfs > 3) {
-        LOG_ERROR("Invalid port or VDF count");
+        LOG_SIMPLE("Invalid port or VDF count");
         return -1;
     }
 
@@ -458,7 +458,7 @@ int main(int argc, char **argv)
     struct sigaction sa = {0};
 
     if (parse_opts(argc, argv, &client.opts) < 0) {
-        LOG_INFO("\nUsage: %s [OPTIONS] PORT [N_VDFS]\n"
+        LOG_SIMPLE("\nUsage: %s [OPTIONS] PORT [N_VDFS]\n"
                 "List of options [default, min - max]:\n"
                 "  --freq N - set ASIC frequency [%d, 200 - 2200]\n"
                 "  --voltage N - set board voltage [%.2f, 0.7 - 1.0]\n"
@@ -472,7 +472,7 @@ int main(int argc, char **argv)
     }
 
     if (client.opts.do_list) {
-        LOG_INFO("List of available devices:");
+        LOG_SIMPLE("List of available devices:");
         return list_hw() ? 1 : 0;
     }
 

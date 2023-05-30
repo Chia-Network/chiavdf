@@ -1,0 +1,66 @@
+name: HW Build
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+
+concurrency:
+  # SHA is added to the end if on `main` to let all main workflows run
+  group: ${{ github.ref }}-${{ github.workflow }}-${{ github.event_name }}-${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/long_lived/')) && github.sha || '' }}
+  cancel-in-progress: true
+
+jobs:
+  build-hw:
+    name: Build HW VDF Client
+    runs-on: [ubuntu-latest]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libgmp-dev libboost-system-dev
+
+      - name: Download USB drivers
+        run: |
+          mkdir libft4222
+          cd libft4222
+          wget https://download.chia.net/vdf/libft4222-linux-1.4.4.170.tgz
+          tar -xvzf libft4222-linux-1.4.4.170.tgz
+          
+          cd $GITHUB_WORKSPACE
+          mkdir libftd2xx
+          cd libftd2xx
+          wget https://download.chia.net/vdf/libftd2xx-x86_64-1.4.27.tgz
+          tar -xvzf libftd2xx-x86_64-1.4.27.tgz
+          
+          cd $GITHUB_WORKSPACE
+          ln -s libftd2xx/release $GITHUB_WORKSPACE/src/hw/libftd2xx
+          ln -s libft4222/build-x86_64/libft4222.so.1.4.4.170 $GITHUB_WORKSPACE/libft4222/build-x86_64/libft4222.so
+          ln -s libft4222/build-x86_64 $GITHUB_WORKSPACE/libftd2xx/release/build-x86_64
+
+      - name: Compile
+        working-directory: "${{ github.workspace }}/src"
+        env:
+          CXXFLAGS: "-I${{ github.workspace }}/libft4222 -L${{ github.workspace }}/libft4222/build-x86_64"
+          LD_LIBRARY_PATH: "${{ github.workspace }}/libft4222/build-x86_64"
+        run: make -f Makefile.vdf-client emu_hw_main hw_main emu_hw_vdf_client hw_vdf_client
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: hw-vdf
+          path: |
+            ${{ github.workspace }}/src/emu_hw_main
+            ${{ github.workspace }}/src/hw_main
+            ${{ github.workspace }}/src/hw_vdf_client
+            ${{ github.workspace }}/src/emu_hw_vdf_client

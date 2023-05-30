@@ -89,7 +89,7 @@ jobs:
           cp ${{ github.workspace }}/src/hw_vdf_client dist/$CLI_DEB_BASE/usr/bin/
           cp ${{ github.workspace }}/src/emu_hw_vdf_client dist/$CLI_DEB_BASE/usr/bin/
 
-          cp ${{ github.workspace }}/libft4222/build-x86_64/libft4222.so /usr/lib/
+          cp ${{ github.workspace }}/libft4222/build-x86_64/libft4222.so dist/$CLI_DEB_BASE/usr/lib/
           dpkg-deb --build --root-owner-group "dist/$CLI_DEB_BASE"
 
       - name: Upload Installer

@@ -37,6 +37,7 @@ jobs:
           wget https://download.chia.net/vdf/libft4222-linux-1.4.4.170.tgz
           tar -xvzf libft4222-linux-1.4.4.170.tgz
           ln -s ${{ github.workspace }}/libft4222 ${{ github.workspace }}/src/hw/libftd2xx
+          ln -s ${{ github.workspace }}/libft4222/build-x86_64/libft4222.so.1.4.4.170 ${{ github.workspace }}/libft4222/build-x86_64/libft4222.so
 
       - name: Compile
         working-directory: "${{ github.workspace }}/src"

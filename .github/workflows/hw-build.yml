@@ -36,23 +36,10 @@ jobs:
           cd libft4222
           wget https://download.chia.net/vdf/libft4222-linux-1.4.4.170.tgz
           tar -xvzf libft4222-linux-1.4.4.170.tgz
-          
-          cd ${{ github.workspace }}
-          mkdir libftd2xx
-          cd libftd2xx
-          wget https://download.chia.net/vdf/libftd2xx-x86_64-1.4.27.tgz
-          tar -xvzf libftd2xx-x86_64-1.4.27.tgz
-          
-          cd ${{ github.workspace }}
-          ln -s ${{ github.workspace }}/libftd2xx/release $GITHUB_WORKSPACE/src/hw/libftd2xx
-          ln -s ${{ github.workspace }}/libft4222/build-x86_64/libft4222.so.1.4.4.170 ${{ github.workspace }}/libft4222/build-x86_64/libft4222.so
-          ln -s ${{ github.workspace }}/libft4222/build-x86_64 ${{ github.workspace }}/libftd2xx/release/build-x86_64
+          ln -s ${{ github.workspace }}/libft4222 ${{ github.workspace }}/src/hw/libftd2xx
 
       - name: Compile
         working-directory: "${{ github.workspace }}/src"
-        env:
-          CXXFLAGS: "-I${{ github.workspace }}/libft4222 -L${{ github.workspace }}/libft4222/build-x86_64"
-          LD_LIBRARY_PATH: "${{ github.workspace }}/libft4222/build-x86_64"
         run: make -f Makefile.vdf-client emu_hw_main hw_main emu_hw_vdf_client hw_vdf_client
 
       - name: Upload Artifacts
@@ -64,7 +51,7 @@ jobs:
             ${{ github.workspace }}/src/hw_main
             ${{ github.workspace }}/src/hw_vdf_client
             ${{ github.workspace }}/src/emu_hw_vdf_client
-            ${{ github.workspace }}/libft4222/build-x86_64/libft4222.so
+            ${{ github.workspace }}/src/hw/libftd2xx/build-x86_64/libft4222.so
 
       - name: Get tag name
         if: startsWith(github.ref, 'refs/tags/')
@@ -89,7 +76,7 @@ jobs:
           cp ${{ github.workspace }}/src/hw_vdf_client dist/$CLI_DEB_BASE/usr/bin/
           cp ${{ github.workspace }}/src/emu_hw_vdf_client dist/$CLI_DEB_BASE/usr/bin/
 
-          cp ${{ github.workspace }}/libft4222/build-x86_64/libft4222.so dist/$CLI_DEB_BASE/usr/lib/
+          cp ${{ github.workspace }}/src/hw/libftd2xx/build-x86_64/libft4222.so dist/$CLI_DEB_BASE/usr/lib/
           dpkg-deb --build --root-owner-group "dist/$CLI_DEB_BASE"
 
       - name: Upload Installer

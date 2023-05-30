@@ -64,3 +64,4 @@ jobs:
             ${{ github.workspace }}/src/hw_main
             ${{ github.workspace }}/src/hw_vdf_client
             ${{ github.workspace }}/src/emu_hw_vdf_client
+            ${{ github.workspace }}/libft4222/build-x86_64/libft4222.so

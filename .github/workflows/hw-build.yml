@@ -37,16 +37,16 @@ jobs:
           wget https://download.chia.net/vdf/libft4222-linux-1.4.4.170.tgz
           tar -xvzf libft4222-linux-1.4.4.170.tgz
           
-          cd $GITHUB_WORKSPACE
+          cd ${{ github.workspace }}
           mkdir libftd2xx
           cd libftd2xx
           wget https://download.chia.net/vdf/libftd2xx-x86_64-1.4.27.tgz
           tar -xvzf libftd2xx-x86_64-1.4.27.tgz
           
-          cd $GITHUB_WORKSPACE
-          ln -s libftd2xx/release $GITHUB_WORKSPACE/src/hw/libftd2xx
-          ln -s libft4222/build-x86_64/libft4222.so.1.4.4.170 $GITHUB_WORKSPACE/libft4222/build-x86_64/libft4222.so
-          ln -s libft4222/build-x86_64 $GITHUB_WORKSPACE/libftd2xx/release/build-x86_64
+          cd ${{ github.workspace }}
+          ln -s ${{ github.workspace }}/libftd2xx/release $GITHUB_WORKSPACE/src/hw/libftd2xx
+          ln -s ${{ github.workspace }}/libft4222/build-x86_64/libft4222.so.1.4.4.170 ${{ github.workspace }}/libft4222/build-x86_64/libft4222.so
+          ln -s ${{ github.workspace }}/libft4222/build-x86_64 ${{ github.workspace }}/libftd2xx/release/build-x86_64
 
       - name: Compile
         working-directory: "${{ github.workspace }}/src"

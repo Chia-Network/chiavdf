@@ -316,7 +316,7 @@ int main(int argc, char* argv[]) try
     init_gmp();
     if (argc != 4)
     {
-      std::cerr << "Usage: ./vdf_client <host> <port>\n";
+      std::cerr << "Usage: ./vdf_client <host> <port> <counter>\n";
       return 1;
     }
 

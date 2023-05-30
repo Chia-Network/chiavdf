@@ -4,11 +4,11 @@ import re
 import shutil
 import subprocess
 import sys
-from distutils.command.build import build  # type: ignore
 from distutils.command.install import install
 from distutils.version import LooseVersion
 
 from setuptools import Command, Extension, setup, setuptools
+from setuptools.command.build import build
 from setuptools.command.build_ext import build_ext
 
 BUILD_HOOKS = []
@@ -253,7 +253,6 @@ if platform.system() == "Windows":
         python_requires=">=3.7",
         long_description=open("README.md").read(),
         long_description_content_type="text/markdown",
-        build_requires=["pybind11"],
         url="https://github.com/Chia-Network/chiavdf",
         ext_modules=ext_modules,
         cmdclass={"build_ext": BuildExt},
@@ -273,7 +272,6 @@ else:
         long_description=open("README.md").read(),
         long_description_content_type="text/markdown",
         url="https://github.com/Chia-Network/chiavdf",
-        setup_requires=["pybind11>=2.5.0"],
         ext_modules=[CMakeExtension("chiavdf", "src")],
         cmdclass=dict(
             build_ext=CMakeBuild, install_hook=install_hook, build_hook=build_hook

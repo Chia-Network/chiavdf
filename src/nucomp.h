@@ -51,7 +51,7 @@ typedef struct qfb
 typedef qfb qfb_t[1];
 
 // From Antic using Flint (works!)
-void qfb_nucomp(qfb_t r, const qfb_t f, const qfb_t g, mpz_t& D, mpz_t& L)
+void qfb_nucomp(qfb_t r, const qfb_t f, const qfb_t g, mpz_t const& D, mpz_t const& L)
 {
    mpz_t a1, a2, c2, ca, cb, cc, k, s, sp, ss, m, t, u2, v1, v2;
 
@@ -192,7 +192,7 @@ void qfb_nucomp(qfb_t r, const qfb_t f, const qfb_t g, mpz_t& D, mpz_t& L)
 }
 
 // a = b * c
-void nucomp_form(form &a, form &b, form &c, integer &D, integer &L) {
+void nucomp_form(form &a, form const& b, form const& c, integer const& D, integer const& L) {
     qfb fr, fr2, fr3;
 
     *fr.a = *a.a.impl;

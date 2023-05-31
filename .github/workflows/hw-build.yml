@@ -70,6 +70,7 @@ jobs:
           mkdir -p "dist/$CLI_DEB_BASE/usr/bin"
           mkdir -p "dist/$CLI_DEB_BASE/usr/lib"
           mkdir -p "dist/$CLI_DEB_BASE/DEBIAN"
+          mkdir -p "dist/$CLI_DEB_BASE/etc/udev/rules.d"
           j2 -o "dist/$CLI_DEB_BASE/DEBIAN/control" assets/deb/control.j2
 
           cp ${{ github.workspace }}/src/emu_hw_main dist/$CLI_DEB_BASE/usr/bin/

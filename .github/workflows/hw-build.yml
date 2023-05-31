@@ -62,7 +62,7 @@ jobs:
 
       - name: Assemble .deb
         env:
-          INSTALLER_VERSION: "${{ steps.tag-name.outputs.TAG_NAME || github.sha }}"
+          INSTALLER_VERSION: "${{ steps.tag-name.outputs.TAG_NAME || format('0.0.1-{1}', github.sha) }}"
           PLATFORM: "amd64"
         run: |
           pip install j2cli

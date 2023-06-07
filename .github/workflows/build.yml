@@ -154,10 +154,6 @@ jobs:
         CIBW_BEFORE_BUILD_MACOS: >
           python -m pip install --upgrade pip
         CIBW_ENVIRONMENT_MACOS: "MACOSX_DEPLOYMENT_TARGET=10.14 BUILD_VDF_CLIENT=N"
-        CIBW_REPAIR_WHEEL_COMMAND_MACOS: >
-          pip uninstall -y delocate && pip install git+https://github.com/Chia-Network/delocate.git
-          && delocate-listdeps {wheel} && delocate-wheel -v {wheel}
-          && cp {wheel} {dest_dir}
         CIBW_BEFORE_ALL_WINDOWS: >
           git clone https://github.com/Chia-Network/mpir_gc_x64.git
         CIBW_ENVIRONMENT_WINDOWS: "BUILD_VDF_CLIENT=N SETUPTOOLS_USE_DISTUTILS=stdlib"

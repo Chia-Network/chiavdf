@@ -238,7 +238,7 @@ bool hw_proof_should_queue(struct vdf_state *vdf, uint64_t iters)
     return iters < vdf->proofs[last_queued_idx].iters;
 }
 
-static const uint32_t g_chkp_thres = 500000;
+static const uint32_t g_chkp_thres = 1000000;
 
 void hw_proof_process_req(struct vdf_state *vdf)
 {
@@ -366,7 +366,7 @@ void hw_proof_process_work(struct vdf_state *vdf)
                     vdf->idx, i, iters, proof->seg_iters, is_chkp ? " [checkpoint]" : "");
             vdf->queued_proofs.erase(vdf->queued_proofs.begin());
             vdf->aux_threads_busy |= 1U << i;
-            vdf->n_proof_threads++;
+            vdf->n_proof_threads += PARALLEL_PROVER_N_THREADS;
             proof->flags |= HW_VDF_PROOF_FLAG_STARTED;
             std::thread(hw_compute_proof, vdf, idx, proof, i).detach();
         }
@@ -504,10 +504,10 @@ void hw_stop_proof(struct vdf_state *vdf)
     hw_proof_wait_values(vdf, false);
 }
 
-class HwProver : public Prover {
+class HwProver : public ParallelProver {
   public:
     HwProver(Segment segm, integer D, struct vdf_state *vdf)
-        : Prover(segm, D)
+        : ParallelProver(segm, D)
     {
         this->vdf = vdf;
         k = FindK(segm.length);
@@ -666,7 +666,7 @@ void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof 
 out:
     if (thr_idx < vdf->max_aux_threads) {
         vdf->aux_threads_busy &= ~(1U << thr_idx);
-        vdf->n_proof_threads--;
+        vdf->n_proof_threads -= PARALLEL_PROVER_N_THREADS;
     }
 }
 

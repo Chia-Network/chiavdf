@@ -295,6 +295,19 @@ class Prover {
     std::atomic<bool> is_finished;
 };
 
+#define PARALLEL_PROVER_N_THREADS 2
+
+class ParallelProver : public Prover {
+  public:
+    ParallelProver(Segment segm, integer D) : Prover(segm, D) {}
+    void GenerateProof();
+  protected:
+    integer B;
+    integer L;
+    form id;
+    form x_vals[PARALLEL_PROVER_N_THREADS];
+};
+
 void nudupl_form(form &a, form &b, integer &D, integer &L);
 
 integer GetB(const integer& D, form &x, form& y);

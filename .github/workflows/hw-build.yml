@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - hw_vdf
     tags:
       - '**'
   pull_request:

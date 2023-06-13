@@ -246,7 +246,7 @@ void hw_proof_process_req(struct vdf_state *vdf)
     uint64_t req_iters;
     uint64_t base_iters = 0;
     uint64_t chkp_iters;
-    uint32_t chkp_div = 3, chkp_mul = 2;
+    uint32_t chkp_div = 4, chkp_mul = 3;
     int i;
     uint16_t prev = HW_VDF_PROOF_NONE;
 
@@ -287,17 +287,20 @@ void hw_proof_process_req(struct vdf_state *vdf)
     iters = req_iters - base_iters;
 
     if (iters > g_chkp_thres) {
+        // Split iters as [75%, 25%]
         chkp_iters = iters * chkp_mul / chkp_div;
         if (iters - chkp_iters > g_chkp_thres) {
-            // Split iters as [58%, 29%, 13%]; 29 * 100 / (29 + 13) == 69
-            uint32_t chkp2_div[] = { 100, 100 }, chkp2_mul[] = { 58, 69 };
+            // Split iters as [69%, 23%, 8%]
+            uint32_t chkp2_mul[] = { 69, 69 + 23 };
+            uint64_t chkp2_iters;
 
-            chkp_iters = iters * chkp2_mul[0] / chkp2_div[0];
+            chkp_iters = iters * chkp2_mul[0] / 100;
             chkp_iters = chkp_iters / vdf->interval * vdf->interval;
             prev = hw_queue_proof(vdf, chkp_iters, prev, 0);
-            iters -= chkp_iters;
 
-            chkp_iters = iters * chkp2_mul[1] / chkp2_div[1];
+            chkp2_iters = iters * chkp2_mul[1] / 100 - chkp_iters;
+            iters -= chkp_iters;
+            chkp_iters = chkp2_iters;
         }
         chkp_iters = chkp_iters / vdf->interval * vdf->interval;
         prev = hw_queue_proof(vdf, chkp_iters, prev, 0);

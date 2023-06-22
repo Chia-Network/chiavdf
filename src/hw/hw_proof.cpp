@@ -181,6 +181,16 @@ uint16_t hw_queue_proof(struct vdf_state *vdf, uint64_t seg_iters, uint16_t prev
     return pos;
 }
 
+uint8_t hw_proof_cnt_segments(struct vdf_state *vdf, uint16_t idx)
+{
+    uint8_t cnt = 0;
+    do {
+        cnt++;
+        idx = vdf->proofs[idx].prev;
+    } while (idx != HW_VDF_PROOF_NONE);
+    return cnt;
+}
+
 void hw_proof_inc_ref(struct vdf_state *vdf, uint16_t idx)
 {
     do {
@@ -247,6 +257,7 @@ void hw_proof_process_req(struct vdf_state *vdf)
     uint64_t base_iters = 0;
     uint64_t chkp_iters;
     uint32_t chkp_div = 4, chkp_mul = 3;
+    uint8_t max_chkp_segments = 64 - 3;
     int i;
     uint16_t prev = HW_VDF_PROOF_NONE;
 
@@ -272,15 +283,19 @@ void hw_proof_process_req(struct vdf_state *vdf)
 
     for (i = vdf->queued_proofs.size() - 1; i >= 0; i--) {
         uint16_t idx = vdf->queued_proofs[i];
+        uint8_t n_segments;
         if (vdf->proofs[idx].flags & HW_VDF_PROOF_FLAG_IS_REQ) {
             continue;
         }
         iters = vdf->proofs[idx].iters;
-        if (iters <= req_iters) {
+        n_segments = hw_proof_cnt_segments(vdf, idx);
+        if (iters <= req_iters && n_segments <= max_chkp_segments) {
             base_iters = iters;
             prev = idx;
             hw_proof_inc_ref(vdf, prev);
             break;
+        } else if (iters <= req_iters) {
+            LOG_INFO("VDF %d: Max seg triggered at req_iters=%lu", vdf->idx, req_iters);
         }
     }
 

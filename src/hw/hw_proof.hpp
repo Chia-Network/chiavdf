@@ -63,7 +63,7 @@ struct vdf_state {
     timepoint_t start_time;
     //std::vector<struct vdf_value> raw_values;
     struct vdf_value last_val;
-    std::vector<form> values;
+    std::vector<form *> values;
     std::vector<uint8_t> valid_values;
     std::mutex valid_values_mtx;
     std::deque<struct vdf_proof_req> req_proofs;

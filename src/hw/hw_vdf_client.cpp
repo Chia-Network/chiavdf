@@ -250,7 +250,7 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
     if (conn->state == WAITING) {
         uint64_t d_size;
         char d_str[350];
-        uint64_t n_iters = 200 * 1000 * 1000;
+        uint64_t n_iters = 2000UL * 1000 * 1000;
         uint8_t *init_form;
 
         bytes = read_data(conn);

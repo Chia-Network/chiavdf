@@ -78,9 +78,29 @@ void hw_proof_print_stats(struct vdf_state *vdf, uint64_t elapsed_us, bool detai
     LOG_INFO("");
 }
 
+static const size_t g_values_mult = 1UL << 12;
+
+form *hw_proof_value_at(struct vdf_state *vdf, size_t pos)
+{
+    size_t idx = pos / g_values_mult;
+    size_t old_size = vdf->values.size();
+
+    if (idx >= old_size) {
+        vdf->values.resize(idx + 1);
+        for (size_t i = old_size; i <= idx; i++) {
+            vdf->values[i] = new form[g_values_mult];
+        }
+        LOG_INFO("VDF %d: Allocating intermediate values, total %zu * %zu",
+                vdf->idx, idx + 1, g_values_mult);
+    }
+    return &vdf->values[idx][pos % g_values_mult];
+}
+
 void hw_proof_add_intermediate(struct vdf_state *vdf, struct vdf_value *val, size_t pos)
 {
-    hw_proof_get_form(&vdf->values[pos], vdf, val);
+    if (val) {
+        hw_proof_get_form(hw_proof_value_at(vdf, pos), vdf, val);
+    }
     vdf->valid_values_mtx.lock();
     vdf->valid_values[pos / 8] |= 1 << (pos % 8);
     vdf->valid_values_mtx.unlock();
@@ -124,11 +144,8 @@ void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_work *work, int thr_
                 abort();
             }
 
-            vdf->values[pos] = f;
-            vdf->valid_values_mtx.lock();
-            vdf->valid_values[pos / 8] |= 1 << (pos % 8);
-            vdf->valid_values_mtx.unlock();
-            vdf->done_values++;
+            *hw_proof_value_at(vdf, pos) = f;
+            hw_proof_add_intermediate(vdf, NULL, pos);
 
             next_iters += vdf->interval;
         }
@@ -472,10 +489,7 @@ void hw_proof_handle_value(struct vdf_state *vdf, struct vdf_value *val)
     uint64_t log_interval = 10 * 1000000;
     bool print_stats = false;
 
-    // TODO: locking for 'values'
-    //vdf->values.resize(end_iters / interval + 1);
     if (val->iters == end_iters) {
-        //vdf->values[iters / interval] = *val;
         hw_proof_add_intermediate(vdf, val, val->iters / interval);
         if (end_iters) {
             end_iters -= interval;
@@ -537,9 +551,9 @@ class HwProver : public ParallelProver {
         pos += pos_offset;
         if (hw_proof_wait_value(vdf, pos)) {
             // Provide arbitrary value when stopping - proof won't be computed
-            return &vdf->values[0];
+            return &vdf->values[0][0];
         }
-        return &vdf->values[pos];
+        return hw_proof_value_at(vdf, pos);
     }
 
     void start() {
@@ -612,8 +626,8 @@ void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof 
         LOG_INFO("VDF %d: Proof stopped", vdf->idx);
         goto out;
     }
-    x = vdf->values[start_pos];
-    y = vdf->values[pos];
+    x = *hw_proof_value_at(vdf, start_pos);
+    y = *hw_proof_value_at(vdf, pos);
     if (!y.check_valid(vdf->D)) {
         LOG_ERROR("VDF %d: invalid form at pos=%lu", vdf->idx, pos);
         abort();
@@ -769,7 +783,7 @@ void init_vdf_state(struct vdf_state *vdf, struct vdf_proof_opts *opts, const ch
     mpz_root(vdf->L.impl, vdf->L.impl, 4);
 
     num_values = vdf->target_iters / vdf->interval + 1;
-    vdf->values.resize(num_values);
+    vdf->values.reserve((num_values + g_values_mult - 1) / g_values_mult);
     vdf->valid_values.resize((num_values + 7) / 8, 0);
 
     //mpz_init_set_ui(initial.a, 2);
@@ -779,7 +793,7 @@ void init_vdf_state(struct vdf_state *vdf, struct vdf_proof_opts *opts, const ch
     // TODO: verify validity of initial form
     bqfc_deserialize(vdf->last_val.a, vdf->last_val.b, vdf->D.impl, init_form,
             BQFC_FORM_SIZE, BQFC_MAX_D_BITS);
-    hw_proof_get_form(&vdf->values[0], vdf, &vdf->last_val);
+    hw_proof_get_form(hw_proof_value_at(vdf, 0), vdf, &vdf->last_val);
     vdf->valid_values[0] = 1 << 0;
     //vdf->raw_values.push_back(initial);
     vdf->init_done = true;
@@ -792,6 +806,9 @@ void clear_vdf_state(struct vdf_state *vdf)
     vdf->queued_proofs.clear();
     vdf->done_proofs.clear();
 
+    for (size_t i = 0; i < vdf->values.size(); i++) {
+        delete[] vdf->values[i];
+    }
     vdf->values.clear();
     vdf->valid_values.clear();
     mpz_clears(vdf->last_val.a, vdf->last_val.b, NULL);

@@ -68,6 +68,10 @@ int bqfc_decompr(mpz_t out_a, mpz_t out_b, const mpz_t D, const struct qfb_c *c)
         mpz_set(t, c->t);
     }
 
+    if (mpz_sgn(c->a) == 0) {
+        ret = -1;
+        goto out;
+    }
     mpz_gcdext(tmp, t_inv, NULL, t, c->a);
     if (mpz_cmp_ui(tmp, 1)) {
         ret = -1;

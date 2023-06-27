@@ -135,7 +135,7 @@ jobs:
           && echo "epel-release installed"
           && yum -y install boost-devel lzip
           && echo "boost-devel and lzip installed"
-          && curl -L https://github.com/Kitware/CMake/releases/download/v3.17.3/cmake-3.17.3-Linux-`uname -m`.sh > cmake.sh
+          && curl -v -L https://github.com/Kitware/CMake/releases/download/v3.17.3/cmake-3.17.3-Linux-`uname -m`.sh > cmake.sh
           && yes | sh cmake.sh | cat
           && rm -f /usr/bin/cmake
           && curl -L https://gmplib.org/download/gmp/gmp-6.2.1.tar.lz | tar x --lzip

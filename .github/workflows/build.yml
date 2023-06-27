@@ -138,7 +138,7 @@ jobs:
           && curl -L https://github.com/Kitware/CMake/releases/download/v3.17.3/cmake-3.17.3-Linux-`uname -m`.sh > cmake.sh
           && yes | sh cmake.sh | cat
           && rm -f /usr/bin/cmake
-          && curl -L https://gmplib.org/download/gmp/gmp-6.2.1.tar.lz | tar x --lzip
+          && curl -L https://ftp.gnu.org/gnu/gmp/gmp-6.2.1.tar.lz | tar x --lzip
           && cp src/lib/gmp-patch-6.2.1/longlong.h gmp-6.2.1/
           && cp src/lib/gmp-patch-6.2.1/compat.c gmp-6.2.1/
           && cp src/lib/gmp-patch-6.2.1/mpz/inp_raw.c gmp-6.2.1/mpz

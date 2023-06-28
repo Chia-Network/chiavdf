@@ -483,6 +483,7 @@ int main(int argc, char **argv)
 
     sa.sa_handler = signal_handler;
     sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
 
     event_loop(&client);
 

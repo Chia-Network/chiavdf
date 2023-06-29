@@ -647,8 +647,7 @@ void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof 
         Segment seg(start_iters, proof_iters - start_iters, x, y);
         HwProver prover(seg, vdf->D, vdf);
 
-        if (out_proof->flags & HW_VDF_PROOF_FLAG_IS_REQ &&
-                seg.length > g_chkp_thres) {
+        if (!is_chkp && seg.length > g_chkp_thres) {
             LOG_INFO("VDF %d: Warning: too long final proof segment length=%lu",
                     vdf->idx, seg.length);
         }

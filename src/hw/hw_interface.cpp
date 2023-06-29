@@ -44,11 +44,13 @@ int list_hw(void)
 void prepare_job(ChiaDriver *drv, uint64_t n_iters, uint8_t *buf, mpz_t d, mpz_t a, mpz_t b)
 {
     uint32_t job_id = 0xab;
-    integer D;
-    mpz_set(D.impl, d);
-    integer L(root(-D, 4));
+    mpz_t L;
+    mpz_init_set(L, d);
+    mpz_neg(L, L);
+    mpz_root(L, L, 4);
 
-    drv->SerializeJob(buf, job_id, n_iters, a, b, D.impl, L.impl);
+    drv->SerializeJob(buf, job_id, n_iters, a, b, d, L);
+    mpz_clear(L);
 }
 
 ChiaDriver *init_hw(double freq, double set_brd_voltage)

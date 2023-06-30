@@ -6,6 +6,8 @@
 #include "proof_common.h"
 #include "util.h"
 
+#define PARALLEL_PROVER_N_THREADS 2
+
 class ParallelProver : public Prover {
   private:
     static void ProofThread(ParallelProver *prover, uint8_t thr_idx, uint32_t start, uint32_t len) {
@@ -18,30 +20,6 @@ class ParallelProver : public Prover {
             nudupl_form(f, f, D, L);
             reducer.reduce(f);
         }
-    }
-
-  public:
-    ParallelProver(Segment segm, integer D) : Prover(segm, D) {}
-    void GenerateProof() {
-        PulmarkReducer reducer;
-
-        this->B = GetB(D, segm.x, segm.y);
-        this->L = root(-D, 4);
-        this->id = form::identity(D);
-
-        uint32_t l0 = l / 2;
-        uint32_t l1 = l - l0;
-        std::thread proof_thr(ParallelProver::ProofThread, this, 0, l, l0);
-        ProvePart(1, l1, l1);
-
-        proof_thr.join();
-        if (!PerformExtraStep()) {
-            return;
-        }
-        nucomp_form(proof, x_vals[0], x_vals[1], D, L);
-        reducer.reduce(proof);
-        //proof = x;
-        OnFinish();
     }
 
     void ProvePart(uint8_t thr_idx, uint32_t start, uint32_t len) {
@@ -97,12 +75,36 @@ class ParallelProver : public Prover {
         SquareFormN(x, end * k, reducer);
         x_vals[thr_idx] = x;
     }
+  public:
+    ParallelProver(Segment segm, integer D) : Prover(segm, D) {}
+    void GenerateProof();
 
   protected:
     integer B;
     integer L;
     form id;
-    form x_vals[2];
+    form x_vals[PARALLEL_PROVER_N_THREADS];
 };
+
+void ParallelProver::GenerateProof() {
+    PulmarkReducer reducer;
+
+    this->B = GetB(D, segm.x, segm.y);
+    this->L = root(-D, 4);
+    this->id = form::identity(D);
+
+    uint32_t l0 = l / 2;
+    uint32_t l1 = l - l0;
+    std::thread proof_thr(ParallelProver::ProofThread, this, 0, l, l0);
+    ProvePart(1, l1, l1);
+
+    proof_thr.join();
+    if (!PerformExtraStep()) {
+        return;
+    }
+    nucomp_form(proof, x_vals[0], x_vals[1], D, L);
+    reducer.reduce(proof);
+    OnFinish();
+}
 
 #endif // PROVER_PARALLEL_H

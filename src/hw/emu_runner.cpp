@@ -79,6 +79,14 @@ void init_state(struct job_state *st, struct job_regs *r)
 	st->stopping = false;
 }
 
+void clear_state(struct job_state *st)
+{
+	if (st->init_done) {
+		delete st->drv;
+		st->init_done = false;
+	}
+}
+
 void run_job(int i)
 {
 	struct job_state *st = states[i];
@@ -107,18 +115,20 @@ void run_job(int i)
 
 void job_thread(int i)
 {
-	init_state(states[i], &regs[i]);
 	run_job(i);
 }
 
 static void start_job(int i)
 {
-	LOG_INFO("Emu %d: Starting job", i);
 	while (states[i]->running) {
 		states[i]->stopping = true;
 		LOG_INFO("Emu %d: Waiting for the old thread to finish", i);
 		usleep(1000);
 	}
+	clear_state(states[i]);
+
+	LOG_INFO("Emu %d: Starting job", i);
+	init_state(states[i], &regs[i]);
 	std::thread(job_thread, i).detach();
 	//usleep(100000);
 }
@@ -299,10 +309,7 @@ __attribute__((destructor)) void emu_shutdown(void)
 {
 	for (int i = 0; i < N_VDFS; i++) {
 		if (states[i]) {
-			if (states[i]->init_done) {
-				states[i]->init_done = false;
-				delete states[i]->drv;
-			}
+			clear_state(states[i]);
 			delete states[i];
 			states[i] = NULL;
 		}

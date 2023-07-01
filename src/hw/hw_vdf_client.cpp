@@ -105,6 +105,15 @@ void init_vdf_client(struct vdf_client *client)
     }
 }
 
+void clear_vdf_client(struct vdf_client *client)
+{
+    for (uint8_t i = 0; i < N_HW_VDFS; i++) {
+        if (client->opts.vdfs_mask & (1 << i)) {
+            clear_vdf_value(&client->values[i]);
+        }
+    }
+}
+
 ssize_t read_data(struct vdf_conn *conn)
 {
     ssize_t bytes = read(conn->sock, conn->read_buf + conn->buf_pos,
@@ -452,7 +461,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     return 0;
 }
 
-int main(int argc, char **argv)
+int hw_vdf_client_main(int argc, char **argv)
 {
     struct vdf_client client;
     struct sigaction sa = {0};
@@ -476,7 +485,6 @@ int main(int argc, char **argv)
         return list_hw() ? 1 : 0;
     }
 
-    VdfBaseInit();
     client.drv = init_hw(client.opts.freq, client.opts.voltage);
 
     init_vdf_client(&client);
@@ -488,5 +496,12 @@ int main(int argc, char **argv)
     event_loop(&client);
 
     stop_hw(client.drv);
+    clear_vdf_client(&client);
     return 0;
+}
+
+int main(int argc, char **argv)
+{
+    VdfBaseInit();
+    return hw_vdf_client_main(argc, argv);
 }

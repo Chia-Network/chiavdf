@@ -71,7 +71,8 @@ void init_conn(struct vdf_conn *conn, uint32_t ip, int port)
     ret = connect(conn->sock, (struct sockaddr *)&sa, sizeof(sa));
     if (ret < 0) {
         perror("connect");
-        throw std::runtime_error("Failed to connect");
+        sleep(1);
+        return;
     }
 
     ret = fcntl(conn->sock, F_SETFL, O_NONBLOCK);

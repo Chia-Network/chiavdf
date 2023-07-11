@@ -67,7 +67,7 @@ void init_conn(struct vdf_conn *conn, uint32_t ip, int port)
     int ret;
     struct sockaddr_in sa = { AF_INET, htons(port), { htonl(ip) } };
     conn->sock = socket(AF_INET, SOCK_STREAM, 0);
-    LOG_INFO("Connecting to %s", inet_ntoa(sa.sin_addr));
+    LOG_INFO("Connecting to %s:%d", inet_ntoa(sa.sin_addr), port);
     ret = connect(conn->sock, (struct sockaddr *)&sa, sizeof(sa));
     if (ret < 0) {
         perror("connect");

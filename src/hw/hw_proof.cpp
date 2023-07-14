@@ -85,13 +85,14 @@ form *hw_proof_value_at(struct vdf_state *vdf, size_t pos)
     size_t idx = pos / g_values_mult;
     size_t old_size = vdf->values.size();
 
-    if (idx >= old_size) {
-        vdf->values.resize(idx + 1);
-        for (size_t i = old_size; i <= idx; i++) {
+    if (idx + 1 >= old_size) {
+        size_t new_size = idx + 2;
+        vdf->values.resize(new_size);
+        for (size_t i = old_size; i < new_size; i++) {
             vdf->values[i] = new form[g_values_mult];
         }
         LOG_INFO("VDF %d: Allocating intermediate values, total %zu * %zu",
-                vdf->idx, idx + 1, g_values_mult);
+                vdf->idx, new_size, g_values_mult);
     }
     return &vdf->values[idx][pos % g_values_mult];
 }

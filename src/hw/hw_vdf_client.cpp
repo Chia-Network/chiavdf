@@ -474,7 +474,7 @@ int hw_vdf_client_main(int argc, char **argv)
                 "  --voltage N - set board voltage [%.2f, 0.7 - 1.0]\n"
                 "  --ip A.B.C.D - timelord IP address [localhost]\n"
                 "  --vdfs-mask - mask for enabling VDF engines [7, 1 - 7]\n"
-                "  --vdf-threads N - number of software threads per VDF engine [4, 2 - 28]\n"
+                "  --vdf-threads N - number of software threads per VDF engine [4, 2 - 64]\n"
                 "  --proof-threads N - number of proof threads per VDF engine\n"
                 "  --list - list available devices",
                 argv[0], (int)HW_VDF_DEF_FREQ, HW_VDF_DEF_VOLTAGE);

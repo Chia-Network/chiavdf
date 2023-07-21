@@ -156,7 +156,7 @@ void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_work *work, int thr_
     vdf->done_iters += iters - init_iters;
     vdf->elapsed_us += vdf_get_elapsed_us(t1);
     LOG_DEBUG(" VDF %d: aux thread %d done", vdf->idx, thr_idx);
-    vdf->aux_threads_busy &= ~(1U << thr_idx);
+    vdf->aux_threads_busy &= ~(1UL << thr_idx);
 }
 
 class ProofCmp {
@@ -371,7 +371,7 @@ void hw_proof_add_work(struct vdf_state *vdf, uint64_t next_iters, uint32_t n_st
 
 void hw_proof_process_work(struct vdf_state *vdf)
 {
-    uint32_t busy = vdf->aux_threads_busy;
+    uint64_t busy = vdf->aux_threads_busy;
     uint32_t qlen;
 
     while (!vdf->req_proofs.empty() && (vdf->queued_proofs.size() < 3 ||
@@ -395,13 +395,13 @@ void hw_proof_process_work(struct vdf_state *vdf)
             break;
         }
 
-        if (!(busy & (1U << i))) {
+        if (!(busy & (1UL << i))) {
             bool is_chkp = !(proof->flags & HW_VDF_PROOF_FLAG_IS_REQ);
 
             LOG_INFO("VDF %d: Starting proof thread %d for iters=%lu, length=%lu%s",
                     vdf->idx, i, iters, proof->seg_iters, is_chkp ? " [checkpoint]" : "");
             vdf->queued_proofs.erase(vdf->queued_proofs.begin());
-            vdf->aux_threads_busy |= 1U << i;
+            vdf->aux_threads_busy |= 1UL << i;
             vdf->n_proof_threads += PARALLEL_PROVER_N_THREADS;
             proof->flags |= HW_VDF_PROOF_FLAG_STARTED;
             std::thread(hw_compute_proof, vdf, idx, proof, i).detach();
@@ -411,7 +411,7 @@ void hw_proof_process_work(struct vdf_state *vdf)
     busy = vdf->aux_threads_busy;
 
     for (int i = 0; i < vdf->max_aux_threads; i++) {
-        if (!(busy & (1U << i))) {
+        if (!(busy & (1UL << i))) {
             struct vdf_work *work;
 
             if (vdf->wq.empty()) {
@@ -422,7 +422,7 @@ void hw_proof_process_work(struct vdf_state *vdf)
             vdf->wq.pop_front();
             //struct vdf_value *val = &vdf->raw_values[work.raw_idx];
 
-            vdf->aux_threads_busy |= 1U << i;
+            vdf->aux_threads_busy |= 1UL << i;
             std::thread(hw_proof_calc_values, vdf, work, i).detach();
         }
     }
@@ -697,7 +697,7 @@ void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof 
 
 out:
     if (thr_idx < vdf->max_aux_threads) {
-        vdf->aux_threads_busy &= ~(1U << thr_idx);
+        vdf->aux_threads_busy &= ~(1UL << thr_idx);
         vdf->n_proof_threads -= PARALLEL_PROVER_N_THREADS;
     }
 }

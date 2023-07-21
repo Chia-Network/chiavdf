@@ -14,7 +14,7 @@
 #define HW_VDF_VALUE_INTERVAL 4000
 #define HW_VDF_VALUE_INTERVAL_DIVISORS { 2, 4, 5, 8, 10, 16, 20 }
 #define HW_VDF_CHKP_INTERVAL 1000000
-#define HW_VDF_MAX_AUX_THREADS 28
+#define HW_VDF_MAX_AUX_THREADS 64
 #define HW_VDF_DEFAULT_MAX_AUX_THREADS 4
 #define HW_VDF_WQ_WARN_MULT 2
 #define HW_VDF_B_SIZE 33
@@ -79,7 +79,7 @@ struct vdf_state {
     uint32_t chkp_interval;
     uint32_t n_bad;
     uint32_t log_cnt;
-    std::atomic<uint32_t> aux_threads_busy;
+    std::atomic<uint64_t> aux_threads_busy;
     std::atomic<uint8_t> n_proof_threads;
     uint8_t idx;
     uint8_t max_aux_threads;

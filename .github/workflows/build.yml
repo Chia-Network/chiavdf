@@ -27,7 +27,7 @@ jobs:
             matrix: macos
             runs-on:
               arm: [macOS, ARM64]
-              intel: [macos-latest]
+              intel: [macos-11]
             cibw-archs-macos:
               arm: arm64
               intel: x86_64
@@ -94,7 +94,7 @@ jobs:
               matrix: macos
               runs-on:
                 arm: [macOS, ARM64]
-                intel: [macos-latest]
+                intel: [macos-11]
             python:
               major-dot-minor: '3.7'
               cibw-build: 'cp37-*'

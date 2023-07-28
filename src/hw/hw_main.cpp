@@ -35,7 +35,7 @@ void init_chia(void)
     //fesetround(FE_TOWARDZERO);
 }
 
-int main(int argc, char **argv)
+int hw_main(int argc, char **argv)
 {
     uint64_t n_iters = 100000;
     uint8_t n_vdfs = 2;
@@ -112,4 +112,10 @@ int main(int argc, char **argv)
     }
     stop_hw(drv);
     return 0;
+}
+
+int main(int argc, char **argv)
+{
+    init_chia();
+    return hw_main(argc, argv);
 }

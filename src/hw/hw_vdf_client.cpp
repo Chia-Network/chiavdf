@@ -487,6 +487,9 @@ int hw_vdf_client_main(int argc, char **argv)
     }
 
     client.drv = init_hw(client.opts.freq, client.opts.voltage);
+    if (!client.drv) {
+        return 1;
+    }
 
     init_vdf_client(&client);
 

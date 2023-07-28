@@ -55,63 +55,70 @@ void prepare_job(ChiaDriver *drv, uint64_t n_iters, uint8_t *buf, mpz_t d, mpz_t
 
 ChiaDriver *init_hw(double freq, double set_brd_voltage)
 {
+    bool set_status;
+    double freq_read, brd_voltage, brd_current, brd_power;
+    double external_alarm_temp = 100.0, engine_alarm_temp = 100.0;
+
     ChiaDriver* drv = new ChiaDriver();
     if (drv->ftdi.Open()) {
-        throw std::runtime_error("Failed to open device");
+        LOG_ERROR("Failed to open device");
+        goto fail;
     }
-
-    bool set_status;
 
     LOG_INFO("Setting frequency to %f MHz", freq);
     set_status = drv->SetPLLFrequency(freq);
     if (set_status == false) {
-      LOG_ERROR("Aborting since freq not set");
-      abort();
+        LOG_ERROR("Aborting since freq not set");
+        goto fail;
     }
 
     // Check frequency
-    double freq_read = drv->GetPLLFrequency();
+    freq_read = drv->GetPLLFrequency();
     LOG_INFO("Frequency is %f MHz", freq_read);
 
-    double brd_voltage = drv->GetBoardVoltage();
+    brd_voltage = drv->GetBoardVoltage();
     LOG_INFO("Board voltage is %1.3f V", brd_voltage);
 
     LOG_INFO("Setting voltage to %1.3f V", set_brd_voltage);
-    int ret_val = drv->SetBoardVoltage(set_brd_voltage);
-    if (ret_val != 0) {
-      LOG_ERROR("Aborting since set voltage failed");
-      abort();
+    if (drv->SetBoardVoltage(set_brd_voltage) != 0) {
+        LOG_ERROR("Aborting since set voltage failed");
+        goto fail;
     }
 
     brd_voltage = drv->GetBoardVoltage();
     LOG_INFO("Board voltage is now %1.3f V", brd_voltage);
 
-    double brd_current = drv->GetBoardCurrent();
+    brd_current = drv->GetBoardCurrent();
     LOG_INFO("Board current is %2.3f A", brd_current);
 
-    double brd_power = drv->GetPower();
+    brd_power = drv->GetPower();
     LOG_INFO("Board power is %2.3f W", brd_power);
 
     // Enable PVT sensor
     drv->EnablePvt();
 
     // Set external temperature alarm in PVT sensor
-    double external_alarm_temp = 100.0;
     set_status = drv->SetTempAlarmExternal(external_alarm_temp);
     if (set_status == false) {
-      LOG_ERROR("Aborting since temp alarm not set");
-      abort();
+        LOG_ERROR("Aborting since temp alarm not set");
+        goto fail;
     }
 
     // Set engine temperature alarm in PVT sensor
-    double engine_alarm_temp = 100.0;
     set_status = drv->SetTempAlarmEngine(engine_alarm_temp);
     if (set_status == false) {
-      LOG_ERROR("Aborting since temp alarm not set");
-      abort();
+        LOG_ERROR("Aborting since temp alarm not set");
+        goto fail;
     }
 
     return drv;
+
+fail:
+    if (drv->ftdi.IsOpen()) {
+        drv->ftdi.Close();
+    }
+    delete drv;
+    return NULL;
 }
 
 void stop_hw(ChiaDriver *drv)

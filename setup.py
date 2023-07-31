@@ -222,7 +222,7 @@ class BuildExt(build_ext):
     }
 
     if sys.platform == "darwin":
-        darwin_opts = ["-stdlib=libc++", "-mmacosx-version-min=10.14"]
+        darwin_opts = ["-stdlib=libc++", "-mmacosx-version-min=11"]
         c_opts["unix"] += darwin_opts
         l_opts["unix"] += darwin_opts  # type: ignore
 
@@ -250,7 +250,7 @@ if platform.system() == "Windows":
         author_email="mariano@chia.net",
         description="Chia vdf verification (wraps C++)",
         license="Apache License",
-        python_requires=">=3.7",
+        python_requires=">=3.8",
         long_description=open("README.md").read(),
         long_description_content_type="text/markdown",
         url="https://github.com/Chia-Network/chiavdf",
@@ -268,7 +268,7 @@ else:
         author_email="florin@chia.net",
         description="Chia vdf verification (wraps C++)",
         license="Apache License",
-        python_requires=">=3.7",
+        python_requires=">=3.8",
         long_description=open("README.md").read(),
         long_description_content_type="text/markdown",
         url="https://github.com/Chia-Network/chiavdf",

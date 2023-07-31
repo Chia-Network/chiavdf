@@ -116,7 +116,7 @@ jobs:
 
     - name: Build and test
       env:
-        MACOSX_DEPLOYMENT_TARGET: 11
+        MACOSX_DEPLOYMENT_TARGET: 11.0
         CIBW_BUILD_VERBOSITY_MACOS: 3
         CIBW_BUILD_VERBOSITY_LINUX: 0
         CIBW_BUILD_VERBOSITY_WINDOWS: 0

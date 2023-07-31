@@ -116,7 +116,6 @@ jobs:
 
     - name: Build and test
       env:
-        MACOSX_DEPLOYMENT_TARGET: '11.0'
         CIBW_BUILD_VERBOSITY_MACOS: 3
         CIBW_BUILD_VERBOSITY_LINUX: 0
         CIBW_BUILD_VERBOSITY_WINDOWS: 0
@@ -148,7 +147,7 @@ jobs:
           brew install gmp boost cmake
         CIBW_BEFORE_BUILD_MACOS: >
           python -m pip install --upgrade pip
-        CIBW_ENVIRONMENT_MACOS: "BUILD_VDF_CLIENT=N"
+        CIBW_ENVIRONMENT_MACOS: "SYSTEM_VERSION_COMPAT=0 MACOSX_DEPLOYMENT_TARGET=11 BUILD_VDF_CLIENT=N"
         CIBW_BEFORE_ALL_WINDOWS: >
           git clone https://github.com/Chia-Network/mpir_gc_x64.git
         CIBW_ENVIRONMENT_WINDOWS: "BUILD_VDF_CLIENT=N SETUPTOOLS_USE_DISTUTILS=stdlib"

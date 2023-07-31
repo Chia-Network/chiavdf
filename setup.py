@@ -221,11 +221,7 @@ class BuildExt(build_ext):
         "unix": [""],
     }
 
-    if sys.platform == "darwin":
-        darwin_opts = ["-stdlib=libc++", "-mmacosx-version-min=11"]
-        c_opts["unix"] += darwin_opts
-        l_opts["unix"] += darwin_opts  # type: ignore
-
+    
     def build_extensions(self):
         ct = self.compiler.compiler_type
         opts = self.c_opts.get(ct, [])

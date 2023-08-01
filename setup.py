@@ -221,7 +221,6 @@ class BuildExt(build_ext):
         "unix": [""],
     }
 
-    
     def build_extensions(self):
         ct = self.compiler.compiler_type
         opts = self.c_opts.get(ct, [])

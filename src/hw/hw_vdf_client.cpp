@@ -54,6 +54,8 @@ struct vdf_proof_segm {
     uint8_t proof[BQFC_FORM_SIZE];
 };
 
+void write_data(struct vdf_conn *conn, const char *buf, size_t size);
+
 static volatile bool g_stopping = false;
 
 void signal_handler(int sig)
@@ -78,7 +80,9 @@ void init_conn(struct vdf_conn *conn, uint32_t ip, int port)
     ret = fcntl(conn->sock, F_SETFL, O_NONBLOCK);
     if (ret < 0) {
         perror("fcntl");
-        throw std::runtime_error("Failed to set O_NONBLOCK");
+        close(conn->sock);
+        conn->sock = -1;
+        return;
     }
     conn->state = WAITING;
     conn->buf_pos = 0;
@@ -115,15 +119,43 @@ void clear_vdf_client(struct vdf_client *client)
     }
 }
 
-ssize_t read_data(struct vdf_conn *conn)
+void stop_conn(struct vdf_client *client, struct vdf_conn *conn)
+{
+    if (conn->sock >= 0) {
+        write_data(conn, "STOP", 4);
+    }
+    if (conn->vdf.init_done) {
+        hw_stop_proof(&conn->vdf);
+        clear_vdf_state(&conn->vdf);
+        stop_hw_vdf(client->drv, conn->vdf.idx);
+    }
+    conn->state = STOPPED;
+    LOG_INFO("VDF %d: Stopped at iters=%lu", conn->vdf.idx, conn->vdf.cur_iters);
+}
+
+void close_conn(struct vdf_conn *conn)
+{
+    if (conn->state != CLOSED) {
+        close(conn->sock);
+        conn->sock = -1;
+        conn->state = CLOSED;
+        LOG_INFO("VDF %d: Connection closed", conn->vdf.idx);
+    }
+}
+
+ssize_t read_data(struct vdf_client *client, struct vdf_conn *conn)
 {
     ssize_t bytes = read(conn->sock, conn->read_buf + conn->buf_pos,
             sizeof(conn->read_buf) - conn->buf_pos);
-    if (bytes < 0 && errno != EAGAIN) {
-        perror("read");
-        throw std::runtime_error("Read error");
-    }
-    if (bytes >= 0) {
+    if ((bytes < 0 && errno != EAGAIN) || bytes == 0) {
+        if (bytes == 0) {
+            LOG_ERROR("VDF %d: Unexpected EOF", conn->vdf.idx);
+        } else {
+            perror("read");
+        }
+        stop_conn(client, conn);
+        close_conn(conn);
+    } else if (bytes > 0) {
         conn->buf_pos += bytes;
         return conn->buf_pos;
     }
@@ -137,21 +169,6 @@ void write_data(struct vdf_conn *conn, const char *buf, size_t size)
         perror("write");
         throw std::runtime_error("Write error");
     }
-}
-
-void stop_conn(struct vdf_client *client, struct vdf_conn *conn)
-{
-    LOG_INFO("VDF %d: Stop requested", conn->vdf.idx);
-    if (conn->sock >= 0) {
-        write_data(conn, "STOP", 4);
-    }
-    if (conn->vdf.init_done) {
-        hw_stop_proof(&conn->vdf);
-        clear_vdf_state(&conn->vdf);
-        stop_hw_vdf(client->drv, conn->vdf.idx);
-    }
-    conn->state = STOPPED;
-    LOG_INFO("VDF %d: Stopped at iters=%lu", conn->vdf.idx, conn->vdf.cur_iters);
 }
 
 void handle_iters(struct vdf_client *client, struct vdf_conn *conn)
@@ -177,6 +194,7 @@ void handle_iters(struct vdf_client *client, struct vdf_conn *conn)
             LOG_DEBUG("VDF %d: Requested proof for iters=%lu", conn->vdf.idx, iters);
             hw_request_proof(&conn->vdf, iters, false);
         } else {
+            LOG_INFO("VDF %d: Stop requested", conn->vdf.idx);
             stop_conn(client, conn);
             bytes -= 2 + iters_size;
             break;
@@ -254,6 +272,7 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
     struct vdf_state *vdf = &conn->vdf;
 
     if (g_stopping && conn->state != CLOSED && conn->state != STOPPED) {
+        LOG_INFO("VDF %d: Global stop requested", conn->vdf.idx);
         stop_conn(client, conn);
     }
 
@@ -263,7 +282,7 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
         uint64_t n_iters = 2000UL * 1000 * 1000;
         uint8_t *init_form;
 
-        bytes = read_data(conn);
+        bytes = read_data(client, conn);
         if (bytes < 5) {
             /* Expecting discr size and discriminant */
             return;
@@ -295,24 +314,19 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
         LOG_INFO("VDF %d: Received challenge, running", vdf->idx);
     } else if (conn->state == RUNNING || conn->state == IDLING) {
         handle_proofs(client, conn);
-        bytes = read_data(conn);
-        if (bytes < 0) {
+        bytes = read_data(client, conn);
+        if (bytes <= 0) {
             return;
         }
 
         handle_iters(client, conn);
     }
     if (conn->state == STOPPED) {
-        bytes = read_data(conn);
-        if (bytes == 3 && !memcmp(buf, "ACK", 3)) {
-            close(conn->sock);
-            conn->sock = -1;
-            conn->state = CLOSED;
-            LOG_INFO("VDF %d: Connection closed", vdf->idx);
-        } else if (bytes >= 0) {
+        bytes = read_data(client, conn);
+        if (bytes != 3 || memcmp(buf, "ACK", 3)) {
             LOG_ERROR("Bad data size after stop: %zd", bytes);
-            throw std::runtime_error("Bad data size");
         }
+        close_conn(conn);
     } else if (conn->state == CLOSED && !g_stopping) {
         init_conn(conn, client->opts.ip, client->opts.port);
     }

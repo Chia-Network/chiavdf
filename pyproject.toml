@@ -12,6 +12,7 @@ test-command = "pytest -v {project}/tests"
 skip = "*-manylinux_i686 *-win32 *-musllinux_*"
 
 [tool.cibuildwheel.linux]
+environment = "BUILD_VDF_CLIENT=N"
 build-verbosity = 0
 before-all = """
 yum -y install epel-release \

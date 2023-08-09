@@ -14,6 +14,10 @@ skip = "*-manylinux_i686 *-win32 *-musllinux_*"
 [tool.cibuildwheel.linux]
 build-verbosity = 0
 before-all = """
+yum -y install epel-release \
+&& echo "epel-release installed" \
+&& yum -y install boost-devel lzip \
+&& echo "boost-devel and lzip installed" \
 curl -L https://ftp.gnu.org/gnu/gmp/gmp-6.2.1.tar.lz | tar x --lzip \
 && cp src/lib/gmp-patch-6.2.1/longlong.h gmp-6.2.1/ \
 && cp src/lib/gmp-patch-6.2.1/compat.c gmp-6.2.1/ \
@@ -21,7 +25,7 @@ curl -L https://ftp.gnu.org/gnu/gmp/gmp-6.2.1.tar.lz | tar x --lzip \
 && cd gmp-6.2.1 && ./configure --enable-fat --enable-cxx \
 && make && make install && cd .. && rm -rf gmp-6.2.1 \
 && cmake --version \
-&& uname -a
+&& uname -a \
 """
 before-build = "python -m pip install --upgrade pip"
 
@@ -47,5 +51,5 @@ ls -l mpir_gc_x64 && pip uninstall -y delocate \
 && delocate-wheel -v -i mpir_gc_x64/mpir_piledriver.dll {wheel} \
 && delocate-wheel -v -i mpir_gc_x64/mpir_sandybridge.dll {wheel} \
 && delocate-wheel -v -i mpir_gc_x64/mpir_skylake_avx.dll {wheel} \
-&& cp {wheel} {dest_dir}
+&& cp {wheel} {dest_dir} \
 """

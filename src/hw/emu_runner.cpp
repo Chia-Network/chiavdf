@@ -1,7 +1,4 @@
 #include "chia_driver.hpp"
-//#include "verifier.h"
-//#include "../src/chia/chia_registers.hpp"
-//#include "alloc.hpp"
 #include "vdf_base.hpp"
 #include "clock.hpp"
 #include "hw_util.hpp"
@@ -34,13 +31,6 @@ struct job_status {
 	//uint32_t padding[19];
 };
 
-//static struct job_status status;
-//struct burst_regs {
-	//uint32_t pvt[5];
-	//struct job_status vdfs[N_VDFS];
-	//uint32_t pvt2[5];
-//};
-//static struct burst_regs burst;
 static struct job_status g_status_regs[N_VDFS];
 
 struct job_state {
@@ -59,10 +49,6 @@ static struct job_state *states[N_VDFS];
 
 void init_state(struct job_state *st, struct job_regs *r)
 {
-	//size_t a_size = CHIA_VDF_CMD_A_MULTIREG_COUNT * 4;
-	//size_t f_size = CHIA_VDF_CMD_F_MULTIREG_COUNT * 4;
-	//size_t d_size = CHIA_VDF_CMD_D_MULTIREG_COUNT * 4;
-	//size_t l_size = CHIA_VDF_CMD_L_MULTIREG_COUNT * 4;
 	integer a, f;
 	st->drv = new ChiaDriver();
 
@@ -193,14 +179,10 @@ void read_regs(uint32_t addr, uint8_t *buf, uint32_t size)
 {
 	uint32_t job_status_base = CHIA_VDF_STATUS_JOB_ID_REG_OFFSET;
 	uint32_t job_status_end = job_status_base + CHIA_VDF_JOB_CSR_MULT * N_VDFS;
-	//uint32_t job_status_size = job_status_end - job_status;
 
 	uint32_t burst_start = CHIA_VDF_BURST_START;
 	uint32_t burst_end = CHIA_VDF_BURST_START + sizeof(g_status_regs);
 
-	//if ((addr >= job_status && addr < job_status_end) ||
-			//(addr >= burst_start && addr < burst_end))
-	//{
 	for (int i = 0; i < N_VDFS; i++) {
 		uint32_t job_id_addr = CHIA_VDF_BURST_START +
 			sizeof(g_status_regs[0]) * i;
@@ -210,7 +192,8 @@ void read_regs(uint32_t addr, uint8_t *buf, uint32_t size)
 		if (!states[i] || !states[i]->init_done) {
 			continue;
 		}
-		/* Reading the job ID register triggers job status update. */
+
+		// Reading the job ID register triggers job status update
 		if ((job_id_addr >= addr && job_id_addr < addr + size) ||
 			(job_id_addr2 >= addr && job_id_addr2 < addr + size))
 		{
@@ -218,7 +201,7 @@ void read_regs(uint32_t addr, uint8_t *buf, uint32_t size)
 			update_status(&g_status_regs[i], states[i]);
 		}
 	}
-	//}
+
 	if (addr + size > job_status_base && addr < job_status_end) {
 		uint32_t i = (addr - job_status_base) / CHIA_VDF_JOB_CSR_MULT;
 		int32_t offset = addr - job_status_base - CHIA_VDF_JOB_CSR_MULT * i;
@@ -244,8 +227,6 @@ int emu_do_io(uint8_t *buf_in, uint16_t size_in, uint8_t *buf_out, uint16_t size
 {
 	uint32_t job_control = CHIA_VDF_CONTROL_REG_OFFSET;
 	uint32_t job_csr = CHIA_VDF_CMD_JOB_ID_REG_OFFSET;
-	//uint32_t job_status = CHIA_VDF_STATUS_JOB_ID_REG_OFFSET;
-	//uint32_t job_status_end = CHIA_VDF_STATUS_END_REG_OFFSET;
 	uint32_t addr = (buf_in[1] << 16) | (buf_in[2] << 8) | buf_in[3];
 	int i;
 
@@ -280,18 +261,10 @@ int emu_do_io(uint8_t *buf_in, uint16_t size_in, uint8_t *buf_out, uint16_t size
 	}
 
 	if (!size_in && size_out) {
-		//uint32_t offset = addr - job_status;
-		//uint32_t size;
 		size_out -= WAIT_CYCLES;
 		buf_out += WAIT_CYCLES;
 
-		//size = size_out;
 		read_regs(addr, buf_out, size_out);
-		//if (offset + size > job_status_end - job_status) {
-
-		//}
-		//update_status(&state);
-		//memcpy(buf_out, (uint8_t *)&status + offset, size_out);
 	}
 
 	return 0;

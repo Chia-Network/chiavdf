@@ -34,19 +34,8 @@ FTD2XX_API FT_STATUS WINAPI FT_GetDeviceInfoList(
 	return 0;
 }
 
-//static void EmuInit(void)
-//{
-	//static bool init_done = false;
-	//if (!init_done) {
-		//init_gmp();
-		//fesetround(FE_TOWARDZERO);
-	//}
-//}
-
 FTD2XX_API FT_STATUS WINAPI FT_OpenEx(PVOID pArg1, DWORD Flags, FT_HANDLE *pHandle)
 {
-	//EmuInit();
-
 	if ((uintptr_t)pArg1 == EMU_LOC_ID) {
 		*pHandle = (void *)SPI_FT_BASE;
 	} else if ((uintptr_t)pArg1 == EMU_LOC_ID + 3) {
@@ -110,7 +99,6 @@ FTD2XX_API FT_STATUS WINAPI FT_Close(FT_HANDLE ftHandle)
 
 LIBFT4222_API FT4222_STATUS FT4222_SPIMaster_MultiReadWrite(FT_HANDLE ftHandle, uint8* readBuffer, uint8* writeBuffer, uint8 singleWriteBytes, uint16 multiWriteBytes, uint16 multiReadBytes, uint32* sizeOfRead)
 {
-	/* TODO: load form, enable engine or get cur iteration */
 	int ret = emu_do_io(writeBuffer, multiWriteBytes, readBuffer, multiReadBytes);
 	if (!ret) {
 		*sizeOfRead = multiReadBytes;

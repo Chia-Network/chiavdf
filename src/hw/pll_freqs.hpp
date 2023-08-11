@@ -8079,5 +8079,5 @@ pll_entry pll_entries[VALID_PLL_FREQS] = {
  {2980.0, {9, 148, 0}},
  {3000.0, {0, 14, 0}}
 };
-  
+
 #endif // _PLL_FREQS_HPP_

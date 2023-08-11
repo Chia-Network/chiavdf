@@ -104,7 +104,7 @@ inline std::string DeviceFlagToString(DWORD flags) {
 
 int FtdiDriver::List() {
   DWORD     num_devs = 0;
-  
+
   CHECK(FT_CreateDeviceInfoList(&num_devs));
 
   if (num_devs == 0) {
@@ -116,7 +116,7 @@ int FtdiDriver::List() {
   FT_DEVICE_LIST_INFO_NODE *dev_info =
     (FT_DEVICE_LIST_INFO_NODE *)malloc((size_t)num_devs *
                                        sizeof(FT_DEVICE_LIST_INFO_NODE));
-    
+
   // Populate the list of info nodes
   if (FT_GetDeviceInfoList(dev_info, &num_devs) != FT4222_OK) {
     free(dev_info);
@@ -138,7 +138,7 @@ int FtdiDriver::List() {
       }
     }
   }
-  
+
   free(dev_info);
   return 0;
 }
@@ -149,7 +149,7 @@ int FtdiDriver::Open() {
 
 int FtdiDriver::OpenClk(unsigned sys_clk, unsigned clk_div, DWORD target_id) {
   DWORD     num_devs = 0;
-  
+
   CHECK(FT_CreateDeviceInfoList(&num_devs));
 
   if (num_devs == 0) {
@@ -161,7 +161,7 @@ int FtdiDriver::OpenClk(unsigned sys_clk, unsigned clk_div, DWORD target_id) {
   FT_DEVICE_LIST_INFO_NODE *dev_info =
     (FT_DEVICE_LIST_INFO_NODE *)malloc((size_t)num_devs *
                                        sizeof(FT_DEVICE_LIST_INFO_NODE));
-    
+
   // Populate the list of info nodes
   if (FT_GetDeviceInfoList(dev_info, &num_devs) != FT4222_OK) {
     free(dev_info);
@@ -197,12 +197,12 @@ int FtdiDriver::OpenClk(unsigned sys_clk, unsigned clk_div, DWORD target_id) {
   }
 
   free(dev_info);
-      
+
   if (!found) {
     eprintf("No FT4222H detected.");
     return -1;
   }
-  
+
   return Open(device_id, sys_clk, clk_div);
 }
 
@@ -218,7 +218,7 @@ int FtdiDriver::SetMode(FtdiDriver::MODE_t mode)
     //printf("SetMode FT4222_UnInitialize\n");
     active_mode = MODE_none;
   }
-	
+
   switch(mode) {
 
   case MODE_spi:
@@ -245,7 +245,7 @@ int FtdiDriver::SetMode(FtdiDriver::MODE_t mode)
   default:
     active_mode = MODE_none;
   }
-  
+
   return 0;
 }
 
@@ -411,7 +411,7 @@ int FtdiDriver::WriteRaw(uint8_t *write_buf, size_t size) {
   assert(IsOpen());
   // fprintf(stderr, "WriteRaw\n");
   // print_buf(0x0, write_buf, size);
-  
+
   uint32_t size_of_read;
   CHECK(SetMode(MODE_spi));
   CHECK(FT4222_SPIMaster_MultiReadWrite(spi_ft_handle, NULL, write_buf,
@@ -658,9 +658,9 @@ int FtdiDriver::ReadBit(int *bit)
   // "ReadSDA" makes SDA an input - processor lets go of pin and internal
   //  pull-up resistor makes it high.  Now slave can drive the pin.
   ReadSDA();
-  
+
   Delay();
-  
+
   // Clock stretching - Makes SCL an input and pull-up resistor makes
   //  the pin high.  Slave device can pull SCL low to extend clock cycle.
   if (!clockStretchDisable) {
@@ -678,14 +678,14 @@ int FtdiDriver::ReadBit(int *bit)
   } else {
     ReadSCL();
   }
-  
+
   // At this point, SCL is high and SDA is valid - so read the bit.
   *bit = ReadSDA();
- 
+
   Delay();
-  
+
   ClearSCL();     // Pull the serial clock line low ...
-  
+
   return I2C_RETURN_CODE_success;     //  and return.
 }
 
@@ -699,7 +699,7 @@ int FtdiDriver::WriteBit(int bit)
     {
       ClearSDA();     // Make SDA an output ... so pin is pulled low.
     }
-  
+
   Delay();
 
   // Clock stretching - Makes SCL an input and pull-up resistor makes
@@ -726,10 +726,10 @@ int FtdiDriver::WriteBit(int bit)
     {
       return I2C_RETURN_CODE_lostArbitration;       // Lost arbitration
     }
-  
+
   Delay();
   ClearSCL();
-  
+
   return I2C_RETURN_CODE_success;           // Success!
 }
 
@@ -737,7 +737,7 @@ int FtdiDriver::SendStartCondition()
 {
   if (start)
     {
-      // set SDA to 1 
+      // set SDA to 1
       ReadSDA();
       Delay();
 
@@ -759,28 +759,28 @@ int FtdiDriver::SendStartCondition()
 	ReadSCL();
       }
     }
-  
+
   if (!ReadSDA())
     {
       return I2C_RETURN_CODE_sdaBadState;
     }
-  
-  // SCL is high, set SDA from 1 to 0 
+
+  // SCL is high, set SDA from 1 to 0
   ClearSDA();
   Delay();
   ClearSCL();
-  
+
   start = 1;
-  
+
   return I2C_RETURN_CODE_success;
 }
 
 int FtdiDriver::SendStopCondition()
 {
-  // set SDA to 0 
+  // set SDA to 0
   ClearSDA();
   Delay();
-  
+
   // Clock stretching - Makes SCL an input and pull-up resistor makes
   //  the pin high.  Slave device can pull SCL low to extend clock cycle.
   if (!clockStretchDisable) {
@@ -799,12 +799,12 @@ int FtdiDriver::SendStopCondition()
     ReadSCL();
   }
 
-  // SCL is high, set SDA from 0 to 1 
+  // SCL is high, set SDA from 0 to 1
   ReadSDA();
   Delay();
 
   start = 0;
-  
+
   return I2C_RETURN_CODE_success;
 }
 
@@ -824,13 +824,13 @@ int FtdiDriver::i2c_Init()
   if (!ReadSCL()) return I2C_RETURN_CODE_timeout;
   if (!ReadSDA()) return I2C_RETURN_CODE_timeout;
 #endif
-  
+
   return I2C_RETURN_CODE_success;
 }
 
 int FtdiDriver::i2c_TransmitX
-( int sendStartCondition, 
-  int sendStopCondition, 
+( int sendStartCondition,
+  int sendStopCondition,
   int slaveAddress,
   uint8_t *buf,
   uint16_t bytesToXfer,
@@ -839,7 +839,7 @@ int FtdiDriver::i2c_TransmitX
 #if !USE_I2C_BITBANG
 
   FT_STATUS s;
-  
+
   s = SetMode(MODE_i2c);
   if (s!=FT_OK)
     return I2C_RETURN_CODE_fail;
@@ -877,7 +877,7 @@ int FtdiDriver::i2c_TransmitX
 	goto transmitx_error;
       byteToSend <<= 1;
     }
-    
+
     ret = ReadBit(&nack);
     if (ret != I2C_RETURN_CODE_success)
       goto transmitx_error;
@@ -894,16 +894,16 @@ int FtdiDriver::i2c_TransmitX
 	  goto transmitx_error;
 	byteToSend <<= 1;
       }
-      
+
       ret = ReadBit(&nack);
       if (ret != I2C_RETURN_CODE_success)
 	goto transmitx_error;
-      
+
       if (nack)
 	break;
     }
   }
-  
+
   if (sendStopCondition) {
     ret = SendStopCondition();
     if (ret != I2C_RETURN_CODE_success)
@@ -915,7 +915,7 @@ int FtdiDriver::i2c_TransmitX
  transmitx_error:
   SendStopCondition();
   ReadSDA();
-  Delay();  
+  Delay();
   start = 0;
   return ret;
 
@@ -924,7 +924,7 @@ int FtdiDriver::i2c_TransmitX
 
 int FtdiDriver::i2c_ReceiveX
 ( int sendStartCondition,
-  int sendStopCondition, 
+  int sendStopCondition,
   int slaveAddress,
   uint8_t *buf,
   uint16_t bytesToXfer,
@@ -933,7 +933,7 @@ int FtdiDriver::i2c_ReceiveX
 #if !USE_I2C_BITBANG
 
   FT_STATUS s;
-  
+
   s = SetMode(MODE_i2c);
   if (s!=FT_OK)
     return I2C_RETURN_CODE_fail;
@@ -954,7 +954,7 @@ int FtdiDriver::i2c_ReceiveX
 
   int ret;
   int b, bit, nack, sendAcknowledgeBit;
-  
+
   if (sendStartCondition) {
     ret = SendStartCondition();
     if (ret != I2C_RETURN_CODE_success)
@@ -970,7 +970,7 @@ int FtdiDriver::i2c_ReceiveX
 	goto receivex_error;
       byteToSend <<= 1;
     }
-    
+
     ret = ReadBit(&nack);
     if (ret != I2C_RETURN_CODE_success)
       goto receivex_error;
@@ -989,10 +989,10 @@ int FtdiDriver::i2c_ReceiveX
 	if (b)
 	  byte |= 1;
       }
-      
+
       buf[bytesXfered++] = byte;
       sendAcknowledgeBit = bytesXfered < bytesToXfer;
-      
+
       ret = WriteBit(!sendAcknowledgeBit);
       if (ret != I2C_RETURN_CODE_success)
 	goto receivex_error;
@@ -1010,7 +1010,7 @@ int FtdiDriver::i2c_ReceiveX
  receivex_error:
   SendStopCondition();
   ReadSDA();
-  Delay();  
+  Delay();
   start = 0;
   return ret;
 

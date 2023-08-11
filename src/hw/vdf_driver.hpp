@@ -31,7 +31,7 @@ public:
   }
 
   virtual ~VdfDriver() {}
-  
+
   // Functions for serializing to buffers
   // Append size bytes to 'buf' starting at offset. Returns size.
   size_t write_bytes(size_t size, size_t offset, uint8_t *buf,
@@ -48,7 +48,7 @@ public:
                     uint64_t &val);
   size_t read_bytes(size_t size, size_t offset, uint8_t *buf,
                     mpz_t val, size_t num_coeffs);
-  
+
   // Returns the buffer size needed for a command
   virtual size_t CmdSize() = 0;
 

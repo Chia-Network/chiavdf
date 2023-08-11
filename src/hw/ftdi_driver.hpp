@@ -16,7 +16,7 @@ public:
   typedef unsigned int DWORD;
   static const unsigned GPIO2 = 2;
   static const unsigned GPIO3 = 3;
-  
+
   FtdiDriver();
   ~FtdiDriver();
 
@@ -25,7 +25,7 @@ public:
   int List();
 
   bool IsOpen();
-  
+
   // Open a connection to an automatically located FTDI device
   // Returns status, 0 for success
   int Open();
@@ -37,7 +37,7 @@ public:
   // Returns status, 0 for success
   int Open(DWORD spi_loc_id, unsigned sys_clk, unsigned clk_div);
 
-  // Enumeration of FTDI statemachine operation modes 
+  // Enumeration of FTDI statemachine operation modes
   typedef enum {
     MODE_none,
     MODE_spi,
@@ -62,17 +62,17 @@ public:
   // Read arbitrary size message
   // Returns status, 0 for success
   int Read(uint32_t addr, uint8_t *read_data, size_t size);
-  
+
   // Write size bytes, starting at the specified register.
   // Size must be 4, 16, 32, 64, 128, or 256
   // Returns status, 0 for success
   int WriteCmd(uint32_t addr, uint8_t *write_data, size_t size);
 
-  // Read size bytes, starting at the specified register. 
+  // Read size bytes, starting at the specified register.
   // Size must be 4, 16, 32, 64, 128, or 256
   // Returns status, 0 for success
   int ReadCmd(uint32_t addr, uint8_t *read_data, size_t size);
-  
+
   // Write size bytes, starting at the specified register.
   // Returns status, 0 for success
   int WriteRaw(uint8_t *write_buf, size_t size);
@@ -149,7 +149,7 @@ private:
   // Opaque pointer for the FTDI driver
   void *spi_ft_handle;
   void *gpio_ft_handle;
-  
+
   // Location ID for the FTDI SPI device
   DWORD spi_loc_id;
 

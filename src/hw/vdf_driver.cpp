@@ -16,7 +16,7 @@ size_t VdfDriver::write_bytes(size_t size, size_t offset, uint8_t *buf,
   for (unsigned i = 0; i < REG_BYTES; i++) {
     buf[i + offset] = p[REG_BYTES - i - 1];
   }
-  
+
   return size;
 }
 
@@ -47,7 +47,7 @@ size_t VdfDriver::write_bytes(size_t size, size_t offset, uint8_t *buf,
     mpz_clear(shifted);
   }
   mpz_set(tmp, val);
-  
+
   // Extract coefficients
   uint32_t word_mask = (1UL << WORD_BITS) - 1;
   std::vector<uint32_t> coeffs;
@@ -58,7 +58,7 @@ size_t VdfDriver::write_bytes(size_t size, size_t offset, uint8_t *buf,
   }
   // Last coeff does not get masked
   coeffs.push_back(mpz_get_ui(tmp));
-  
+
   // Pack coefficients, with redundant bits
   mpz_set_ui(tmp, 0);
   for (int i = num_coeffs - 1; i >= 0; i--) {
@@ -80,7 +80,7 @@ size_t VdfDriver::write_bytes(size_t size, size_t offset, uint8_t *buf,
 
     mpz_tdiv_q_2exp(tmp, tmp, REG_BITS);
   }
-  
+
   mpz_clears(tmp, val, NULL);
   return size;
 }
@@ -92,7 +92,7 @@ size_t VdfDriver::read_bytes(size_t size, size_t offset, uint8_t *buf,
   for (unsigned i = 0; i < REG_BYTES; i++) {
     p[REG_BYTES - i - 1] = buf[i + offset];
   }
-  
+
   return size;
 }
 
@@ -101,10 +101,10 @@ size_t VdfDriver::read_bytes(size_t size, size_t offset, uint8_t *buf,
   uint32_t val32;
   read_bytes(REG_BYTES, offset, buf, val32);
   val = val32;
-  
+
   read_bytes(REG_BYTES, offset + REG_BYTES, buf, val32);
   val |= ((uint64_t)val32) << REG_BITS;
-  
+
   return size;
 }
 
@@ -144,7 +144,7 @@ size_t VdfDriver::read_bytes(size_t size, size_t offset, uint8_t *buf,
       mpz_mul_2exp(tmp2, tmp2, WORD_BITS * i); // left shift
       mpz_add(val, val, tmp2);
     }
-    
+
     mpz_tdiv_q_2exp(tmp, tmp, REDUNDANT_BITS);
   }
 

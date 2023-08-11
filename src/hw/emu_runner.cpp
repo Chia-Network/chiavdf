@@ -32,6 +32,7 @@ struct job_status {
 };
 
 static struct job_status g_status_regs[N_VDFS];
+static int g_error_prob = -1;
 
 struct job_state {
 	uint64_t cur_iter;
@@ -41,6 +42,7 @@ struct job_state {
 	bool init_done;
 	bool stopping;
 	bool running;
+	bool error;
 	ChiaDriver *drv;
 	std::mutex mtx;
 };
@@ -81,6 +83,7 @@ void run_job(int i)
 
 	LOG_INFO("Emu %d: Starting run for %lu iters", i, st->target_iter);
 
+	st->error = false;
 	st->running = true;
 	while (!st->stopping && st->cur_iter < st->target_iter) {
 		nudupl_form(qf2, st->qf, st->d, st->l);
@@ -134,10 +137,26 @@ static void enable_engine(int i)
 		states[i]->init_done = false;
 		states[i]->stopping = true;
 		states[i]->running = false;
+		srand48(1);
 	}
 	if (states[i]->stopping) {
 		states[i]->stopping = false;
 		LOG_INFO("Emu %d: Enabling engine", i);
+	}
+}
+
+void inject_error(struct job_status *stat, struct job_state *st)
+{
+	int p = g_error_prob;
+	if (p == -1) {
+		char *prob = getenv("EMU_ERROR_PROB");
+		p = prob ? atoi(prob) : 0;
+		g_error_prob = p;
+	}
+	if (p != 0 && (st->error || (uint32_t)mrand48() % p == 0)) {
+		// Inject error by messing up 'a' register
+		stat->a[10] = ~stat->a[10];
+		st->error = true;
 	}
 }
 
@@ -152,6 +171,8 @@ void update_status(struct job_status *stat, struct job_state *st)
 	} else {
 		memset(stat, 0, sizeof(*stat));
 	}
+
+	inject_error(stat, st);
 }
 
 void copy_regs(void *dst, void *src, uint32_t size, uint32_t max_size, int32_t offset)

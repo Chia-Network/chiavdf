@@ -54,8 +54,8 @@ struct vdf_proof_opts {
 };
 
 struct vdf_state {
-    uint64_t proof_iters;
     uint64_t target_iters;
+    uint64_t iters_offset;
     uint64_t cur_iters;
     std::atomic<uint64_t> done_values;
     std::atomic<uint64_t> done_iters;
@@ -89,7 +89,8 @@ struct vdf_state {
     bool init_done;
 };
 
-void hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val);
+int hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val);
+form *hw_proof_last_good_form(struct vdf_state *vdf, size_t *out_pos);
 void hw_proof_handle_value(struct vdf_state *vdf, struct vdf_value *val);
 void hw_stop_proof(struct vdf_state *vdf);
 void hw_request_proof(struct vdf_state *vdf, uint64_t iters, bool is_chkp);

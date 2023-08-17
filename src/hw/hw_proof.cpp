@@ -13,22 +13,19 @@ int verify_vdf_value(struct vdf_state *vdf, struct vdf_value *val)
     /* Verify that c could be computed as c = (b^2 - d) / (4 * a) */
     if (!mpz_divisible_p(vdf->a2.impl, val->a) || mpz_scan1(vdf->a2.impl, 0) < mpz_scan1(val->a, 0) + 2) {
         vdf->n_bad++;
-        if (vdf->n_bad > 1) {
-            LOG_INFO("VDF %d: Warning: Bad VDF value at iters=%lu n_bad=%u",
-                    vdf->idx, val->iters, vdf->n_bad);
-            gmp_fprintf(stderr, " a = %#Zx\n b = %#Zx\n d = %#Zx\n",
-                    val->a, val->b, vdf->D.impl);
-        }
+        LOG_INFO("VDF %d: Warning: Bad VDF value at iters=%lu n_bad=%u",
+                vdf->idx, val->iters, vdf->n_bad);
         return -1;
     }
     return 0;
 }
 
-void hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val)
+int hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val)
 {
-    if (!val->iters || vdf->last_val.iters == val->iters) {
+    val->iters += vdf->iters_offset;
+    if (val->iters == vdf->iters_offset || val->iters == vdf->last_val.iters) {
         LOG_INFO("VDF %d: Skipping iters=%lu", vdf->idx, val->iters);
-        return;
+        return 1;
     }
 
     // b = b (mod 2*a)
@@ -36,9 +33,10 @@ void hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val)
     mpz_mod(val->b, val->b, vdf->a2.impl);
 
     if (verify_vdf_value(vdf, val)) {
-        return;
+        return -1;
     }
     hw_proof_handle_value(vdf, val);
+    return 0;
 }
 
 void hw_proof_get_form(form *f, struct vdf_state *vdf, struct vdf_value *val)
@@ -74,6 +72,9 @@ void hw_proof_print_stats(struct vdf_state *vdf, uint64_t elapsed_us, bool detai
         uint64_t done_values = vdf->done_values;
         LOG_INFO("VDF %d: Avg iters per intermediate: %lu",
                 vdf->idx, sw_iters / done_values);
+        if (vdf->n_bad > 0) {
+            LOG_INFO("VDF %d: Bad VDF values observed: %u", vdf->idx, vdf->n_bad);
+        }
     }
     LOG_INFO("");
 }
@@ -95,6 +96,17 @@ form *hw_proof_value_at(struct vdf_state *vdf, size_t pos)
                 vdf->idx, new_size, g_values_mult);
     }
     return &vdf->values[idx][pos % g_values_mult];
+}
+
+form *hw_proof_last_good_form(struct vdf_state *vdf, size_t *out_pos)
+{
+    size_t pos = vdf->cur_iters / vdf->interval;
+
+    while (!(vdf->valid_values[pos / 8] & (1 << (pos % 8)))) {
+        pos--;
+    }
+    *out_pos = pos;
+    return hw_proof_value_at(vdf, pos);
 }
 
 void hw_proof_add_intermediate(struct vdf_state *vdf, struct vdf_value *val, size_t pos)
@@ -749,8 +761,8 @@ void init_vdf_state(struct vdf_state *vdf, struct vdf_proof_opts *opts, const ch
     //int ret;
     //struct vdf_value initial;
     size_t num_values;
-    vdf->proof_iters = n_iters;
     vdf->cur_iters = 0;
+    vdf->iters_offset = 0;
     vdf->done_values = 1;
     vdf->done_iters = 0;
     vdf->elapsed_us = 0;

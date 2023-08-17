@@ -367,7 +367,21 @@ void event_loop(struct vdf_client *client)
 
         for (uint8_t i = 0; i < N_HW_VDFS; i++) {
             if (running_mask & (1 << i)) {
-                hw_proof_add_value(&client->conns[i].vdf, &client->values[i]);
+                struct vdf_state *vdf = &client->conns[i].vdf;
+
+                if (hw_proof_add_value(vdf, &client->values[i]) < 0) {
+                    size_t pos = 0;
+                    form *f;
+
+                    stop_hw_vdf(client->drv, vdf->idx);
+                    f = hw_proof_last_good_form(vdf, &pos);
+                    vdf->iters_offset = pos * vdf->interval;
+
+                    LOG_INFO("VDF %d: Restarting VDF at %lu iters",
+                            vdf->idx, vdf->iters_offset);
+                    start_hw_vdf(client->drv, vdf->D.impl, f->a.impl, f->b.impl,
+                            vdf->target_iters - vdf->iters_offset, vdf->idx);
+                }
                 if (client->conns[i].vdf.completed) {
                     stop_hw_vdf(client->drv, i);
                     client->conns[i].state = IDLING;

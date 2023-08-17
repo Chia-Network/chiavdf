@@ -6,15 +6,20 @@
 #include <cstdlib>
 #include <unistd.h>
 
+void report_bad_vdf_value(struct vdf_state *vdf, struct vdf_value *val)
+{
+    vdf->n_bad++;
+    LOG_INFO("VDF %d: Warning: Bad VDF value at iters=%lu n_bad=%u",
+            vdf->idx, val->iters, vdf->n_bad);
+}
+
 int verify_vdf_value(struct vdf_state *vdf, struct vdf_value *val)
 {
     mpz_mul(vdf->a2.impl, val->b, val->b);
     mpz_sub(vdf->a2.impl, vdf->a2.impl, vdf->D.impl);
     /* Verify that c could be computed as c = (b^2 - d) / (4 * a) */
     if (!mpz_divisible_p(vdf->a2.impl, val->a) || mpz_scan1(vdf->a2.impl, 0) < mpz_scan1(val->a, 0) + 2) {
-        vdf->n_bad++;
-        LOG_INFO("VDF %d: Warning: Bad VDF value at iters=%lu n_bad=%u",
-                vdf->idx, val->iters, vdf->n_bad);
+        report_bad_vdf_value(vdf, val);
         return -1;
     }
     return 0;
@@ -28,6 +33,10 @@ int hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val)
         return 1;
     }
 
+    if (mpz_sgn(val->a) == 0) {
+        report_bad_vdf_value(vdf, val);
+        return -1;
+    }
     // b = b (mod 2*a)
     mpz_mul_2exp(vdf->a2.impl, val->a, 1);
     mpz_mod(val->b, val->b, vdf->a2.impl);

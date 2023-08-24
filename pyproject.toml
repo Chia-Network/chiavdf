@@ -5,3 +5,52 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools_scm]
 fallback_version = "unknown-no-.git-directory"
 local_scheme = "no-local-version"
+
+[tool.cibuildwheel]
+test-requires = "pytest"
+test-command = "pytest -v {project}/tests"
+skip = "*-manylinux_i686 *-win32 *-musllinux_*"
+
+[tool.cibuildwheel.linux]
+environment = "BUILD_VDF_CLIENT=N"
+build-verbosity = 0
+before-all = """
+yum -y install epel-release \
+&& echo "epel-release installed" \
+&& yum -y install boost-devel lzip \
+&& echo "boost-devel and lzip installed" \
+&& curl -L https://ftp.gnu.org/gnu/gmp/gmp-6.2.1.tar.lz | tar x --lzip \
+&& cp src/lib/gmp-patch-6.2.1/longlong.h gmp-6.2.1/ \
+&& cp src/lib/gmp-patch-6.2.1/compat.c gmp-6.2.1/ \
+&& cp src/lib/gmp-patch-6.2.1/mpz/inp_raw.c gmp-6.2.1/mpz \
+&& cd gmp-6.2.1 && ./configure --enable-fat --enable-cxx \
+&& make && make install && cd .. && rm -rf gmp-6.2.1 \
+&& cmake --version \
+&& uname -a \
+"""
+before-build = "python -m pip install --upgrade pip"
+
+[tool.cibuildwheel.macos]
+build-verbosity = 0
+before-all = "brew install gmp boost cmake"
+before-build = "python -m pip install --upgrade pip"
+environment = {MACOSX_DEPLOYMENT_TARGET="11", SYSTEM_VERSION_COMPAT=0, BUILD_VDF_CLIENT="N"}
+
+[tool.cibuildwheel.windows]
+build-verbosity = 0
+before-all = "git clone https://github.com/Chia-Network/mpir_gc_x64.git"
+environment = {BUILD_VDF_CLIENT="N", SETUPTOOLS_USE_DISTUTILS="stdlib"}
+repair-wheel-command = """
+ls -l mpir_gc_x64 && pip uninstall -y delocate \
+&& pip install git+https://github.com/Chia-Network/delocate.git \
+&& delocate-wheel -v -i mpir_gc_x64/mpir.dll {wheel} \
+&& delocate-wheel -v -i mpir_gc_x64/mpir_gc.dll {wheel} \
+&& delocate-wheel -v -i mpir_gc_x64/mpir_broadwell.dll {wheel} \
+&& delocate-wheel -v -i mpir_gc_x64/mpir_broadwell_avx.dll {wheel} \
+&& delocate-wheel -v -i mpir_gc_x64/mpir_bulldozer.dll {wheel} \
+&& delocate-wheel -v -i mpir_gc_x64/mpir_haswell.dll {wheel} \
+&& delocate-wheel -v -i mpir_gc_x64/mpir_piledriver.dll {wheel} \
+&& delocate-wheel -v -i mpir_gc_x64/mpir_sandybridge.dll {wheel} \
+&& delocate-wheel -v -i mpir_gc_x64/mpir_skylake_avx.dll {wheel} \
+&& cp {wheel} {dest_dir} \
+"""

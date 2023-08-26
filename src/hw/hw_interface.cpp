@@ -126,10 +126,6 @@ void stop_hw(ChiaDriver *drv)
     delete drv;
 }
 
-struct vdf_state;
-void add_vdf_value(struct vdf_state *vdf, mpz_t a, mpz_t f, uint64_t n_iters);
-
-
 int start_hw_vdf(ChiaDriver *drv, mpz_t d, mpz_t a, mpz_t b, uint64_t n_iters, int idx)
 {
     uint8_t job[CHIA_VDF_JOB_SIZE];

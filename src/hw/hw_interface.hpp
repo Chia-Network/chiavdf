@@ -24,7 +24,6 @@ ChiaDriver *init_hw(double freq, double brd_voltage);
 void stop_hw(ChiaDriver *drv);
 
 struct vdf_state;
-//int run_hw(mpz_t d, uint64_t n_iters, struct vdf_state *vdf_p, int idx);
 void init_vdf_value(struct vdf_value *val);
 void clear_vdf_value(struct vdf_value *val);
 void copy_vdf_value(struct vdf_value *dst, struct vdf_value *src);

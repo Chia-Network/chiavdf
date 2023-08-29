@@ -4,7 +4,7 @@
 #include <cstdint>
 
 #define VALID_PLL_FILTER_RANGES 8
-#define VALID_PLL_FREQS 8033
+#define VALID_PLL_FREQS 8003
 
 /*
 struct pll_filter_range {
@@ -32,6 +32,7 @@ struct pll_settings {
   uint32_t divq;
 };
 
+// freq = 400 * (divfi + 1) / (2 * (divr + 1) * (divq + 1))
 struct pll_entry {
   double freq;
   pll_settings settings;

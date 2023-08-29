@@ -23,6 +23,7 @@ public:
   static const uint32_t VDF_ENGINE_STRIDE = 0x10000;
 
   FtdiDriver ftdi;
+  uint32_t   freq_idx;
 
   VdfDriver(unsigned _WORD_BITS, unsigned _REDUNDANT_BITS,
             bool _SIGNED)
@@ -112,7 +113,7 @@ public:
   bool SetTempAlarmExternal(double temp);
   bool SetTempAlarmEngine(double temp);
   void ResetPLL();
-  bool SetPLLFrequency(double frequency);
+  bool SetPLLFrequency(double frequency, uint32_t entry_index);
   double GetPLLFrequency();
   int Reset(uint32_t sleep_duration);
   int TurnFanOn();

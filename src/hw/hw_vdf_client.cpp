@@ -36,6 +36,7 @@ struct vdf_client_opts {
     uint32_t ip;
     int port;
     int n_vdfs;
+    uint32_t auto_freq_period;
     bool do_list;
     struct vdf_proof_opts vpo;
     uint8_t vdfs_mask;
@@ -377,6 +378,10 @@ void event_loop(struct vdf_client *client)
                     f = hw_proof_last_good_form(vdf, &pos);
                     vdf->iters_offset = pos * vdf->interval;
 
+                    if (client->opts.auto_freq_period) {
+                        adjust_hw_freq(client->drv, running_mask & ~(1 << i), -1);
+                    }
+
                     LOG_INFO("VDF %d: Restarting VDF at %lu iters",
                             vdf->idx, vdf->iters_offset);
                     start_hw_vdf(client->drv, vdf->D.impl, f->a.impl, f->b.impl,
@@ -406,6 +411,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
         {"vdf-threads", required_argument, NULL, 1},
         {"proof-threads", required_argument, NULL, 1},
         {"list", no_argument, NULL, 1},
+        {"auto-freq-period", required_argument, NULL, 1},
         {0}
     };
     int long_idx = -1;
@@ -436,6 +442,8 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
             opts->vpo.max_proof_threads = strtoul(optarg, NULL, 0);
         } else if (long_idx == 6) {
             opts->do_list = true;
+        } else if (long_idx == 7) {
+            opts->auto_freq_period = strtoul(optarg, NULL, 0);
         }
     }
     if (ret != -1) {

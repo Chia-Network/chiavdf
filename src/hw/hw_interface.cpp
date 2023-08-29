@@ -1,6 +1,7 @@
 #include "hw_interface.hpp"
 #include "chia_driver.hpp"
 #include "hw_util.hpp"
+#include "pll_freqs.hpp"
 
 #include "vdf_base.hpp"
 
@@ -66,7 +67,7 @@ ChiaDriver *init_hw(double freq, double set_brd_voltage)
     }
 
     LOG_INFO("Setting frequency to %f MHz", freq);
-    set_status = drv->SetPLLFrequency(freq);
+    set_status = drv->SetPLLFrequency(freq, 0);
     if (set_status == false) {
         LOG_ERROR("Aborting since freq not set");
         goto fail;
@@ -124,6 +125,30 @@ fail:
 void stop_hw(ChiaDriver *drv)
 {
     delete drv;
+}
+
+void hw_vdf_control(ChiaDriver *drv, uint8_t idx_mask, uint32_t value)
+{
+    for (uint8_t i = 0; i < N_HW_VDFS; i++) {
+        uint32_t addr = CHIA_VDF_CONTROL_REG_OFFSET + CHIA_VDF_JOB_CSR_MULT * i;
+        if (idx_mask & (1 << i)) {
+           drv->RegWrite(addr, value);
+        }
+    }
+}
+
+void adjust_hw_freq(ChiaDriver *drv, uint8_t idx_mask, int direction)
+{
+    double freq;
+
+    hw_vdf_control(drv, idx_mask, 0);
+
+    drv->SetPLLFrequency(0.0, drv->freq_idx + direction);
+    freq = drv->GetPLLFrequency();
+    LOG_INFO("Frequency is %s to %f MHz; freq_idx=%u",
+            direction > 0 ? "increased" : "decreased", freq, drv->freq_idx);
+
+    hw_vdf_control(drv, idx_mask, 1);
 }
 
 int start_hw_vdf(ChiaDriver *drv, mpz_t d, mpz_t a, mpz_t b, uint64_t n_iters, int idx)

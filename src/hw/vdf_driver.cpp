@@ -324,15 +324,16 @@ void VdfDriver::ResetPLL() {
   RegWrite(CLOCK_CONTROL_REG_OFFSET, (uint32_t)0x1); // Reset
 }
 
-bool VdfDriver::SetPLLFrequency(double frequency) {
+bool VdfDriver::SetPLLFrequency(double frequency, uint32_t entry_index) {
   if (frequency > pll_entries[VALID_PLL_FREQS - 1].freq) {
     fprintf(stderr, "SetPLLFrequency frequency too high %lf\n", frequency);
     return false;
   }
 
-  int entry_index = 0;
-  while (frequency > pll_entries[entry_index].freq) {
-    entry_index++;
+  if (!entry_index) {
+    while (frequency > pll_entries[entry_index].freq) {
+      entry_index++;
+    }
   }
 
   uint32_t divr = pll_entries[entry_index].settings.divr;
@@ -353,8 +354,8 @@ bool VdfDriver::SetPLLFrequency(double frequency) {
   //printf("Frequency %lf should use entry %d - divr %d fi %d q %d range %d\n",
   //       frequency, entry_index, divr, divfi, divq, filter_range);
 
-  // Reset ASIC before changing frequency
-  Reset(10000);
+  // Remember current frequency
+  this->freq_idx = entry_index;
 
   RegWrite(CLOCK_CONTROL_REG_OFFSET, (uint32_t)0x1); // Reset
 

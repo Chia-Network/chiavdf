@@ -38,6 +38,7 @@ struct vdf_client_opts {
     int n_vdfs;
     uint32_t auto_freq_period;
     bool do_list;
+    bool auto_freq;
     struct vdf_proof_opts vpo;
     uint8_t vdfs_mask;
 };
@@ -378,7 +379,7 @@ void event_loop(struct vdf_client *client)
                     f = hw_proof_last_good_form(vdf, &pos);
                     vdf->iters_offset = pos * vdf->interval;
 
-                    if (client->opts.auto_freq_period) {
+                    if (client->opts.auto_freq) {
                         adjust_hw_freq(client->drv, running_mask & ~(1 << i), -1);
                     }
 
@@ -423,6 +424,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     opts->port = 0;
     opts->n_vdfs = 3;
     opts->do_list = false;
+    opts->auto_freq = false;
     opts->vpo.max_aux_threads = HW_VDF_DEFAULT_MAX_AUX_THREADS;
     opts->vpo.max_proof_threads = 0;
     opts->vdfs_mask = 0;
@@ -443,6 +445,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
         } else if (long_idx == 6) {
             opts->do_list = true;
         } else if (long_idx == 7) {
+            opts->auto_freq = true;
             opts->auto_freq_period = strtoul(optarg, NULL, 0);
         }
     }
@@ -482,6 +485,10 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
         LOG_SIMPLE("Number of proof threads must be less than VDF threads");
         return -1;
     }
+    if (opts->auto_freq && opts->auto_freq_period < 10) {
+        LOG_SIMPLE("Invalid auto freq period");
+        return -1;
+    }
 
     if (optind == argc) {
         return -1;
@@ -509,10 +516,11 @@ int hw_vdf_client_main(int argc, char **argv)
                 "  --freq N - set ASIC frequency [%d, 200 - 2200]\n"
                 "  --voltage N - set board voltage [%.2f, 0.7 - 1.0]\n"
                 "  --ip A.B.C.D - timelord IP address [localhost]\n"
-                "  --vdfs-mask - mask for enabling VDF engines [7, 1 - 7]\n"
+                "  --vdfs-mask N - mask for enabling VDF engines [7, 1 - 7]\n"
                 "  --vdf-threads N - number of software threads per VDF engine [4, 2 - 64]\n"
                 "  --proof-threads N - number of proof threads per VDF engine\n"
-                "  --list - list available devices",
+                "  --auto-freq-period N - auto-adjust frequency every N seconds [0, 10 - inf]\n"
+                "  --list - list available devices and exit",
                 argv[0], (int)HW_VDF_DEF_FREQ, HW_VDF_DEF_VOLTAGE);
         return 1;
     }

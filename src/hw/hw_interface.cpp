@@ -145,7 +145,7 @@ void adjust_hw_freq(ChiaDriver *drv, uint8_t idx_mask, int direction)
 
     drv->SetPLLFrequency(0.0, drv->freq_idx + direction);
     freq = drv->GetPLLFrequency();
-    LOG_INFO("Frequency is %s to %f MHz; freq_idx=%u",
+    LOG_INFO("Frequency is %s to %.1f MHz; freq_idx = %u",
             direction > 0 ? "increased" : "decreased", freq, drv->freq_idx);
 
     hw_vdf_control(drv, idx_mask, 1);
@@ -191,7 +191,8 @@ int read_hw_status(ChiaDriver *drv, uint8_t idx_mask, struct vdf_value *values)
                 uint32_t temp_code;
                 drv->read_bytes(4, 0, read_status, temp_code);
                 double temp = drv->ValueToTemp(temp_code);
-                LOG_INFO("ASIC Temp = %3.2f C", temp);
+                LOG_INFO("ASIC Temp = %3.2f C; Frequency = %.1f MHz; freq_idx = %u",
+                        temp, pll_entries[drv->freq_idx].freq, drv->freq_idx);
             }
         } else if (idx_mask & (1 << i)) {
             drv->ftdi.Read(CHIA_VDF_STATUS_JOB_ID_REG_OFFSET + (0x10000 * i),

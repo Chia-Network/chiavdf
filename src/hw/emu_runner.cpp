@@ -14,7 +14,7 @@
 
 #define N_VDFS 3
 
-struct job_regs {
+struct job_reg_set {
 	uint32_t id;
 	uint32_t iters[2];
 	uint32_t a[21], f[21], d[41], l[11];
@@ -22,7 +22,7 @@ struct job_regs {
 	uint32_t padding[30];
 };
 
-static struct job_regs regs[N_VDFS];
+static struct job_reg_set g_job_regs[N_VDFS];
 
 struct job_status {
 	uint32_t id;
@@ -32,6 +32,8 @@ struct job_status {
 };
 
 static struct job_status g_status_regs[N_VDFS];
+static uint32_t g_pll_regs[8];
+
 static int g_error_prob = -1;
 
 struct job_state {
@@ -49,7 +51,7 @@ struct job_state {
 
 static struct job_state *states[N_VDFS];
 
-void init_state(struct job_state *st, struct job_regs *r)
+void init_state(struct job_state *st, struct job_reg_set *r)
 {
 	integer a, f;
 	st->drv = new ChiaDriver();
@@ -117,7 +119,7 @@ static void start_job(int i)
 	clear_state(states[i]);
 
 	LOG_INFO("Emu %d: Starting job", i);
-	init_state(states[i], &regs[i]);
+	init_state(states[i], &g_job_regs[i]);
 	std::thread(job_thread, i).detach();
 	//usleep(100000);
 }
@@ -230,11 +232,8 @@ void read_regs(uint32_t addr, uint8_t *buf, uint32_t size)
 	} else if (addr + size > burst_start && addr < burst_end) {
 		int32_t offset = addr - burst_start;
 		copy_regs(buf, g_status_regs, size, sizeof(g_status_regs), offset);
-	} else if (addr == CLOCK_STATUS_REG_OFFSET) {
-		// Emulate ACK of PLL freq setting
-		uint32_t val = htonl((1U << CLOCK_STATUS_DIVACK_BIT) |
-				(1U << CLOCK_STATUS_LOCK_BIT));
-		copy_regs(buf, &val, size, sizeof(val), 0);
+	} else if (addr < sizeof(g_pll_regs)) {
+		copy_regs(buf, g_pll_regs, size, sizeof(g_pll_regs), addr);
 	} else {
 		memset(buf, 0, size);
 		LOG_INFO("Emu: No data at addr=0x%x size=%u", addr, size);
@@ -257,14 +256,14 @@ int emu_do_io(uint8_t *buf_in, uint16_t size_in, uint8_t *buf_out, uint16_t size
 	size_in -= CMD_SIZE;
 	LOG_DEBUG("Emu: addr=0x%x in=%hu bytes out=%hu bytes", addr, size_in, size_out);
 	for (i = 0; i < N_VDFS; i++) {
-		if (addr >= job_csr && addr < job_csr + sizeof(regs[0])) {
+		if (addr >= job_csr && addr < job_csr + sizeof(g_job_regs[0])) {
 			uint32_t offset = addr - job_csr;
-			memcpy((uint8_t *)&regs[i] + offset, buf_in, size_in);
-			LOG_DEBUG("Emu: offset=0x%x start_flag=0x%x", offset, regs[i].start_flag);
+			memcpy((uint8_t *)&g_job_regs[i] + offset, buf_in, size_in);
+			LOG_DEBUG("Emu: offset=0x%x start_flag=0x%x", offset, g_job_regs[i].start_flag);
 
-			if (regs[i].start_flag & (1 << 24)) {
+			if (g_job_regs[i].start_flag & (1 << 24)) {
 				start_job(i);
-				regs[i].start_flag = 0;
+				g_job_regs[i].start_flag = 0;
 			}
 		}
 		if (addr == job_control) {
@@ -286,6 +285,13 @@ int emu_do_io(uint8_t *buf_in, uint16_t size_in, uint8_t *buf_out, uint16_t size
 		buf_out += WAIT_CYCLES;
 
 		read_regs(addr, buf_out, size_out);
+	} else if (!size_out && addr < sizeof(g_pll_regs)) {
+		uint8_t *regs_addr = &((uint8_t *)g_pll_regs)[addr];
+		uint32_t status_val = htonl((1U << CLOCK_STATUS_DIVACK_BIT) |
+				(1U << CLOCK_STATUS_LOCK_BIT));
+
+		copy_regs(regs_addr, buf_in, size_in, sizeof(g_pll_regs) - addr, 0);
+		g_pll_regs[CLOCK_STATUS_REG_OFFSET / 4] = status_val;
 	}
 
 	return 0;

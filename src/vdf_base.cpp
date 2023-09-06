@@ -17,6 +17,6 @@ bool dummy_form_check_valid(form &f, integer &d)
 
 form dummy_get_proof(ParallelProver &p)
 {
-	p.GenerateProof();
-	return p.GetProof();
+    p.GenerateProof();
+    return p.GetProof();
 }

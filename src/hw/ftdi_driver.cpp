@@ -224,15 +224,15 @@ int FtdiDriver::SetMode(FtdiDriver::MODE_t mode)
   case MODE_spi:
     //printf("SetMode(MODE_spi);\n");
     CHECK(FT4222_SPIMaster_Init(spi_ft_handle, SPI_IO_QUAD, spi_clk_div,
-				CLK_IDLE_LOW, CLK_LEADING, 0x01));
+                                CLK_IDLE_LOW, CLK_LEADING, 0x01));
     // The SPI_ChipSelect value is named either CS_ACTIVE_NEGTIVE or
     // CS_ACTIVE_LOW depending on libftd2xx version, but it's 0 in any case
     CHECK(FT4222_SPIMaster_SetCS(spi_ft_handle, (SPI_ChipSelect)0));
     CHECK(FT4222_SPI_SetDrivingStrength(spi_ft_handle,
-					// clk, io, sso
-					//DS_8MA, DS_8MA, DS_8MA));
-					//DS_4MA, DS_4MA, DS_8MA));
-					DS_4MA, DS_4MA, DS_4MA));
+                                        // clk, io, sso
+                                        //DS_8MA, DS_8MA, DS_8MA));
+                                        //DS_4MA, DS_4MA, DS_8MA));
+                                        DS_4MA, DS_4MA, DS_4MA));
     active_mode = mode;
     break;
 
@@ -266,11 +266,11 @@ int FtdiDriver::Open(DWORD loc_id, unsigned sys_clk, unsigned clk_div) {
   gpio_loc_id = loc_id + 3;
   cnfmode = 1;
   if (FT_OpenEx((PVOID)(uintptr_t)gpio_loc_id, FT_OPEN_BY_LOCATION,
-		&gpio_ft_handle)) {
+                &gpio_ft_handle)) {
     gpio_loc_id = loc_id + 1;
     cnfmode = 0;
     CHECK(FT_OpenEx((PVOID)(uintptr_t)gpio_loc_id, FT_OPEN_BY_LOCATION,
-		    &gpio_ft_handle));
+                    &gpio_ft_handle));
   }
 
   CHECK(FT4222_SetClock(spi_ft_handle, (FT4222_ClockRate)sys_clk));
@@ -548,11 +548,11 @@ int FtdiDriver::ReadCmd(uint32_t addr, uint8_t *read_buf, size_t rsize) {
 int FtdiDriver::SetGPIO(GPIO_Port port, bool value) {
   assert(IsOpen());
   assert((cnfmode==0 &&
-	  (port == GPIO_PORT0 || port == GPIO_PORT1 ||
-	   port == GPIO_PORT2 || port == GPIO_PORT3))
-	 ||
-	 (cnfmode==1 &&
-	  (port == GPIO_PORT2 || port == GPIO_PORT3)));
+          (port == GPIO_PORT0 || port == GPIO_PORT1 ||
+           port == GPIO_PORT2 || port == GPIO_PORT3))
+         ||
+         (cnfmode==1 &&
+          (port == GPIO_PORT2 || port == GPIO_PORT3)));
   //FIXME: might this cause a glitch when going from tri to out?
   if (gpio_dir[port] != GPIO_OUTPUT) {
     gpio_dir[port] = GPIO_OUTPUT;
@@ -565,11 +565,11 @@ int FtdiDriver::SetGPIO(GPIO_Port port, bool value) {
 int FtdiDriver::GetGPIO(GPIO_Port port, bool &value) {
   assert(IsOpen());
   assert((cnfmode==0 &&
-	  (port == GPIO_PORT0 || port == GPIO_PORT1 ||
-	   port == GPIO_PORT2 || port == GPIO_PORT3))
-	 ||
-	 (cnfmode==1 &&
-	  (port == GPIO_PORT2 || port == GPIO_PORT3)));
+          (port == GPIO_PORT0 || port == GPIO_PORT1 ||
+           port == GPIO_PORT2 || port == GPIO_PORT3))
+         ||
+         (cnfmode==1 &&
+          (port == GPIO_PORT2 || port == GPIO_PORT3)));
   BOOL int_val;
   CHECK(FT4222_GPIO_Read(gpio_ft_handle, port, &int_val));
   value = int_val > 0;
@@ -580,11 +580,11 @@ int FtdiDriver::TriGPIO(GPIO_Port port)
 {
   assert(IsOpen());
   assert((cnfmode==0 &&
-	  (port == GPIO_PORT0 || port == GPIO_PORT1 ||
-	   port == GPIO_PORT2 || port == GPIO_PORT3))
-	 ||
-	 (cnfmode==1 &&
-	  (port == GPIO_PORT2 || port == GPIO_PORT3)));
+          (port == GPIO_PORT0 || port == GPIO_PORT1 ||
+           port == GPIO_PORT2 || port == GPIO_PORT3))
+         ||
+         (cnfmode==1 &&
+          (port == GPIO_PORT2 || port == GPIO_PORT3)));
   if (gpio_dir[port] != GPIO_INPUT) {
     gpio_dir[port] = GPIO_INPUT;
     CHECK(FT4222_GPIO_Init(gpio_ft_handle, gpio_dir));
@@ -667,13 +667,13 @@ int FtdiDriver::ReadBit(int *bit)
     auto t0 = Clock::now();
     while (!ReadSCL())
       {
-	// Check for timeout
-	if (timeoutEnable) {
-	  auto t1 = Clock::now();
-	  uint64_t diff = std::chrono::duration_cast<std::chrono::milliseconds>(t1-t0).count();
-	  if (diff > 2000)
-	    return I2C_RETURN_CODE_timeout;
-	}
+        // Check for timeout
+        if (timeoutEnable) {
+          auto t1 = Clock::now();
+          uint64_t diff = std::chrono::duration_cast<std::chrono::milliseconds>(t1-t0).count();
+          if (diff > 2000)
+            return I2C_RETURN_CODE_timeout;
+        }
       }
   } else {
     ReadSCL();
@@ -708,13 +708,13 @@ int FtdiDriver::WriteBit(int bit)
     auto t0 = Clock::now();
     while (!ReadSCL())
       {
-	// Check for timeout
-	if (timeoutEnable) {
-	  auto t1 = Clock::now();
-	  uint64_t diff = std::chrono::duration_cast<std::chrono::milliseconds>(t1-t0).count();
-	  if (diff > 2000)
-	    return I2C_RETURN_CODE_timeout;
-	}
+        // Check for timeout
+        if (timeoutEnable) {
+          auto t1 = Clock::now();
+          uint64_t diff = std::chrono::duration_cast<std::chrono::milliseconds>(t1-t0).count();
+          if (diff > 2000)
+            return I2C_RETURN_CODE_timeout;
+        }
       }
   } else {
     ReadSCL();
@@ -744,19 +744,19 @@ int FtdiDriver::SendStartCondition()
       // Clock stretching - Makes SCL an input and pull-up resistor makes
       //  the pin high.  Slave device can pull SCL low to extend clock cycle.
       if (!clockStretchDisable) {
-	auto t0 = Clock::now();
-	while (!ReadSCL())
-	  {
-	    // Check for timeout
-	    if (timeoutEnable) {
-	      auto t1 = Clock::now();
-	      uint64_t diff = std::chrono::duration_cast<std::chrono::milliseconds>(t1-t0).count();
-	      if (diff > 2000)
-		return I2C_RETURN_CODE_timeout;
-	    }
-	  }
+        auto t0 = Clock::now();
+        while (!ReadSCL())
+        {
+            // Check for timeout
+            if (timeoutEnable) {
+              auto t1 = Clock::now();
+              uint64_t diff = std::chrono::duration_cast<std::chrono::milliseconds>(t1-t0).count();
+              if (diff > 2000)
+                return I2C_RETURN_CODE_timeout;
+            }
+          }
       } else {
-	ReadSCL();
+        ReadSCL();
       }
     }
 
@@ -787,13 +787,13 @@ int FtdiDriver::SendStopCondition()
     auto t0 = Clock::now();
     while (!ReadSCL())
       {
-	// Check for timeout
-	if (timeoutEnable) {
-	  auto t1 = Clock::now();
-	  uint64_t diff = std::chrono::duration_cast<std::chrono::milliseconds>(t1-t0).count();
-	  if (diff > 2000)
-	    return I2C_RETURN_CODE_timeout;
-	}
+        // Check for timeout
+        if (timeoutEnable) {
+          auto t1 = Clock::now();
+          uint64_t diff = std::chrono::duration_cast<std::chrono::milliseconds>(t1-t0).count();
+          if (diff > 2000)
+            return I2C_RETURN_CODE_timeout;
+        }
       }
   } else {
     ReadSCL();
@@ -874,7 +874,7 @@ int FtdiDriver::i2c_TransmitX
     for (bit = 0; bit < 8; bit++) {
       ret = WriteBit((byteToSend & 0x80) != 0);
       if (ret != I2C_RETURN_CODE_success)
-	goto transmitx_error;
+        goto transmitx_error;
       byteToSend <<= 1;
     }
 
@@ -889,18 +889,18 @@ int FtdiDriver::i2c_TransmitX
 
       uint8_t byteToSend = buf[bytesXfered];
       for (bit = 0; bit < 8; bit++) {
-	ret = WriteBit((byteToSend & 0x80) != 0);
-	if (ret != I2C_RETURN_CODE_success)
-	  goto transmitx_error;
-	byteToSend <<= 1;
+        ret = WriteBit((byteToSend & 0x80) != 0);
+        if (ret != I2C_RETURN_CODE_success)
+          goto transmitx_error;
+        byteToSend <<= 1;
       }
 
       ret = ReadBit(&nack);
       if (ret != I2C_RETURN_CODE_success)
-	goto transmitx_error;
+        goto transmitx_error;
 
       if (nack)
-	break;
+        break;
     }
   }
 
@@ -967,7 +967,7 @@ int FtdiDriver::i2c_ReceiveX
     for (bit = 0; bit < 8; bit++) {
       ret = WriteBit((byteToSend & 0x80) != 0);
       if (ret != I2C_RETURN_CODE_success)
-	goto receivex_error;
+        goto receivex_error;
       byteToSend <<= 1;
     }
 
@@ -982,12 +982,12 @@ int FtdiDriver::i2c_ReceiveX
 
       uint8_t byte = 0;
       for (bit = 0; bit < 8; bit++) {
-	byte <<= 1;
-	ret = ReadBit(&b);
-	if (ret != I2C_RETURN_CODE_success)
-	  goto receivex_error;
-	if (b)
-	  byte |= 1;
+        byte <<= 1;
+        ret = ReadBit(&b);
+        if (ret != I2C_RETURN_CODE_success)
+          goto receivex_error;
+        if (b)
+          byte |= 1;
       }
 
       buf[bytesXfered++] = byte;
@@ -995,7 +995,7 @@ int FtdiDriver::i2c_ReceiveX
 
       ret = WriteBit(!sendAcknowledgeBit);
       if (ret != I2C_RETURN_CODE_success)
-	goto receivex_error;
+        goto receivex_error;
     }
   }
 

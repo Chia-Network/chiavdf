@@ -37,8 +37,8 @@ void init_chia(void)
 
 int hw_test_main(int argc, char **argv)
 {
-    uint64_t n_iters = 100000;
-    uint8_t n_vdfs = 2;
+    uint64_t n_iters = 1000000;
+    uint8_t n_vdfs = 3;
     uint8_t n_completed = 0;
     uint8_t vdfs_mask;
     uint8_t init_form[BQFC_FORM_SIZE] = { 0x08 };

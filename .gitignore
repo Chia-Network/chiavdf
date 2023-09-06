@@ -38,7 +38,7 @@ src/hw_vdf_client
 *.s
 
 # external library
-/src/hw/libftd2xx
+/src/hw/libft4222
 
 # pyenv
 .python-version

@@ -7,7 +7,7 @@ import sys
 from distutils.command.install import install
 from distutils.version import LooseVersion
 
-from setuptools import Command, Extension, setup, setuptools
+from setuptools import Command, Extension, setup, errors
 from setuptools.command.build import build
 from setuptools.command.build_ext import build_ext
 
@@ -190,7 +190,7 @@ def has_flag(compiler, flagname):
         f.write("int main (int argc, char **argv) { return 0; }")
         try:
             compiler.compile([f.name], extra_postargs=[flagname])
-        except setuptools.distutils.errors.CompileError:
+        except errors.CompileError:
             return False
     return True
 

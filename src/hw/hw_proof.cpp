@@ -6,6 +6,9 @@
 #include <cstdlib>
 #include <unistd.h>
 
+static const uint32_t g_chkp_thres = 1000000;
+static const uint32_t g_skip_thres = 10;
+
 void report_bad_vdf_value(struct vdf_state *vdf, struct vdf_value *val)
 {
     vdf->n_bad++;
@@ -29,9 +32,16 @@ int hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val)
 {
     val->iters += vdf->iters_offset;
     if (val->iters == vdf->iters_offset || val->iters == vdf->last_val.iters) {
-        LOG_INFO("VDF %d: Skipping iters=%lu", vdf->idx, val->iters);
+        vdf->n_skipped++;
+        LOG_INFO("VDF %d: Skipping iters=%lu n_skipped=%u",
+                vdf->idx, val->iters, vdf->n_skipped);
+        if (vdf->n_skipped > g_skip_thres) {
+            vdf->n_skipped = 0;
+            return -1;
+        }
         return 1;
     }
+    vdf->n_skipped = 0;
 
     if (mpz_sgn(val->a) == 0) {
         report_bad_vdf_value(vdf, val);
@@ -286,8 +296,6 @@ bool hw_proof_should_queue(struct vdf_state *vdf, uint64_t iters)
     uint16_t last_queued_idx = vdf->queued_proofs.back();
     return iters < vdf->proofs[last_queued_idx].iters;
 }
-
-static const uint32_t g_chkp_thres = 1000000;
 
 void hw_proof_process_req(struct vdf_state *vdf)
 {
@@ -785,6 +793,7 @@ void init_vdf_state(struct vdf_state *vdf, struct vdf_proof_opts *opts, const ch
     vdf->aux_threads_busy = 0;
     vdf->n_proof_threads = 0;
     vdf->n_bad = 0;
+    vdf->n_skipped = 0;
     vdf->log_cnt = 0;
     vdf->wq_warn_thres[0] = 1;
     vdf->wq_warn_thres[1] = HW_VDF_WQ_WARN_MULT * HW_VDF_WQ_WARN_MULT;

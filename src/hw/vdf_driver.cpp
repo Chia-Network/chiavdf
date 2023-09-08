@@ -331,6 +331,8 @@ bool VdfDriver::SetPLLFrequency(double frequency, uint32_t entry_index) {
   }
 
   if (!entry_index) {
+    // Reset is necessary for the initial setting of frequency
+    Reset(10000);
     while (frequency > pll_entries[entry_index].freq) {
       entry_index++;
     }

@@ -5,6 +5,7 @@
 #include "ftdi_driver.hpp"
 #include "pvt.hpp"
 #include "clock.hpp"
+#include "hw_util.hpp"
 
 // Define the baseclass VDF driver
 class VdfDriver {
@@ -24,6 +25,7 @@ public:
 
   FtdiDriver ftdi;
   uint32_t   freq_idx;
+  timepoint_t last_freq_update;
 
   VdfDriver(unsigned _WORD_BITS, unsigned _REDUNDANT_BITS,
             bool _SIGNED)

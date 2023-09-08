@@ -3,6 +3,7 @@
 #include "hw_util.hpp"
 #include "bqfc.h"
 #include "vdf_base.hpp"
+#include "chia_driver.hpp"
 
 #include <arpa/inet.h>
 #include <cstdio>
@@ -392,6 +393,13 @@ void event_loop(struct vdf_client *client)
                     stop_hw_vdf(client->drv, i);
                     client->conns[i].state = IDLING;
                 }
+            }
+        }
+
+        if (client->opts.auto_freq && !(loop_cnt % 256)) {
+            uint64_t elapsed = vdf_get_elapsed_us(client->drv->last_freq_update);
+            if (elapsed / 1000000 >= client->opts.auto_freq_period) {
+                adjust_hw_freq(client->drv, running_mask, 1);
             }
         }
 

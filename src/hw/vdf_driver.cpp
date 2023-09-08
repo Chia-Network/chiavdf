@@ -354,9 +354,6 @@ bool VdfDriver::SetPLLFrequency(double frequency, uint32_t entry_index) {
   //printf("Frequency %lf should use entry %d - divr %d fi %d q %d range %d\n",
   //       frequency, entry_index, divr, divfi, divq, filter_range);
 
-  // Remember current frequency
-  this->freq_idx = entry_index;
-
   RegWrite(CLOCK_CONTROL_REG_OFFSET, (uint32_t)0x1); // Reset
 
   RegWrite(CLOCK_PRE_DIVIDE_REG_OFFSET, divr);
@@ -395,6 +392,10 @@ bool VdfDriver::SetPLLFrequency(double frequency, uint32_t entry_index) {
       return false;
     }
   }
+
+  // Remember current frequency
+  this->freq_idx = entry_index;
+  this->last_freq_update = vdf_get_cur_time();
 
   return true;
 }

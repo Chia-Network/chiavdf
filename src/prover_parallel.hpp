@@ -88,21 +88,33 @@ class ParallelProver : public Prover {
 
 void ParallelProver::GenerateProof() {
     PulmarkReducer reducer;
+    size_t n_threads = PARALLEL_PROVER_N_THREADS;
+    uint32_t len = l / n_threads;
+    uint32_t rem = l % n_threads;
+    uint32_t start = l;
+    std::thread threads[n_threads];
 
     this->B = GetB(D, segm.x, segm.y);
     this->L = root(-D, 4);
     this->id = form::identity(D);
 
-    uint32_t l0 = l / 2;
-    uint32_t l1 = l - l0;
-    std::thread proof_thr(ParallelProver::ProofThread, this, 0, l, l0);
-    ProvePart(1, l1, l1);
+    for (size_t i = 0; i < n_threads; i++) {
+        uint32_t cur_len = len + (i < rem);
+        threads[i] = std::thread(ParallelProver::ProofThread, this, i, start, cur_len);
+        start -= cur_len;
+    }
 
-    proof_thr.join();
+    for (size_t i = 0; i < n_threads; i++) {
+        threads[i].join();
+    }
     if (!PerformExtraStep()) {
         return;
     }
-    nucomp_form(proof, x_vals[0], x_vals[1], D, L);
+
+    proof = x_vals[0];
+    for (size_t i = 1; i < n_threads; i++) {
+        nucomp_form(proof, proof, x_vals[i], D, L);
+    }
     reducer.reduce(proof);
     OnFinish();
 }

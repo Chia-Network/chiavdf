@@ -64,7 +64,7 @@ jobs:
               source ./venv/bin/activate && \
               pip install --upgrade pip && \
               cmake --version && \
-              uname -a && \q
+              uname -a && \
               export BUILD_VDF_CLIENT=N && \
               pip wheel -w dist . && \
               ./venv/bin/python -m pip install dist/*.whl && \

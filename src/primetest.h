@@ -141,9 +141,10 @@ static int is_prime_bpsw(const mpz_t n)
     int min_pprods = 5, n_pprods = sizeof(pprods) / sizeof(*pprods);
     mpz_t b, d;
 
-    /* Discard even numbers. */
-    if (!mpz_tstbit(n, 0) && mpz_cmp_ui(n, 2))
-        return 0;
+    /* Discard even and non-positive numbers. */
+    if (!mpz_tstbit(n, 0) || n->_mp_size < 1) {
+        return mpz_cmp_ui(n, 2) ? 0 : 2;
+    }
 
     /* Adjust the number of GCDs to compute with products of small primes
      * if bit length of n is less than 1024. As the computational cost of
@@ -155,8 +156,16 @@ static int is_prime_bpsw(const mpz_t n)
     }
 
     for (i = 0; i < n_pprods; i++) {
-        if (mpn_gcd_1(n->_mp_d, n->_mp_size, pprods[i]) != 1)
-            return 0;
+        if (mpn_gcd_1(n->_mp_d, n->_mp_size, pprods[i]) != 1) {
+            if (n->_mp_size > 1 || n->_mp_d[0] > pprods_max_prime) {
+                return 0;
+            } else if (n->_mp_d[0] < 8) {
+                /* Special case for primes 3, 5, 7. */
+                return (1 << n->_mp_d[0]) & 0xac ? 2 : 0;
+            } else {
+                break;
+            }
+        }
     }
 
     mpz_init2(b, n->_mp_size * sizeof(n->_mp_d[0]) * 8);

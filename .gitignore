@@ -25,6 +25,7 @@ src/vdf_client
 src/1weso_test
 src/2weso_test
 src/prover_test
+src/primes_test
 /verifier
 /verifier_test
 /build/*

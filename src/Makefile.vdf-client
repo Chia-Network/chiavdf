@@ -27,15 +27,17 @@ endif
 
 .PHONY: all clean
 
-all: vdf_client prover_test 1weso_test 2weso_test vdf_bench
+ALL = vdf_client primes_test prover_test 1weso_test 2weso_test vdf_bench
+
+all: $(ALL)
 
 clean:
-	rm -f *.o vdf_client prover_test 1weso_test 2weso_test compile_asm vdf_bench
+	rm -f *.o $(ALL) compile_asm avx512_test
 
-vdf_client vdf_bench prover_test 1weso_test 2weso_test avx512_test: %: %.o lzcnt.o asm_compiled.o avx2_asm_compiled.o avx512_asm_compiled.o
+$(ALL) avx512_test: %: %.o lzcnt.o asm_compiled.o avx2_asm_compiled.o avx512_asm_compiled.o
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-vdf_client.o vdf_bench.o prover_test.o 1weso_test.o 2weso_test.o avx512_test.o: CXXFLAGS += $(OPT_CFLAGS)
+$(addsuffix .o,$(ALL)) avx512_test.o: CXXFLAGS += $(OPT_CFLAGS)
 
 lzcnt.o: refcode/lzcnt.c
 	$(CC) -c refcode/lzcnt.c

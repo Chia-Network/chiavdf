@@ -1,57 +1,137 @@
-name: Build and test riscv64 on ubuntu-latest
+name: Build and test riscv64
 
 on:
   push:
     branches:
       - main
-      - dev
-    tags:
-        - '**'
+  release:
+    types: [published]
   pull_request:
     branches:
       - '**'
 
+concurrency:
+  # SHA is added to the end if on `main` to let all main workflows run
+  group: ${{ github.ref }}-${{ github.workflow }}-${{ github.event_name }}-${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/long_lived/')) && github.sha || '' }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   build_wheels:
-    name: QEMU riscv64 via Debian on ubuntu-latest
-    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.os.emoji }} 📦 Build ${{ matrix.python.major-dot-minor }}
+    runs-on: ${{ matrix.os.runs-on }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [ ubuntu-latest ]
+        os:
+          - name: Linux
+            matrix: linux
+            emoji: 🐧
+            runs-on: [ubuntu-latest]
+        python:
+          - major-dot-minor: '3.8'
+            matrix: '3.8'
+          - major-dot-minor: '3.9'
+            matrix: '3.9'
+          - major-dot-minor: '3.10'
+            matrix: '3.10'
+          - major-dot-minor: '3.11'
+            matrix: '3.11'
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
-      with:
-        fetch-depth: 1
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 1
 
-    - name: Set up QEMU on x86_64
-      if: startsWith(matrix.os, 'ubuntu-latest')
-      id: qemu
-      uses: docker/setup-qemu-action@v2
-      with:
-        platforms: riscv64
+      - name: Set up QEMU on x86_64
+        id: qemu
+        uses: docker/setup-qemu-action@v2
+        with:
+          platforms: riscv64
 
-    - name: Build and Test
-      run: |
-        docker run --rm --platform linux/riscv64 \
-          -v ${{ github.workspace }}:/ws --workdir=/ws \
-          riscv64/debian:rc-buggy \
-          bash -exc '\
-            apt-get update && \
-            apt-get install -y cmake build-essential git python3-full python3-dev python3-pip libgmp-dev libboost-dev && \
-            cmake --version && \
-            uname -a && \
-            export BUILD_VDF_CLIENT=N && \
-            pip wheel -w dist . && \
-            python3 -m venv venv && \
-            ./venv/bin/python -m pip install dist/*.whl && \
-            ./venv/bin/python -m pip install pytest && \
-            ./venv/bin/python -m pytest -v tests/ 
-          '
+      - name: Build and Test
+        run: |
+          docker run --rm --platform linux/riscv64 \
+            -v ${{ github.workspace }}:/ws --workdir=/ws \
+            chianetwork/ubuntu-22.04-risc-builder:latest \
+            bash -exc '\
+              pyenv global ${{ matrix.python.matrix }} && \
+              python3 -m venv venv && \
+              source ./venv/bin/activate && \
+              pip install --upgrade pip && \
+              cmake --version && \
+              uname -a && \q
+              export BUILD_VDF_CLIENT=N && \
+              pip wheel -w dist . && \
+              ./venv/bin/python -m pip install dist/*.whl && \
+              ./venv/bin/python -m pip install pytest && \
+              ./venv/bin/python -m pytest -v tests/
+            '
 
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v3
-      with:
-        name: packages
-        path: ./dist
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: packages
+          path: ./dist
+          if-no-files-found: error
+  upload:
+    name: Upload to Chia PyPI
+    runs-on: ubuntu-latest
+    needs:
+      - build_wheels
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set Env
+        uses: Chia-Network/actions/setjobenv@main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download artifacts
+        if: env.RELEASE == 'true'
+        uses: actions/download-artifact@v3
+        with:
+          name: packages
+          path: ./dist
+
+      - name: Configure AWS credentials
+        if: env.RELEASE == 'true'
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.CHIA_AWS_ACCOUNT_ID }}:role/installer-upload
+          aws-region: us-west-2
+
+      - name: List existing wheels
+        if: env.RELEASE == 'true'
+        shell: sh
+        run: |
+          aws s3 ls s3://download.chia.net/simple/chiavdf/ > existing_wheel_list_raw
+          cat existing_wheel_list_raw
+          cat existing_wheel_list_raw | tr -s ' ' | cut -d ' ' -f 4 > existing_wheel_list
+
+      - name: List new wheels
+        if: env.RELEASE == 'true'
+        shell: sh
+        run: |
+          (cd dist/; ls ${{ inputs.package_name }}-*.whl) > new_wheel_list
+          cat new_wheel_list | xargs -I % sh -c 'ls -l dist/%'
+
+      - name: Choose wheels to upload
+        if: env.RELEASE == 'true'
+        shell: sh
+        run: |
+          grep -F -x -v -f existing_wheel_list new_wheel_list > upload_wheel_list
+          cat upload_wheel_list
+
+      - name: Upload wheels
+        if: env.RELEASE == 'true'
+        shell: sh
+        run: |
+          cat upload_wheel_list | xargs -I % sh -c 'aws s3 cp dist/% s3://download.chia.net/simple/chiavdf/'

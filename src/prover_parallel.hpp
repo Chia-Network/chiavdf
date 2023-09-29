@@ -6,7 +6,7 @@
 #include "proof_common.h"
 #include "util.h"
 
-#define PARALLEL_PROVER_N_THREADS 2
+#define PROVER_MAX_SEGMENT_THREADS 8
 
 class ParallelProver : public Prover {
   private:
@@ -76,23 +76,25 @@ class ParallelProver : public Prover {
         x_vals[thr_idx] = x;
     }
   public:
-    ParallelProver(Segment segm, integer D) : Prover(segm, D) {}
+    ParallelProver(Segment segm, integer D, size_t n_thr) : Prover(segm, D) {
+        this->n_threads = n_thr;
+    }
     void GenerateProof();
 
   protected:
     integer B;
     integer L;
     form id;
-    form x_vals[PARALLEL_PROVER_N_THREADS];
+    form x_vals[PROVER_MAX_SEGMENT_THREADS];
+    size_t n_threads;
 };
 
 void ParallelProver::GenerateProof() {
     PulmarkReducer reducer;
-    size_t n_threads = PARALLEL_PROVER_N_THREADS;
     uint32_t len = l / n_threads;
     uint32_t rem = l % n_threads;
     uint32_t start = l;
-    std::thread threads[n_threads];
+    std::thread threads[PROVER_MAX_SEGMENT_THREADS];
 
     this->B = GetB(D, segm.x, segm.y);
     this->L = root(-D, 4);

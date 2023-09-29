@@ -435,6 +435,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     opts->auto_freq = false;
     opts->vpo.max_aux_threads = HW_VDF_DEFAULT_MAX_AUX_THREADS;
     opts->vpo.max_proof_threads = 0;
+    opts->vpo.segment_threads = 0;
     opts->vdfs_mask = 0;
 
     while ((ret = getopt_long(argc, argv, "", long_opts, &long_idx)) == 1) {
@@ -451,8 +452,10 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
         } else if (long_idx == 5) {
             opts->vpo.max_proof_threads = strtoul(optarg, NULL, 0);
         } else if (long_idx == 6) {
-            opts->do_list = true;
+            opts->vpo.segment_threads = strtoul(optarg, NULL, 0);
         } else if (long_idx == 7) {
+            opts->do_list = true;
+        } else if (long_idx == 8) {
             opts->auto_freq = true;
             opts->auto_freq_period = strtoul(optarg, NULL, 0);
         }
@@ -525,8 +528,9 @@ int hw_vdf_client_main(int argc, char **argv)
                 "  --voltage N - set board voltage [%.2f, 0.7 - 1.0]\n"
                 "  --ip A.B.C.D - timelord IP address [localhost]\n"
                 "  --vdfs-mask N - mask for enabling VDF engines [7, 1 - 7]\n"
-                "  --vdf-threads N - number of software threads per VDF engine [4, 2 - 64]\n"
-                "  --proof-threads N - number of proof threads per VDF engine\n"
+                "  --vdf-threads N - max number of software threads per VDF engine [4, 2 - 64]\n"
+                "  --proof-threads N - max number of proof threads per VDF engine\n"
+                "  --segment-threads N - number of proof threads per segment [2, 1 - 8]\n"
                 "  --auto-freq-period N - auto-adjust frequency every N seconds [0, 10 - inf]\n"
                 "  --list - list available devices and exit",
                 argv[0], (int)HW_VDF_DEF_FREQ, HW_VDF_DEF_VOLTAGE);

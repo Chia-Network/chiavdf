@@ -431,7 +431,7 @@ void hw_proof_process_work(struct vdf_state *vdf)
                     vdf->idx, i, iters, proof->seg_iters, is_chkp ? " [checkpoint]" : "");
             vdf->queued_proofs.erase(vdf->queued_proofs.begin());
             vdf->aux_threads_busy |= 1UL << i;
-            vdf->n_proof_threads += PARALLEL_PROVER_N_THREADS;
+            vdf->n_proof_threads += vdf->segment_threads;
             proof->flags |= HW_VDF_PROOF_FLAG_STARTED;
             std::thread(hw_compute_proof, vdf, idx, proof, i).detach();
         }
@@ -569,7 +569,7 @@ void hw_stop_proof(struct vdf_state *vdf)
 class HwProver : public ParallelProver {
   public:
     HwProver(Segment segm, integer D, struct vdf_state *vdf)
-        : ParallelProver(segm, D)
+        : ParallelProver(segm, D, vdf->segment_threads)
     {
         this->vdf = vdf;
         k = FindK(segm.length);
@@ -727,7 +727,7 @@ void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof 
 out:
     if (thr_idx < vdf->max_aux_threads) {
         vdf->aux_threads_busy &= ~(1UL << thr_idx);
-        vdf->n_proof_threads -= PARALLEL_PROVER_N_THREADS;
+        vdf->n_proof_threads -= vdf->segment_threads;
     }
 }
 
@@ -805,6 +805,10 @@ void init_vdf_state(struct vdf_state *vdf, struct vdf_proof_opts *opts, const ch
     vdf->max_proof_threads = vdf->max_aux_threads - (vdf->max_aux_threads + 7) / 8;
     if (opts && opts->max_proof_threads) {
         vdf->max_proof_threads = opts->max_proof_threads;
+    }
+    vdf->segment_threads = 2;
+    if (opts && opts->segment_threads) {
+        vdf->segment_threads = opts->segment_threads;
     }
 
     mpz_set_str(vdf->D.impl, d_str, 0);

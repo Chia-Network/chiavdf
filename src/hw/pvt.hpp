@@ -1,0 +1,111 @@
+// Generated register defines for pvt
+#ifndef _PVT_REG_DEFS_
+#define _PVT_REG_DEFS_
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+// Register width
+#define PVT_PARAM_REG_WIDTH 32
+
+// PVT measurement control
+#define PVT_ENABLE_REG_OFFSET 0x10000
+#define PVT_ENABLE_REG_RESVAL 0x0
+#define PVT_ENABLE_ENABLE_BIT 0
+#define PVT_ENABLE_STATUS_MASK 0xf
+#define PVT_ENABLE_STATUS_OFFSET 12
+#define PVT_ENABLE_STATUS_FIELD \
+  ((bitfield_field32_t) { .mask = PVT_ENABLE_STATUS_MASK, .index = PVT_ENABLE_STATUS_OFFSET })
+
+// PVT clock period
+#define PVT_PERIOD_REG_OFFSET 0x10004
+#define PVT_PERIOD_REG_RESVAL 0x0
+#define PVT_PERIOD_PERIOD_MASK 0x3f
+#define PVT_PERIOD_PERIOD_OFFSET 0
+#define PVT_PERIOD_PERIOD_FIELD \
+  ((bitfield_field32_t) { .mask = PVT_PERIOD_PERIOD_MASK, .index = PVT_PERIOD_PERIOD_OFFSET })
+
+// PVT tuning for TRIMG
+#define PVT_TRIMG_REG_OFFSET 0x10008
+#define PVT_TRIMG_REG_RESVAL 0xf
+#define PVT_TRIMG_TRIMG_MASK 0x1f
+#define PVT_TRIMG_TRIMG_OFFSET 0
+#define PVT_TRIMG_TRIMG_FIELD \
+  ((bitfield_field32_t) { .mask = PVT_TRIMG_TRIMG_MASK, .index = PVT_TRIMG_TRIMG_OFFSET })
+
+// PVT tuning for TRIMO
+#define PVT_TRIMO_REG_OFFSET 0x1000c
+#define PVT_TRIMO_REG_RESVAL 0x0
+#define PVT_TRIMO_TRIMO_MASK 0x3f
+#define PVT_TRIMO_TRIMO_OFFSET 0
+#define PVT_TRIMO_TRIMO_FIELD \
+  ((bitfield_field32_t) { .mask = PVT_TRIMO_TRIMO_MASK, .index = PVT_TRIMO_TRIMO_OFFSET })
+
+// Die temperature measurement
+#define PVT_TEMPERATURE_REG_OFFSET 0x10010
+#define PVT_TEMPERATURE_REG_RESVAL 0x0
+#define PVT_TEMPERATURE_TEMPERATURE_MASK 0x3ff
+#define PVT_TEMPERATURE_TEMPERATURE_OFFSET 0
+#define PVT_TEMPERATURE_TEMPERATURE_FIELD \
+  ((bitfield_field32_t) { .mask = PVT_TEMPERATURE_TEMPERATURE_MASK, .index = PVT_TEMPERATURE_TEMPERATURE_OFFSET })
+
+// Die LVT process measurement
+#define PVT_PROCESS_LVT_REG_OFFSET 0x10014
+#define PVT_PROCESS_LVT_REG_RESVAL 0x0
+#define PVT_PROCESS_LVT_LVT_MASK 0x3ff
+#define PVT_PROCESS_LVT_LVT_OFFSET 0
+#define PVT_PROCESS_LVT_LVT_FIELD \
+  ((bitfield_field32_t) { .mask = PVT_PROCESS_LVT_LVT_MASK, .index = PVT_PROCESS_LVT_LVT_OFFSET })
+
+// Die SLVT process measurement
+#define PVT_PROCESS_SLVT_REG_OFFSET 0x10018
+#define PVT_PROCESS_SLVT_REG_RESVAL 0x0
+#define PVT_PROCESS_SLVT_SLVT_MASK 0x3ff
+#define PVT_PROCESS_SLVT_SLVT_OFFSET 0
+#define PVT_PROCESS_SLVT_SLVT_FIELD \
+  ((bitfield_field32_t) { .mask = PVT_PROCESS_SLVT_SLVT_MASK, .index = PVT_PROCESS_SLVT_SLVT_OFFSET })
+
+// Die RVT process measurement
+#define PVT_PROCESS_RVT_REG_OFFSET 0x1001c
+#define PVT_PROCESS_RVT_REG_RESVAL 0x0
+#define PVT_PROCESS_RVT_RVT_MASK 0x3ff
+#define PVT_PROCESS_RVT_RVT_OFFSET 0
+#define PVT_PROCESS_RVT_RVT_FIELD \
+  ((bitfield_field32_t) { .mask = PVT_PROCESS_RVT_RVT_MASK, .index = PVT_PROCESS_RVT_RVT_OFFSET })
+
+// Voltage measurement
+#define PVT_VOLTAGE_REG_OFFSET 0x10020
+#define PVT_VOLTAGE_REG_RESVAL 0x0
+#define PVT_VOLTAGE_VOLTAGE_MASK 0x3ff
+#define PVT_VOLTAGE_VOLTAGE_OFFSET 0
+#define PVT_VOLTAGE_VOLTAGE_FIELD \
+  ((bitfield_field32_t) { .mask = PVT_VOLTAGE_VOLTAGE_MASK, .index = PVT_VOLTAGE_VOLTAGE_OFFSET })
+
+// Temperature alarm to external pin.
+#define PVT_TEMP_ALARM_EXTERNAL_REG_OFFSET 0x10024
+#define PVT_TEMP_ALARM_EXTERNAL_REG_RESVAL 0x3ff
+#define PVT_TEMP_ALARM_EXTERNAL_THRESHOLD_MASK 0x3ff
+#define PVT_TEMP_ALARM_EXTERNAL_THRESHOLD_OFFSET 0
+#define PVT_TEMP_ALARM_EXTERNAL_THRESHOLD_FIELD \
+  ((bitfield_field32_t) { .mask = PVT_TEMP_ALARM_EXTERNAL_THRESHOLD_MASK, .index = PVT_TEMP_ALARM_EXTERNAL_THRESHOLD_OFFSET })
+#define PVT_TEMP_ALARM_EXTERNAL_STATUS_BIT 15
+
+// Temperature alarm to engines
+#define PVT_TEMP_ALARM_ENGINE_REG_OFFSET 0x10028
+#define PVT_TEMP_ALARM_ENGINE_REG_RESVAL 0x3ff
+#define PVT_TEMP_ALARM_ENGINE_THRESHOLD_MASK 0x3ff
+#define PVT_TEMP_ALARM_ENGINE_THRESHOLD_OFFSET 0
+#define PVT_TEMP_ALARM_ENGINE_THRESHOLD_FIELD \
+  ((bitfield_field32_t) { .mask = PVT_TEMP_ALARM_ENGINE_THRESHOLD_MASK, .index = PVT_TEMP_ALARM_ENGINE_THRESHOLD_OFFSET })
+#define PVT_TEMP_ALARM_ENGINE_STATUS_BIT 15
+
+// Mark the end of the address space
+#define PVT_END_OF_RANGE_REG_OFFSET 0x1fffc
+#define PVT_END_OF_RANGE_REG_RESVAL 0x0
+#define PVT_END_OF_RANGE_MARKER_BIT 0
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif
+#endif  // _PVT_REG_DEFS_
+// End generated register defines for pvt

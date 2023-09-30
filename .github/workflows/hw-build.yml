@@ -1,0 +1,103 @@
+name: HW Build
+
+on:
+  push:
+    branches:
+      - main
+  release:
+    types: [published]
+  pull_request:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+concurrency:
+  # SHA is added to the end if on `main` to let all main workflows run
+  group: ${{ github.ref }}-${{ github.workflow }}-${{ github.event_name }}-${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/long_lived/')) && github.sha || '' }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-hw:
+    name: Build HW VDF Client
+    runs-on: [ubuntu-latest]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set Env
+        uses: Chia-Network/actions/setjobenv@main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libgmp-dev libboost-system-dev
+
+      - name: Download USB drivers
+        run: |
+          mkdir libft4222
+          cd libft4222
+          wget https://download.chia.net/vdf/libft4222-linux-1.4.4.170.tgz
+          tar -xvzf libft4222-linux-1.4.4.170.tgz
+          ln -s ${{ github.workspace }}/libft4222 ${{ github.workspace }}/src/hw/libft4222
+          ln -s ${{ github.workspace }}/libft4222/build-x86_64/libft4222.so.1.4.4.170 ${{ github.workspace }}/libft4222/build-x86_64/libft4222.so
+
+      - name: Compile
+        working-directory: "${{ github.workspace }}/src"
+        run: make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: hw-vdf
+          path: |
+            ${{ github.workspace }}/src/emu_hw_test
+            ${{ github.workspace }}/src/hw_test
+            ${{ github.workspace }}/src/hw_vdf_client
+            ${{ github.workspace }}/src/emu_hw_vdf_client
+            ${{ github.workspace }}/src/hw/libft4222/build-x86_64/libft4222.so
+
+      - name: Assemble .deb
+        env:
+          INSTALLER_VERSION: "${{ env.RELEASE_TAG || format('0.0.1-{0}', github.run_id) }}"
+          PLATFORM: "amd64"
+        run: |
+          pip install j2cli
+          CLI_DEB_BASE="chiavdf-hw_$INSTALLER_VERSION-1_$PLATFORM"
+          mkdir -p "dist/$CLI_DEB_BASE/usr/bin"
+          mkdir -p "dist/$CLI_DEB_BASE/usr/lib"
+          mkdir -p "dist/$CLI_DEB_BASE/DEBIAN"
+          mkdir -p "dist/$CLI_DEB_BASE/etc/udev/rules.d"
+          j2 -o "dist/$CLI_DEB_BASE/DEBIAN/control" assets/deb/control.j2
+
+          cp ${{ github.workspace }}/src/emu_hw_test dist/$CLI_DEB_BASE/usr/bin/
+          cp ${{ github.workspace }}/src/hw_test dist/$CLI_DEB_BASE/usr/bin/
+          cp ${{ github.workspace }}/src/hw_vdf_client dist/$CLI_DEB_BASE/usr/bin/
+          cp ${{ github.workspace }}/src/emu_hw_vdf_client dist/$CLI_DEB_BASE/usr/bin/
+          cp ${{ github.workspace }}/src/hw/libft4222/build-x86_64/libft4222.so dist/$CLI_DEB_BASE/usr/lib/
+          echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="601c", MODE="0666"' > dist/$CLI_DEB_BASE/etc/udev/rules.d/99-chiavdf.rules
+          dpkg-deb --build --root-owner-group "dist/$CLI_DEB_BASE"
+
+          echo "DEB_NAME=$CLI_DEB_BASE.deb" >> $GITHUB_ENV
+
+      - name: Upload Installer
+        uses: actions/upload-artifact@v3
+        with:
+          name: installer
+          path: |
+            ${{ github.workspace }}/dist/${{ env.DEB_NAME }}
+
+      - name: Upload release artifacts
+        if: env.RELEASE == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload \
+            $RELEASE_TAG \
+            dist/${{ env.DEB_NAME }}

@@ -114,14 +114,13 @@ form FastPowFormNucomp(form x, integer &D, integer num_iterations, integer &L, P
         return form::identity(D);
 
     form res = x;
-    int max_size = -D.impl->_mp_size / 2 + 1, i;
+    int max_size = -D.impl->_mp_size / 2, i;
 
     // Do exponentiation by squaring from top bits of exponent to bottom
     for (i = num_iterations.num_bits() - 2; i >= 0; i--) {
         nudupl_form(res, res, D, L);
         if (res.a.impl->_mp_size > max_size) {
-            // Reduce only when 'a' exceeds a half of the discriminant size by
-            // more than one limb
+            // Reduce only when 'a' exceeds a half of the discriminant size
             reducer.reduce(res);
         }
 

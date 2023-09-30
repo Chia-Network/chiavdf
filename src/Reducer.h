@@ -64,7 +64,7 @@ public:
   /**
    * @brief run - runs reduction algorithm for cg context params
    */
-  inline void run() {
+  void run() {
     while (!isReduced()) {
       int_fast64_t a, b, c;
       {
@@ -229,7 +229,7 @@ bool bLZCHasHW=false;
 
       // The condition (abs(v_) | abs(x_)) <= THRESH protects against
       // overflow
-      below_threshold = (abs(v_) | abs(x_)) <= THRESH ? 1 : 0;
+      below_threshold = (labs(v_) | labs(x_)) <= THRESH ? 1 : 0;
     } while (below_threshold && a > c && c > 0);
 
     if (below_threshold) {

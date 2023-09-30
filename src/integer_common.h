@@ -127,34 +127,50 @@ static bool allow_integer_constructor=false; //don't want static integers becaus
 struct integer {
     mpz_struct impl[1];
 
-    ~integer() {
+    inline ~integer() {
         mpz_clear(impl);
     }
 
-    integer() {
-        assert(allow_integer_constructor);
+    inline integer() {
+        //assert(allow_integer_constructor);
         mpz_init(impl);
     }
 
-    integer(const integer& t) {
+    inline integer(mpz_t t) {
+        mpz_init_set(impl, t);
+    }
+
+    inline integer(const integer& t) {
         mpz_init(impl);
         mpz_set(impl, t.impl);
     }
 
-    integer(integer&& t) {
+    inline integer(integer&& t) {
         mpz_init(impl);
         mpz_swap(impl, t.impl);
     }
 
-    explicit integer(int64 i) {
-        mpz_init(impl);
-        mpz_set_si(impl, i);
+    explicit inline integer(int i) {
+        mpz_init_set_si(impl, i);
+    }
+
+    explicit inline integer(uint32_t i) {
+        mpz_init_set_ui(impl, i);
+    }
+
+    explicit inline integer(int64 i) {
+        mpz_init_set_si(impl, i);
+    }
+
+    explicit inline integer(uint64_t i) {
+        mpz_init_set_ui(impl, i);
     }
 
     explicit integer(const string& s) {
         mpz_init(impl);
-        int res=mpz_set_str(impl, s.c_str(), 0);
-        assert(res==0);
+        int res = mpz_set_str(impl, s.c_str(), 0);
+        assert(res == 0);
+        (void)res;
     }
 
     explicit integer(const std::vector<uint8_t> v) {
@@ -192,12 +208,12 @@ struct integer {
         return res;
     }
 
-    integer& operator=(const integer& t) {
+    inline integer& operator=(const integer& t) {
         mpz_set(impl, t.impl);
         return *this;
     }
 
-    integer& operator=(integer&& t) {
+    inline integer& operator=(integer&& t) {
         mpz_swap(impl, t.impl);
         return *this;
     }
@@ -208,8 +224,9 @@ struct integer {
     }
 
     integer& operator=(const string& s) {
-        int res=mpz_set_str(impl, s.c_str(), 0);
-        assert(res==0);
+        int res = mpz_set_str(impl, s.c_str(), 0);
+        assert(res == 0);
+        (void)res;
         return *this;
     }
 

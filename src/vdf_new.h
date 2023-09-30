@@ -155,9 +155,7 @@ struct form {
         return res;
     }
 
-    bool check_valid(const integer& d) {
-        return b*b-integer(4)*a*c==d;
-    }
+    bool check_valid(const integer& d);
 
     void assert_valid(const integer& d) {
         assert(check_valid(d));
@@ -178,6 +176,10 @@ struct form {
         return int((res>>4) & ((1ull<<31)-1)); //ignoring some of the lower bits because they might not be random enough
     }
 };
+
+bool form::check_valid(const integer& d) {
+    return b*b-integer(4)*a*c==d;
+}
 
 integer generate_discriminant(int num_bits, int seed=-1) {
     integer res=rand_integer(num_bits, seed);
@@ -206,7 +208,6 @@ integer three_gcd(integer a, integer b, integer c) {
 
 gcd_res test_gcd(integer a_signed, integer b_signed, int index=0) {
     bool a_negative=a_signed<integer(0);
-    bool b_negative=b_signed<integer(0);
 
     integer a=abs(a_signed);
     integer b=abs(b_signed);

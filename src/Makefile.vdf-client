@@ -6,14 +6,14 @@ else
 NOPIE = -no-pie
 endif
 
-LDFLAGS += -flto $(NOPIE)
+LDFLAGS += -flto $(NOPIE) -g
 LDLIBS += -lgmpxx -lgmp -lboost_system -pthread
 CXXFLAGS += -flto -std=c++1z -D VDF_MODE=0 -D FAST_MACHINE=1 -pthread $(NOPIE) -fvisibility=hidden
 ifeq ($(UNAME),Darwin)
 CXXFLAGS += -D CHIAOSX=1
 endif
 
-OPT_CFLAGS = -O3
+OPT_CFLAGS = -O3 -g
 
 ifneq ($(ASAN),)
 LDFLAGS += -fsanitize=address -fsanitize=undefined
@@ -27,15 +27,16 @@ endif
 
 .PHONY: all clean
 
-all: vdf_client prover_test 1weso_test 2weso_test vdf_bench
+BINS = vdf_client prover_test 1weso_test 2weso_test vdf_bench
+all: $(BINS)
 
 clean:
-	rm -f *.o vdf_client prover_test 1weso_test 2weso_test compile_asm vdf_bench
+	rm -f *.o hw/*.o $(BINS) compile_asm emu_hw_test hw_test hw_vdf_client emu_hw_vdf_client
 
-vdf_client vdf_bench prover_test 1weso_test 2weso_test avx512_test: %: %.o lzcnt.o asm_compiled.o avx2_asm_compiled.o avx512_asm_compiled.o
+$(BINS) avx512_test: %: %.o lzcnt.o asm_compiled.o avx2_asm_compiled.o avx512_asm_compiled.o
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-vdf_client.o vdf_bench.o prover_test.o 1weso_test.o 2weso_test.o avx512_test.o: CXXFLAGS += $(OPT_CFLAGS)
+$(addsuffix .o,$(BINS)) avx512_test.o: CXXFLAGS += $(OPT_CFLAGS)
 
 lzcnt.o: refcode/lzcnt.c
 	$(CC) -c refcode/lzcnt.c
@@ -51,3 +52,21 @@ avx512_asm_compiled.s: compile_asm
 
 compile_asm: compile_asm.o
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+
+HW_OBJS = $(addprefix hw/,hw_util.o hw_proof.o hw_interface.o chia_driver.o ftdi_driver.o vdf_driver.o pll_freqs.o) vdf_base.o lzcnt.o
+EMU_OBJS = hw/emu_funcs.o hw/emu_runner.o
+HW_LIB = hw/libft4222/build-x86_64/libft4222.so
+
+hw_test: hw/hw_test.o $(HW_OBJS) $(HW_LIB) hw/real_hw.o
+	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+
+emu_hw_test: hw/hw_test.o $(HW_OBJS) $(EMU_OBJS)
+	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+
+hw_vdf_client: hw/hw_vdf_client.o $(HW_OBJS) $(HW_LIB) hw/real_hw.o
+	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+
+emu_hw_vdf_client: hw/hw_vdf_client.o $(HW_OBJS) $(EMU_OBJS)
+	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+
+hw/hw_test.o hw/hw_vdf_client.o $(HW_OBJS) $(EMU_OBJS): CXXFLAGS += -I. -Ihw -Ihw/libft4222 $(OPT_CFLAGS) -Wall

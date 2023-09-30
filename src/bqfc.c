@@ -161,7 +161,7 @@ enum BQFC_FLAGS {
  */
 int bqfc_serialize_only(uint8_t *out_str, const struct qfb_c *c, size_t d_bits)
 {
-    size_t offset, bytes, size, g_size;
+    size_t offset, g_size;
 
     d_bits = (d_bits + 31) & ~(size_t)31;
 

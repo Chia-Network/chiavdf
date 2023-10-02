@@ -101,3 +101,9 @@ jobs:
           gh release upload \
             $RELEASE_TAG \
             dist/${{ env.DEB_NAME }}
+
+      - name: Trigger repo update
+        if: env.RELEASE == 'true'
+        run: |
+          curl -s -XPOST -H "Authorization: Bearer ${{ secrets.GLUE_ACCESS_TOKEN }}" --data '{"release_version":"${{ env.RELEASE_TAG }}"}' ${{ secrets.GLUE_API_URL }}/api/v1/chiavdf-hw/${{ env.RELEASE_TAG }}/start
+          curl -s -XPOST -H "Authorization: Bearer ${{ secrets.GLUE_ACCESS_TOKEN }}" --data '{"release_version":"${{ env.RELEASE_TAG }}"}' ${{ secrets.GLUE_API_URL }}/api/v1/chiavdf-hw/${{ env.RELEASE_TAG }}/success/release_hw

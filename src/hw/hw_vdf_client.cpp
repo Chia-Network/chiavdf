@@ -419,6 +419,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
         {"vdfs-mask", required_argument, NULL, 1},
         {"vdf-threads", required_argument, NULL, 1},
         {"proof-threads", required_argument, NULL, 1},
+        {"segment-threads", required_argument, NULL, 1},
         {"list", no_argument, NULL, 1},
         {"auto-freq-period", required_argument, NULL, 1},
         {0}
@@ -494,6 +495,10 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     }
     if (opts->vpo.max_proof_threads >= opts->vpo.max_aux_threads) {
         LOG_SIMPLE("Number of proof threads must be less than VDF threads");
+        return -1;
+    }
+    if (opts->vpo.segment_threads > 8) {
+        LOG_SIMPLE("Number of proof threads per segment must be between 1 and 8");
         return -1;
     }
     if (opts->auto_freq && opts->auto_freq_period < 10) {

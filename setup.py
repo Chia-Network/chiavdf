@@ -130,6 +130,8 @@ class CMakeBuild(build_ext):
             build_args += ["--", "/m"]
         else:
             cmake_args += ["-DCMAKE_BUILD_TYPE=" + cfg]
+            cmake_args += ["-DCMAKE_CXX_FLAGS_DEBUG=-fsanitize=address -fsanitize=undefined",
+                "-DCMAKE_LINKER_FLAGS_DEBUG=-fsanitize=address -fsanitize=undefined"]
             build_args += ["--", "-j", "6"]
 
         env = os.environ.copy()
@@ -137,7 +139,7 @@ class CMakeBuild(build_ext):
             env.get("CXXFLAGS", ""), self.distribution.get_version()
         )
         subprocess.check_call(["cmake", ext.sourcedir] + cmake_args, env=env)
-        subprocess.check_call(["cmake", "--build", "."] + build_args)
+        subprocess.check_call(["cmake", "--build", "."] + build_args + ["--", "VERBOSE=1"])
 
 
 class get_pybind_include(object):

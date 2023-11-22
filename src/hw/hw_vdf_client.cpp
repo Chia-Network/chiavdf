@@ -407,6 +407,7 @@ void event_loop(struct vdf_client *client)
                     adjust_hw_freq(client->drv, running_mask, 1);
                 } else {
                     LOG_INFO("Can't increase frequency, already at maximum");
+                    client->drv->last_freq_update = vdf_get_cur_time();
                 }
             }
         }

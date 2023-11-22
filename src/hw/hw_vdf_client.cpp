@@ -4,6 +4,7 @@
 #include "bqfc.h"
 #include "vdf_base.hpp"
 #include "chia_driver.hpp"
+#include "pll_freqs.hpp"
 
 #include <arpa/inet.h>
 #include <cstdio>
@@ -40,6 +41,7 @@ struct vdf_client_opts {
     uint32_t auto_freq_period;
     bool do_list;
     bool auto_freq;
+    double max_freq; // Used when auto_freq mode is turned on, to limit the max frequency
     struct vdf_proof_opts vpo;
     uint8_t vdfs_mask;
 };
@@ -399,7 +401,14 @@ void event_loop(struct vdf_client *client)
         if (client->opts.auto_freq && !(loop_cnt % 256)) {
             uint64_t elapsed = vdf_get_elapsed_us(client->drv->last_freq_update);
             if (elapsed / 1000000 >= client->opts.auto_freq_period) {
-                adjust_hw_freq(client->drv, running_mask, 1);
+                // Check and see what the next frequency would be, and if its <= max allowed frequency
+                double next_freq = pll_entries[client->drv->freq_idx + 1].freq;
+                if (next_freq <= client->opts.max_freq) {
+                    adjust_hw_freq(client->drv, running_mask, 1);
+                } else {
+                    LOG_INFO("Can't increase frequency, already at maximum");
+                    client->drv->last_freq_update = vdf_get_cur_time();
+                }
             }
         }
 
@@ -421,6 +430,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
         {"proof-threads", required_argument, NULL, 1},
         {"list", no_argument, NULL, 1},
         {"auto-freq-period", required_argument, NULL, 1},
+        {"max-freq", required_argument, NULL, 1},
         {0}
     };
     int long_idx = -1;
@@ -433,6 +443,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     opts->n_vdfs = 3;
     opts->do_list = false;
     opts->auto_freq = false;
+    opts->max_freq = pll_entries[VALID_PLL_FREQS - 1].freq;
     opts->vpo.max_aux_threads = HW_VDF_DEFAULT_MAX_AUX_THREADS;
     opts->vpo.max_proof_threads = 0;
     opts->vdfs_mask = 0;
@@ -455,6 +466,8 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
         } else if (long_idx == 7) {
             opts->auto_freq = true;
             opts->auto_freq_period = strtoul(optarg, NULL, 0);
+        } else if (long_idx == 8) {
+            opts->max_freq = strtod(optarg, NULL);
         }
     }
     if (ret != -1) {

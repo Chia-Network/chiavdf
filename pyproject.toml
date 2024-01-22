@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=42", "wheel", "setuptools_scm[toml]>=3.5.0", "pybind11>=2.10.0"]
+requires = ["setuptools>=42", "wheel", "setuptools_scm[toml]>=3.5.0", "pybind11>=2.10.0", "looseversion"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools_scm]
@@ -28,19 +28,19 @@ yum -y install epel-release \
 && cmake --version \
 && uname -a \
 """
-before-build = "python -m pip install --upgrade pip && pip install looseversion"
+before-build = "python -m pip install --upgrade pip"
 
 [tool.cibuildwheel.macos]
 build-verbosity = 0
 before-all = "brew install gmp boost cmake"
-before-build = "python -m pip install --upgrade pip && pip install looseversion"
+before-build = "python -m pip install --upgrade pip"
 environment = {MACOSX_DEPLOYMENT_TARGET="11", SYSTEM_VERSION_COMPAT=0, BUILD_VDF_CLIENT="N"}
 
 [tool.cibuildwheel.windows]
 build-verbosity = 0
 before-all = "git clone https://github.com/Chia-Network/mpir_gc_x64.git"
 environment = {BUILD_VDF_CLIENT="N", SETUPTOOLS_USE_DISTUTILS="stdlib"}
-before-build = "pip install delvewheel && pip install looseversion"
+before-build = "pip install delvewheel"
 repair-wheel-command = """
 delvewheel repair -v -w {dest_dir} {wheel} \
 --add-path mpir_gc_x64 \

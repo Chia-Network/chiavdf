@@ -43,6 +43,6 @@ environment = {BUILD_VDF_CLIENT="N", SETUPTOOLS_USE_DISTUTILS="stdlib"}
 before-build = "pip install delvewheel"
 repair-wheel-command = """
 delvewheel repair -v -w {dest_dir} {wheel} \
---add-path mpir_gc_x64
+--add-path mpir_gc_x64 \
 --add-dll mpir.dll;mpir_gc.dll;mpir_broadwell.dll;mpir_broadwell_avx.dll;mpir_bulldozer.dll;mpir_haswell.dll;mpir_piledriver.dll;mpir_sandybridge.dll;mpir_skylake_avx.dll \
 """

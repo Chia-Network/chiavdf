@@ -9,7 +9,6 @@ from setuptools import Command, Extension, setup, errors
 from setuptools.command.build import build
 from setuptools.command.build_ext import build_ext
 from setuptools.command.install import install
-from looseversion import LooseVersion
 
 BUILD_HOOKS = []
 INSTALL_HOOKS = []
@@ -100,13 +99,6 @@ class CMakeBuild(build_ext):
                 + " the following extensions: "
                 + ", ".join(e.name for e in self.extensions)
             )
-
-        if platform.system() == "Windows":
-            cmake_version = LooseVersion(
-                re.search(r"version\s*([\d.]+)", out.decode()).group(1)
-            )
-            if cmake_version < "3.1.0":
-                raise RuntimeError("CMake >= 3.1.0 is required on Windows")
 
         for ext in self.extensions:
             self.build_extension(ext)

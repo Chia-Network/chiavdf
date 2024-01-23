@@ -5,6 +5,8 @@
 ![PyPI - Format](https://img.shields.io/pypi/format/chiavdf?logo=pypi)
 ![GitHub](https://img.shields.io/github/license/Chia-Network/chiavdf?logo=Github)
 
+[![CodeQL](https://github.com/Chia-Network/chiavdf/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/Chia-Network/chiavdf/actions/workflows/codeql-analysis.yml)
+
 ## Building a wheel
 
 Compiling chiavdf requires cmake, boost and GMP/MPIR.

@@ -19,6 +19,8 @@ jobs:
       matrix:
         os: [macos-latest, ubuntu-latest]
         config: [ optimized=1, TSAN=1, ASAN=1]
+        include:
+        - os: windows-latest
 
     steps:
     - name: Checkout code
@@ -35,6 +37,13 @@ jobs:
       if: startsWith(matrix.os, 'mac')
       run: |
         brew install boost
+        cd src
+        make ${{ matrix.config }} -f Makefile.vdf-client
+
+    - name: Build vdf-client on Windows
+      if: startsWith(matrix.os, 'windows')
+      run: |
+        choco install boost-msvc-14.2
         cd src
         make ${{ matrix.config }} -f Makefile.vdf-client
 

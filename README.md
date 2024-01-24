@@ -1,13 +1,11 @@
 # Chia VDF
 
-![Build](https://github.com/Chia-Network/chiavdf/workflows/Build/badge.svg)
+![Build](https://github.com/Chia-Network/chiavdf/actions/workflows/build.yml/badge.svg)
 ![PyPI](https://img.shields.io/pypi/v/chiavdf?logo=pypi)
 ![PyPI - Format](https://img.shields.io/pypi/format/chiavdf?logo=pypi)
 ![GitHub](https://img.shields.io/github/license/Chia-Network/chiavdf?logo=Github)
 
-[![Total alerts](https://img.shields.io/lgtm/alerts/g/Chia-Network/chiavdf.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/Chia-Network/chiavdf/alerts/)
-[![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/Chia-Network/chiavdf.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/Chia-Network/chiavdf/context:python)
-[![Language grade: C/C++](https://img.shields.io/lgtm/grade/cpp/g/Chia-Network/chiavdf.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/Chia-Network/chiavdf/context:cpp)
+[![CodeQL](https://github.com/Chia-Network/chiavdf/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/Chia-Network/chiavdf/actions/workflows/codeql-analysis.yml)
 
 ## Building a wheel
 

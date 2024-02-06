@@ -120,7 +120,7 @@ jobs:
         if: env.RELEASE == 'true'
         shell: sh
         run: |
-          (cd dist/; ls ${{ inputs.package_name }}-*.whl) > new_wheel_list
+          (cd dist/; ls chiavdf-*.whl) > new_wheel_list
           cat new_wheel_list | xargs -I % sh -c 'ls -l dist/%'
 
       - name: Choose wheels to upload

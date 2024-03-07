@@ -46,5 +46,11 @@ add_executable(verifier_test
   ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
 )
 
+add_library(chiavdfc SHARED
+  ${CMAKE_CURRENT_SOURCE_DIR}/c_bindings/c_wrapper.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
+)
+
 target_link_libraries(chiavdf PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} -pthread)
 target_link_libraries(verifier_test ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} -pthread)
+target_link_libraries(chiavdfc ${GMP_LIBRARIES} ${GMPXX_LIBRARIES})

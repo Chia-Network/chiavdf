@@ -2,6 +2,7 @@ CMAKE_MINIMUM_REQUIRED(VERSION 3.14 FATAL_ERROR)
 option(BUILD_CHIAVDFC "Build the chiavdfc shared library" OFF)
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 IF(NOT CMAKE_BUILD_TYPE)
@@ -14,6 +15,10 @@ set(CMAKE_MODULE_PATH
     ${CMAKE_CURRENT_LIST_DIR}/cmake
     ${CMAKE_MODULE_PATH}
 )
+
+if(MSVC)
+  add_compile_options(/EHsc)
+endif()
 
 if(WIN32)
   set(MPIR_LIBRARY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../mpir_gc_x64")
@@ -43,8 +48,6 @@ else()
     ${GMPXX_INCLUDE_DIR}
   )
 endif()
-
-set (CMAKE_CXX_FLAGS "-std=c++17")
 
 # CMake 3.14+
 include(FetchContent)

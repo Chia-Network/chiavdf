@@ -4,7 +4,7 @@ import shutil
 import subprocess
 import sys
 
-from setuptools import Command, Extension, setup, errors
+from setuptools import Command, Extension, setup
 from setuptools.command.build import build
 from setuptools.command.build_ext import build_ext
 from setuptools.command.install import install

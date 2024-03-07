@@ -18,7 +18,11 @@ set(CMAKE_MODULE_PATH
 if(WIN32)
   set(MPIR_LIBRARY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../mpir_gc_x64")
   set(MPIR_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../mpir_gc_x64")
-  include_directories(${MPIR_INCLUDE_DIR})
+  include_directories(
+    ${INCLUDE_DIRECTORIES}
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${MPIR_INCLUDE_DIR}
+  )
   find_library(MPIR_LIBRARY NAMES mpir PATHS ${MPIR_LIBRARY_DIR} NO_DEFAULT_PATH)
   if(MPIR_LIBRARY)
     message(STATUS "MPIR library found at ${MPIR_LIBRARY}")
@@ -28,17 +32,17 @@ if(WIN32)
   endif()
 
   list(APPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../mpir_gc_x64")
+else()
+  find_package(GMP REQUIRED)
+  find_package(GMPXX REQUIRED)
+
+  include_directories(
+    ${INCLUDE_DIRECTORIES}
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${GMP_INCLUDE_DIR}
+    ${GMPXX_INCLUDE_DIR}
+  )
 endif()
-
-find_package(GMP REQUIRED)
-find_package(GMPXX REQUIRED)
-
-include_directories(
-  ${INCLUDE_DIRECTORIES}
-  ${CMAKE_CURRENT_SOURCE_DIR}
-  ${GMP_INCLUDE_DIR}
-  ${GMPXX_INCLUDE_DIR}
-)
 
 set (CMAKE_CXX_FLAGS "-std=c++1z")
 

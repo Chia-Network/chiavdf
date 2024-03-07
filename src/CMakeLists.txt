@@ -15,9 +15,6 @@ set(CMAKE_MODULE_PATH
     ${CMAKE_MODULE_PATH}
 )
 
-find_package(GMP REQUIRED)
-find_package(GMPXX REQUIRED)
-
 if(WIN32)
   set(MPIR_LIBRARY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/mpir_gc_x64")
   set(MPIR_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/mpir_gc_x64")
@@ -30,6 +27,9 @@ if(WIN32)
     message(FATAL_ERROR "MPIR library not found")
   endif()
 endif()
+
+find_package(GMP REQUIRED)
+find_package(GMPXX REQUIRED)
 
 include_directories(
   ${INCLUDE_DIRECTORIES}

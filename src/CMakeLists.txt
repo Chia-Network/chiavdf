@@ -92,7 +92,9 @@ if(BUILD_CHIAVDFC)
   set_target_properties(chiavdfc_shared PROPERTIES
           OUTPUT_NAME chiavdfc
           LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib/shared"
+          RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib/shared"
   )
+
   set_target_properties(chiavdfc_static PROPERTIES
           OUTPUT_NAME chiavdfc
           ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib/static"

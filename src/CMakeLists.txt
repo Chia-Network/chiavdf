@@ -44,7 +44,7 @@ else()
   )
 endif()
 
-set (CMAKE_CXX_FLAGS "-std=c++1z")
+set (CMAKE_CXX_FLAGS "-std=c++17")
 
 # CMake 3.14+
 include(FetchContent)
@@ -66,8 +66,13 @@ add_executable(verifier_test
   ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
 )
 
-target_link_libraries(chiavdf PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} -pthread)
-target_link_libraries(verifier_test ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} -pthread)
+target_link_libraries(chiavdf PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES})
+target_link_libraries(verifier_test PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES})
+
+if(UNIX)
+  target_link_libraries(chiavdf PRIVATE -pthread)
+  target_link_libraries(verifier_test PRIVATE -pthread)
+endif()
 
 if(BUILD_CHIAVDFC)
   add_library(chiavdfc_shared SHARED

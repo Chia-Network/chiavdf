@@ -18,6 +18,19 @@ set(CMAKE_MODULE_PATH
 find_package(GMP REQUIRED)
 find_package(GMPXX REQUIRED)
 
+if(WIN32)
+  set(MPIR_LIBRARY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/mpir_gc_x64")
+  set(MPIR_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/mpir_gc_x64")
+  include_directories(${MPIR_INCLUDE_DIR})
+  find_library(MPIR_LIBRARY NAMES mpir PATHS ${MPIR_LIBRARY_DIR} NO_DEFAULT_PATH)
+  if(MPIR_LIBRARY)
+    message(STATUS "MPIR library found at ${MPIR_LIBRARY}")
+    link_libraries(${MPIR_LIBRARY})
+  else()
+    message(FATAL_ERROR "MPIR library not found")
+  endif()
+endif()
+
 include_directories(
   ${INCLUDE_DIRECTORIES}
   ${CMAKE_CURRENT_SOURCE_DIR}

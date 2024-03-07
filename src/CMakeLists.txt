@@ -26,6 +26,8 @@ if(WIN32)
   else()
     message(FATAL_ERROR "MPIR library not found")
   endif()
+
+  list(APPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../mpir_gc_x64")
 endif()
 
 find_package(GMP REQUIRED)

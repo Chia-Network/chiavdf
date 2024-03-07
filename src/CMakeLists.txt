@@ -1,4 +1,5 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 3.14 FATAL_ERROR)
+option(BUILD_CHIAVDFC "Build the chiavdfc shared library" OFF)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -46,11 +47,27 @@ add_executable(verifier_test
   ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
 )
 
-add_library(chiavdfc SHARED
-  ${CMAKE_CURRENT_SOURCE_DIR}/c_bindings/c_wrapper.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
-)
-
 target_link_libraries(chiavdf PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} -pthread)
 target_link_libraries(verifier_test ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} -pthread)
-target_link_libraries(chiavdfc ${GMP_LIBRARIES} ${GMPXX_LIBRARIES})
+
+if(BUILD_CHIAVDFC)
+  add_library(chiavdfc_shared SHARED
+          ${CMAKE_CURRENT_SOURCE_DIR}/c_bindings/c_wrapper.cpp
+          ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
+  )
+  add_library(chiavdfc_static STATIC
+          ${CMAKE_CURRENT_SOURCE_DIR}/c_bindings/c_wrapper.cpp
+          ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
+  )
+  target_link_libraries(chiavdfc_shared ${GMP_LIBRARIES} ${GMPXX_LIBRARIES})
+  target_link_libraries(chiavdfc_static ${GMP_LIBRARIES} ${GMPXX_LIBRARIES})
+
+  set_target_properties(chiavdfc_shared PROPERTIES
+          OUTPUT_NAME chiavdfc
+          LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib/shared"
+  )
+  set_target_properties(chiavdfc_static PROPERTIES
+          OUTPUT_NAME chiavdfc
+          ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib/static"
+  )
+endif()

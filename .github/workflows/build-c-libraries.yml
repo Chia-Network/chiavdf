@@ -1,0 +1,82 @@
+name: Build C Libraries
+
+on:
+  push:
+    branches:
+    - main
+  release:
+    types: [published]
+  pull_request:
+    branches:
+    - '**'
+
+concurrency:
+  # SHA is added to the end if on `main` to let all main workflows run
+  group: ${{ github.ref }}-${{ github.workflow }}-${{ github.event_name }}-${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/long_lived/')) && github.sha || '' }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build-c-libraries:
+    name: C Libraries - ${{ matrix.os.name }} ${{ matrix.arch.name }}
+    runs-on: ${{ matrix.os.runs-on[matrix.arch.matrix] }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - name: macOS
+            matrix: macos
+            runs-on:
+              arm: [macOS, ARM64]
+              intel: [macos-11]
+          - name: Ubuntu
+            matrix: ubuntu
+            runs-on:
+              arm: [Linux, ARM64]
+              intel: [ubuntu-latest]
+          - name: Windows
+            matrix: windows
+            runs-on:
+              intel: [windows-latest]
+        arch:
+          - name: ARM
+            matrix: arm
+          - name: Intel
+            matrix: intel
+        exclude:
+          # Only partial entries are required here by GitHub Actions so generally I
+          # only specify the `matrix:` entry.  The super linter complains so for now
+          # all entries are included to avoid that.  Reported at
+          # https://github.com/github/super-linter/issues/3016
+          - os:
+              name: Windows
+              matrix: windows
+              runs-on:
+                intel: [windows-latest]
+            arch:
+              name: ARM
+              matrix: arm
+
+    steps:
+    - name: Clean workspace
+      uses: Chia-Network/actions/clean-workspace@main
+
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Build
+      working-directory: src
+      run: |
+        cmake . -DBUILD_CHIAVDFC=ON
+        make
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: c-libraries
+        path: ./src/lib

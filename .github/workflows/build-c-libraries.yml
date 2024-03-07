@@ -75,6 +75,7 @@ jobs:
       with:
         repository: Chia-Network/mpir_gc_x64
         fetch-depth: 1
+        path: mpir_gc_x64
 
     - name: Build
       working-directory: src

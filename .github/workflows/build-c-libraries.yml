@@ -83,7 +83,7 @@ jobs:
         BUILD_VDF_CLIENT: "N"
       run: |
         cmake . -DBUILD_CHIAVDFC=ON
-        cmake --build
+        cmake --build .
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v3

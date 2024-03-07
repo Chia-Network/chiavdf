@@ -69,6 +69,13 @@ jobs:
       with:
         fetch-depth: 0
 
+    - name: Checkout mpir for windows
+      if: ${{ matrix.os.matrix == "windows" }}
+      uses: actions/checkout@v4
+      with:
+        repo: Chia-Network/mpir_gc_x64.git
+        fetch-depth: 1
+
     - name: Build
       working-directory: src
       env:
@@ -80,5 +87,5 @@ jobs:
     - name: Upload artifacts
       uses: actions/upload-artifact@v3
       with:
-        name: c-libraries
+        name: c-libraries-${{ matrix.os.matrix }}-${{ matrix.arch.matrix }}
         path: ./src/lib

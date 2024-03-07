@@ -73,7 +73,7 @@ jobs:
       if: matrix.os.matrix == 'windows'
       uses: actions/checkout@v4
       with:
-        repository: Chia-Network/mpir_gc_x64.git
+        repository: Chia-Network/mpir_gc_x64
         fetch-depth: 1
 
     - name: Build

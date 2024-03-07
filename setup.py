@@ -4,7 +4,7 @@ import shutil
 import subprocess
 import sys
 
-from setuptools import Command, Extension, setup, errors
+from setuptools import Command, Extension, setup
 from setuptools.command.build import build
 from setuptools.command.build_ext import build_ext
 from setuptools.command.install import install
@@ -116,7 +116,7 @@ class CMakeBuild(build_ext):
             cmake_args += [
                 "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY_{}={}".format(cfg.upper(), extdir)
             ]
-            if sys.maxsize > 2 ** 32:
+            if sys.maxsize > 2**32:
                 cmake_args += ["-A", "x64"]
             build_args += ["--", "/m"]
         else:
@@ -131,136 +131,22 @@ class CMakeBuild(build_ext):
         subprocess.check_call(["cmake", "--build", "."] + build_args)
 
 
-class get_pybind_include(object):
-    """Helper class to determine the pybind11 include path
+build.sub_commands.append(("build_hook", lambda x: True))  # type: ignore
+install.sub_commands.append(("install_hook", lambda x: True))
 
-    The purpose of this class is to postpone importing pybind11
-    until it is actually installed, so that the ``get_include()``
-    method can be invoked."""
-
-    def __init__(self, user=False):
-        self.user = user
-
-    def __str__(self):
-        import pybind11
-
-        return pybind11.get_include(self.user)
-
-
-ext_modules = [
-    Extension(
-        "chiavdf",
-        sorted(
-            [
-                "src/python_bindings/fastvdf.cpp",
-                "src/refcode/lzcnt.c",
-            ]
-        ),
-        include_dirs=[
-            # Path to pybind11 headers
-            get_pybind_include(),
-            get_pybind_include(user=True),
-            "mpir_gc_x64",
-        ],
-        library_dirs=["mpir_gc_x64"],
-        libraries=["mpir"],
-        language="c++",
+setup(
+    name="chiavdf",
+    author="Florin Chirica",
+    author_email="florin@chia.net",
+    description="Chia vdf verification (wraps C++)",
+    license="Apache License",
+    python_requires=">=3.8",
+    long_description=open("README.md").read(),
+    long_description_content_type="text/markdown",
+    url="https://github.com/Chia-Network/chiavdf",
+    ext_modules=[CMakeExtension("chiavdf", "src")],
+    cmdclass=dict(
+        build_ext=CMakeBuild, install_hook=install_hook, build_hook=build_hook
     ),
-]
-
-
-# As of Python 3.6, CCompiler has a `has_flag` method.
-# cf http://bugs.python.org/issue26689
-def has_flag(compiler, flagname):
-    """Return a boolean indicating whether a flag name is supported on
-    the specified compiler.
-    """
-    import tempfile
-
-    with tempfile.NamedTemporaryFile("w", suffix=".cpp") as f:
-        f.write("int main (int argc, char **argv) { return 0; }")
-        try:
-            compiler.compile([f.name], extra_postargs=[flagname])
-        except errors.CompileError:
-            return False
-    return True
-
-
-def cpp_flag(compiler):
-    """Return the -std=c++[11/14/17] compiler flag.
-
-    The newer version is prefered over c++11 (when it is available).
-    """
-    flags = ["-std=c++17", "-std=c++14", "-std=c++11"]
-
-    for flag in flags:
-        if has_flag(compiler, flag):
-            return flag
-
-    raise RuntimeError("Unsupported compiler -- at least C++11 support " "is needed!")
-
-
-class BuildExt(build_ext):
-    """A custom build extension for adding compiler-specific options."""
-
-    c_opts = {
-        "msvc": ["/EHsc", "/std:c++17"],
-        "unix": [""],
-    }
-    l_opts = {
-        "msvc": [],
-        "unix": [""],
-    }
-
-    def build_extensions(self):
-        ct = self.compiler.compiler_type
-        opts = self.c_opts.get(ct, [])
-        link_opts = self.l_opts.get(ct, [])
-        if ct == "unix":
-            opts.append('-DVERSION_INFO="%s"' % self.distribution.get_version())
-            opts.append(cpp_flag(self.compiler))
-            if has_flag(self.compiler, "-fvisibility=hidden"):
-                opts.append("-fvisibility=hidden")
-        elif ct == "msvc":
-            opts.append('/DVERSION_INFO=\\"%s\\"' % self.distribution.get_version())
-        for ext in self.extensions:
-            ext.extra_compile_args = opts
-            ext.extra_link_args = link_opts
-        build_ext.build_extensions(self)
-
-
-if platform.system() == "Windows":
-    setup(
-        name="chiavdf",
-        author="Mariano Sorgente",
-        author_email="mariano@chia.net",
-        description="Chia vdf verification (wraps C++)",
-        license="Apache License",
-        python_requires=">=3.8",
-        long_description=open("README.md").read(),
-        long_description_content_type="text/markdown",
-        url="https://github.com/Chia-Network/chiavdf",
-        ext_modules=ext_modules,
-        cmdclass={"build_ext": BuildExt},
-        zip_safe=False,
-    )
-else:
-    build.sub_commands.append(("build_hook", lambda x: True))  # type: ignore
-    install.sub_commands.append(("install_hook", lambda x: True))
-
-    setup(
-        name="chiavdf",
-        author="Florin Chirica",
-        author_email="florin@chia.net",
-        description="Chia vdf verification (wraps C++)",
-        license="Apache License",
-        python_requires=">=3.8",
-        long_description=open("README.md").read(),
-        long_description_content_type="text/markdown",
-        url="https://github.com/Chia-Network/chiavdf",
-        ext_modules=[CMakeExtension("chiavdf", "src")],
-        cmdclass=dict(
-            build_ext=CMakeBuild, install_hook=install_hook, build_hook=build_hook
-        ),
-        zip_safe=False,
-    )
+    zip_safe=False,
+)

@@ -2,6 +2,11 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+*.dylib
+*.dll
+*.a
+src/verifier_test
 
 # Generated assembly file
 /asm_compiled.s

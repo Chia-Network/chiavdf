@@ -70,10 +70,10 @@ jobs:
         fetch-depth: 0
 
     - name: Checkout mpir for windows
-      if: ${{ matrix.os.matrix == "windows" }}
+      if: matrix.os.matrix == 'windows'
       uses: actions/checkout@v4
       with:
-        repo: Chia-Network/mpir_gc_x64.git
+        repository: Chia-Network/mpir_gc_x64.git
         fetch-depth: 1
 
     - name: Build

@@ -71,6 +71,8 @@ jobs:
 
     - name: Build
       working-directory: src
+      env:
+        BUILD_VDF_CLIENT: "N"
       run: |
         cmake . -DBUILD_CHIAVDFC=ON
         make

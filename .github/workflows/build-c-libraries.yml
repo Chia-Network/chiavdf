@@ -101,7 +101,7 @@ jobs:
       run: |
         DIST_DIR="chiavdfc-${{ matrix.os.matrix }}-${{ matrix.arch.matrix }}"
         echo "DIST_DIR=$DIST_DIR" >> "$GITHUB_ENV"
-        mkdir -p ${{ env.DIR }}/static ${DIST_DIR}/shared
+        mkdir -p ${DIST_DIR}/static ${DIST_DIR}/shared
 
         cp src/c_bindings/c_wrapper.h ${DIST_DIR}/
         find src/lib/static -type f -exec cp {} ${DIST_DIR}/static/ \;

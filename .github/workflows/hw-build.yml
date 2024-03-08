@@ -104,6 +104,7 @@ jobs:
             dist/${{ env.DEB_NAME }}
 
       - uses: Chia-Network/actions/github/jwt@main
+        if: env.RELEASE == 'true'
 
       - name: Trigger repo update
         if: env.RELEASE == 'true'

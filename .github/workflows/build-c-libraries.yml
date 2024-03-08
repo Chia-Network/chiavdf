@@ -98,22 +98,24 @@ jobs:
 
     - name: Assemble directory of headers and libraries for distribution
       shell: bash
+      env:
+        DIR: chiavdfc-${{ matrix.os.matrix }}-${{ matrix.arch.matrix }}
       run: |
-        mkdir -p dist/static dist/shared
+        mkdir -p ${{ env.DIR }}/static ${{ env.DIR }}/shared
 
-        cp src/c_bindings/c_wrapper.h dist/
-        find src/lib/static -type f -exec cp {} dist/static/ \;
-        find src/lib/shared -type f -exec cp {} dist/shared/ \;
+        cp src/c_bindings/c_wrapper.h ${{ env.DIR }}/
+        find src/lib/static -type f -exec cp {} ${{ env.DIR }}/static/ \;
+        find src/lib/shared -type f -exec cp {} ${{ env.DIR }}/shared/ \;
 
     - name: Zip (linux/mac)
       if: runner.os != 'Windows'
       run: |
-        zip -r chiavdfc-${{ matrix.os.matrix }}-${{ matrix.arch.matrix }}.zip dist
+        zip -r chiavdfc-${{ matrix.os.matrix }}-${{ matrix.arch.matrix }}.zip ${{ env.DIR }}
 
     - name: Zip (windows)
       if: runner.os == 'Windows'
       run: |
-        Compress-Archive -Path dist/* -Destination chiavdfc-${{ matrix.os.matrix }}-${{ matrix.arch.matrix }}.zip
+        Compress-Archive -Path ${{ env.DIR }}/* -Destination chiavdfc-${{ matrix.os.matrix }}-${{ matrix.arch.matrix }}.zip
 
     - name: Upload zip as artifact
       uses: actions/upload-artifact@v3

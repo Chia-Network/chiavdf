@@ -69,6 +69,11 @@ jobs:
       with:
         fetch-depth: 0
 
+    - name: Set Env
+      uses: Chia-Network/actions/setjobenv@main
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
     - name: Checkout mpir for windows
       if: matrix.os.matrix == 'windows'
       uses: actions/checkout@v4
@@ -90,3 +95,47 @@ jobs:
       with:
         name: c-libraries-${{ matrix.os.matrix }}-${{ matrix.arch.matrix }}
         path: ./src/lib
+
+    - name: Assemble directory of headers and libraries for distribution
+      shell: bash
+      run: |
+        DIST_DIR="chiavdfc-${{ matrix.os.matrix }}-${{ matrix.arch.matrix }}"
+        echo "DIST_DIR=$DIST_DIR" >> "$GITHUB_ENV"
+        mkdir -p ${DIST_DIR}/static ${DIST_DIR}/shared
+
+        cp src/c_bindings/c_wrapper.h ${DIST_DIR}/
+        find src/lib/static -type f -exec cp {} ${DIST_DIR}/static/ \;
+        find src/lib/shared -type f -exec cp {} ${DIST_DIR}/shared/ \;
+
+    - name: Zip (linux/mac)
+      if: runner.os != 'Windows'
+      run: |
+        zip -r chiavdfc-${{ matrix.os.matrix }}-${{ matrix.arch.matrix }}.zip ${{ env.DIST_DIR }}
+
+    - name: Zip (windows)
+      if: runner.os == 'Windows'
+      run: |
+        Compress-Archive -Path ${{ env.DIST_DIR }}/* -Destination chiavdfc-${{ matrix.os.matrix }}-${{ matrix.arch.matrix }}.zip
+
+    - name: Upload zip as artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: chiavdfc-${{ matrix.os.matrix }}-${{ matrix.arch.matrix }}
+        path: |
+          ${{ github.workspace }}/chiavdfc-${{ matrix.os.matrix }}-${{ matrix.arch.matrix }}.zip
+
+    - name: Upload release artifacts
+      if: env.RELEASE == 'true'
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release upload \
+          $RELEASE_TAG \
+          chiavdfc-${{ matrix.os.matrix }}-${{ matrix.arch.matrix }}.zip
+
+    - uses: Chia-Network/actions/github/jwt@main
+
+    - name: Notify new build
+      if: env.RELEASE == 'true'
+      run: |
+        curl -s -XPOST -H "Authorization: Bearer ${{ env.JWT_TOKEN }}" --data '{"release_version":"${{ env.RELEASE_TAG }}"}' ${{ secrets.GLUE_API_URL }}/api/v1/chiavdfc/trigger

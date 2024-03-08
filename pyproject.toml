@@ -42,6 +42,7 @@ before-all = "git clone https://github.com/Chia-Network/mpir_gc_x64.git"
 environment = {BUILD_VDF_CLIENT="N", SETUPTOOLS_USE_DISTUTILS="stdlib"}
 repair-wheel-command = """
 ls -l mpir_gc_x64 && pip uninstall -y delocate \
+&& pip install wheel==0.37.1 \
 && pip install --no-build-isolation git+https://github.com/Chia-Network/delocate.git@debug \
 && delocate-wheel -v -i mpir_gc_x64/mpir.dll {wheel} \
 && delocate-wheel -v -i mpir_gc_x64/mpir_gc.dll {wheel} \

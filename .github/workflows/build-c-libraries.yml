@@ -96,7 +96,7 @@ jobs:
         name: c-libraries-${{ matrix.os.matrix }}-${{ matrix.arch.matrix }}
         path: ./src/lib
 
-    - name: Assemble zip of headers and libraries
+    - name: Assemble directory of headers and libraries for distribution
       shell: bash
       run: |
         mkdir -p dist/static dist/shared
@@ -105,7 +105,15 @@ jobs:
         find src/lib/static -type f -exec cp {} dist/static/ \;
         find src/lib/shared -type f -exec cp {} dist/shared/ \;
 
+    - name: Zip (linux/mac)
+      if: runner.os != 'Windows'
+      run: |
         zip -r chiavdfc-${{ matrix.os.matrix }}-${{ matrix.arch.matrix }}.zip dist
+
+    - name: Zip (windows)
+      if: runner.os == 'Windows'
+      run: |
+        Compress-Archive -Path dist/* -Destination chiavdfc-${{ matrix.os.matrix }}-${{ matrix.arch.matrix }}.zip
 
     - name: Upload zip as artifact
       uses: actions/upload-artifact@v3

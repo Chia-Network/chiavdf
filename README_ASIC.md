@@ -58,10 +58,11 @@ List of options [default, min - max]:
         Allows connecting to a timelord running on a remote host. Useful when running multiple machines with VDF hardware connecting to a single timelord.
   --vdfs-mask N - mask for enabling VDF engines [7, 1 - 7]
         The ASIC has 3 VDF engines numbered 0, 1, 2. If not running all 3 engines, the mask can be specified to enable specific engines. It must be the result of bitwise OR of the engine bits (1, 2, 4 for engines 0, 1, 2).
-  --vdf-threads N - number of software threads per VDF engine [4, 2 - 64]
+  --vdf-threads N - max number of software threads per VDF engine [4, 2 - 64]
         Number of software threads computing intermediate values and proofs per VDF engine.
-  --proof-threads N - number of proof threads per VDF engine
+  --proof-threads N - max number of proof threads per VDF engine
         Number of software threads only computing proofs per VDF engine. Must be less than --vdf-threads.
+  --segment-threads N - number of proof threads per segment [2, 1 - 8]
   --auto-freq-period N - auto-adjust frequency every N seconds [0, 10 - inf]
   --list - list available devices and exit
 ```

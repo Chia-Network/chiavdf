@@ -135,6 +135,7 @@ jobs:
           chiavdfc-${{ matrix.os.matrix }}-${{ matrix.arch.matrix }}.zip
 
     - uses: Chia-Network/actions/github/jwt@main
+      if: env.RELEASE == 'true'
 
     - name: Notify new build
       if: env.RELEASE == 'true'

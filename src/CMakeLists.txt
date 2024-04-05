@@ -1,5 +1,6 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 3.14 FATAL_ERROR)
 option(BUILD_CHIAVDFC "Build the chiavdfc shared library" OFF)
+option(BUILD_PYTHON "Build the python bindings for chiavdf" ON)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -52,17 +53,19 @@ endif()
 # CMake 3.14+
 include(FetchContent)
 
-FetchContent_Declare(
-  pybind11-src
-  GIT_REPOSITORY https://github.com/pybind/pybind11.git
-  GIT_TAG        v2.11.1
-)
-FetchContent_MakeAvailable(pybind11-src)
+if(BUILD_PYTHON)
+  FetchContent_Declare(
+    pybind11-src
+    GIT_REPOSITORY https://github.com/pybind/pybind11.git
+    GIT_TAG        v2.11.1
+  )
+  FetchContent_MakeAvailable(pybind11-src)
 
-pybind11_add_module(chiavdf
-  ${CMAKE_CURRENT_SOURCE_DIR}/python_bindings/fastvdf.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
-)
+  pybind11_add_module(chiavdf
+    ${CMAKE_CURRENT_SOURCE_DIR}/python_bindings/fastvdf.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
+  )
+endif()
 
 add_executable(verifier_test
   ${CMAKE_CURRENT_SOURCE_DIR}/verifier_test.cpp

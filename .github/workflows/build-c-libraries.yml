@@ -73,6 +73,7 @@ jobs:
       uses: Chia-Network/actions/setjobenv@main
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo ${{ secrets.GITHUB_TOKEN }}
 
     - name: Checkout mpir for windows
       if: matrix.os.matrix == 'windows'

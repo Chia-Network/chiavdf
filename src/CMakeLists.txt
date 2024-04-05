@@ -65,18 +65,20 @@ if(BUILD_PYTHON)
     ${CMAKE_CURRENT_SOURCE_DIR}/python_bindings/fastvdf.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
   )
+
+  target_link_libraries(chiavdf PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES})
+  if(UNIX)
+    target_link_libraries(chiavdf PRIVATE -pthread)
+  endif()
 endif()
 
 add_executable(verifier_test
   ${CMAKE_CURRENT_SOURCE_DIR}/verifier_test.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
 )
-
-target_link_libraries(chiavdf PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES})
 target_link_libraries(verifier_test PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES})
 
 if(UNIX)
-  target_link_libraries(chiavdf PRIVATE -pthread)
   target_link_libraries(verifier_test PRIVATE -pthread)
 endif()
 

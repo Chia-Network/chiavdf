@@ -238,7 +238,7 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
     }
 
     {
-        // this shouldn't be needed but avoids some false negatives in TSAN
+        // this shouldn't be needed but avoids some false positives in TSAN
         std::lock_guard<std::mutex> lk(cout_lock);
         std::cout << "VDF loop finished. Total iters: " << num_iterations << "\n";
     }
@@ -277,7 +277,7 @@ Proof ProveOneWesolowski(uint64_t iters, integer& D, form f, OneWesolowskiCallba
     Proof proof(y_serialized, proof_serialized);
     proof.witness_type = 0;
     {
-        // this shouldn't be needed but avoids some false negatives in TSAN
+        // this shouldn't be needed but avoids some false positives in TSAN
         std::lock_guard<std::mutex> lk(cout_lock);
         std::cout << "Got simple weso proof: " << proof.hex() << "\n";
     }

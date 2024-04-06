@@ -87,7 +87,7 @@ jobs:
       env:
         BUILD_VDF_CLIENT: "N"
       run: |
-        cmake . -DBUILD_CHIAVDFC=ON
+        cmake . -DBUILD_CHIAVDFC=ON -DBUILD_PYTHON=OFF
         cmake --build .
 
     - name: Upload artifacts

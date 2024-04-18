@@ -58,3 +58,6 @@ activate
 
 src/cmake-build-debug/
 .idea
+
+# Rust
+/target

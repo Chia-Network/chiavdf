@@ -1,8 +1,11 @@
 use std::env;
 use std::path::PathBuf;
+use std::str::FromStr;
+
+use cmake::Config;
 
 fn main() {
-    println!("cargo:rerun-if-changed=wrapper.cpp");
+    println!("cargo:rerun-if-changed=wrapper.hpp");
     println!("cargo:rustc-link-lib=gmp");
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
@@ -11,23 +14,37 @@ fn main() {
     if !src_dir.exists() {
         src_dir = manifest_dir
             .parent()
-            .expect("can't access ../c_bindings")
-            .join("c_bindings");
+            .expect("can't access ../")
+            .to_path_buf();
     }
 
-    cc::Build::new()
-        .cpp(true)
-        .std("c++14")
-        .files([src_dir.join("c_wrapper.cpp")])
-        .warnings(false)
-        .include(src_dir.as_path())
-        .compile("chiavdf");
+    let dst = Config::new(src_dir.as_path())
+        .build_target("chiavdfc_static")
+        .define("BUILD_CHIAVDFC", "ON")
+        .env("BUILD_VDF_CLIENT", "N")
+        .define("BUILD_PYTHON", "OFF")
+        .build();
+
+    println!(
+        "cargo:rustc-link-search=native={}",
+        PathBuf::from_str(dst.display().to_string().as_str())
+            .unwrap()
+            .join("build")
+            .join("lib")
+            .join("static")
+            .to_str()
+            .unwrap()
+    );
+    println!("cargo:rustc-link-lib=static=chiavdfc");
 
     let bindings = bindgen::Builder::default()
         .header(manifest_dir.join("wrapper.hpp").to_str().unwrap())
         .clang_arg("-x")
         .clang_arg("c++")
-        .clang_arg(format!("-I{}", src_dir.to_str().unwrap()))
+        .clang_arg(format!(
+            "-I{}",
+            src_dir.join("c_bindings").to_str().unwrap()
+        ))
         .clang_arg("-std=c++14")
         .allowlist_function("verify_n_wesolowski_wrapper")
         .allowlist_function("create_discriminant_wrapper")

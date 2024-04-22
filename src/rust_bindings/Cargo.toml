@@ -10,7 +10,8 @@ repository = "https://github.com/Chia-Network/chiavdf"
 links = "chiavdf"
 
 [dependencies]
+link-cplusplus = "1.0.9"
 
 [build-dependencies]
 bindgen = "0.69.4"
-cc = "1.0.90"
+cmake = "0.1.50"

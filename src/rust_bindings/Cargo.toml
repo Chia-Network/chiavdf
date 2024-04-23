@@ -7,7 +7,6 @@ description = "Bindings to the chiavdf C++ library for vdf verification."
 authors = ["Brandon Haggstrom <b.haggstrom@chia.net>"]
 homepage = "https://github.com/Chia-Network/chiavdf"
 repository = "https://github.com/Chia-Network/chiavdf"
-links = "chiavdf"
 
 [dependencies]
 link-cplusplus = "1.0.9"

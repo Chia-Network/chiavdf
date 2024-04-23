@@ -38,7 +38,7 @@ fn main() {
     println!("cargo:rustc-link-lib=static=chiavdfc");
 
     let bindings = bindgen::Builder::default()
-        .header(manifest_dir.join("wrapper.hpp").to_str().unwrap())
+        .header(manifest_dir.join("wrapper.h").to_str().unwrap())
         .clang_arg("-x")
         .clang_arg("c++")
         .clang_arg(format!(

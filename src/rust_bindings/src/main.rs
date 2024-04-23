@@ -10,6 +10,7 @@ mod bindings {
 }
 
 pub fn create_discriminant<const N: usize>(seed: &[u8], output: &mut [u8; N]) {
+    // SAFETY: The length is guaranteed to match the actual length of the char pointer.
     unsafe {
         let ptr = bindings::create_discriminant_wrapper(seed.as_ptr(), seed.len(), N as i32);
         output.copy_from_slice(std::slice::from_raw_parts(ptr as *const u8, N));
@@ -25,6 +26,7 @@ pub fn verify_n_wesolowski(
     disc_size_bits: u64,
     recursion: u64,
 ) -> bool {
+    // SAFETY: The lengths are guaranteed to match the actual lengths of the char pointers.
     unsafe {
         let value = bindings::verify_n_wesolowski_wrapper(
             discriminant.as_ptr() as *const std::ffi::c_char,

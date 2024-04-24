@@ -14,3 +14,9 @@ link-cplusplus = "1.0.9"
 [build-dependencies]
 bindgen = "0.69.4"
 cmake = "0.1.50"
+
+[dev-dependencies]
+hex = "0.4.3"
+hex-literal = "0.4.1"
+rand = "0.8.5"
+rand_chacha = "0.3.1"

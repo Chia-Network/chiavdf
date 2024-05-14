@@ -56,7 +56,7 @@ int main() {
     if (multi_proc_machine) {
         fast_storage = new FastStorage((FastAlgorithmCallback*)weso);
     }
-    std::thread vdf_worker(repeated_square, f, D, L, weso, fast_storage, std::ref(stopped));
+    std::thread vdf_worker(repeated_square, 0, f, D, L, weso, fast_storage, std::ref(stopped));
     ProverManager pm(D, (FastAlgorithmCallback*)weso, fast_storage, segments, thread_count);
     pm.start();
     std::vector<std::thread> threads;

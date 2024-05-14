@@ -100,7 +100,7 @@ void repeated_square_original(vdf_original &vdfo, form& f, const integer& D, con
 }
 
 // thread safe; but it is only called from the main thread
-void repeated_square(form f, const integer& D, const integer& L,
+void repeated_square(uint64_t iterations, form f, const integer& D, const integer& L,
     WesolowskiCallback* weso, FastStorage* fast_storage, std::atomic<bool>& stopped)
 {
     #ifdef VDF_TEST
@@ -219,6 +219,11 @@ void repeated_square(form f, const integer& D, const integer& L,
             }
 
             last_checkpoint += (1 << 15);
+        }
+
+        if (iterations != 0 && num_iterations > iterations) {
+            weso->iterations = num_iterations;
+            break;
         }
 
         #ifdef VDF_TEST

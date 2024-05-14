@@ -73,7 +73,7 @@ const int64_t EXP_THRESH = 31;
 // Notifies ProverManager class each time there's a new event.
 bool new_event = false;
 std::condition_variable new_event_cv;
-std::mutex new_event_mutex;
+std::mutex new_event_mutex, cout_lock;
 
 bool debug_mode = false;
 bool fast_algorithm = false;
@@ -231,8 +231,12 @@ void repeated_square(form f, const integer& D, const integer& L,
             }
         #endif
     }
+    {
+        // this shouldn't be needed but avoids some false positive in TSAN
+        std::lock_guard<std::mutex> lk(cout_lock);
+        std::cout << "VDF loop finished. Total iters: " << num_iterations << "\n" << std::flush;
+    }
 
-    std::cout << "VDF loop finished. Total iters: " << num_iterations << "\n" << std::flush;
     #ifdef VDF_TEST
         print( "fast average batch size", double(num_iterations_fast)/double(num_calls_fast) );
         print( "fast iterations per slow iteration", double(num_iterations_fast)/double(num_iterations_slow) );
@@ -266,7 +270,11 @@ Proof ProveOneWesolowski(uint64_t iters, integer& D, form f, OneWesolowskiCallba
     proof_serialized = SerializeForm(proof_form, d_bits);
     Proof proof(y_serialized, proof_serialized);
     proof.witness_type = 0;
-    std::cout << "Got simple weso proof: " << proof.hex() << "\n";
+    {
+        // this shouldn't be needed but avoids some false positive in TSAN
+        std::lock_guard<std::mutex> lk(cout_lock);
+        std::cout << "Got simple weso proof: " << proof.hex() << "\n";
+    }
     return proof;
 }
 

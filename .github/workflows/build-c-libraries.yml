@@ -91,7 +91,7 @@ jobs:
         cmake --build .
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: c-libraries-${{ matrix.os.matrix }}-${{ matrix.arch.matrix }}
         path: ./src/lib
@@ -118,7 +118,7 @@ jobs:
         Compress-Archive -Path ${{ env.DIST_DIR }}/* -Destination chiavdfc-${{ matrix.os.matrix }}-${{ matrix.arch.matrix }}.zip
 
     - name: Upload zip as artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: chiavdfc-${{ matrix.os.matrix }}-${{ matrix.arch.matrix }}
         path: |

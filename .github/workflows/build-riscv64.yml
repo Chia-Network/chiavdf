@@ -73,9 +73,9 @@ jobs:
             '
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: packages
+          name: packages-${{ matrix.os.name }}-${{ matrix.python.major-dot-minor }}
           path: ./dist
           if-no-files-found: error
   upload:
@@ -96,9 +96,10 @@ jobs:
 
       - name: Download artifacts
         if: env.RELEASE == 'true'
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
-          name: packages
+          merge-multiple: true
+          pattern: packages-*
           path: ./dist
 
       - name: Configure AWS credentials

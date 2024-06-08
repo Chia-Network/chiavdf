@@ -35,12 +35,16 @@ extern "C" {
         return resultArray;
     }
 
-    int verify_n_wesolowski_wrapper(const char* discriminant_str, size_t discriminant_size, const char* x_s, size_t x_s_size, const char* proof_blob, size_t proof_blob_size, uint64_t num_iterations, uint64_t disc_size_bits, uint64_t recursion) {
+    int verify_n_wesolowski_wrapper(const char* discriminant_str, const char* x_s, size_t x_s_size, const char* proof_blob, size_t proof_blob_size, uint64_t num_iterations, uint64_t disc_size_bits, uint64_t recursion) {
         std::vector<uint8_t> x_s_v(x_s, x_s + x_s_size);
         std::vector<uint8_t> proof_blob_v(proof_blob, proof_blob + proof_blob_size);
 
         bool result = CheckProofOfTimeNWesolowski(integer(discriminant_str), x_s_v.data(), proof_blob_v.data(), proof_blob_v.size(), num_iterations, disc_size_bits, recursion);
 
         return result ? 1 : 0;
+    }
+
+    void delete_byte_array(ByteArray array) {
+        delete[] array.data;
     }
 }

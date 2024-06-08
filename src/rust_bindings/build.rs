@@ -5,7 +5,9 @@ use std::str::FromStr;
 use cmake::Config;
 
 fn main() {
-    println!("cargo:rerun-if-changed=wrapper.hpp");
+    println!("cargo:rerun-if-changed=wrapper.h");
+    println!("cargo:rerun-if-changed=c_bindings/c_wrapper.h");
+    println!("cargo:rerun-if-changed=c_bindings/c_wrapper.cpp");
     println!("cargo:rustc-link-lib=gmp");
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
@@ -48,7 +50,10 @@ fn main() {
         .clang_arg("-std=c++14")
         .allowlist_function("verify_n_wesolowski_wrapper")
         .allowlist_function("create_discriminant_wrapper")
+        .allowlist_function("prove_wrapper")
         .allowlist_function("free")
+        .allowlist_function("delete_byte_array")
+        .allowlist_function("test_thing")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .generate()
         .expect("Unable to generate bindings");

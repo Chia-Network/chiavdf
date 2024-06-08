@@ -11,11 +11,10 @@ mod bindings {
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }
 
-pub fn create_discriminant(seed: &[u8], disc_size_bits: u64) -> CString {
+pub fn create_discriminant(seed: &[u8], disc_size_bits: i32) -> CString {
     // SAFETY: The length is guaranteed to match the actual length of the char pointer.
     unsafe {
-        let ptr =
-            bindings::create_discriminant_wrapper(seed.as_ptr(), seed.len(), disc_size_bits as i32);
+        let ptr = bindings::create_discriminant_wrapper(seed.as_ptr(), seed.len(), disc_size_bits);
         let c_str = CStr::from_ptr(ptr).to_owned();
         bindings::free(ptr as *mut std::ffi::c_void);
         c_str
@@ -33,14 +32,14 @@ pub fn verify_n_wesolowski(
     // SAFETY: The lengths are guaranteed to match the actual lengths of the char pointers.
     unsafe {
         let value = bindings::verify_n_wesolowski_wrapper(
-            dbg!(discriminant.as_ptr() as *const std::ffi::c_char),
-            dbg!(x_s.as_ptr() as *const std::ffi::c_char),
-            dbg!(x_s.len()),
-            dbg!(proof.as_ptr() as *const std::ffi::c_char),
-            dbg!(proof.len()),
-            dbg!(num_iterations),
-            dbg!(disc_size_bits),
-            dbg!(recursion),
+            discriminant.as_ptr() as *const std::ffi::c_char,
+            x_s.as_ptr() as *const std::ffi::c_char,
+            x_s.len(),
+            proof.as_ptr() as *const std::ffi::c_char,
+            proof.len(),
+            num_iterations,
+            disc_size_bits,
+            recursion,
         );
         value == 1
     }

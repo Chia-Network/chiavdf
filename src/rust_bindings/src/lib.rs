@@ -23,7 +23,7 @@ pub fn create_discriminant(seed: &[u8], disc_size_bits: i32) -> CString {
 
 pub fn verify_n_wesolowski(
     discriminant: &CStr,
-    x_s: [u8; 100],
+    x_s: &[u8],
     proof: &[u8],
     num_iterations: u64,
     disc_size_bits: u64,
@@ -45,12 +45,7 @@ pub fn verify_n_wesolowski(
     }
 }
 
-pub fn prove(
-    challenge: &[u8],
-    x_s: [u8; 100],
-    disc_size_bits: i32,
-    num_iterations: u64,
-) -> Vec<u8> {
+pub fn prove(challenge: &[u8], x_s: &[u8], disc_size_bits: i32, num_iterations: u64) -> Vec<u8> {
     // SAFETY: The lengths are guaranteed to match the actual lengths of the char pointers.
     unsafe {
         let array = bindings::prove_wrapper(
@@ -118,9 +113,9 @@ mod tests {
         let mut default_el = [0; 100];
         default_el[0] = 0x08;
 
-        let proof = prove(&genesis_challenge, default_el, 1024, 231);
+        let proof = prove(&genesis_challenge, &default_el, 1024, 231);
         let disc = create_discriminant(&genesis_challenge, 1024);
-        let valid = verify_n_wesolowski(&disc, default_el, &proof, 231, 1024, 0);
+        let valid = verify_n_wesolowski(&disc, &default_el, &proof, 231, 1024, 0);
         assert!(valid);
     }
 }

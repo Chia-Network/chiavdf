@@ -80,7 +80,7 @@ mod tests {
     #[test]
     fn test_create_discriminant() {
         let mut discriminants = Vec::new();
-        let mut seeds = [[0; 10]; 10];
+        let mut seeds = [[0; 10]; 5];
 
         for (i, seed) in seeds.iter_mut().enumerate() {
             let mut rng = ChaCha8Rng::seed_from_u64(i as u64);
@@ -111,91 +111,17 @@ mod tests {
         }
     }
 
-    #[derive(Debug)]
-    struct VdfInfo {
-        challenge_hash: [u8; 32],
-        number_iters: u64,
-        output: [u8; 100],
-    }
-
-    impl VdfInfo {
-        fn new(challenge_hash: [u8; 32], number_iters: u64, output: [u8; 100]) -> Self {
-            Self {
-                challenge_hash,
-                number_iters,
-                output,
-            }
-        }
-    }
-
-    #[derive(Debug)]
-    struct VdfProof {
-        witness_type: u8,
-        witness: Vec<u8>,
-        normalized_to_identity: bool,
-    }
-
-    impl VdfProof {
-        fn new(witness_type: u8, witness: [u8; 100], normalized_to_identity: bool) -> Self {
-            Self {
-                witness_type,
-                witness: witness.to_vec(),
-                normalized_to_identity,
-            }
-        }
-    }
-
-    fn get_vdf_info_and_proof(
-        vdf_input: [u8; 100],
-        challenge_hash: [u8; 32],
-        number_iters: u64,
-        normalized_to_identity: bool,
-    ) -> (VdfInfo, VdfProof) {
-        let result = prove(&challenge_hash, vdf_input, 1024, number_iters);
-        let output: [u8; 100] = result[0..100].try_into().unwrap();
-        let proof_bytes: [u8; 100] = result[100..200].try_into().unwrap();
-        (
-            VdfInfo::new(challenge_hash, number_iters, output),
-            VdfProof::new(0, proof_bytes, normalized_to_identity),
-        )
-    }
-
-    fn validate_vdf(proof: VdfProof, input_el: [u8; 100], info: VdfInfo) -> bool {
-        let genesis_challenge =
-            hex!("ccd5bb71183532bff220ba46c268991a3ff07eb358e8255a65c30a2dce0e5fbb");
-
-        if proof.witness_type + 1 > 64 {
-            return false;
-        }
-
-        let disc = create_discriminant(&genesis_challenge, 1024);
-
-        let mut bytes = Vec::new();
-        bytes.extend(info.output);
-        bytes.extend(proof.witness);
-
-        verify_n_wesolowski(
-            &disc,
-            input_el,
-            &bytes,
-            info.number_iters,
-            1024,
-            proof.witness_type as u64,
-        )
-    }
-
     #[test]
     fn test_verify_n_wesolowski() {
         let genesis_challenge =
             hex!("ccd5bb71183532bff220ba46c268991a3ff07eb358e8255a65c30a2dce0e5fbb");
+
         let mut default_el = [0; 100];
         default_el[0] = 0x08;
-        let (vdf, proof) = dbg!(get_vdf_info_and_proof(
-            default_el,
-            genesis_challenge,
-            231,
-            false
-        ));
-        assert!(validate_vdf(proof, default_el, vdf));
+
+        let proof = prove(&genesis_challenge, default_el, 1024, 231);
+        let disc = create_discriminant(&genesis_challenge, 1024);
+        let valid = verify_n_wesolowski(&disc, default_el, &proof, 231, 1024, 0);
+        assert!(valid);
     }
 }

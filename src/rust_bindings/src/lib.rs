@@ -64,7 +64,6 @@ pub fn prove(challenge: &[u8], x_s: &[u8], disc_size_bits: i32, num_iterations: 
 
 #[cfg(test)]
 mod tests {
-
     use hex_literal::hex;
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;

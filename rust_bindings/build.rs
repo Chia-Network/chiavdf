@@ -6,8 +6,8 @@ use cmake::Config;
 
 fn main() {
     println!("cargo:rerun-if-changed=wrapper.h");
-    println!("cargo:rerun-if-changed=c_bindings/c_wrapper.h");
-    println!("cargo:rerun-if-changed=c_bindings/c_wrapper.cpp");
+    println!("cargo:rerun-if-changed=../src/c_bindings/c_wrapper.h");
+    println!("cargo:rerun-if-changed=../src/c_bindings/c_wrapper.cpp");
     println!("cargo:rustc-link-lib=gmp");
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
@@ -17,6 +17,7 @@ fn main() {
         src_dir = manifest_dir
             .parent()
             .expect("can't access ../")
+            .join("src")
             .to_path_buf();
     }
 

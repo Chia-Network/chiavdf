@@ -11,13 +11,16 @@ mod bindings {
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }
 
-pub fn create_discriminant(seed: &[u8], disc_size_bits: i32) -> CString {
+pub fn create_discriminant(seed: &[u8], disc_size_bits: i32) -> Option<CString> {
     // SAFETY: The length is guaranteed to match the actual length of the char pointer.
     unsafe {
         let ptr = bindings::create_discriminant_wrapper(seed.as_ptr(), seed.len(), disc_size_bits);
+        if ptr.is_null() {
+            return None;
+        }
         let c_str = CStr::from_ptr(ptr).to_owned();
         bindings::free(ptr as *mut std::ffi::c_void);
-        c_str
+        Some(c_str)
     }
 }
 
@@ -45,7 +48,12 @@ pub fn verify_n_wesolowski(
     }
 }
 
-pub fn prove(challenge: &[u8], x_s: &[u8], disc_size_bits: i32, num_iterations: u64) -> Vec<u8> {
+pub fn prove(
+    challenge: &[u8],
+    x_s: &[u8],
+    disc_size_bits: i32,
+    num_iterations: u64,
+) -> Option<Vec<u8>> {
     // SAFETY: The lengths are guaranteed to match the actual lengths of the char pointers.
     unsafe {
         let array = bindings::prove_wrapper(
@@ -56,9 +64,12 @@ pub fn prove(challenge: &[u8], x_s: &[u8], disc_size_bits: i32, num_iterations: 
             disc_size_bits,
             num_iterations,
         );
+        if array.data.is_null() {
+            return None;
+        }
         let result = std::slice::from_raw_parts(array.data, array.length).to_vec();
         bindings::delete_byte_array(array);
-        result
+        Some(result)
     }
 }
 
@@ -80,7 +91,7 @@ mod tests {
 
             rng.fill(seed);
 
-            let discriminant = create_discriminant(seed, 512);
+            let discriminant = create_discriminant(seed, 512).unwrap();
 
             discriminants.push(discriminant);
         }
@@ -112,8 +123,8 @@ mod tests {
         let mut default_el = [0; 100];
         default_el[0] = 0x08;
 
-        let proof = prove(&genesis_challenge, &default_el, 1024, 231);
-        let disc = create_discriminant(&genesis_challenge, 1024);
+        let proof = prove(&genesis_challenge, &default_el, 1024, 231).unwrap();
+        let disc = create_discriminant(&genesis_challenge, 1024).unwrap();
         let valid = verify_n_wesolowski(&disc, &default_el, &proof, 231, 1024, 0);
         assert!(valid);
     }

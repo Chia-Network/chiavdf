@@ -30,7 +30,7 @@ jobs:
           - name: macOS
             matrix: macos
             runs-on:
-              arm: [macOS, ARM64]
+              arm: [macos-14]
               intel: [macos-12]
             cibw-archs-macos:
               arm: arm64

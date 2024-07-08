@@ -20,7 +20,7 @@ extern "C" {
 
             return cResultStr; // Return the C-string
         } catch (const runtime_error& e) {
-            return NULL;
+            return nullptr;
         }
     }
 
@@ -39,7 +39,7 @@ extern "C" {
             ByteArray resultArray = { resultData, result.size() };
             return resultArray;
         } catch (const runtime_error& e) {
-            ByteArray resultArray = { NULL, 0 };
+            ByteArray resultArray = { nullptr, 0 };
             return resultArray;
         }
     }

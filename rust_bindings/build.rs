@@ -8,7 +8,6 @@ fn main() {
     println!("cargo:rerun-if-changed=wrapper.h");
     println!("cargo:rerun-if-changed=../src/c_bindings/c_wrapper.h");
     println!("cargo:rerun-if-changed=../src/c_bindings/c_wrapper.cpp");
-    println!("cargo:rustc-link-lib=gmp");
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
 
@@ -39,6 +38,7 @@ fn main() {
             .unwrap()
     );
     println!("cargo:rustc-link-lib=static=chiavdfc");
+    println!("cargo:rustc-link-lib=gmp");
 
     let bindings = bindgen::Builder::default()
         .header(manifest_dir.join("wrapper.h").to_str().unwrap())

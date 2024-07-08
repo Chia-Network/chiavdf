@@ -21,7 +21,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
 
       - name: Install dependencies
-        run: sudo apt-get install pkg-config libgmp-dev
+        run: sudo apt-get install libgmp-dev
 
       - name: Install cargo-fuzz
         run: cargo +nightly install cargo-fuzz
@@ -48,7 +48,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Install dependencies
-        run: sudo apt-get install pkg-config libgmp-dev
+        run: sudo apt-get install libgmp-dev
 
       - name: Rustfmt
         run: cargo fmt -- --files-with-diff --check

@@ -63,10 +63,10 @@ jobs:
         run: cargo build --release
 
       - name: Prepare for publish
-        run: cp -r src rust_bindings/cpp
+        run: ln -s src rust_bindings/cpp
 
       - name: Publish to crates.io (dry run)
-        run: cargo publish --dry-run -p chiavdf
+        run: cargo publish --dry-run -p chiavdf --allow-dirty
 
       - name: Upload crate artifacts
         uses: actions/upload-artifact@v4
@@ -79,5 +79,5 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.cargo_registry_token }}
         run: |
-          cp -r src rust_bindings/cpp
-          cargo publish -p chiavdf
+          ln -s src rust_bindings/cpp
+          cargo publish -p chiavdf --allow-dirty

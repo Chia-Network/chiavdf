@@ -54,7 +54,6 @@ fn main() {
         .allowlist_function("prove_wrapper")
         .allowlist_function("free")
         .allowlist_function("delete_byte_array")
-        .allowlist_function("test_thing")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .generate()
         .expect("Unable to generate bindings");

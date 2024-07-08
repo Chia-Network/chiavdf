@@ -8,7 +8,9 @@ fn main() {
     println!("cargo:rerun-if-changed=wrapper.h");
     println!("cargo:rerun-if-changed=../src/c_bindings/c_wrapper.h");
     println!("cargo:rerun-if-changed=../src/c_bindings/c_wrapper.cpp");
-    println!("cargo:rustc-link-lib=gmp");
+
+    // Link GMP library using pkg-config
+    pkg_config::Config::new().probe("gmp").unwrap();
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
 

@@ -35,6 +35,7 @@ build-verbosity = 0
 before-all = """
 brew install gmp boost cmake \
 && brew info gmp \
+&& brew --prefix gmp \
 """
 before-build = "python -m pip install --upgrade pip"
 environment = {MACOSX_DEPLOYMENT_TARGET="12", SYSTEM_VERSION_COMPAT=0, BUILD_VDF_CLIENT="N"}

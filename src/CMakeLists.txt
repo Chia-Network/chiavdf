@@ -46,6 +46,7 @@ if(WIN32)
 else()
   find_package(GMP REQUIRED)
   find_package(GMPXX REQUIRED)
+  find_package(DIEDIEDIE REQUIRED)
 
   include_directories(
     ${INCLUDE_DIRECTORIES}

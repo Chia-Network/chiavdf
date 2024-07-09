@@ -3,6 +3,7 @@ option(BUILD_CHIAVDFC "Build the chiavdfc shared library" OFF)
 option(BUILD_PYTHON "Build the python bindings for chiavdf" ON)
 
 set(CMAKE_FIND_DEBUG_MODE TRUE)
+set(CMAKE_MESSAGE_LOG_LEVEL DEBUG)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)

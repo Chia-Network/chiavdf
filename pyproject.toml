@@ -44,7 +44,7 @@ before-build = """
 python -m pip install --upgrade pip \
 && python -m sysconfig \
 """
-environment = {MACOSX_DEPLOYMENT_TARGET="12", SYSTEM_VERSION_COMPAT=0, BUILD_VDF_CLIENT="N", GMPDIR="/opt/homebrew/include"}
+environment = {MACOSX_DEPLOYMENT_TARGET="12", SYSTEM_VERSION_COMPAT=0, BUILD_VDF_CLIENT="N"}
 
 [tool.cibuildwheel.windows]
 build-verbosity = 0

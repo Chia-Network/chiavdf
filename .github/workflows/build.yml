@@ -35,15 +35,15 @@ jobs:
             cibw-archs-macos:
               arm: arm64
               intel: x86_64
-          - name: Ubuntu
-            matrix: ubuntu
-            runs-on:
-              arm: [Linux, ARM64]
-              intel: [ubuntu-latest]
-          - name: Windows
-            matrix: windows
-            runs-on:
-              intel: [windows-latest]
+#          - name: Ubuntu
+#            matrix: ubuntu
+#            runs-on:
+#              arm: [Linux, ARM64]
+#              intel: [ubuntu-latest]
+#          - name: Windows
+#            matrix: windows
+#            runs-on:
+#              intel: [windows-latest]
         python:
           - major-dot-minor: '3.8'
             cibw-build: 'cp38-*'
@@ -53,18 +53,18 @@ jobs:
             cibw-build: 'cp39-*'
             manylinux: manylinux_2_28
             matrix: '3.9'
-          - major-dot-minor: '3.10'
-            cibw-build: 'cp310-*'
-            manylinux: manylinux_2_28
-            matrix: '3.10'
-          - major-dot-minor: '3.11'
-            cibw-build: 'cp311-*'
-            manylinux: manylinux_2_28
-            matrix: '3.11'
-          - major-dot-minor: '3.12'
-            cibw-build: 'cp312-*'
-            manylinux: manylinux_2_28
-            matrix: '3.12'
+#          - major-dot-minor: '3.10'
+#            cibw-build: 'cp310-*'
+#            manylinux: manylinux_2_28
+#            matrix: '3.10'
+#          - major-dot-minor: '3.11'
+#            cibw-build: 'cp311-*'
+#            manylinux: manylinux_2_28
+#            matrix: '3.11'
+#          - major-dot-minor: '3.12'
+#            cibw-build: 'cp312-*'
+#            manylinux: manylinux_2_28
+#            matrix: '3.12'
 
         arch:
           - name: ARM
@@ -110,7 +110,7 @@ jobs:
         CIBW_ARCHS_MACOS: ${{ matrix.os.cibw-archs-macos[matrix.arch.matrix] }}
         CIBW_PRERELEASE_PYTHONS: True
       run:
-        pipx run --spec='cibuildwheel==2.19.2' cibuildwheel --output-dir dist 2>&1
+        CMAKE_VERBOSE_MAKEFILE=ON pipx run --spec='cibuildwheel==2.19.2' cibuildwheel --output-dir dist --verbose 2>&1
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4

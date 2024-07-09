@@ -38,7 +38,7 @@ brew install gmp boost cmake \
 && brew --prefix gmp \
 """
 before-build = "python -m pip install --upgrade pip"
-environment = {MACOSX_DEPLOYMENT_TARGET="12", SYSTEM_VERSION_COMPAT=0, BUILD_VDF_CLIENT="N"}
+environment = {MACOSX_DEPLOYMENT_TARGET="12", SYSTEM_VERSION_COMPAT=0, BUILD_VDF_CLIENT="N", GMPDIR="/opt/homebrew/include"}
 
 [tool.cibuildwheel.windows]
 build-verbosity = 0

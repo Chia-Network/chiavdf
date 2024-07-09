@@ -35,7 +35,7 @@ build-verbosity = 0
 before-all = "brew install gmp boost cmake"
 before-build = """
 python -m pip install --upgrade pip \
-&& venv/bin/python -c 'import os; width = max(len(key) for key in os.environ.keys()); print("\n".join(f"{key:<{width}}: {value}" for key, value in sorted(os.environ.items())))' \
+&& python -c 'import os; width = max(len(key) for key in os.environ.keys()); print("\n".join(f"{key:<{width}}: {value}" for key, value in sorted(os.environ.items())))' \
 """
 environment = {MACOSX_DEPLOYMENT_TARGET="12", SYSTEM_VERSION_COMPAT=0, BUILD_VDF_CLIENT="N"}
 

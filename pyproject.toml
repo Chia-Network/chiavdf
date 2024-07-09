@@ -28,7 +28,10 @@ yum -y install epel-release \
 && cmake --version \
 && uname -a \
 """
-before-build = "python -m pip install --upgrade pip"
+before-build = """
+python -m pip install --upgrade pip \
+&& python -m sysconfig \
+"""
 
 [tool.cibuildwheel.macos]
 build-verbosity = 0

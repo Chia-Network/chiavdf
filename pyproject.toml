@@ -34,7 +34,7 @@ before-build = "python -m pip install --upgrade pip"
 build-verbosity = 0
 before-all = "brew install gmp boost cmake"
 before-build = "python -m pip install --upgrade pip"
-environment = {MACOSX_DEPLOYMENT_TARGET="11", SYSTEM_VERSION_COMPAT=0, BUILD_VDF_CLIENT="N"}
+environment = {MACOSX_DEPLOYMENT_TARGET="12", SYSTEM_VERSION_COMPAT=0, BUILD_VDF_CLIENT="N"}
 
 [tool.cibuildwheel.windows]
 build-verbosity = 0

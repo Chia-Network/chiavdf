@@ -76,26 +76,27 @@ pub fn prove(
 #[cfg(test)]
 mod tests {
     use hex_literal::hex;
-    use rand::{Rng, SeedableRng};
-    use rand_chacha::ChaCha8Rng;
 
     use super::*;
 
     #[test]
     fn test_create_discriminant() {
+        let seeds = [
+            hex!("6c3b9aa767f785b537c0"),
+            hex!("b10da48cea4c09676b8e"),
+            hex!("c51b8a31c98b9fe13065"),
+            hex!("5de9bc1bb4cb7a9f9cf9"),
+            hex!("22cfaefc92e4edb9b0ae"),
+        ];
+
         let mut discriminants = Vec::new();
-        let mut seeds = [[0; 10]; 5];
 
-        for (i, seed) in seeds.iter_mut().enumerate() {
-            let mut rng = ChaCha8Rng::seed_from_u64(i as u64);
-
-            rng.fill(seed);
-
-            let discriminant = create_discriminant(seed, 512).unwrap();
-
+        for seed in seeds {
+            let discriminant = create_discriminant(&seed, 512).unwrap();
             discriminants.push(discriminant);
         }
 
+        // These came from running the Python `create_discriminant` with the same seeds.
         let expected = [
             "-0x9a8eaf9c52d9a5f1db648cdf7bcd04b35cb1ac4f421c978fa61fe1344b97d4199dbff700d24e7cfc0b785e4b8b8023dc49f0e90227f74f54234032ac3381879f",
             "-0xb193cdb02f1c2615a257b98933ee0d24157ac5f8c46774d5d635022e6e6bd3f7372898066c2a40fa211d1df8c45cb95c02e36ef878bc67325473d9c0bb34b047",

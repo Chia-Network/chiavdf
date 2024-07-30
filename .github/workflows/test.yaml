@@ -17,8 +17,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-12, ubuntu-latest]
-        config: [ optimized=1, TSAN=1, ASAN=1]
+        os: [macos-13, ubuntu-latest]
+        config: [optimized=1, TSAN=1, ASAN=1]
 
     steps:
     - name: Checkout code

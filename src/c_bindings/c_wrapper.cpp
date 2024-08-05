@@ -46,7 +46,7 @@ extern "C" {
             std::vector<uint8_t> proof_blob_v(proof_blob, proof_blob + proof_blob_size);
             
             return CheckProofOfTimeNWesolowski(
-                discriminant,
+                -discriminant,
                 x_s_v.data(),
                 proof_blob_v.data(),
                 proof_blob_v.size(),

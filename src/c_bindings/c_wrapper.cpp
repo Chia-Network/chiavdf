@@ -28,12 +28,9 @@ extern "C" {
             uint8_t* resultData = new uint8_t[result.size()];
             std::copy(result.begin(), result.end(), resultData);
 
-            // Create and return a ByteArray struct
-            ByteArray resultArray = { resultData, result.size() };
-            return resultArray;
+            return ByteArray  { resultData, result.size() };
         } catch (const runtime_error& e) {
-            ByteArray resultArray = { nullptr, 0 };
-            return resultArray;
+            return ByteArray { nullptr, 0 };
         }
     }
 

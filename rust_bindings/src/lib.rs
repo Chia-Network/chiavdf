@@ -3,55 +3,54 @@
 #![allow(dead_code)]
 #![allow(non_upper_case_globals)]
 
-use std::ffi::{CStr, CString};
-
 extern crate link_cplusplus;
 
 mod bindings {
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }
 
-pub fn create_discriminant(seed: &[u8], disc_size_bits: i32) -> Option<CString> {
+pub fn create_discriminant<const SIZE: usize>(seed: &[u8]) -> Option<[u8; SIZE]> {
     // SAFETY: The length is guaranteed to match the actual length of the char pointer.
     unsafe {
-        let ptr = bindings::create_discriminant_wrapper(seed.as_ptr(), seed.len(), disc_size_bits);
-        if ptr.is_null() {
+        let mut result = [0; SIZE];
+        if !bindings::create_discriminant_wrapper(
+            seed.as_ptr(),
+            seed.len(),
+            SIZE * 8,
+            result.as_mut_ptr(),
+        ) {
             return None;
         }
-        let c_str = CStr::from_ptr(ptr).to_owned();
-        bindings::free(ptr as *mut std::ffi::c_void);
-        Some(c_str)
+        Some(result)
     }
 }
 
 pub fn verify_n_wesolowski(
-    discriminant: &CStr,
+    discriminant: &[u8],
     x_s: &[u8],
     proof: &[u8],
     num_iterations: u64,
-    disc_size_bits: u64,
     recursion: u64,
 ) -> bool {
     // SAFETY: The lengths are guaranteed to match the actual lengths of the char pointers.
     unsafe {
-        let value = bindings::verify_n_wesolowski_wrapper(
-            discriminant.as_ptr() as *const std::ffi::c_char,
-            x_s.as_ptr() as *const std::ffi::c_char,
+        bindings::verify_n_wesolowski_wrapper(
+            discriminant.as_ptr(),
+            discriminant.len() * 8,
+            x_s.as_ptr(),
             x_s.len(),
-            proof.as_ptr() as *const std::ffi::c_char,
+            proof.as_ptr(),
             proof.len(),
             num_iterations,
-            disc_size_bits,
             recursion,
-        );
-        value == 1
+        )
     }
 }
 
 pub fn prove(
     challenge: &[u8],
     x_s: &[u8],
-    disc_size_bits: i32,
+    discriminant_size_bits: usize,
     num_iterations: u64,
 ) -> Option<Vec<u8>> {
     // SAFETY: The lengths are guaranteed to match the actual lengths of the char pointers.
@@ -61,7 +60,7 @@ pub fn prove(
             challenge.len(),
             x_s.as_ptr(),
             x_s.len(),
-            disc_size_bits,
+            discriminant_size_bits,
             num_iterations,
         );
         if array.data.is_null() {
@@ -92,22 +91,22 @@ mod tests {
         let mut discriminants = Vec::new();
 
         for seed in seeds {
-            let discriminant = create_discriminant(&seed, 512).unwrap();
+            let discriminant = create_discriminant::<64>(&seed).unwrap();
             discriminants.push(discriminant);
         }
 
         // These came from running the Python `create_discriminant` with the same seeds.
         let expected = [
-            "-0x9a8eaf9c52d9a5f1db648cdf7bcd04b35cb1ac4f421c978fa61fe1344b97d4199dbff700d24e7cfc0b785e4b8b8023dc49f0e90227f74f54234032ac3381879f",
-            "-0xb193cdb02f1c2615a257b98933ee0d24157ac5f8c46774d5d635022e6e6bd3f7372898066c2a40fa211d1df8c45cb95c02e36ef878bc67325473d9c0bb34b047",
-            "-0xbb5bd19ae50efe98b5ac56c69453a95e92dc16bb4b2824e73b39b9db0a077fa33fc2e775958af14f675a071bf53f1c22f90ccbd456e2291276951830dba9dcaf",
-            "-0xa1e93b8f2e9b0fd3b1325fbe40601f55e2afbdc6161409c0aff8737b7213d7d71cab21ffc83a0b6d5bdeee2fdcbbb34fbc8fc0b439915075afa9ffac8bb1b337",
-            "-0xf2a10f70148fb30e4a16c4eda44cc0f9917cb9c2d460926d59a408318472e2cfd597193aa58e1fdccc6ae6a4d85bc9b27f77567ebe94fcedbf530a60ff709fd7",
+            "9a8eaf9c52d9a5f1db648cdf7bcd04b35cb1ac4f421c978fa61fe1344b97d4199dbff700d24e7cfc0b785e4b8b8023dc49f0e90227f74f54234032ac3381879f",
+            "b193cdb02f1c2615a257b98933ee0d24157ac5f8c46774d5d635022e6e6bd3f7372898066c2a40fa211d1df8c45cb95c02e36ef878bc67325473d9c0bb34b047",
+            "bb5bd19ae50efe98b5ac56c69453a95e92dc16bb4b2824e73b39b9db0a077fa33fc2e775958af14f675a071bf53f1c22f90ccbd456e2291276951830dba9dcaf",
+            "a1e93b8f2e9b0fd3b1325fbe40601f55e2afbdc6161409c0aff8737b7213d7d71cab21ffc83a0b6d5bdeee2fdcbbb34fbc8fc0b439915075afa9ffac8bb1b337",
+            "f2a10f70148fb30e4a16c4eda44cc0f9917cb9c2d460926d59a408318472e2cfd597193aa58e1fdccc6ae6a4d85bc9b27f77567ebe94fcedbf530a60ff709fd7",
         ];
 
         for i in 0..5 {
             assert_eq!(
-                discriminants[i].to_str().unwrap(),
+                hex::encode(discriminants[i]),
                 expected[i],
                 "Discriminant {} does not match (seed is {})",
                 i,
@@ -124,9 +123,9 @@ mod tests {
         let mut default_el = [0; 100];
         default_el[0] = 0x08;
 
+        let disc = create_discriminant::<128>(&genesis_challenge).unwrap();
         let proof = prove(&genesis_challenge, &default_el, 1024, 231).unwrap();
-        let disc = create_discriminant(&genesis_challenge, 1024).unwrap();
-        let valid = verify_n_wesolowski(&disc, &default_el, &proof, 231, 1024, 0);
+        let valid = verify_n_wesolowski(&disc, &default_el, &proof, 231, 0);
         assert!(valid);
     }
 }

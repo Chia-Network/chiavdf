@@ -9,7 +9,7 @@ fuzz_target!(|data: &[u8]| {
     let mut default_el = [0; 100];
     default_el[0] = 0x08;
     let proof = prove(&genesis_challenge, &default_el, 1024, 231).unwrap();
-    let disc = create_discriminant(&genesis_challenge, 1024).unwrap();
-    let valid = verify_n_wesolowski(&disc, &default_el, &proof, 231, 1024, 0);
+    let disc = create_discriminant::<128>(&genesis_challenge).unwrap();
+    let valid = verify_n_wesolowski(&disc, &default_el, &proof, 231, 0);
     assert!(valid);
 });

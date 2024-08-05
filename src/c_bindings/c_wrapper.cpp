@@ -37,19 +37,16 @@ extern "C" {
         }
     }
 
-    bool verify_n_wesolowski_wrapper(const uint8_t* discriminant_bytes, size_t discriminant_size_bits, const uint8_t* x_s, size_t x_s_size, const uint8_t* proof_blob, size_t proof_blob_size, uint64_t num_iterations, uint64_t recursion) {
+    bool verify_n_wesolowski_wrapper(const uint8_t* discriminant_bytes, size_t discriminant_size_bits, const uint8_t* x_s, const uint8_t* proof_blob, size_t proof_blob_size, uint64_t num_iterations, uint64_t recursion) {
         try {
             integer discriminant;
             mpz_import(discriminant.impl, discriminant_size_bits / 8, 1, 1, 0, 0, discriminant_bytes);
             
-            std::vector<uint8_t> x_s_v(x_s, x_s + x_s_size);
-            std::vector<uint8_t> proof_blob_v(proof_blob, proof_blob + proof_blob_size);
-            
             return CheckProofOfTimeNWesolowski(
                 -discriminant,
-                x_s_v.data(),
-                proof_blob_v.data(),
-                proof_blob_v.size(),
+                x_s,
+                proof_blob,
+                proof_blob_size,
                 num_iterations,
                 discriminant_size_bits,
                 recursion

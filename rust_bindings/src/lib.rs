@@ -38,7 +38,6 @@ pub fn verify_n_wesolowski(
             discriminant.as_ptr(),
             discriminant.len() * 8,
             x_s.as_ptr(),
-            x_s.len(),
             proof.as_ptr(),
             proof.len(),
             num_iterations,

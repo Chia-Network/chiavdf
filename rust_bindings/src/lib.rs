@@ -10,7 +10,8 @@ mod bindings {
 }
 
 pub fn create_discriminant<const SIZE: usize>(seed: &[u8]) -> Option<[u8; SIZE]> {
-    // SAFETY: The length is guaranteed to match the actual length of the char pointer.
+    // SAFETY: The length of each individual array is passed in as to prevent buffer overflows.
+    // Exceptions are handled on the C++ side and None is returned if so.
     unsafe {
         let mut result = [0; SIZE];
         if !bindings::create_discriminant_wrapper(
@@ -32,11 +33,12 @@ pub fn verify_n_wesolowski(
     num_iterations: u64,
     recursion: u64,
 ) -> bool {
-    // SAFETY: The lengths are guaranteed to match the actual lengths of the char pointers.
+    // SAFETY: The length of each individual array is passed in as to prevent buffer overflows.
+    // Exceptions are handled on the C++ side and false is returned if so.
     unsafe {
         bindings::verify_n_wesolowski_wrapper(
             discriminant.as_ptr(),
-            discriminant.len() * 8,
+            discriminant.len(),
             x_s.as_ptr(),
             proof.as_ptr(),
             proof.len(),
@@ -52,7 +54,8 @@ pub fn prove(
     discriminant_size_bits: usize,
     num_iterations: u64,
 ) -> Option<Vec<u8>> {
-    // SAFETY: The lengths are guaranteed to match the actual lengths of the char pointers.
+    // SAFETY: The length of each individual array is passed in as to prevent buffer overflows.
+    // Exceptions are handled on the C++ side and a null pointer is returned for `data` if so.
     unsafe {
         let array = bindings::prove_wrapper(
             challenge.as_ptr(),

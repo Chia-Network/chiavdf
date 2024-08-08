@@ -12,7 +12,7 @@ extern "C" {
             integer discriminant = CreateDiscriminant(seed_vector, size_bits);
             mpz_export(result, NULL, 1, 1, 0, 0, discriminant.impl);
             return true;
-        } catch (const runtime_error& e) {
+        } catch (...) {
             return false;
         }
     }
@@ -29,15 +29,15 @@ extern "C" {
             std::copy(result.begin(), result.end(), resultData);
 
             return ByteArray  { resultData, result.size() };
-        } catch (const runtime_error& e) {
+        } catch (...) {
             return ByteArray { nullptr, 0 };
         }
     }
 
-    bool verify_n_wesolowski_wrapper(const uint8_t* discriminant_bytes, size_t discriminant_size_bits, const uint8_t* x_s, const uint8_t* proof_blob, size_t proof_blob_size, uint64_t num_iterations, uint64_t recursion) {
+    bool verify_n_wesolowski_wrapper(const uint8_t* discriminant_bytes, size_t discriminant_size, const uint8_t* x_s, const uint8_t* proof_blob, size_t proof_blob_size, uint64_t num_iterations, uint64_t recursion) {
         try {
             integer discriminant;
-            mpz_import(discriminant.impl, discriminant_size_bits / 8, 1, 1, 0, 0, discriminant_bytes);
+            mpz_import(discriminant.impl, discriminant_size, 1, 1, 0, 0, discriminant_bytes);
             
             return CheckProofOfTimeNWesolowski(
                 -discriminant,
@@ -45,10 +45,10 @@ extern "C" {
                 proof_blob,
                 proof_blob_size,
                 num_iterations,
-                discriminant_size_bits,
+                discriminant_size * 8,
                 recursion
             );
-        } catch (const runtime_error& e) {
+        } catch (...) {
             return false;
         }
     }

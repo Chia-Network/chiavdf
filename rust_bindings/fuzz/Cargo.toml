@@ -1,0 +1,42 @@
+[package]
+name = "chiavdf-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.chiavdf]
+path = ".."
+
+[[bin]]
+name = "create_discriminant"
+path = "fuzz_targets/create_discriminant.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "verify_n_wesolowski"
+path = "fuzz_targets/verify_n_wesolowski.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "prove"
+path = "fuzz_targets/prove.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "verify"
+path = "fuzz_targets/verify.rs"
+test = false
+doc = false
+bench = false

@@ -9,20 +9,16 @@ mod bindings {
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }
 
-pub fn create_discriminant<const SIZE: usize>(seed: &[u8]) -> Option<[u8; SIZE]> {
+pub fn create_discriminant(seed: &[u8], result: &mut [u8]) -> bool {
     // SAFETY: The length of each individual array is passed in as to prevent buffer overflows.
     // Exceptions are handled on the C++ side and None is returned if so.
     unsafe {
-        let mut result = [0; SIZE];
-        if !bindings::create_discriminant_wrapper(
+        bindings::create_discriminant_wrapper(
             seed.as_ptr(),
             seed.len(),
-            SIZE * 8,
+            result.len() * 8,
             result.as_mut_ptr(),
-        ) {
-            return None;
-        }
-        Some(result)
+        )
     }
 }
 
@@ -93,7 +89,8 @@ mod tests {
         let mut discriminants = Vec::new();
 
         for seed in seeds {
-            let discriminant = create_discriminant::<64>(&seed).unwrap();
+            let mut discriminant = [0; 64];
+            assert!(create_discriminant(&seed, &mut discriminant));
             discriminants.push(discriminant);
         }
 
@@ -125,7 +122,8 @@ mod tests {
         let mut default_el = [0; 100];
         default_el[0] = 0x08;
 
-        let disc = create_discriminant::<128>(&genesis_challenge).unwrap();
+        let mut disc = [0; 128];
+        assert!(create_discriminant(&genesis_challenge, &mut disc));
         let proof = prove(&genesis_challenge, &default_el, 1024, 231).unwrap();
         let valid = verify_n_wesolowski(&disc, &default_el, &proof, 231, 0);
         assert!(valid);

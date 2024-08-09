@@ -70,6 +70,11 @@ jobs:
           name: crate
           path: ./target/package/*-*.crate
 
+      - name: Set Env
+        uses: Chia-Network/actions/setjobenv@main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Publish to crates.io
         if: env.RELEASE == 'true'
         env:

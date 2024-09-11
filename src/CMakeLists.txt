@@ -70,6 +70,11 @@ if(BUILD_PYTHON)
   if(UNIX)
     target_link_libraries(chiavdf PRIVATE -pthread)
   endif()
+  if (WIN32)
+    # workaround for constexpr mutex constructor change in MSVC 2022
+    # https://stackoverflow.com/questions/78598141/first-stdmutexlock-crashes-in-application-built-with-latest-visual-studio
+    target_compile_definitions(chiavdf PUBLIC _DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
+  endif()
 endif()
 
 add_executable(verifier_test

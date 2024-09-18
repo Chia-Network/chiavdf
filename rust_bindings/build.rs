@@ -27,18 +27,54 @@ fn main() {
         .define("BUILD_PYTHON", "OFF")
         .build();
 
-    println!(
-        "cargo:rustc-link-search=native={}",
-        PathBuf::from_str(dst.display().to_string().as_str())
-            .unwrap()
-            .join("build")
-            .join("lib")
-            .join("static")
-            .to_str()
-            .unwrap()
-    );
+    // Detect platform: macOS vs. Windows
+    if cfg!(target_os = "windows") {
+        // Windows: Add `Release` or `Debug` subdirectory based on build type
+        let build_type = if cfg!(debug_assertions) {
+            "Debug"
+        } else {
+            "Release"
+        };
+        println!(
+            "cargo:rustc-link-search=native={}",
+            PathBuf::from_str(dst.display().to_string().as_str())
+                .unwrap()
+                .join("build")
+                .join("lib")
+                .join("static")
+                .join(build_type)
+                .to_str()
+                .unwrap()
+        );
+
+        println!(
+            "cargo:rustc-link-search=native={}",
+            src_dir
+                .parent()
+                .unwrap()
+                .join("mpir_gc_x64")
+                .to_str()
+                .unwrap()
+        );
+
+        println!("cargo:rustc-link-lib=mpir");
+    } else {
+        // macOS (or other platforms): Keep it as is
+        println!(
+            "cargo:rustc-link-search=native={}",
+            PathBuf::from_str(dst.display().to_string().as_str())
+                .unwrap()
+                .join("build")
+                .join("lib")
+                .join("static")
+                .to_str()
+                .unwrap()
+        );
+
+        println!("cargo:rustc-link-lib=gmp");
+    }
+
     println!("cargo:rustc-link-lib=static=chiavdfc");
-    println!("cargo:rustc-link-lib=gmp");
 
     let bindings = bindgen::Builder::default()
         .header(manifest_dir.join("wrapper.h").to_str().unwrap())

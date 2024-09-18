@@ -94,6 +94,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: MacOS GMP library path
+        if: matrix.os.name == 'macOS'
+        run: |
+          export LIBRARY_PATH=/opt/homebrew/lib:$LIBRARY_PATH
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 

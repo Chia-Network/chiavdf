@@ -94,9 +94,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: MacOS GMP library path
+      - name: MacOS - GMP library path
         if: matrix.os.name == 'macOS'
         run: echo "LIBRARY_PATH=/opt/homebrew/lib:$LIBRARY_PATH" >> $GITHUB_ENV
+
+      - name: Windows - Download MPIR
+        if: matrix.os.name == 'Windows'
+        run: git clone https://github.com/Chia-Network/mpir_gc_x64.git
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable

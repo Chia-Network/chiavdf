@@ -55,7 +55,7 @@ fn main() {
                 .unwrap()
         );
 
-        println!("cargo:rustc-link-lib=mpir");
+        println!("cargo:rustc-link-lib=static=mpir");
     } else {
         println!(
             "cargo:rustc-link-search=native={}",
@@ -66,7 +66,7 @@ fn main() {
                 .unwrap()
         );
 
-        println!("cargo:rustc-link-lib=gmp");
+        println!("cargo:rustc-link-lib=static=gmp");
     }
 
     let bindings = bindgen::Builder::default()

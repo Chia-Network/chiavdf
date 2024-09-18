@@ -1,6 +1,5 @@
 use std::env;
 use std::path::PathBuf;
-use std::str::FromStr;
 
 use cmake::Config;
 
@@ -27,6 +26,8 @@ fn main() {
         .define("BUILD_PYTHON", "OFF")
         .build();
 
+    println!("cargo:rustc-link-lib=static=chiavdfc");
+
     if cfg!(target_os = "windows") {
         let build_type = if cfg!(debug_assertions) {
             "Debug"
@@ -36,9 +37,7 @@ fn main() {
 
         println!(
             "cargo:rustc-link-search=native={}",
-            PathBuf::from_str(dst.display().to_string().as_str())
-                .unwrap()
-                .join("build")
+            dst.join("build")
                 .join("lib")
                 .join("static")
                 .join(build_type)
@@ -60,9 +59,7 @@ fn main() {
     } else {
         println!(
             "cargo:rustc-link-search=native={}",
-            PathBuf::from_str(dst.display().to_string().as_str())
-                .unwrap()
-                .join("build")
+            dst.join("build")
                 .join("lib")
                 .join("static")
                 .to_str()
@@ -71,8 +68,6 @@ fn main() {
 
         println!("cargo:rustc-link-lib=gmp");
     }
-
-    println!("cargo:rustc-link-lib=static=chiavdfc");
 
     let bindings = bindgen::Builder::default()
         .header(manifest_dir.join("wrapper.h").to_str().unwrap())

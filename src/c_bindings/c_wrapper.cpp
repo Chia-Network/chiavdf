@@ -17,12 +17,12 @@ extern "C" {
         }
     }
 
-    ByteArray prove_wrapper(const uint8_t* challenge_hash, size_t challenge_size, const uint8_t* x_s, size_t x_s_size, size_t discriminant_size_bits, uint64_t num_iterations) {
+    ByteArray prove_wrapper(const uint8_t* challenge_hash, size_t challenge_size, const uint8_t* x_s, size_t x_s_size, size_t discriminant_size_bits, uint64_t num_iterations, char *shutdown_file_path) {
         try {
             std::vector<uint8_t> challenge_hash_bytes(challenge_hash, challenge_hash + challenge_size);
             integer discriminant = CreateDiscriminant(challenge_hash_bytes, discriminant_size_bits);
             form x = DeserializeForm(discriminant, x_s, x_s_size);
-            std::vector<uint8_t> result = ProveSlow(discriminant, x, num_iterations);
+            std::vector<uint8_t> result = ProveSlow(discriminant, x, num_iterations, shutdown_file_path);
 
             // Allocate memory for the result and copy data
             uint8_t* resultData = new uint8_t[result.size()];

@@ -78,7 +78,7 @@ form GenerateWesolowski(form &y, form &x_init,
     return x;
 }
 
-std::vector<uint8_t> ProveSlow(integer& D, form& x, uint64_t num_iterations, std::string shutdown_file_path) {
+std::vector<uint8_t> ProveSlow(integer& D, form& x, uint64_t num_iterations, std::string& shutdown_file_path) {
     integer L = root(-D, 4);
     PulmarkReducer reducer;
     form y = form::from_abd(x.a, x.b, D);
@@ -101,8 +101,8 @@ std::vector<uint8_t> ProveSlow(integer& D, form& x, uint64_t num_iterations, std
         nudupl_form(y, y, D, L);
         reducer.reduce(y);
 
-        // Check for cancellation every 50000 interations
-        if (num_iterations%50000==0) {
+        // Check for cancellation every 65535 interations
+        if ((num_iterations&0xffff)==0) {
             struct stat buffer;
 
             if (stat (shutdown_file_path.c_str(), &buffer) != 0)

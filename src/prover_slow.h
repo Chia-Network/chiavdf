@@ -5,6 +5,7 @@
 #include "nucomp.h"
 #include "picosha2.h"
 #include "proof_common.h"
+#include <sys/stat.h>
 
 
 // TODO: Refactor to use 'Prover' class once new_vdf is merged in.

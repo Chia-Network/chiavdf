@@ -60,6 +60,7 @@ pub fn prove(
             x_s.len(),
             discriminant_size_bits,
             num_iterations,
+            ""
         );
         if array.data.is_null() {
             return None;

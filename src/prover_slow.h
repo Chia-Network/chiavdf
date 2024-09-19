@@ -106,7 +106,7 @@ std::vector<uint8_t> ProveSlow(integer& D, form& x, uint64_t num_iterations, std
         if ((num_iterations&0xffff)==0) {
             struct stat buffer;
 
-            if (stat (shutdown_file_path.c_str(), &buffer) != 0)
+            if (stat (shutdown_file_path.c_str(), &buffer) == 0)
                 return {};
         }
     }

@@ -78,7 +78,7 @@ form GenerateWesolowski(form &y, form &x_init,
     return x;
 }
 
-std::vector<uint8_t> ProveSlow(integer& D, form& x, uint64_t num_iterations, std::string& shutdown_file_path) {
+std::vector<uint8_t> ProveSlow(integer& D, form& x, uint64_t num_iterations, std::string shutdown_file_path) {
     integer L = root(-D, 4);
     PulmarkReducer reducer;
     form y = form::from_abd(x.a, x.b, D);

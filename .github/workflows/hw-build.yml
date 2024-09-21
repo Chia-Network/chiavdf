@@ -106,20 +106,11 @@ jobs:
       - uses: Chia-Network/actions/github/jwt@main
         if: env.RELEASE == 'true'
 
-      - name: Trigger repo update start
+      - name: Trigger repo update
         if: env.RELEASE == 'true'
         uses: Chia-Network/actions/github/glue@main
         with:
           json_data: '{"release_version":"${{ env.RELEASE_TAG }}"}'
           glue_url: ${{ secrets.GLUE_API_URL }}
           glue_project: "chiavdf-hw"
-          glue_path: "${{ env.RELEASE_TAG }}/start"
-
-      - name: Trigger repo update success
-        if: env.RELEASE == 'true'
-        uses: Chia-Network/actions/github/glue@main
-        with:
-          json_data: '{"release_version":"${{ env.RELEASE_TAG }}"}'
-          glue_url: ${{ secrets.GLUE_API_URL }}
-          glue_project: "chiavdf-hw"
-          glue_path: "${{ env.RELEASE_TAG }}/success/release_hw"
+          glue_path: "trigger"

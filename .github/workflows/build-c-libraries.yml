@@ -139,5 +139,9 @@ jobs:
 
     - name: Notify new build
       if: env.RELEASE == 'true'
-      run: |
-        curl -s -XPOST -H "Authorization: Bearer ${{ env.JWT_TOKEN }}" --data '{"release_version":"${{ env.RELEASE_TAG }}"}' ${{ secrets.GLUE_API_URL }}/api/v1/chiavdfc/trigger
+      uses: Chia-Network/actions/github/glue@main
+      with:
+        json_data: '{"release_version":"${{ env.RELEASE_TAG }}"}'
+        glue_url: ${{ secrets.GLUE_API_URL }}
+        glue_project: "chiavdfc"
+        glue_path: "trigger"

@@ -102,6 +102,7 @@ jobs:
         if: matrix.os.name == 'Windows'
         run: |
           vcpkg install mpir:x64-windows-static
+          vcpkg integrate install
           git clone https://github.com/Chia-Network/mpir_gc_x64.git
 
       - name: Set up Rust

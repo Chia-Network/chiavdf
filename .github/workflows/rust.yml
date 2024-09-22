@@ -100,7 +100,7 @@ jobs:
 
       - name: Install MPIR on Windows
         if: matrix.os.name == 'Windows'
-        run: vcpkg install mpir
+        run: vcpkg install mpir:x64-windows-static
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -128,7 +128,6 @@ jobs:
         run: |
           cd rust_bindings
           cp -r ../src cpp
-          git clone https://github.com/Chia-Network/mpir_gc_x64.git
 
       - name: Publish to crates.io (dry run)
         # We use `--allow-dirty` because the `cpp` folder is copied into the working directory.

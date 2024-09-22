@@ -45,7 +45,7 @@ fn main() {
                 .unwrap()
         );
 
-        println!("cargo:rustc-link-lib=static=mpir");
+        vcpkg::find_package("mpir").unwrap();
     } else {
         println!(
             "cargo:rustc-link-search=native={}",

@@ -114,10 +114,10 @@ std::vector<uint8_t> ProveSlow(integer& D, form& x, uint64_t num_iterations, std
         reducer.reduce(y);
 
         // Check for cancellation every 65535 interations
-        if ((num_iterations&0xffff)==0) {
+        if ((i&0xffff)==0) {
             struct stat buffer;
             char sz[200];
-            sprintf(sz,"num_iterations %llu shutdown_file_path.c_str() %s",num_iterations,shutdown_file_path.c_str());
+            sprintf(sz,"num_iterations %llu shutdown_file_path.c_str() %s",i,shutdown_file_path.c_str());
             logit(sz);
             if ((shutdown_file_path!="") && (stat (shutdown_file_path.c_str(), &buffer) != 0))
                 logit("aborting");     

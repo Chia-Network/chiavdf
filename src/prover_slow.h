@@ -118,7 +118,7 @@ std::vector<uint8_t> ProveSlow(integer& D, form& x, uint64_t num_iterations, std
             // Only if we have a shutdown path
             if (shutdown_file_path!="") {
                 struct stat buffer;
-                logit(shutdown_file_path.c_str());
+                logit("checking stat");
             
                 if (stat (shutdown_file_path.c_str(), &buffer) != 0) {
                     logit("aborting");     

@@ -120,7 +120,7 @@ std::vector<uint8_t> ProveSlow(integer& D, form& x, uint64_t num_iterations, std
                 struct stat buffer;
                 logit(shutdown_file_path.c_str());
             
-                if (stat (shutdown_file_path.c_str(), &buffer) != 0)) {
+                if (stat (shutdown_file_path.c_str(), &buffer) != 0) {
                     logit("aborting");     
                     return {};
                 }

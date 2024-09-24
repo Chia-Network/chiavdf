@@ -79,17 +79,6 @@ form GenerateWesolowski(form &y, form &x_init,
     return x;
 }
 
-void logit(char *sz)
-{
-    FILE *f;
-    f = fopen("wjb.log", "a+");
-    if (f == NULL)
-        return;
-    fprintf(f, sz);
-    fprintf(f, "\n");
-    fclose(f);
-}
-
 std::vector<uint8_t> ProveSlow(integer& D, form& x, uint64_t num_iterations, std::string shutdown_file_path) {
     integer L = root(-D, 4);
     PulmarkReducer reducer;
@@ -118,10 +107,9 @@ std::vector<uint8_t> ProveSlow(integer& D, form& x, uint64_t num_iterations, std
             // Only if we have a shutdown path
             if (shutdown_file_path!="") {
                 struct stat buffer;
-                logit("checking stat");
             
                 if (stat (shutdown_file_path.c_str(), &buffer) != 0) {
-                    logit("aborting");     
+                    // shutdown file doesn't exist, abort out
                     return {};
                 }
             }

@@ -101,7 +101,7 @@ jobs:
       - name: Install MPIR on Windows
         if: matrix.os.name == 'Windows'
         run: |
-          vcpkg install mpir:x64-windows-static-md
+          vcpkg install gmp:x64-windows-static-md
           vcpkg integrate install
           git clone https://github.com/Chia-Network/mpir_gc_x64.git
 

@@ -46,7 +46,7 @@ fn main() {
                 .unwrap()
         );
 
-        vcpkg::find_package("mpir").unwrap();
+        vcpkg::find_package("gmp").unwrap();
     } else {
         println!(
             "cargo:rustc-link-search=native={}",

@@ -109,7 +109,7 @@ std::vector<uint8_t> ProveSlow(integer& D, form& x, uint64_t num_iterations, std
                 struct stat buffer;
             
                 int statrst = stat(shutdown_file_path.c_str(), &buffer);
-                if ((statrst != 0) && (statrst != EINTR)) {
+                if ((statrst != 0) && (errno != EINTR)) {
                     // shutdown file doesn't exist, abort out
                     return {};
                 }

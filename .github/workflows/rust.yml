@@ -152,6 +152,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check if MPIR DLL is on the PATH
+        run: |
+          $pathList = $Env:PATH -split ";"
+          foreach ($path in $pathList) {
+            if (Test-Path "$path\mpir.dll") {
+              Write-Output "Found mpir.dll in $path"
+            }
+          }
+        shell: powershell
+
       - name: Publish to crates.io
         if: env.RELEASE == 'true'
         env:

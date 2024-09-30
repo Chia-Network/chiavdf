@@ -45,8 +45,6 @@ fn main() {
                 .to_str()
                 .unwrap()
         );
-
-        vcpkg::find_package("gmp").unwrap();
     } else {
         println!(
             "cargo:rustc-link-search=native={}",

@@ -1,7 +1,6 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 3.14 FATAL_ERROR)
 option(BUILD_CHIAVDFC "Build the chiavdfc shared library" OFF)
 option(BUILD_PYTHON "Build the python bindings for chiavdf" ON)
-option(SKIP_MPIR_LINK "Skip linking MPIR" OFF)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -31,9 +30,7 @@ if(WIN32)
     ${MPIR_INCLUDE_DIR}
   )
   find_library(MPIR_LIBRARY NAMES mpir PATHS ${MPIR_LIBRARY_DIR} NO_DEFAULT_PATH)
-  if(SKIP_MPIR_LINK)
-    message(STATUS "MPIR library found, skipping linking")
-  elseif(MPIR_LIBRARY)
+  if(MPIR_LIBRARY)
     message(STATUS "MPIR library found at ${MPIR_LIBRARY}")
     link_libraries(${MPIR_LIBRARY})
   else()

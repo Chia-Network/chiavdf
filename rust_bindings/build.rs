@@ -45,6 +45,17 @@ fn main() {
                 .to_str()
                 .unwrap()
         );
+
+        println!("cargo:rustc-link-lib=static=mpir");
+        println!(
+            "cargo:rustc-link-search=native={}",
+            src_dir
+                .parent()
+                .unwrap()
+                .join("mpir_gc_x64")
+                .to_str()
+                .unwrap()
+        );
     } else {
         println!(
             "cargo:rustc-link-search=native={}",

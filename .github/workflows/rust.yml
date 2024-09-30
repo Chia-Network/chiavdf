@@ -103,7 +103,7 @@ jobs:
         run: |
           git clone https://github.com/Chia-Network/mpir_gc_x64.git
           echo 0
-          "$((Get-Location)\mpir_gc_x64)" | Out-File -Append -FilePath $env:GITHUB_PATH
+          "$(Get-Location)/mpir_gc_x64" | Out-File -Append -FilePath $env:GITHUB_PATH
           echo X
           echo $GITHUB_PATH
           echo Y

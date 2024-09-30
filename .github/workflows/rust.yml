@@ -104,6 +104,16 @@ jobs:
           git clone https://github.com/Chia-Network/mpir_gc_x64.git
           echo "$(Get-Location)\mpir_gc_x64" >> $GITHUB_PATH
 
+      - name: Check if MPIR DLL is on the PATH
+        if: matrix.os.name == 'Windows'
+        run: |
+          $pathList = $Env:PATH -split ";"
+          foreach ($path in $pathList) {
+            if (Test-Path "$path\mpir.dll") {
+              Write-Output "Found mpir.dll in $path"
+            }
+          }
+
       - name: Install libclang-dev on Linux
         if: matrix.os.name == 'Ubuntu'
         run: sudo apt-get install libclang-dev -y
@@ -151,16 +161,6 @@ jobs:
         uses: Chia-Network/actions/setjobenv@main
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Check if MPIR DLL is on the PATH
-        run: |
-          $pathList = $Env:PATH -split ";"
-          foreach ($path in $pathList) {
-            if (Test-Path "$path\mpir.dll") {
-              Write-Output "Found mpir.dll in $path"
-            }
-          }
-        shell: powershell
 
       - name: Publish to crates.io
         if: env.RELEASE == 'true'

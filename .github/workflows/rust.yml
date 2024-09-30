@@ -94,13 +94,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: GMP library path on MacOS
+      - name: Setup library path on MacOS
         if: matrix.os.name == 'macOS'
         run: echo "LIBRARY_PATH=/opt/homebrew/lib:$LIBRARY_PATH" >> $GITHUB_ENV
 
       - name: Install MPIR on Windows
         if: matrix.os.name == 'Windows'
         run: git clone https://github.com/Chia-Network/mpir_gc_x64.git
+
+      - name: Install libclang-dev on Linux
+        if: matrix.os.name == 'Ubuntu'
+        run: sudo apt-get install libclang-dev
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable

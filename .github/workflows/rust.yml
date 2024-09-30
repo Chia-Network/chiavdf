@@ -102,11 +102,11 @@ jobs:
         if: matrix.os.name == 'Windows'
         run: |
           git clone https://github.com/Chia-Network/mpir_gc_x64.git
-          echo "RUSTFLAGS='-C link-args=-Wl,-rpath,${{ github.workspace }}/mpir_gc_x64'" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "$(Get-Location)\mpir_gc_x64" >> $GITHUB_PATH
 
       - name: Install libclang-dev on Linux
         if: matrix.os.name == 'Ubuntu'
-        run: sudo apt-get install libclang-dev
+        run: sudo apt-get install libclang-dev -y
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable

@@ -102,26 +102,7 @@ jobs:
         if: matrix.os.name == 'Windows'
         run: |
           git clone https://github.com/Chia-Network/mpir_gc_x64.git
-          echo 0
           "$(Get-Location)/mpir_gc_x64" | Out-File -Append -FilePath $env:GITHUB_PATH
-          echo X
-          echo $GITHUB_PATH
-          echo Y
-          echo $Env:PATH
-          echo Z
-          echo $Env:GITHUB_PATH
-          echo A
-          echo $Env:GITHUB_ENV
-
-      - name: Check if MPIR DLL is on the PATH
-        if: matrix.os.name == 'Windows'
-        run: |
-          $pathList = $Env:PATH -split ";"
-          foreach ($path in $pathList) {
-            if (Test-Path "$path\mpir.dll") {
-              Write-Output "Found mpir.dll in $path"
-            }
-          }
 
       - name: Install libclang-dev on Linux
         if: matrix.os.name == 'Ubuntu'

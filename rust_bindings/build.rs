@@ -24,7 +24,6 @@ fn main() {
         .define("BUILD_CHIAVDFC", "ON")
         .env("BUILD_VDF_CLIENT", "N")
         .define("BUILD_PYTHON", "OFF")
-        .define("SKIP_MPIR_LINK", "ON")
         .build();
 
     println!("cargo:rustc-link-lib=static=chiavdfc");

@@ -1,6 +1,6 @@
 [package]
 name = "chiavdf"
-version = "1.1.6"
+version = "1.1.8"
 edition = "2021"
 license = "Apache-2.0"
 description = "Bindings to the chiavdf C++ library."

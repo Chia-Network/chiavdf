@@ -295,17 +295,20 @@ class Prover {
     std::atomic<bool> is_finished;
 };
 
-#define PARALLEL_PROVER_N_THREADS 2
+#define PROVER_MAX_SEGMENT_THREADS 8
 
 class ParallelProver : public Prover {
   public:
-    ParallelProver(Segment segm, integer D) : Prover(segm, D) {}
+    ParallelProver(Segment segm, integer D, size_t n_thr) : Prover(segm, D) {
+        this->n_threads = n_thr;
+    }
     void GenerateProof();
   protected:
     integer B;
     integer L;
     form id;
-    form x_vals[PARALLEL_PROVER_N_THREADS];
+    form x_vals[PROVER_MAX_SEGMENT_THREADS];
+    size_t n_threads;
 };
 
 void nudupl_form(form &a, form &b, integer &D, integer &L);

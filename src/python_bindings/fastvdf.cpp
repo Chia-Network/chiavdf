@@ -51,6 +51,7 @@ PYBIND11_MODULE(chiavdf, m) {
 
     m.def("prove", [] (const py::bytes& challenge_hash, const string& x_s, int discriminant_size_bits, uint64_t num_iterations) {
         std::string challenge_hash_str(challenge_hash);
+        std::string x_s_copy(x_s);
         std::vector<uint8_t> result;
         {
             py::gil_scoped_release release;
@@ -59,7 +60,7 @@ PYBIND11_MODULE(chiavdf, m) {
                     challenge_hash_bytes,
                     discriminant_size_bits
             );
-            form x = DeserializeForm(D, (const uint8_t *) x_s.data(), x_s.size());
+            form x = DeserializeForm(D, (const uint8_t *) x_s_copy.data(), x_s_copy.size());
             result = ProveSlow(D, x, num_iterations);
         }
         py::bytes ret = py::bytes(reinterpret_cast<char*>(result.data()), result.size());

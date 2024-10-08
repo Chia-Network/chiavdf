@@ -25,11 +25,14 @@ PYBIND11_MODULE(chiavdf, m) {
                                    const string& x_s, const string& y_s,
                                    const string& proof_s,
                                    uint64_t num_iterations) {
-        py::gil_scoped_release release;
         integer D(discriminant);
-        form x = DeserializeForm(D, (const uint8_t *)x_s.data(), x_s.size());
-        form y = DeserializeForm(D, (const uint8_t *)y_s.data(), y_s.size());
-        form proof = DeserializeForm(D, (const uint8_t *)proof_s.data(), proof_s.size());
+        std::string x_s_copy(x_s);
+        std::string y_s_copy(y_s);
+        std::string proof_s_copy(proof_s);
+        py::gil_scoped_release release;
+        form x = DeserializeForm(D, (const uint8_t *)x_s_copy.data(), x_s_copy.size());
+        form y = DeserializeForm(D, (const uint8_t *)y_s_copy.data(), y_s_copy.size());
+        form proof = DeserializeForm(D, (const uint8_t *)proof_s_copy.data(), proof_s_copy.size());
 
         bool is_valid = false;
         VerifyWesolowskiProof(D, x, y, proof, num_iterations, is_valid);
@@ -41,16 +44,19 @@ PYBIND11_MODULE(chiavdf, m) {
                                    const string& x_s,
                                    const string& proof_blob,
                                    const uint64_t num_iterations, const uint64_t disc_size_bits, const uint64_t recursion) {
+        std::string discriminant_copy(discriminant);
+        std::string x_s_copy(x_s);
+        std::string proof_blob_copy(proof_blob);
         py::gil_scoped_release release;
-        std::string proof_blob_str(proof_blob);
-        uint8_t *proof_blob_ptr = reinterpret_cast<uint8_t *>(proof_blob_str.data());
-        int proof_blob_size = proof_blob.size();
+        uint8_t *proof_blob_ptr = reinterpret_cast<uint8_t *>(proof_blob_copy.data());
+        int proof_blob_size = proof_blob_copy.size();
 
-        return CheckProofOfTimeNWesolowski(integer(discriminant), (const uint8_t *)x_s.data(), proof_blob_ptr, proof_blob_size, num_iterations, disc_size_bits, recursion);
+        return CheckProofOfTimeNWesolowski(integer(discriminant_copy), (const uint8_t *)x_s_copy.data(), proof_blob_ptr, proof_blob_size, num_iterations, disc_size_bits, recursion);
     });
 
     m.def("prove", [] (const py::bytes& challenge_hash, const string& x_s, int discriminant_size_bits, uint64_t num_iterations) {
         std::string challenge_hash_str(challenge_hash);
+        std::string x_s_copy(x_s);
         std::vector<uint8_t> result;
         {
             py::gil_scoped_release release;
@@ -59,7 +65,7 @@ PYBIND11_MODULE(chiavdf, m) {
                     challenge_hash_bytes,
                     discriminant_size_bits
             );
-            form x = DeserializeForm(D, (const uint8_t *) x_s.data(), x_s.size());
+            form x = DeserializeForm(D, (const uint8_t *) x_s_copy.data(), x_s_copy.size());
             result = ProveSlow(D, x, num_iterations);
         }
         py::bytes ret = py::bytes(reinterpret_cast<char*>(result.data()), result.size());
@@ -74,11 +80,14 @@ PYBIND11_MODULE(chiavdf, m) {
                                    const uint64_t num_iterations, const uint64_t recursion) {
         std::pair<bool, std::vector<uint8_t>> result;
         {
+            std::string discriminant_copy(discriminant);
+            std::string B_copy(B);
+            std::string x_s_copy(x_s);
+            std::string proof_blob_copy(proof_blob);
             py::gil_scoped_release release;
-            std::string proof_blob_str(proof_blob);
-            uint8_t *proof_blob_ptr = reinterpret_cast<uint8_t *>(proof_blob_str.data());
-            int proof_blob_size = proof_blob.size();
-            result = CheckProofOfTimeNWesolowskiWithB(integer(discriminant), integer(B), (const uint8_t *)x_s.data(), proof_blob_ptr, proof_blob_size, num_iterations, recursion);
+            uint8_t *proof_blob_ptr = reinterpret_cast<uint8_t *>(proof_blob_copy.data());
+            int proof_blob_size = proof_blob_copy.size();
+            result = CheckProofOfTimeNWesolowskiWithB(integer(discriminant_copy), integer(B_copy), (const uint8_t *)x_s_copy.data(), proof_blob_ptr, proof_blob_size, num_iterations, recursion);
         }
         py::bytes res_bytes = py::bytes(reinterpret_cast<char*>(result.second.data()), result.second.size());
         py::tuple res_tuple = py::make_tuple(result.first, res_bytes);
@@ -89,11 +98,13 @@ PYBIND11_MODULE(chiavdf, m) {
                                    const string& x_s,
                                    const string& proof_blob,
                                    const uint64_t num_iterations, const uint64_t recursion) {
+        std::string discriminant_copy(discriminant);
+        std::string x_s_copy(x_s);
+        std::string proof_blob_copy(proof_blob);
         py::gil_scoped_release release;
-        std::string proof_blob_str(proof_blob);
-        uint8_t *proof_blob_ptr = reinterpret_cast<uint8_t *>(proof_blob_str.data());
-        int proof_blob_size = proof_blob.size();
-        integer B = GetBFromProof(integer(discriminant), (const uint8_t *)x_s.data(), proof_blob_ptr, proof_blob_size, num_iterations, recursion);
+        uint8_t *proof_blob_ptr = reinterpret_cast<uint8_t *>(proof_blob_copy.data());
+        int proof_blob_size = proof_blob_copy.size();
+        integer B = GetBFromProof(integer(discriminant_copy), (const uint8_t *)x_s_copy.data(), proof_blob_ptr, proof_blob_size, num_iterations, recursion);
         return B.to_string();
     });
 }

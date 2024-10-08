@@ -5,6 +5,7 @@
 #include "nucomp.h"
 #include "picosha2.h"
 #include "proof_common.h"
+#include <sys/stat.h>
 
 
 // TODO: Refactor to use 'Prover' class once new_vdf is merged in.
@@ -78,7 +79,7 @@ form GenerateWesolowski(form &y, form &x_init,
     return x;
 }
 
-std::vector<uint8_t> ProveSlow(integer& D, form& x, uint64_t num_iterations) {
+std::vector<uint8_t> ProveSlow(integer& D, form& x, uint64_t num_iterations, std::string shutdown_file_path) {
     integer L = root(-D, 4);
     PulmarkReducer reducer;
     form y = form::from_abd(x.a, x.b, D);
@@ -100,6 +101,20 @@ std::vector<uint8_t> ProveSlow(integer& D, form& x, uint64_t num_iterations) {
         }
         nudupl_form(y, y, D, L);
         reducer.reduce(y);
+
+        // Check for cancellation every 65535 interations
+        if ((i&0xffff)==0) {
+            // Only if we have a shutdown path
+            if (shutdown_file_path!="") {
+                struct stat buffer;
+            
+                int statrst = stat(shutdown_file_path.c_str(), &buffer);
+                if ((statrst != 0) && (errno != EINTR)) {
+                    // shutdown file doesn't exist, abort out
+                    return {};
+                }
+            }
+        }
     }
 
     form proof = GenerateWesolowski(y, x, D, reducer, intermediates, num_iterations, k, l);

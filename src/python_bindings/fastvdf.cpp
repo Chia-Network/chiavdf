@@ -54,7 +54,7 @@ PYBIND11_MODULE(chiavdf, m) {
         return CheckProofOfTimeNWesolowski(integer(discriminant_copy), (const uint8_t *)x_s_copy.data(), proof_blob_ptr, proof_blob_size, num_iterations, disc_size_bits, recursion);
     });
 
-    m.def("prove", [] (const py::bytes& challenge_hash, const string& x_s, int discriminant_size_bits, uint64_t num_iterations) {
+    m.def("prove", [] (const py::bytes& challenge_hash, const string& x_s, int discriminant_size_bits, uint64_t num_iterations, const string& shutdown_file_path) {
         std::string challenge_hash_str(challenge_hash);
         std::string x_s_copy(x_s);
         std::vector<uint8_t> result;
@@ -66,7 +66,7 @@ PYBIND11_MODULE(chiavdf, m) {
                     discriminant_size_bits
             );
             form x = DeserializeForm(D, (const uint8_t *) x_s_copy.data(), x_s_copy.size());
-            result = ProveSlow(D, x, num_iterations);
+            result = ProveSlow(D, x, num_iterations, shutdown_file_path);
         }
         py::bytes ret = py::bytes(reinterpret_cast<char*>(result.data()), result.size());
         return ret;

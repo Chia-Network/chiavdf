@@ -13,7 +13,7 @@ def test_prove_and_verify():
 
     iters = 1000000
     t1 = time.time()
-    result = prove(discriminant_challenge, initial_el, discriminant_size, iters)
+    result = prove(discriminant_challenge, initial_el, discriminant_size, iters, "")
     t2 = time.time()
     print(f"IPS: {iters / (t2 - t1)}")
     result_y = result[:form_size]
@@ -36,6 +36,7 @@ def test_prove_and_verify():
         result_y,
         discriminant_size,
         iters_2,
+        ""
     )
     t2 = time.time()
     print(f"IPS: {iters_2 / (t2 - t1)}")

@@ -22,7 +22,7 @@ extern "C" {
             std::vector<uint8_t> challenge_hash_bytes(challenge_hash, challenge_hash + challenge_size);
             integer discriminant = CreateDiscriminant(challenge_hash_bytes, discriminant_size_bits);
             form x = DeserializeForm(discriminant, x_s, x_s_size);
-            std::vector<uint8_t> result = ProveSlow(discriminant, x, num_iterations);
+            std::vector<uint8_t> result = ProveSlow(discriminant, x, num_iterations, "");
 
             // Allocate memory for the result and copy data
             uint8_t* resultData = new uint8_t[result.size()];

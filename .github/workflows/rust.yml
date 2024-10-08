@@ -10,6 +10,10 @@ on:
     branches:
       - "**"
 
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow_ref, github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: true
+
 permissions:
   id-token: write
   contents: read
@@ -32,16 +36,11 @@ jobs:
           cd rust_bindings
           cargo fuzz list | xargs -I "%" sh -c "cargo +nightly fuzz run % -- -max_total_time=600 || exit 255"
 
-  build_crate:
-    name: Build crate
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -54,14 +53,92 @@ jobs:
       - name: Clippy
         run: cargo clippy
 
+  test:
+    name: Test (${{ matrix.os.name }} ${{ matrix.arch.name }})
+    runs-on: ${{ matrix.os.runs-on[matrix.arch.matrix] }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - name: macOS
+            matrix: macos
+            runs-on:
+              arm: [macos-13-arm64]
+              intel: [macos-13]
+            cibw-archs-macos:
+              arm: arm64
+              intel: x86_64
+          - name: Ubuntu
+            matrix: ubuntu
+            runs-on:
+              arm: [Linux, ARM64]
+              intel: [ubuntu-latest]
+          - name: Windows
+            matrix: windows
+            runs-on:
+              intel: [windows-latest]
+
+        arch:
+          - name: ARM
+            matrix: arm
+          - name: Intel
+            matrix: intel
+
+        exclude:
+          - os:
+              name: Windows
+              matrix: windows
+              runs-on:
+                intel: [windows-latest]
+            arch:
+              name: ARM
+              matrix: arm
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup library path on MacOS
+        if: matrix.os.name == 'macOS'
+        run: echo "LIBRARY_PATH=/opt/homebrew/lib:$LIBRARY_PATH" >> $GITHUB_ENV
+
+      - name: Install MPIR on Windows
+        if: matrix.os.name == 'Windows'
+        run: |
+          git clone https://github.com/Chia-Network/mpir_gc_x64.git
+          "$(Get-Location)/mpir_gc_x64" | Out-File -Append -FilePath $env:GITHUB_PATH
+
+      - name: Install libclang-dev on Linux
+        if: matrix.os.name == 'Ubuntu'
+        run: sudo apt-get install libclang-dev -y
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Tests
         run: cargo test && cargo test --release
+
+  build_crate:
+    name: Build crate
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Build
         run: cargo build --release
 
       - name: Prepare for publish
-        run: cp -r src rust_bindings/cpp
+        run: |
+          cd rust_bindings
+          cp -r ../src cpp
+          git clone https://github.com/Chia-Network/mpir_gc_x64.git
 
       - name: Publish to crates.io (dry run)
         # We use `--allow-dirty` because the `cpp` folder is copied into the working directory.

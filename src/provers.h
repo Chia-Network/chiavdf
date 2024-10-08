@@ -11,7 +11,7 @@ class OneWesolowskiProver : public Prover {
     {
         this->intermediates = intermediates;
         if (num_iterations >= (1 << 16)) {
-            ApproximateParameters(num_iterations, k, l);
+            ApproximateParameters(num_iterations, l, k);
         } else {
             k = 10;
             l = 1;

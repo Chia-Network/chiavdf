@@ -108,6 +108,9 @@ jobs:
 
       - name: Trigger repo update
         if: env.RELEASE == 'true'
-        run: |
-          curl -s -XPOST -H "Authorization: Bearer ${{ env.JWT_TOKEN }}" --data '{"release_version":"${{ env.RELEASE_TAG }}"}' ${{ secrets.GLUE_API_URL }}/api/v1/chiavdf-hw/${{ env.RELEASE_TAG }}/start
-          curl -s -XPOST -H "Authorization: Bearer ${{ env.JWT_TOKEN }}" --data '{"release_version":"${{ env.RELEASE_TAG }}"}' ${{ secrets.GLUE_API_URL }}/api/v1/chiavdf-hw/${{ env.RELEASE_TAG }}/success/release_hw
+        uses: Chia-Network/actions/github/glue@main
+        with:
+          json_data: '{"release_version":"${{ env.RELEASE_TAG }}"}'
+          glue_url: ${{ secrets.GLUE_API_URL }}
+          glue_project: "chiavdf-hw"
+          glue_path: "trigger"

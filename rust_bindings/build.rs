@@ -1,6 +1,5 @@
 use std::env;
 use std::path::PathBuf;
-use std::str::FromStr;
 
 use cmake::Config;
 
@@ -27,18 +26,47 @@ fn main() {
         .define("BUILD_PYTHON", "OFF")
         .build();
 
-    println!(
-        "cargo:rustc-link-search=native={}",
-        PathBuf::from_str(dst.display().to_string().as_str())
-            .unwrap()
-            .join("build")
-            .join("lib")
-            .join("static")
-            .to_str()
-            .unwrap()
-    );
     println!("cargo:rustc-link-lib=static=chiavdfc");
-    println!("cargo:rustc-link-lib=gmp");
+
+    if cfg!(target_os = "windows") {
+        let build_type = if cfg!(debug_assertions) {
+            "Debug"
+        } else {
+            "Release"
+        };
+
+        println!(
+            "cargo:rustc-link-search=native={}",
+            dst.join("build")
+                .join("lib")
+                .join("static")
+                .join(build_type)
+                .to_str()
+                .unwrap()
+        );
+
+        println!("cargo:rustc-link-lib=static=mpir");
+        println!(
+            "cargo:rustc-link-search=native={}",
+            src_dir
+                .parent()
+                .unwrap()
+                .join("mpir_gc_x64")
+                .to_str()
+                .unwrap()
+        );
+    } else {
+        println!(
+            "cargo:rustc-link-search=native={}",
+            dst.join("build")
+                .join("lib")
+                .join("static")
+                .to_str()
+                .unwrap()
+        );
+
+        println!("cargo:rustc-link-lib=gmp");
+    }
 
     let bindings = bindgen::Builder::default()
         .header(manifest_dir.join("wrapper.h").to_str().unwrap())

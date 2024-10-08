@@ -7,7 +7,6 @@ using boost::asio::ip::tcp;
 const int max_length = 2048;
 std::mutex socket_mutex;
 
-int process_number;
 // Segments are 2^16, 2^18, ..., 2^30
 // Best case it'll be able to proof for up to 2^36 due to 64-wesolowski restriction.
 int segments = 8;
@@ -21,6 +20,8 @@ void PrintInfo(std::string input) {
 char disc[350];
 char disc_size[5];
 int disc_int_size;
+
+uint8_t initial_form_s[BQFC_FORM_SIZE];
 
 void WriteProof(uint64_t iteration, Proof& result, tcp::socket& sock) {
     // Writes the number of iterations
@@ -78,13 +79,11 @@ void CreateAndWriteProofTwoWeso(integer& D, form f, uint64_t iters, TwoWesolowsk
     WriteProof(iters, result, sock);
 }
 
-uint8_t initial_form_s[BQFC_FORM_SIZE];
-
 void InitSession(tcp::socket& sock) {
     boost::system::error_code error;
 
-    memset(disc,0x00,sizeof(disc)); // For null termination
-    memset(disc_size,0x00,sizeof(disc_size)); // For null termination
+    memset(disc, 0x00, sizeof(disc)); // For null termination
+    memset(disc_size, 0x00, sizeof(disc_size)); // For null termination
 
     boost::asio::read(sock, boost::asio::buffer(disc_size, 3), error);
     disc_int_size = atoi(disc_size);
@@ -99,14 +98,14 @@ void InitSession(tcp::socket& sock) {
     else if (error)
         throw boost::system::system_error(error); // Some other error.
 
-    if (getenv( "warn_on_corruption_in_production" )!=nullptr) {
-        warn_on_corruption_in_production=true;
+    if (getenv("warn_on_corruption_in_production") != nullptr) {
+        warn_on_corruption_in_production = true;
     }
     if (is_vdf_test) {
-        PrintInfo( "=== Test mode ===" );
+        PrintInfo("=== Test mode ===");
     }
     if (warn_on_corruption_in_production) {
-        PrintInfo( "=== Warn on corruption enabled ===" );
+        PrintInfo("=== Warn on corruption enabled ===");
     }
     assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
     set_rounding_mode();
@@ -123,7 +122,7 @@ void FinishSession(tcp::socket& sock) {
         boost::asio::write(sock, boost::asio::buffer("STOP", 4));
 
         char ack[5];
-        memset(ack,0x00,sizeof(ack));
+        memset(ack, 0x00, sizeof(ack));
         boost::asio::read(sock, boost::asio::buffer(ack, 3), error);
         assert (strncmp(ack, "ACK", 3) == 0);
     } catch (std::exception& e) {
@@ -149,7 +148,7 @@ void SessionFastAlgorithm(tcp::socket& sock) {
     InitSession(sock);
     try {
         integer D(disc);
-        integer L=root(-D, 4);
+        integer L = root(-D, 4);
         PrintInfo("Discriminant = " + to_string(D.impl));
         form f = DeserializeForm(D, initial_form_s, sizeof(initial_form_s));
         PrintInfo("Initial form: " + to_string(f.a.impl) + " " + to_string(f.b.impl));
@@ -197,7 +196,7 @@ void SessionOneWeso(tcp::socket& sock) {
     InitSession(sock);
     try {
         integer D(disc);
-        integer L=root(-D, 4);
+        integer L = root(-D, 4);
         PrintInfo("Discriminant = " + to_string(D.impl));
         form f = DeserializeForm(D, initial_form_s, sizeof(initial_form_s));
         // Tell client that I'm ready to get the challenges.
@@ -233,7 +232,7 @@ void SessionTwoWeso(tcp::socket& sock) {
     InitSession(sock);
     try {
         integer D(disc);
-        integer L=root(-D, 4);
+        integer L = root(-D, 4);
         PrintInfo("Discriminant = " + to_string(D.impl));
         form f = DeserializeForm(D, initial_form_s, sizeof(initial_form_s));
 
@@ -308,22 +307,19 @@ void SessionTwoWeso(tcp::socket& sock) {
     FinishSession(sock);
 }
 
-int gcd_base_bits=50;
-int gcd_128_max_iter=3;
+int gcd_base_bits = 50;
+int gcd_128_max_iter = 3;
 
-int main(int argc, char* argv[]) try
-{
+int main(int argc, char* argv[]) try {
     init_gmp();
-    if (argc != 4)
-    {
+    if (argc != 4) {
       std::cerr << "Usage: ./vdf_client <host> <port> <counter>\n";
       return 1;
     }
 
-    if(hasAVX2())
-    {
-      gcd_base_bits=63;
-      gcd_128_max_iter=2;
+    if(hasAVX2()) {
+      gcd_base_bits = 63;
+      gcd_128_max_iter = 2;
     }
 
     boost::asio::io_service io_service;

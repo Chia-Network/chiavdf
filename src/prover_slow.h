@@ -51,7 +51,7 @@ form GenerateWesolowski(form &y, form &x_init,
         for (uint64_t i = 0; i < (1UL << k); i++)
             ys[i] = form::identity(D);
 
-        for (uint64_t i = 0; i < ceil(double(num_iterations)  / (k * l)); i++) {
+        for (uint64_t i = 0; i < (num_iterations + k * l - 1)  / (k * l); i++) {
             if (num_iterations >= k * (i * l + j + 1)) {
                 uint64_t b = GetBlock(i*l + j, k, num_iterations, B);
                 nucomp_form(ys[b], ys[b], intermediates[i], D, L);

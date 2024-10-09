@@ -13,13 +13,13 @@ def prove_n_weso(discriminant_challenge, x, discriminant_size, form_size, iters,
     partials = []
     discriminant = create_discriminant(discriminant_challenge, discriminant_size)
     for _ in range(witness):
-        result = prove(discriminant_challenge, x, discriminant_size, iters_chunk)
+        result = prove(discriminant_challenge, x, discriminant_size, iters_chunk, "")
         y = result[:form_size]
         proof = result[form_size : 2 * form_size]
         partials.append((x, y, proof))
         x = y
     iters -= iters_chunk * witness
-    result = prove(discriminant_challenge, x, discriminant_size, iters)
+    result = prove(discriminant_challenge, x, discriminant_size, iters, "")
     y_result = result[:form_size]
     y_proof = result[form_size : 2 * form_size]
     assert verify_wesolowski(discriminant, x, y_result, y_proof, iters)

@@ -66,6 +66,7 @@ def test_prove_n_weso_and_verify():
     discriminant_challenge = b'\xa6\xc4%X\x17O\xb1\xee\xdcd'
     discriminant_size = 512
     discriminant = create_discriminant(discriminant_challenge, discriminant_size)
+    print(f"discriminant_challenge {discriminant_challenge} discriminant {discriminant}")
     form_size = 100
     initial_el = b"\x08" + (b"\x00" * 99)
 

@@ -40,7 +40,8 @@ def prove_n_weso(discriminant_challenge, x, discriminant_size, form_size, iters,
         b_hex = get_b_from_n_wesolowski(discriminant, x, y + proof, iters_chunk, 0)
         b = int(b_hex, 16)
         wjb = wjb + 1
-        print(f"{wjb} verify_wesolowski discriminant {discriminant}\n  x {x}\n  y {y}\n  proof {proof}\n  iters_chunk {iters_chunk}")
+        print(f"{wjb} verify_wesolowski discriminant {discriminant}\n  x {x}")
+        print(f"  y {y}\n  proof {proof}\n  iters_chunk {iters_chunk}")
         assert verify_wesolowski(discriminant, x, y, proof, iters_chunk)
         is_valid, y_from_compression = verify_n_wesolowski_with_b(
             discriminant,

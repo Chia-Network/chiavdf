@@ -9,6 +9,7 @@ from chiavdf import (
 
 
 def prove_n_weso(discriminant_challenge, x, discriminant_size, form_size, iters, witness, wrong_segm):
+    wjb = 0
     iters_chunk = iters // (witness + 1)
     partials = []
     discriminant = create_discriminant(discriminant_challenge, discriminant_size)
@@ -38,7 +39,8 @@ def prove_n_weso(discriminant_challenge, x, discriminant_size, form_size, iters,
     for x, y, proof in reversed(partials):
         b_hex = get_b_from_n_wesolowski(discriminant, x, y + proof, iters_chunk, 0)
         b = int(b_hex, 16)
-        print(f"verify_wesolowski discriminant {discriminant} x {x} y {y} proof {proof} iters_chunk {iters_chunk}")
+        wjb = wjb + 1
+        print(f"{wjb} verify_wesolowski discriminant {discriminant}\n  x {x}\n  y {y}\n  proof {proof}\n  iters_chunk {iters_chunk}")
         assert verify_wesolowski(discriminant, x, y, proof, iters_chunk)
         is_valid, y_from_compression = verify_n_wesolowski_with_b(
             discriminant,

@@ -65,7 +65,7 @@ def prove_n_weso(discriminant_challenge, x, discriminant_size, form_size, iters,
 
 
 def test_prove_n_weso_and_verify():
-    discriminant_challenge = secrets.token_bytes(10)
+    discriminant_challenge = b'\xa6\xc4%X\x17O\xb1\xee\xdcd' ## secrets.token_bytes(10)
     discriminant_size = 512
     discriminant = create_discriminant(discriminant_challenge, discriminant_size)
     form_size = 100

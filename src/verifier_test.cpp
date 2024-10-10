@@ -43,6 +43,12 @@ std::vector<uint8_t> HexToBytes(const char *hex_proof) {
 
 int main()
 {
+int l,k;
+
+ApproximateParameters(90909, l, k);
+
+cout << "l: " << l << " k: " << k << endl;
+
 
 std::vector<uint8_t> challenge_hash=HexToBytes("a6c42558174fb1eedc64");
 std::vector<uint8_t> x_s=HexToBytes("0300aca4849458af5c557710c80f21519f196907764d2d55c9b70581a90d49ca7b3201ad6a9da836429e6592c200e965434f0100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000");

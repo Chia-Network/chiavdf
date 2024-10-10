@@ -196,7 +196,7 @@ struct integer {
 
         size_t count;
         mpz_export(res.data(), &count, -1, 8, 0, 0, impl);
-        res.resize(count);
+        //res.resize(count);
 
         return res;
     }

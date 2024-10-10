@@ -193,13 +193,6 @@ struct integer {
     vector<uint64> to_vector() const {
         vector<uint64> res;
 
-        if (mpz_size(impl)==0) {
-            printf("ZERO to_vector\n");
-            res.resize(1);
-            res[0]=0;
-            return res;
-        }
-
         res.resize(mpz_sizeinbase(impl, 2)/64 + 1, 0);
 
         size_t count;

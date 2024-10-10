@@ -28,7 +28,7 @@ uint64_t GetBlock(uint64_t i, uint64_t k, uint64_t T, integer& B) {
     auto res_vector = res.to_vector();
     if (res_vector.size() == 0)
         printf("ZERO! i %llu k %llu T %llu\n",i,k,T);
-        res_vector.resize(1);
+        return 0;
     return res_vector[0];
 }
 

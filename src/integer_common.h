@@ -196,7 +196,12 @@ struct integer {
 
         size_t count;
         mpz_export(res.data(), &count, -1, 8, 0, 0, impl);
-        res.resize(count);
+        if (count == 0) {
+            res.resize(1);
+            res[0]=0;
+        }
+        else
+            res.resize(count);
 
         return res;
     }

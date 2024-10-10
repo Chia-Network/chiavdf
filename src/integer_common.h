@@ -192,16 +192,18 @@ struct integer {
     //lsb first
     vector<uint64> to_vector() const {
         vector<uint64> res;
+
+        if (mpz_size(impl)==0) {
+            res.resize(1);
+            res[0]=0;
+            return res;
+        }
+
         res.resize(mpz_sizeinbase(impl, 2)/64 + 1, 0);
 
         size_t count;
         mpz_export(res.data(), &count, -1, 8, 0, 0, impl);
-        if (count == 0) {
-            res.resize(1);
-            res[0]=0;
-        }
-        else
-            res.resize(count);
+        res.resize(count);
 
         return res;
     }

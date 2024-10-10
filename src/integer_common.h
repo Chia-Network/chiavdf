@@ -194,6 +194,7 @@ struct integer {
         vector<uint64> res;
 
         if (mpz_size(impl)==0) {
+            printf("ZERO to_vector\n");
             res.resize(1);
             res[0]=0;
             return res;

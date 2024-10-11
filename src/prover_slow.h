@@ -26,7 +26,7 @@ uint64_t GetBlock(uint64_t i, uint64_t k, uint64_t T, integer& B) {
     mpz_mul_2exp(res.impl, res.impl, k);
     res = res / B;
     auto res_vector = res.to_vector();
-    printf("GB %lld\n",res_vector.empty() ? 0 : res_vector[0]);
+    gmp_printf("i %lld k %lld T %lld B %Zd GB %lld\n",i,k,T,B.impl,res_vector.empty() ? 0 : res_vector[0]);
     return res_vector.empty() ? 0 : res_vector[0];
 }
 

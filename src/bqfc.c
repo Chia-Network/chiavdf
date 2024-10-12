@@ -121,6 +121,8 @@ static void bqfc_export(uint8_t *out_str, size_t *offset, size_t size,
     size_t bytes;
 
     mpz_export(&out_str[*offset], &bytes, -1, 1, 0, 0, n);
+    if (bytes > size)
+        gmp_printf("bqfc_export overflow offset %d size %d n %Zd\n", *offset, size, n);
     if (bytes < size)
         memset(&out_str[*offset + bytes], 0, size - bytes);
     *offset += size;

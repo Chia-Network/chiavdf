@@ -120,6 +120,7 @@ form FastPowFormNucomp(form x, integer &D, integer num_iterations, integer &L, P
     // Do exponentiation by squaring from top bits of exponent to bottom
     for (i = num_iterations.num_bits() - 2; i >= 0; i--) {
         nudupl_form(res, res, D, L);
+        gmp_printf("a %Zd _mp_size %d max_size %d\n",res.a.impl,res.a.impl->_mp_size,max_size);
         if (res.a.impl->_mp_size > max_size) {
             // Reduce only when 'a' exceeds a half of the discriminant size
             reducer.reduce(res);

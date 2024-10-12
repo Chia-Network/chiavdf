@@ -19,6 +19,9 @@ set(CMAKE_MODULE_PATH
 
 if(MSVC)
   add_compile_options(/EHsc)
+else()
+  add_link_options(-fsanitize=address)
+  add_compile_options(-fsanitize=address)
 endif()
 
 if(WIN32)

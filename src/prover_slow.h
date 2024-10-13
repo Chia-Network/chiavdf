@@ -64,7 +64,7 @@ form GenerateWesolowski(form &y, form &x_init,
             for (uint64_t b0 = 0; b0 < (1ULL << k0); b0++) {
                 nucomp_form(z, z, ys[b1 * (1ULL << k0) + b0], D, L);
             }
-            z = FastPowFormNucomp(z, D, integer(b1 * (1ULL << k0)), L, reducer);
+            z = FastPowFormNucomp(z, D, integer(b1 * (1 << k0)), L, reducer);
             nucomp_form(x, x, z, D, L);
         }
         for (uint64_t b0 = 0; b0 < (1ULL << k0); b0++) {

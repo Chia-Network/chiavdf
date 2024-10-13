@@ -192,7 +192,6 @@ struct integer {
     //lsb first
     vector<uint64> to_vector() const {
         vector<uint64> res;
-
         res.resize(mpz_sizeinbase(impl, 2)/64 + 1, 0);
 
         size_t count;

@@ -19,7 +19,7 @@ set(CMAKE_MODULE_PATH
 
 if(MSVC)
   add_compile_options(/EHsc)
-ENDIF()
+endif()
 
 if(WIN32)
   set(MPIR_LIBRARY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../mpir_gc_x64")

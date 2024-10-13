@@ -120,6 +120,7 @@ static void bqfc_export(uint8_t *out_str, size_t *offset, size_t size,
 {
     size_t bytes;
 
+    // mpz_export can overflow out_str if reduction bug but this should never happen
     mpz_export(&out_str[*offset], &bytes, -1, 1, 0, 0, n);
     if (bytes > size)
         gmp_printf("bqfc_export overflow offset %d size %d n %Zd\n", *offset, size, n);

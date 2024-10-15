@@ -229,7 +229,8 @@ bool bLZCHasHW=false;
 
       // The condition (abs(v_) | abs(x_)) <= THRESH protects against
       // overflow
-      below_threshold = (labs(v_) | labs(x_)) <= THRESH ? 1 : 0;
+      // must use llabs() as labs() is undefined for too large numbers
+      below_threshold = (llabs(v_) | llabs(x_)) <= THRESH ? 1 : 0;
     } while (below_threshold && a > c && c > 0);
 
     if (below_threshold) {

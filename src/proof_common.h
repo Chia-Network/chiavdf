@@ -27,8 +27,9 @@ integer HashPrime(std::vector<uint8_t> seed, int length, vector<int> bitmask) {
                     break;
             }
             picosha2::hash256(sprout.begin(), sprout.end(), hash.begin(), hash.end());
+            // Visual Studio doesn't like pointer arithmetic past the bounds
             blob.insert(blob.end(), hash.begin(),
-                std::min(hash.end(), hash.begin() + length / 8 - blob.size()));
+                hash.begin() + std::min(hash.size(), length / 8 - blob.size()));
         }
 
         assert ((int) blob.size() * 8 == length);

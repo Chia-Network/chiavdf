@@ -26,7 +26,9 @@ uint64_t GetBlock(uint64_t i, uint64_t k, uint64_t T, integer& B) {
     mpz_mul_2exp(res.impl, res.impl, k);
     res = res / B;
     auto res_vector = res.to_vector();
-    return res_vector[0];
+    // 0 value results in empty vector from mpz_export
+    // https://gmplib.org/list-archives/gmp-bugs/2009-July/001534.html
+    return res_vector.empty() ? 0 : res_vector[0];
 }
 
 form GenerateWesolowski(form &y, form &x_init,
@@ -47,28 +49,28 @@ form GenerateWesolowski(form &y, form &x_init,
     for (int64_t j = l - 1; j >= 0; j--) {
         x = FastPowFormNucomp(x, D, integer(1 << k), L, reducer);
 
-        std::vector<form> ys((1 << k));
-        for (uint64_t i = 0; i < (1UL << k); i++)
+        std::vector<form> ys((1ULL << k));
+        for (uint64_t i = 0; i < (1ULL << k); i++)
             ys[i] = form::identity(D);
 
-        for (uint64_t i = 0; i < ceil(double(num_iterations)  / (k * l)); i++) {
+        for (uint64_t i = 0; i < (num_iterations + k * l - 1)  / (k * l); i++) {
             if (num_iterations >= k * (i * l + j + 1)) {
                 uint64_t b = GetBlock(i*l + j, k, num_iterations, B);
                 nucomp_form(ys[b], ys[b], intermediates[i], D, L);
             }
         }
-        for (uint64_t b1 = 0; b1 < (1UL << k1); b1++) {
+        for (uint64_t b1 = 0; b1 < (1ULL << k1); b1++) {
             form z = form::identity(D);
-            for (uint64_t b0 = 0; b0 < (1UL << k0); b0++) {
-                nucomp_form(z, z, ys[b1 * (1 << k0) + b0], D, L);
+            for (uint64_t b0 = 0; b0 < (1ULL << k0); b0++) {
+                nucomp_form(z, z, ys[b1 * (1ULL << k0) + b0], D, L);
             }
             z = FastPowFormNucomp(z, D, integer(b1 * (1 << k0)), L, reducer);
             nucomp_form(x, x, z, D, L);
         }
-        for (uint64_t b0 = 0; b0 < (1UL << k0); b0++) {
+        for (uint64_t b0 = 0; b0 < (1ULL << k0); b0++) {
             form z = form::identity(D);
-            for (uint64_t b1 = 0; b1 < (1UL << k1); b1++) {
-                nucomp_form(z, z, ys[b1 * (1 << k0) + b0], D, L);
+            for (uint64_t b1 = 0; b1 < (1ULL << k1); b1++) {
+                nucomp_form(z, z, ys[b1 * (1ULL << k0) + b0], D, L);
             }
             z = FastPowFormNucomp(z, D, integer(b0), L, reducer);
             nucomp_form(x, x, z, D, L);

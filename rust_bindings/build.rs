@@ -28,23 +28,16 @@ fn main() {
 
     println!("cargo:rustc-link-lib=static=chiavdfc");
 
+    println!(
+        "cargo:rustc-link-search=native={}",
+        dst.join("build")
+            .join("lib")
+            .join("static")
+            .to_str()
+            .unwrap()
+    );
+
     if cfg!(target_os = "windows") {
-        let build_type = if cfg!(debug_assertions) {
-            "Debug"
-        } else {
-            "Release"
-        };
-
-        println!(
-            "cargo:rustc-link-search=native={}",
-            dst.join("build")
-                .join("lib")
-                .join("static")
-                .join(build_type)
-                .to_str()
-                .unwrap()
-        );
-
         println!("cargo:rustc-link-lib=static=mpir");
         println!(
             "cargo:rustc-link-search=native={}",
@@ -56,15 +49,6 @@ fn main() {
                 .unwrap()
         );
     } else {
-        println!(
-            "cargo:rustc-link-search=native={}",
-            dst.join("build")
-                .join("lib")
-                .join("static")
-                .to_str()
-                .unwrap()
-        );
-
         println!("cargo:rustc-link-lib=gmp");
     }
 

@@ -322,14 +322,13 @@ int main(int argc, char* argv[]) try {
       gcd_128_max_iter = 2;
     }
 
-    boost::asio::io_service io_service;
+    boost::asio::io_context io_context;
 
-    tcp::resolver resolver(io_service);
-    tcp::resolver::query query(tcp::v6(), argv[1], argv[2], boost::asio::ip::resolver_query_base::v4_mapped);
-    tcp::resolver::iterator iterator = resolver.resolve(query);
+    tcp::resolver resolver(io_context);
+    tcp::resolver::results_type endpoints = resolver.resolve(tcp::v6(), argv[1], argv[2], boost::asio::ip::resolver_query_base::v4_mapped);
 
-    tcp::socket s(io_service);
-    boost::asio::connect(s, iterator);
+    tcp::socket s(io_context);
+    boost::asio::connect(s, endpoints);
     fast_algorithm = false;
     two_weso = false;
     boost::system::error_code error;

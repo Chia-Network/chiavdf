@@ -51,6 +51,7 @@ struct vdf_proof {
 struct vdf_proof_opts {
     uint8_t max_aux_threads;
     uint8_t max_proof_threads;
+    uint8_t segment_threads;
 };
 
 struct vdf_state {
@@ -85,6 +86,7 @@ struct vdf_state {
     uint8_t idx;
     uint8_t max_aux_threads;
     uint8_t max_proof_threads;
+    uint8_t segment_threads;
     bool completed;
     bool stopping;
     bool init_done;

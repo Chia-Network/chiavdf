@@ -110,11 +110,12 @@ PYBIND11_MODULE(chiavdf, m) {
         std::string discriminant_copy(discriminant);
         std::string x_s_copy(x_s);
         std::string proof_blob_copy(proof_blob);
+        integer B;
         {
             py::gil_scoped_release release;
             uint8_t *proof_blob_ptr = reinterpret_cast<uint8_t *>(proof_blob_copy.data());
             int proof_blob_size = proof_blob_copy.size();
-            integer B = GetBFromProof(integer(discriminant_copy), (const uint8_t *)x_s_copy.data(), proof_blob_ptr, proof_blob_size, num_iterations, recursion);
+            B = GetBFromProof(integer(discriminant_copy), (const uint8_t *)x_s_copy.data(), proof_blob_ptr, proof_blob_size, num_iterations, recursion);
         }
         return B.to_string();
     });

@@ -69,7 +69,7 @@ jobs:
           INSTALLER_VERSION: "${{ env.RELEASE_TAG || format('0.0.1-{0}', github.run_id) }}"
           PLATFORM: "amd64"
         run: |
-          pip install j2cli
+          pip install jinjanator
           CLI_DEB_BASE="chiavdf-hw_$INSTALLER_VERSION-1_$PLATFORM"
           mkdir -p "dist/$CLI_DEB_BASE/usr/bin"
           mkdir -p "dist/$CLI_DEB_BASE/usr/lib"

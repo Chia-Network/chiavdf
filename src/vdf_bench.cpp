@@ -26,7 +26,6 @@ static void usage(const char *progname)
 int main(int argc, char **argv)
 {
     assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
-    init_gmp();
     set_rounding_mode();
 
     if (argc < 3) {

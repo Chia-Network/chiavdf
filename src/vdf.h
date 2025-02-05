@@ -727,6 +727,9 @@ class ProverManager {
                 if (!new_segment) {
                     provers[index].first->resume();
                 } else {
+                    if (best.is_empty) {
+                        throw std::runtime_error("Empty segment being spawned");
+                    }
                     if (!stopped) {
                         provers.emplace_back(
                             std::make_pair(

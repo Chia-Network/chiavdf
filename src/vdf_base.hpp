@@ -1,9 +1,9 @@
 #ifndef VDF_BASE_H
 #define VDF_BASE_H
 
-#if VDF_MODE==0
-    #define NDEBUG
-#endif
+// #if VDF_MODE==0
+//     #define NDEBUG
+// #endif
 
 #include "Reducer.h"
 #include <gmpxx.h>

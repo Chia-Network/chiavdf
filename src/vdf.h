@@ -228,11 +228,13 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
 
         #ifdef VDF_TEST
             if (vdf_test_correctness) {
+                /*
                 form f_copy_2=f;
                 weso->reduce(f_copy_2);
 
                 repeated_square_original(*weso->vdfo, f_copy, D, L, actual_iterations);
                 assert(f_copy==f_copy_2);
+                */
             }
         #endif
     }

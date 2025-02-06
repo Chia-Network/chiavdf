@@ -655,6 +655,9 @@ class ProverManager {
                         /*x=*/weso->checkpoints[last_appended[i] / (1 << 16)],
                         /*y=*/weso->checkpoints[(last_appended[i] + sg_length) / (1 << 16)]
                     );
+                    if (sg.y.a == integer(0) && sg.y.b == integer(0) && sg.y.c == integer(0)) {
+                        throw std::runtime_error("Null form");
+                    }
                     pending_segments[i].emplace_back(sg);
                     if (!warned && pending_segments[i].size() >= kWindowSize - 2) {
                         warned = true;

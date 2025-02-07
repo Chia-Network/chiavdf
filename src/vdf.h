@@ -639,6 +639,7 @@ class ProverManager {
             }
 
             if (fast_storage != NULL) {
+                throw std::runtime_error("using fast storage");
                 intermediates_iter = fast_storage -> GetFinishedSegment();
             } else {
                 intermediates_iter = vdf_iteration;

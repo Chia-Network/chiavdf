@@ -145,4 +145,14 @@ integer GetBFromProof(integer D, const uint8_t* x_s, const uint8_t* proof_blob, 
     return GetB(D, x, y);
 }
 
+bool CreateDiscriminantAndCheckProofOfTimeNWesolowski(std::vector<uint8_t> seed, uint32 disc_size_bits, const uint8_t* x_s, const uint8_t* proof_blob, int32_t proof_blob_len, uint64_t iterations, int32_t depth)
+{
+    integer D = CreateDiscriminant(
+            seed,
+            disc_size_bits
+        );
+
+    return CheckProofOfTimeNWesolowski(D, x_s, proof_blob, proof_blob_len, iterations, disc_size_bits, depth);
+} 
+
 #endif // VERIFIER_H

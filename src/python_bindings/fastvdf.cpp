@@ -61,6 +61,24 @@ PYBIND11_MODULE(chiavdf, m) {
         return is_valid;
     });
 
+    // Checks an N wesolowski proof.
+    m.def("create_discriminant_and_verify_n_wesolowski", [] (const py::bytes& challenge_hash,
+                                   const int discriminant_size_bits,
+                                   const string& x_s,
+                                   const string& proof_blob,
+                                   const uint64_t num_iterations,
+                                   const uint64_t recursion) {
+        std::string challenge_hash_str(challenge_hash);
+        std::vector<uint8_t> challenge_hash_bits = std::vector<uint8_t>(challenge_hash_str.begin(), challenge_hash_str.end());
+        std::string x_s_copy(x_s);
+        std::string proof_blob_copy(proof_blob);
+        bool is_valid = false;
+        {
+            py::gil_scoped_release release;
+            is_valid=CreateDiscriminantAndCheckProofOfTimeNWesolowski(challenge_hash_bits, discriminant_size_bits,(const uint8_t *)x_s_copy.data(), (const uint8_t *)proof_blob_copy.data(), proof_blob_copy.size(), num_iterations, recursion);
+        }
+        return is_valid;
+    });
 
     m.def("prove", [] (const py::bytes& challenge_hash, const string& x_s, int discriminant_size_bits, uint64_t num_iterations, const string& shutdown_file_path) {
         std::string challenge_hash_str(challenge_hash);

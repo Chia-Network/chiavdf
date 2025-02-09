@@ -19,7 +19,7 @@ std::vector<uint8_t> HexToBytes(const char *hex_proof) {
 
 void doit(int thread)
 {
-    std::ifstream infile("/Users/bill/downloads/newvdfs.txt");
+    std::ifstream infile("vdf.txt");
 
     std::string challenge;
     std::string discriminant_size;
@@ -30,9 +30,11 @@ void doit(int thread)
 
     int cnt=0;
 
-    while(cnt<20000)
+    while(true)
     {
         std::getline(infile, challenge);
+        if (infile.eof())
+            break;
         std::getline(infile, discriminant_size);
         std::getline(infile, input_el);
         std::getline(infile, output);

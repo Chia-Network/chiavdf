@@ -68,15 +68,6 @@ int main()
         threads.emplace_back(doit, i);
     }
     doit(9);
-    bunch0.join();
-    bunch1.join();
-    bunch2.join();
-    bunch3.join();
-    bunch4.join();
-    bunch5.join();
-    bunch6.join();
-    bunch7.join();
-    bunch8.join();
 
     return 0;
 }

@@ -57,7 +57,7 @@ if(BUILD_PYTHON)
   FetchContent_Declare(
     pybind11-src
     GIT_REPOSITORY https://github.com/pybind/pybind11.git
-    GIT_TAG        v2.11.1
+    GIT_TAG        v2.13.6
   )
   FetchContent_MakeAvailable(pybind11-src)
 
@@ -81,10 +81,17 @@ add_executable(verifier_test
   ${CMAKE_CURRENT_SOURCE_DIR}/verifier_test.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
 )
+add_executable(stress_test
+  ${CMAKE_CURRENT_SOURCE_DIR}/stress_test.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
+)
+
 target_link_libraries(verifier_test PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES})
+target_link_libraries(stress_test PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES})
 
 if(UNIX)
   target_link_libraries(verifier_test PRIVATE -pthread)
+  target_link_libraries(stress_test PRIVATE -pthread)
 endif()
 
 if(BUILD_CHIAVDFC)

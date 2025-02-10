@@ -17,7 +17,43 @@ std::vector<uint8_t> HexToBytes(const char *hex_proof) {
     return result;
 }
 
-void doit(int thread)
+struct job
+{
+    std::vector<uint8_t> challengebytes;
+    std::vector<uint8_t> inputbytes;
+    std::vector<uint8_t> outputbytes;
+    uint64 number_of_iterations;
+    uint32 discriminant_size;
+    uint8 witness_type;
+};
+
+void doit(int thread, std::vector<job> const& jobs)
+{
+    int cnt = 0;
+    for (job const& j : jobs)
+    {
+        bool const is_valid = CreateDiscriminantAndCheckProofOfTimeNWesolowski(
+            j.challengebytes,
+            j.discriminant_size,
+            j.inputbytes.data(),
+            j.outputbytes.data(),
+            j.outputbytes.size(),
+            j.number_of_iterations,
+            j.witness_type);
+        if (!is_valid) {
+            printf("thread %d cnt %d is valid %d %llu %d\n",
+                thread,
+                cnt,
+                is_valid,
+                j.number_of_iterations,
+                j.witness_type);
+            std::terminate();
+        }
+        cnt++;
+    }
+}
+
+int main()
 {
     std::ifstream infile("vdf.txt");
 
@@ -28,10 +64,9 @@ void doit(int thread)
     std::string number_of_iterations;
     std::string witness_type;
 
-    int cnt=0;
+    std::vector<job> jobs;
 
-    while(true)
-    {
+    while (true) {
         std::getline(infile, challenge);
         if (infile.eof())
             break;
@@ -41,8 +76,6 @@ void doit(int thread)
         std::getline(infile, number_of_iterations);
         std::getline(infile, witness_type);
 
-        if(cnt%10==thread)
-        {
         std::vector<uint8_t> challengebytes=HexToBytes(challenge.c_str());
         std::vector<uint8_t> inputbytes=HexToBytes(input_el.c_str());
         std::vector<uint8_t> outputbytes=HexToBytes(output.c_str());
@@ -50,38 +83,21 @@ void doit(int thread)
         char *endptr;
 
         uint64 noi=strtoll(number_of_iterations.c_str(),&endptr,10);
+        if (errno == ERANGE) std::terminate();
         uint32 ds=strtoll(discriminant_size.c_str(),&endptr,10);
+        if (errno == ERANGE) std::terminate();
         uint8 wt=strtoll(witness_type.c_str(),&endptr,10);
+        if (errno == ERANGE) std::terminate();
 
-        bool is_valid=CreateDiscriminantAndCheckProofOfTimeNWesolowski(challengebytes, ds, inputbytes.data(), outputbytes.data(), outputbytes.size(), noi, wt);
-
-        printf("thread %d cnt %d is valid %d %s %s %s\n",thread,cnt,is_valid,number_of_iterations.c_str(),witness_type.c_str(),challenge.c_str());
-        }
-        cnt++;
+        jobs.push_back({challengebytes, inputbytes, outputbytes, noi, ds, wt});
     }
-}
 
-int main()
-{
-    std::thread bunch0(doit,0);
-    std::thread bunch1(doit,1);
-    std::thread bunch2(doit,2);
-    std::thread bunch3(doit,3);
-    std::thread bunch4(doit,4);
-    std::thread bunch5(doit,5);
-    std::thread bunch6(doit,6);
-    std::thread bunch7(doit,7);
-    std::thread bunch8(doit,8);
-    doit(9);
-    bunch0.join();
-    bunch1.join();
-    bunch2.join();
-    bunch3.join();
-    bunch4.join();
-    bunch5.join();
-    bunch6.join();
-    bunch7.join();
-    bunch8.join();
+    std::vector<std::thread> threads;
+    for (int i = 0; i < 20; ++i)
+        threads.emplace_back(doit, i, std::ref(jobs));
+
+    for (auto& t : threads)
+        t.join();
 
     return 0;
 }

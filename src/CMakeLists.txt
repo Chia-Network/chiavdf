@@ -19,6 +19,8 @@ set(CMAKE_MODULE_PATH
 
 if(MSVC)
   add_compile_options(/EHsc)
+else()
+  add_compile_options("$<$<CONFIG:Debug>:-Og>")
 endif()
 
 if(WIN32)

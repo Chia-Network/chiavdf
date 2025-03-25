@@ -111,17 +111,13 @@ struct track_max_type {
     }
 };
 track_max_type track_max;
-//#define TRACK_MAX(data) track_max.add(#data " {" __func__ ":" "__LINE__" ")", (data).num_bits())
 #define TRACK_MAX(data) track_max.add(__LINE__, #data, (data).num_bits(), (data)<0)
 
-//typedef __mpz_struct mpz_t[1];
 typedef __mpz_struct mpz_struct;
 
 int mpz_num_bits_upper_bound(mpz_struct* v) {
     return mpz_size(v)*sizeof(mp_limb_t)*8;
 }
-
-static bool allow_integer_constructor=false; //don't want static integers because they use the wrong allocator
 
 //16 bytes
 struct integer {
@@ -132,7 +128,6 @@ struct integer {
     }
 
     inline integer() {
-        //assert(allow_integer_constructor);
         mpz_init(impl);
     }
 

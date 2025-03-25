@@ -1,7 +1,6 @@
 #ifndef THREADING_H
 #define THREADING_H
 
-#include "alloc.hpp"
 #include <atomic>
 
 //mp_limb_t is an unsigned integer

@@ -8,7 +8,9 @@ endif
 
 LDFLAGS += -flto $(NOPIE) -g
 LDLIBS += -lgmpxx -lgmp -lboost_system -pthread
-CXXFLAGS += -flto -std=c++1z -D VDF_MODE=0 -D FAST_MACHINE=1 -pthread $(NOPIE) -fvisibility=hidden
+VDF_MODE ?= 0
+CXXFLAGS += -flto -std=c++1z -D VDF_MODE=$(VDF_MODE) -D FAST_MACHINE=1 -pthread $(NOPIE) -fvisibility=hidden
+
 ifeq ($(UNAME),Darwin)
 CXXFLAGS += -D CHIAOSX=1
 endif

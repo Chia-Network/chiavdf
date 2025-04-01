@@ -17,4 +17,4 @@ cmake = "0.1.52"
 
 [dev-dependencies]
 hex = "0.4.3"
-hex-literal = "0.4.1"
+hex-literal = "1.0.0"

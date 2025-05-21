@@ -46,7 +46,7 @@ bool CheckProofOfTimeNWesolowski(integer D, const uint8_t* x_s, const uint8_t* p
     int form_size = BQFC_FORM_SIZE;
     int segment_len = 8 + B_bytes + form_size;
     // Enforce all invariants and bounds before the loop        
-    if (form_size <= 0 || (size_t)form_size > SIZE_MAX) return false;
+    if (form_size <= 0) return false;
     if (depth < 0 || proof_blob_len != 2 * form_size + depth * segment_len)
         return false;
     if (x_s == nullptr || proof_blob == nullptr)

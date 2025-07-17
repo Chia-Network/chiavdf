@@ -26,18 +26,6 @@ inline void mp_free_func(void* old_ptr, size_t) {
         std::free(static_cast<uint8_t*>(old_ptr) - 8);
 #endif
     }
-    else if ((std::uintptr_t(old_ptr) & 63) != 0) {
-        // this is a bit mysterious. Our allocator only allocates buffers
-        // aligned to 16 bytes + 8 (i.e. the address always ends with 8)
-        // The only other kind of buffer there should be, are the in-place
-        // buffers that are members of the mpz class. Those are specifically
-        // made to be 64 byte aligned (the assumed cache line size). If we're
-        // asked to free such buffer, we just ignore it, since it wasn't
-        // heap allocated. however, this isn't aligned to 64 bytes, so it may
-        // be a default allocated buffer. It's not supposed to happen, but if it
-        // does, we better free it
-        std::free(old_ptr);
-    }
 }
 
 inline void* mp_realloc_func(void* old_ptr, size_t old_size, size_t new_bytes) {

@@ -40,6 +40,8 @@ jobs:
             matrix: '3.11'
           - major-dot-minor: '3.12'
             matrix: '3.12'
+          - major-dot-minor: '3.13'
+            matrix: '3.13'
 
     steps:
       - name: Checkout repository

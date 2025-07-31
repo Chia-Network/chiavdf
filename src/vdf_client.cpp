@@ -119,7 +119,7 @@ void FinishSession(tcp::socket& sock) {
         PrintInfo("Stopped everything! Ready for the next challenge.");
 
         std::lock_guard<std::mutex> lock(socket_mutex);
-        boost::asio::write(sock, boost::asio::buffer("STOP", 4));
+        boost::asio::write(sock, boost::asio::buffer("\0\0\0\0", 4));
 
         char ack[5];
         memset(ack, 0x00, sizeof(ack));

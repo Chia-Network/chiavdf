@@ -65,7 +65,7 @@ jobs:
       uses: Chia-Network/actions/clean-workspace@main
 
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         fetch-depth: 0
 
@@ -76,7 +76,7 @@ jobs:
 
     - name: Checkout mpir for windows
       if: matrix.os.matrix == 'windows'
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         repository: Chia-Network/mpir_gc_x64
         fetch-depth: 1

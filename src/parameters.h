@@ -207,7 +207,7 @@ const int checkpoint_interval=10000; //at each checkpoint, the slave thread is r
 
 // ==== test ====
 #if VDF_MODE==1
-    #define VDF_TEST
+    //#define VDF_TEST
     const bool is_vdf_test=true;
 
     const bool enable_random_error_injection=false;

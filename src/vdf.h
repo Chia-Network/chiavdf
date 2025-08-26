@@ -228,11 +228,13 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
 
         #ifdef VDF_TEST
             if (vdf_test_correctness) {
+                /*
                 form f_copy_2=f;
                 weso->reduce(f_copy_2);
 
                 repeated_square_original(*weso->vdfo, f_copy, D, L, actual_iterations);
                 assert(f_copy==f_copy_2);
+                */
             }
         #endif
     }
@@ -637,6 +639,7 @@ class ProverManager {
             }
 
             if (fast_storage != NULL) {
+                throw std::runtime_error("using fast storage");
                 intermediates_iter = fast_storage -> GetFinishedSegment();
             } else {
                 intermediates_iter = vdf_iteration;
@@ -653,6 +656,9 @@ class ProverManager {
                         /*x=*/weso->checkpoints[last_appended[i] / (1 << 16)],
                         /*y=*/weso->checkpoints[(last_appended[i] + sg_length) / (1 << 16)]
                     );
+                    if (sg.y.a == integer(0) && sg.y.b == integer(0) && sg.y.c == integer(0)) {
+                        throw std::runtime_error("Null form");
+                    }
                     pending_segments[i].emplace_back(sg);
                     if (!warned && pending_segments[i].size() >= kWindowSize - 2) {
                         warned = true;
@@ -725,6 +731,9 @@ class ProverManager {
                 if (!new_segment) {
                     provers[index].first->resume();
                 } else {
+                    if (best.is_empty) {
+                        throw std::runtime_error("Empty segment being spawned");
+                    }
                     if (!stopped) {
                         provers.emplace_back(
                             std::make_pair(

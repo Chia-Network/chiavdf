@@ -36,7 +36,7 @@ jobs:
       run: |
         sudo apt-get install libgmp-dev libboost-python-dev libpython3-dev libboost-system-dev build-essential -y
         cd src
-        make ${{ matrix.config }} -f Makefile.vdf-client
+        VDF_MODE=1 make ${{ matrix.config }} -f Makefile.vdf-client
 
     - name: Build vdf-client on Mac
       if: startsWith(matrix.os, 'mac')

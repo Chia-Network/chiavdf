@@ -7,7 +7,7 @@ NOPIE = -no-pie
 endif
 
 LDFLAGS += -flto $(NOPIE) -g
-LDLIBS += -lgmpxx -lgmp -lboost_system -pthread
+LDLIBS += -lgmpxx -lgmp -pthread
 CXXFLAGS += -flto -std=c++1z -D VDF_MODE=0 -D FAST_MACHINE=1 -pthread $(NOPIE) -fvisibility=hidden
 ifeq ($(UNAME),Darwin)
 CXXFLAGS += -D CHIAOSX=1

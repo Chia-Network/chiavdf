@@ -127,7 +127,7 @@ void clear_vdf_client(struct vdf_client *client)
 void stop_conn(struct vdf_client *client, struct vdf_conn *conn)
 {
     if (conn->sock >= 0) {
-        write_data(conn, "STOP", 4);
+        write_data(conn, "\0\0\0\0", 4);
     }
     if (conn->vdf.init_done) {
         hw_stop_proof(&conn->vdf);

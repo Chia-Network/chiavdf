@@ -21,7 +21,7 @@ jobs:
         config: [optimized=1, TSAN=1, ASAN=1]
 
     env:
-      CXX: g++-15
+      CXX: ${{ contains(matrix.os, 'macos') && 'g++-15' || 'g++' }}
 
     steps:
     - name: Checkout code

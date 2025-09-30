@@ -41,7 +41,7 @@ jobs:
     - name: Build vdf-client on Mac
       if: startsWith(matrix.os, 'mac')
       run: |
-        brew install boost gmp
+        brew install boost gmp gcc
         cd src
         g++ --version
         make ${{ matrix.config }} -f Makefile.vdf-client

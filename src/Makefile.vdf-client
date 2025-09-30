@@ -35,7 +35,8 @@ clean:
 	rm -f *.o hw/*.o $(BINS) compile_asm emu_hw_test hw_test hw_vdf_client emu_hw_vdf_client
 
 $(BINS) avx512_test: %: %.o lzcnt.o asm_compiled.o avx2_asm_compiled.o avx512_asm_compiled.o
-    ${CXX} --version && $(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+	${CXX} --version
+	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 $(addsuffix .o,$(BINS)) avx512_test.o: CXXFLAGS += $(OPT_CFLAGS)
 

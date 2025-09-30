@@ -21,6 +21,7 @@ jobs:
         config: [optimized=1, TSAN=1, ASAN=1]
 
     env:
+      LDFLAGS: ${{ contains(matrix.os, 'macos') && '-L/usr/local/lib' || ' ' }}
       CXX: ${{ contains(matrix.os, 'macos') && 'g++-15' || 'g++' }}
 
     steps:

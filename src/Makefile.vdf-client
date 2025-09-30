@@ -9,7 +9,6 @@ endif
 LDFLAGS += -flto $(NOPIE) -g
 LDLIBS += -lgmpxx -lgmp -pthread
 CXX = g++
-GARBAGE := $(shell g++ --version)
 CXXFLAGS += -flto -std=c++1z -D VDF_MODE=0 -D FAST_MACHINE=1 -pthread $(NOPIE) -fvisibility=hidden
 ifeq ($(UNAME),Darwin)
 CXXFLAGS += -D CHIAOSX=1
@@ -36,7 +35,6 @@ clean:
 	rm -f *.o hw/*.o $(BINS) compile_asm emu_hw_test hw_test hw_vdf_client emu_hw_vdf_client
 
 $(BINS) avx512_test: %: %.o lzcnt.o asm_compiled.o avx2_asm_compiled.o avx512_asm_compiled.o
-	${CXX} --version
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 $(addsuffix .o,$(BINS)) avx512_test.o: CXXFLAGS += $(OPT_CFLAGS)

@@ -19,11 +19,7 @@ jobs:
       matrix:
         os: [macos-13, macos-13-intel, macos-15-intel, ubuntu-latest]
         config: [optimized=1, TSAN=1, ASAN=1]
-
-    env:
-      LDFLAGS: ${{ contains(matrix.os, 'macos') && '-L/usr/local/lib' || ' ' }}
-      CXX: ${{ contains(matrix.os, 'macos') && 'g++-15' || 'g++' }}
-
+        
     steps:
     - name: Checkout code
       uses: actions/checkout@v5
@@ -45,9 +41,8 @@ jobs:
     - name: Build vdf-client on Mac
       if: startsWith(matrix.os, 'mac')
       run: |
-        brew install boost gmp gcc
+        brew install boost gmp
         cd src
-        "${CXX}" --version
         make ${{ matrix.config }} -f Makefile.vdf-client
 
     - name: Test vdf-client

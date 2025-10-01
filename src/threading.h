@@ -456,12 +456,12 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz {
     bool operator>(const mpz_struct* t) const { return mpz_cmp(*this, t)>0; }
     bool operator!=(const mpz_struct* t) const { return mpz_cmp(*this, t)!=0; }
 
-    bool operator<(int64 i) const { return mpz_cmp_si(*this, i)<0; }
-    bool operator<=(int64 i) const { return mpz_cmp_si(*this, i)<=0; }
-    bool operator==(int64 i) const { return mpz_cmp_si(*this, i)==0; }
-    bool operator>=(int64 i) const { return mpz_cmp_si(*this, i)>=0; }
-    bool operator>(int64 i) const { return mpz_cmp_si(*this, i)>0; }
-    bool operator!=(int64 i) const { return mpz_cmp_si(*this, i)!=0; }
+    bool operator<(int64 i) const { return mpz_cmp_si(this->_(), i)<0; }
+    bool operator<=(int64 i) const { return mpz_cmp_si(this->_(), i)<=0; }
+    bool operator==(int64 i) const { return mpz_cmp_si(this->_(), i)==0; }
+    bool operator>=(int64 i) const { return mpz_cmp_si(this->_(), i)>=0; }
+    bool operator>(int64 i) const { return mpz_cmp_si(this->_(), i)>0; }
+    bool operator!=(int64 i) const { return mpz_cmp_si(this->_(), i)!=0; }
 
     bool operator<(uint64 i) const { return mpz_cmp_ui(_(), i)<0; }
     bool operator<=(uint64 i) const { return mpz_cmp_ui(_(), i)<=0; }

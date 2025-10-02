@@ -21,8 +21,7 @@ yum -y install epel-release \
 && echo "boost-devel and lzip installed" \
 && curl -L https://ftp.gnu.org/gnu/gmp/gmp-6.3.0.tar.lz | tar x --lzip \
 && cd gmp-6.3.0 \
-&& patch -p1 < ../src/lib/gmp-patch-6.3.0/longlong.patch  \
-&& patch -p1 < ../src/lib/gmp-patch-6.3.0/compat.patch \
+&& patch < ../src/lib/gmp-6.3.0.diff  \
 && ./configure --enable-fat --enable-cxx \
 && make && make install && cd .. && rm -rf gmp-6.3.0 \
 && cmake --version \

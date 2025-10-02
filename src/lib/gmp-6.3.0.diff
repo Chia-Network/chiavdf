@@ -1,6 +1,25 @@
---- ./longlong.h	2020-11-14 10:45:09
-+++ ../chiavdf/src/lib/gmp-patch-6.2.1/longlong.h	2024-04-05 09:45:02
-@@ -1040,6 +1040,86 @@
+diff --git a/compat.c b/compat.c
+index b4b44ce..3f563dd 100644
+--- a/compat.c
++++ b/compat.c
+@@ -31,6 +31,12 @@ see https://www.gnu.org/licenses/.  */
+ #include <stdio.h>
+ #include "gmp-impl.h"
+ 
++/* RUNTIMECPUID */
++int bCheckedBMI = 0;
++int bBMI1 = 0;
++int bBMI2 = 0;
++int bCheckedLZCNT = 0;
++int bLZCNT = 0;
+ 
+ /* mpn_divexact_by3 was a function in gmp 3.0.1, but as of gmp 3.1 it's a
+    macro calling mpn_divexact_by3c.  */
+diff --git a/longlong.h b/longlong.h
+index be1c3cb..be63698 100644
+--- a/longlong.h
++++ b/longlong.h
+@@ -1034,6 +1034,86 @@ extern UWtype __MPN(udiv_qrnnd) (UWtype *, UWtype, UWtype, UWtype);
  #endif /* 80x86 */
  
  #if defined (__amd64__) && W_TYPE_SIZE == 64
@@ -87,7 +106,7 @@
  #define add_ssaaaa(sh, sl, ah, al, bh, bl) \
    __asm__ ("addq %5,%q1\n\tadcq %3,%q0"					\
  	   : "=r" (sh), "=&r" (sl)					\
-@@ -1050,61 +1130,52 @@
+@@ -1044,61 +1124,52 @@ extern UWtype __MPN(udiv_qrnnd) (UWtype *, UWtype, UWtype, UWtype);
  	   : "=r" (sh), "=&r" (sl)					\
  	   : "0" ((UDItype)(ah)), "rme" ((UDItype)(bh)),		\
  	     "1" ((UDItype)(al)), "rme" ((UDItype)(bl)))
@@ -126,19 +145,6 @@
 -    /* source must be a 64-bit registers, hence cast and %q.         */	\
 -    __asm__ ("rep;bsr\t%1, %q0" : "=r" (count) : "rm" ((UDItype)(x)));	\
 -  } while (0)
--#define COUNT_LEADING_ZEROS_0 64
--#else
--#define count_leading_zeros(count, x)					\
--  do {									\
--    UDItype __cbtmp;							\
--    ASSERT ((x) != 0);							\
--    __asm__ ("bsr\t%1,%0" : "=r" (__cbtmp) : "rm" ((UDItype)(x)));	\
--    (count) = __cbtmp ^ 63;						\
--  } while (0)
--#endif
--
--#if HAVE_HOST_CPU_bd2 || HAVE_HOST_CPU_bd3 || HAVE_HOST_CPU_bd4 \
--  || HAVE_HOST_CPU_zen || HAVE_HOST_CPU_jaguar
 +  if(hasLZCNT()) {                                                      \
 +    do {									\
 +      /* This is lzcnt, spelled for older assemblers.  Destination and */	\
@@ -153,8 +159,19 @@
 +      (count) = __cbtmp ^ 63;                                             \
 +    } while (0);                                                         \
 +  }
-+#define COUNT_LEADING_ZEROS_0 64
-+
+ #define COUNT_LEADING_ZEROS_0 64
+-#else
+-#define count_leading_zeros(count, x)					\
+-  do {									\
+-    UDItype __cbtmp;							\
+-    ASSERT ((x) != 0);							\
+-    __asm__ ("bsr\t%1,%0" : "=r" (__cbtmp) : "rm" ((UDItype)(x)));	\
+-    (count) = __cbtmp ^ 63;						\
+-  } while (0)
+-#endif
+ 
+-#if HAVE_HOST_CPU_bd2 || HAVE_HOST_CPU_bd3 || HAVE_HOST_CPU_bd4 \
+-  || HAVE_HOST_CPU_zen || HAVE_HOST_CPU_jaguar
  #define count_trailing_zeros(count, x)					\
 -  do {									\
 -    /* This is tzcnt, spelled for older assemblers.  Destination and */	\

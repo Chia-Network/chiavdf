@@ -1,5 +1,5 @@
 --- ./compat.c	2020-11-14 10:45:09
-+++ ../chiavdf/src/lib/gmp-patch-6.2.1/compat.c	2024-04-05 09:45:02
++++ ./compat.c	2024-04-05 09:45:02
 @@ -31,6 +31,12 @@
  #include <stdio.h>
  #include "gmp-impl.h"

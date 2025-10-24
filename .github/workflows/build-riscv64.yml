@@ -32,8 +32,6 @@ jobs:
             emoji: 🐧
             runs-on: [ubuntu-latest]
         python:
-          - major-dot-minor: '3.9'
-            matrix: '3.9'
           - major-dot-minor: '3.10'
             matrix: '3.10'
           - major-dot-minor: '3.11'
@@ -42,7 +40,8 @@ jobs:
             matrix: '3.12'
           - major-dot-minor: '3.13'
             matrix: '3.13'
-
+          - major-dot-minor: '3.14'
+            matrix: '3.14'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5

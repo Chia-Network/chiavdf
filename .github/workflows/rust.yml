@@ -65,7 +65,7 @@ jobs:
             matrix: macos
             runs-on:
               arm: [macos-13-arm64]
-              intel: [macos-13]
+              intel: [macos-13-intel]
             cibw-archs-macos:
               arm: arm64
               intel: x86_64
@@ -100,7 +100,7 @@ jobs:
 
       - name: Setup library path on MacOS
         if: matrix.os.name == 'macOS'
-        run: echo "LIBRARY_PATH=/opt/homebrew/lib:$LIBRARY_PATH" >> $GITHUB_ENV
+        run: echo "LIBRARY_PATH=$(brew --prefix)/lib:$LIBRARY_PATH" >> $GITHUB_ENV
 
       - name: Install MPIR on Windows
         if: matrix.os.name == 'Windows'

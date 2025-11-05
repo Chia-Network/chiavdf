@@ -100,7 +100,7 @@ jobs:
 
       - name: Setup library path on MacOS
         if: matrix.os.name == 'macOS'
-        run: echo "LIBRARY_PATH=/opt/homebrew/lib:$LIBRARY_PATH" >> $GITHUB_ENV
+        run: echo "LIBRARY_PATH=$(brew --prefix)/lib:$LIBRARY_PATH" >> $GITHUB_ENV
 
       - name: Install MPIR on Windows
         if: matrix.os.name == 'Windows'

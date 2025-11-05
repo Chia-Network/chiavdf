@@ -9,7 +9,7 @@ homepage = "https://github.com/Chia-Network/chiavdf"
 repository = "https://github.com/Chia-Network/chiavdf"
 
 [dependencies]
-link-cplusplus = "1.0.10"
+link-cplusplus = "1.0.12"
 
 [build-dependencies]
 bindgen = "0.72.0"

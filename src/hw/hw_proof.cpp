@@ -6,7 +6,7 @@
 #include <cstdlib>
 #include <unistd.h>
 
-static const uint32_t g_chkp_thres = 1000000;
+static const uint32_t g_chkp_thres = 500000;
 static const uint32_t g_skip_thres = 10;
 
 void report_bad_vdf_value(struct vdf_state *vdf, struct vdf_value *val)
@@ -297,13 +297,47 @@ bool hw_proof_should_queue(struct vdf_state *vdf, uint64_t iters)
     return iters < vdf->proofs[last_queued_idx].iters;
 }
 
+void hw_proof_queue_proofs(struct vdf_state *vdf, uint64_t iters, uint16_t prev)
+{
+    uint32_t s = vdf->segment_threads;
+    uint32_t chkp_thres = g_chkp_thres * s;
+    double f = 1.0 / s;
+    // Calculate the share of the total iterations for the first proof segment
+    // The formula below is for a 2-segment case
+    double x = (f + 1) / (2 * f + 1);
+
+    if (iters > chkp_thres) {
+        // At least 2 segments are needed, find length of the first segment
+        uint64_t chkp_iters = iters * x;
+        if (iters - chkp_iters > chkp_thres) {
+            // Three segments are needed
+            uint64_t chkp2_iters;
+            double p = f + 1.0;
+            double k = p / f;
+            // Share of the total iterations for the second segment (of 3)
+            double y = p / (k * p + 2.0 * f + 1.0);
+            x = y * k;
+
+            chkp_iters = iters * x;
+            chkp_iters = chkp_iters / vdf->interval * vdf->interval;
+            prev = hw_queue_proof(vdf, chkp_iters, prev, 0);
+
+            chkp2_iters = iters * y;
+            iters -= chkp_iters;
+            chkp_iters = chkp2_iters;
+        }
+        chkp_iters = chkp_iters / vdf->interval * vdf->interval;
+        prev = hw_queue_proof(vdf, chkp_iters, prev, 0);
+        iters -= chkp_iters;
+    }
+    hw_queue_proof(vdf, iters, prev, HW_VDF_PROOF_FLAG_IS_REQ);
+}
+
 void hw_proof_process_req(struct vdf_state *vdf)
 {
     uint64_t iters;
     uint64_t req_iters;
     uint64_t base_iters = 0;
-    uint64_t chkp_iters;
-    uint32_t chkp_div = 4, chkp_mul = 3;
     uint8_t max_chkp_segments = 64 - 3;
     int i;
     uint16_t prev = HW_VDF_PROOF_NONE;
@@ -348,27 +382,7 @@ void hw_proof_process_req(struct vdf_state *vdf)
 
     iters = req_iters - base_iters;
 
-    if (iters > g_chkp_thres) {
-        // Split iters as [75%, 25%]
-        chkp_iters = iters * chkp_mul / chkp_div;
-        if (iters - chkp_iters > g_chkp_thres) {
-            // Split iters as [69%, 23%, 8%]
-            uint32_t chkp2_mul[] = { 69, 69 + 23 };
-            uint64_t chkp2_iters;
-
-            chkp_iters = iters * chkp2_mul[0] / 100;
-            chkp_iters = chkp_iters / vdf->interval * vdf->interval;
-            prev = hw_queue_proof(vdf, chkp_iters, prev, 0);
-
-            chkp2_iters = iters * chkp2_mul[1] / 100 - chkp_iters;
-            iters -= chkp_iters;
-            chkp_iters = chkp2_iters;
-        }
-        chkp_iters = chkp_iters / vdf->interval * vdf->interval;
-        prev = hw_queue_proof(vdf, chkp_iters, prev, 0);
-        iters -= chkp_iters;
-    }
-    hw_queue_proof(vdf, iters, prev, HW_VDF_PROOF_FLAG_IS_REQ);
+    hw_proof_queue_proofs(vdf, iters, prev);
 
     {
         ProofCmp cmp(vdf->proofs);
@@ -431,7 +445,7 @@ void hw_proof_process_work(struct vdf_state *vdf)
                     vdf->idx, i, iters, proof->seg_iters, is_chkp ? " [checkpoint]" : "");
             vdf->queued_proofs.erase(vdf->queued_proofs.begin());
             vdf->aux_threads_busy |= 1UL << i;
-            vdf->n_proof_threads += PARALLEL_PROVER_N_THREADS;
+            vdf->n_proof_threads += vdf->segment_threads;
             proof->flags |= HW_VDF_PROOF_FLAG_STARTED;
             std::thread(hw_compute_proof, vdf, idx, proof, i).detach();
         }
@@ -569,7 +583,7 @@ void hw_stop_proof(struct vdf_state *vdf)
 class HwProver : public ParallelProver {
   public:
     HwProver(Segment segm, integer D, struct vdf_state *vdf)
-        : ParallelProver(segm, D)
+        : ParallelProver(segm, D, vdf->segment_threads)
     {
         this->vdf = vdf;
         k = FindK(segm.length);
@@ -677,7 +691,7 @@ void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof 
         Segment seg(start_iters, proof_iters - start_iters, x, y);
         HwProver prover(seg, vdf->D, vdf);
 
-        if (!is_chkp && seg.length > g_chkp_thres) {
+        if (!is_chkp && seg.length > g_chkp_thres * vdf->segment_threads) {
             LOG_INFO("VDF %d: Warning: too long final proof segment length=%lu",
                     vdf->idx, seg.length);
         }
@@ -727,7 +741,7 @@ void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof 
 out:
     if (thr_idx < vdf->max_aux_threads) {
         vdf->aux_threads_busy &= ~(1UL << thr_idx);
-        vdf->n_proof_threads -= PARALLEL_PROVER_N_THREADS;
+        vdf->n_proof_threads -= vdf->segment_threads;
     }
 }
 
@@ -805,6 +819,10 @@ void init_vdf_state(struct vdf_state *vdf, struct vdf_proof_opts *opts, const ch
     vdf->max_proof_threads = vdf->max_aux_threads - (vdf->max_aux_threads + 7) / 8;
     if (opts && opts->max_proof_threads) {
         vdf->max_proof_threads = opts->max_proof_threads;
+    }
+    vdf->segment_threads = 2;
+    if (opts && opts->segment_threads) {
+        vdf->segment_threads = opts->segment_threads;
     }
 
     mpz_set_str(vdf->D.impl, d_str, 0);

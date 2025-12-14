@@ -11,10 +11,10 @@ PYBIND11_MODULE(chiavdf, m) {
     // Creates discriminant.
     m.def("create_discriminant", [] (const py::bytes& challenge_hash, int discriminant_size_bits) {
         std::string challenge_hash_str(challenge_hash);
+        auto challenge_hash_bits = std::vector<uint8_t>(challenge_hash_str.begin(), challenge_hash_str.end());
         integer D;
         {
             py::gil_scoped_release release;
-            auto challenge_hash_bits = std::vector<uint8_t>(challenge_hash_str.begin(), challenge_hash_str.end());
             D = CreateDiscriminant(
                 challenge_hash_bits,
                 discriminant_size_bits

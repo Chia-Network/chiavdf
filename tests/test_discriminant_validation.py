@@ -32,4 +32,3 @@ def test_discriminant_size_bits_valid():
     # If we get here without an exception, the test passes
     assert discriminant is not None
     assert len(discriminant) > 0  # Should return a string representation of the discriminant
-

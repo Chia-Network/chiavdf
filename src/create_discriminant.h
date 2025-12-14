@@ -32,7 +32,17 @@ inline integer CreateDiscriminant(const uint8_t* challenge,
         throw std::invalid_argument("challenge_length must be positive");
     }
     
-    // Original implementation continues here...
+    // Check 4: Validate that discriminant_size_bits is a multiple of 8 (required by HashPrime)
+    if (discriminant_size_bits % 8 != 0) {
+        throw std::invalid_argument(
+            "discriminant_size_bits must be a multiple of 8 (got " + 
+            std::to_string(discriminant_size_bits) + ")"
+        );
+    }
+    
+    // Convert challenge pointer to vector and call HashPrime
+    std::vector<uint8_t> challenge_vector(challenge, challenge + challenge_length);
+    return HashPrime(challenge_vector, discriminant_size_bits, {0, 1, 2, discriminant_size_bits - 1}) * integer(-1);
 }
 integer CreateDiscriminant(std::vector<uint8_t>& seed, int length = 1024) {
     // INPUT VALIDATION - Fix for issue #282

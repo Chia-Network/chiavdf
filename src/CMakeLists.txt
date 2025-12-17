@@ -1,6 +1,7 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 3.14 FATAL_ERROR)
 option(BUILD_CHIAVDFC "Build the chiavdfc shared library" OFF)
 option(BUILD_PYTHON "Build the python bindings for chiavdf" ON)
+option(HARDENING "Enable hardening" OFF)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -107,6 +108,11 @@ if(BUILD_CHIAVDFC)
   )
   target_link_libraries(chiavdfc_shared ${GMP_LIBRARIES} ${GMPXX_LIBRARIES})
   target_link_libraries(chiavdfc_static ${GMP_LIBRARIES} ${GMPXX_LIBRARIES})
+
+    if (HARDENING)
+        target_compile_definitions(chiavdfc_shared PRIVATE "_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG")
+        target_compile_definitions(chiavdfc_static PRIVATE "_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG")
+    endif()
 
   set_target_properties(chiavdfc_shared PROPERTIES
           OUTPUT_NAME chiavdfc

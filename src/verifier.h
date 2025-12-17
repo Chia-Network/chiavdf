@@ -43,6 +43,7 @@ void VerifyWesolowskiProof(integer &D, form x, form y, form proof, uint64_t iter
 
 bool CheckProofOfTimeNWesolowski(integer D, const uint8_t* x_s, const uint8_t* proof_blob, int32_t proof_blob_len, uint64_t iterations, uint64 disc_size_bits, int32_t depth)
 {
+    printf("CheckProofOfTimeNWesolowski()\n");
     int form_size = BQFC_FORM_SIZE;
     int segment_len = 8 + B_bytes + form_size;
     // Enforce all invariants and bounds before the loop        
@@ -54,11 +55,14 @@ bool CheckProofOfTimeNWesolowski(integer D, const uint8_t* x_s, const uint8_t* p
 
     // All accesses in the loop are now safe
     int i = proof_blob_len - segment_len;
+    printf("CheckProofOfTimeNWesolowski calls initial DeserializeForm()\n");
     form x = DeserializeForm(D, x_s, form_size);
 
     bool is_valid = false;
     for (; i >= 2 * form_size; i -= segment_len) {
         uint64_t segment_iters = BytesToInt64(&proof_blob[i]);
+        printf("CheckProofOfTimeNWesolowski calls DeserializeForm() in form_size loop\n");
+
         form proof = DeserializeForm(D, &proof_blob[i + 8 + B_bytes], form_size);
         integer B(&proof_blob[i + 8], B_bytes);
         form xnew;
@@ -71,6 +75,8 @@ bool CheckProofOfTimeNWesolowski(integer D, const uint8_t* x_s, const uint8_t* p
         }
         iterations -= segment_iters;
     }
+
+    printf("CheckProofOfTimeNWesolowski calls DeserializeForm() for VerifyWesolowskiProof()\n");
 
     // Final forms are guaranteed to be in-bounds
     VerifyWesolowskiProof(D, x,

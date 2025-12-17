@@ -74,7 +74,7 @@ def invoke_make(**kwargs):
     subprocess.check_output("make -C src -f Makefile.vdf-client", shell=True)
 
 
-BUILD_VDF_CLIENT = os.getenv("BUILD_VDF_CLIENT", "Y") == "Y"
+BUILD_VDF_CLIENT = os.getenv("BUILD_VDF_CLIENT", "Y") == "N"
 BUILD_VDF_BENCH = os.getenv("BUILD_VDF_BENCH", "N") == "Y"
 
 

@@ -51,6 +51,7 @@ int bqfc_compr(struct qfb_c *out_c, mpz_t a, mpz_t b)
 
 int bqfc_decompr(mpz_t out_a, mpz_t out_b, const mpz_t D, const struct qfb_c *c)
 {
+    printf("bqfc_decompr()\n");
     int ret = 0;
     mpz_t tmp, t, t_inv, d;
 
@@ -69,11 +70,13 @@ int bqfc_decompr(mpz_t out_a, mpz_t out_b, const mpz_t D, const struct qfb_c *c)
     }
 
     if (mpz_sgn(c->a) == 0) {
+        printf("wjb5\n");
         ret = -1;
         goto out;
     }
     mpz_gcdext(tmp, t_inv, NULL, t, c->a);
     if (mpz_cmp_ui(tmp, 1)) {
+        printf("bqfc_decompr() mpz_gcdext() result mpz_cmp_ui() with 1 is non zero\n");
         ret = -1;
         goto out;
     }
@@ -87,6 +90,7 @@ int bqfc_decompr(mpz_t out_a, mpz_t out_b, const mpz_t D, const struct qfb_c *c)
     mpz_mul(tmp, tmp, d);
     mpz_tdiv_r(tmp, tmp, c->a);
     if (!mpz_perfect_square_p(tmp)) {
+        printf("wjb7\n");
         ret = -1;
         goto out;
     }
@@ -120,10 +124,17 @@ static void bqfc_export(uint8_t *out_str, size_t *offset, size_t size,
 {
     size_t bytes;
 
+
     // mpz_export can overflow out_str if reduction bug but this should never happen
     mpz_export(&out_str[*offset], &bytes, -1, 1, 0, 0, n);
+    printf("bqfc_export() offset %d bytes %d offset+bytes %d (out of %d) buffer size %d\n",*offset,bytes,*offset+bytes,BQFC_FORM_SIZE,size);
+    if (*offset+bytes>BQFC_FORM_SIZE)
+        printf("BQFC_FORM_SIZE overflow\n");
     if (bytes > size)
+    {
+        printf("call param overflow\n");
         gmp_printf("bqfc_export overflow offset %d size %d n %Zd\n", *offset, size, n);
+    }
     if (bytes < size)
         memset(&out_str[*offset + bytes], 0, size - bytes);
     *offset += size;
@@ -237,9 +248,17 @@ int bqfc_serialize(uint8_t *out_str, mpz_t a, mpz_t b, size_t d_bits)
     mpz_inits(f_c.a, f_c.t, f_c.g, f_c.b0, NULL);
     ret = bqfc_compr(&f_c, a, b);
     if (ret)
+    {
+        printf("wjb1\n");
         goto out;
+    }
 
     ret = bqfc_serialize_only(out_str, &f_c, d_bits);
+    if (ret)
+    {
+        printf("wjb2\n");
+    }
+
     if (valid_size != BQFC_FORM_SIZE)
         memset(&out_str[valid_size], 0, BQFC_FORM_SIZE - valid_size);
 out:
@@ -250,10 +269,14 @@ out:
 static int bqfc_verify_canon(mpz_t a, mpz_t b, const uint8_t *str, size_t d_bits)
 {
     uint8_t canon_str[BQFC_FORM_SIZE];
+    printf("bqfc_verify_canon()\n");
     int ret = bqfc_serialize(canon_str, a, b, d_bits);
 
     if (ret)
+    {
+        printf("bqfc_verify_canon failed\n");
         return ret;
+    }
 
     return memcmp(canon_str, str, BQFC_FORM_SIZE);
 }
@@ -263,27 +286,43 @@ int bqfc_deserialize(mpz_t out_a, mpz_t out_b, const mpz_t D, const uint8_t *str
     struct qfb_c f_c;
     int ret;
 
+    printf("bqfc_deserialize()\n");
     if (size != BQFC_FORM_SIZE)
+    {
+        printf("wjb1\n");
         return -1;
+    }
 
     /* "Identity" (1, 1) and "generator" (2, 1) forms are serialized with a
      * special flag set in the first byte. */
     if (str[0] & (BQFC_IS_1 | BQFC_IS_GEN)) {
         mpz_set_ui(out_a, str[0] & BQFC_IS_GEN ? 2 : 1);
         mpz_set_ui(out_b, 1);
+        printf("bqfc_deserialize() early success, not calling bqfc_verify_canon() str[0] & (BQFC_IS_1 | BQFC_IS_GEN)\n");
         return 0;
     }
 
     mpz_inits(f_c.a, f_c.t, f_c.g, f_c.b0, NULL);
     ret = bqfc_deserialize_only(&f_c, str, d_bits);
     if (ret)
+    {
+        printf("wjb2\n");
         goto out;
+    }
 
     ret = bqfc_decompr(out_a, out_b, D, &f_c);
     if (ret)
+    {
+        printf("bqfc_deserialize() bqfc_decompr() returns non zero\n");
         goto out;
+    }
 
     ret = bqfc_verify_canon(out_a, out_b, str, d_bits);
+    if (ret)
+    {
+        printf("wjb4\n");
+    }
+
 out:
     mpz_clears(f_c.a, f_c.t, f_c.g, f_c.b0, NULL);
     return ret;

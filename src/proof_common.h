@@ -54,6 +54,7 @@ std::vector<unsigned char> SerializeForm(form &y, int d_bits)
 form DeserializeForm(const integer &D, const uint8_t *bytes, size_t size)
 {
     integer a, b;
+    printf("DeserializeForm()\n");
     if (bqfc_deserialize(a.impl, b.impl, D.impl, bytes, size, D.num_bits())) {
         throw std::runtime_error("Deserializing compressed form failed");
     }

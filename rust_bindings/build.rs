@@ -1,4 +1,5 @@
 use std::env;
+use std::fs;
 use std::path::PathBuf;
 
 use cmake::Config;
@@ -9,6 +10,9 @@ fn main() {
     println!("cargo:rerun-if-changed=../src/c_bindings/c_wrapper.cpp");
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+
+    let is_fuzzing = std::env::var("CARGO_CFG_FUZZING").is_ok();
+    let is_debug_build = std::env::var_os("OPT_LEVEL").unwrap_or("".into()) == "0";
 
     let mut src_dir = manifest_dir.join("cpp");
     if !src_dir.exists() {
@@ -24,6 +28,14 @@ fn main() {
         .define("BUILD_CHIAVDFC", "ON")
         .env("BUILD_VDF_CLIENT", "N")
         .define("BUILD_PYTHON", "OFF")
+        .define(
+            "HARDENING",
+            if is_fuzzing || is_debug_build {
+                "ON"
+            } else {
+                "OFF"
+            },
+        )
         .build();
 
     println!("cargo:rustc-link-lib=static=chiavdfc");
@@ -48,6 +60,14 @@ fn main() {
                 .to_str()
                 .unwrap()
         );
+    } else if cfg!(target_os = "macos") {
+        println!("cargo:rustc-link-lib=static=gmp");
+        let homebrew_path = if fs::metadata("/opt/homebrew").is_ok() {
+            "/opt/homebrew/lib"
+        } else {
+            "/usr/local/lib"
+        };
+        println!("cargo:rustc-link-search=native={homebrew_path}");
     } else {
         println!("cargo:rustc-link-lib=gmp");
     }

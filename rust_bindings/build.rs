@@ -1,4 +1,5 @@
 use std::env;
+use std::fs;
 use std::path::PathBuf;
 
 use cmake::Config;
@@ -27,8 +28,14 @@ fn main() {
         .define("BUILD_CHIAVDFC", "ON")
         .env("BUILD_VDF_CLIENT", "N")
         .define("BUILD_PYTHON", "OFF")
-        .define("HARDENING", if is_fuzzing || is_debug_build { "ON" } else { "OFF" })
-        .very_verbose(true)
+        .define(
+            "HARDENING",
+            if is_fuzzing || is_debug_build {
+                "ON"
+            } else {
+                "OFF"
+            },
+        )
         .build();
 
     println!("cargo:rustc-link-lib=static=chiavdfc");
@@ -55,7 +62,12 @@ fn main() {
         );
     } else if cfg!(target_os = "macos") {
         println!("cargo:rustc-link-lib=static=gmp");
-        println!("cargo:rustc-link-search=native=/opt/homebrew/lib");
+        let homebrew_path = if fs::metadata("/opt/homebrew").is_ok() {
+            "/opt/homebrew/lib"
+        } else {
+            "/usr/local/lib"
+        };
+        println!("cargo:rustc-link-search=native={homebrew_path}");
     } else {
         println!("cargo:rustc-link-lib=gmp");
     }

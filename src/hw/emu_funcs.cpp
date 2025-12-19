@@ -3,7 +3,6 @@
 
 //#include "verifier.h"
 //#include "bit_manipulation.h"
-//#include "alloc.hpp"
 //#include "double_utility.h"
 
 #include <inttypes.h>

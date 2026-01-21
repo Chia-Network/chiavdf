@@ -1,11 +1,13 @@
 #include "fast_wrapper.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cassert>
 #include <chrono>
 #include <cstdio>
 #include <limits>
 #include <mutex>
+#include <thread>
 #include <vector>
 
 #include "../vdf.h"
@@ -271,31 +273,25 @@ class ProgressOneWesolowskiCallback final : public OneWesolowskiCallback {
     uint64_t next_progress;
 };
 
-class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
+class StreamingWesolowskiBuckets {
   public:
-    StreamingOneWesolowskiCallback(
+    StreamingWesolowskiBuckets(
         integer& D,
+        integer& L,
         uint64_t wanted_iter,
         uint32_t k,
         uint32_t l,
         uint64_t limit,
-        integer& B,
-        bool use_getblock_opt,
-        uint64_t progress_interval,
-        ChiavdfProgressCallback progress_cb,
-        void* progress_user_data)
-        : WesolowskiCallback(D),
+        integer B,
+        bool use_getblock_opt)
+        : D(D),
+          L(L),
           wanted_iter(wanted_iter),
           k(k),
           l(l),
           kl(static_cast<uint64_t>(k) * static_cast<uint64_t>(l)),
           limit(limit),
-          B(B),
-          progress_interval(progress_interval),
-          progress_cb(progress_cb),
-          progress_user_data(progress_user_data),
-          next_progress(progress_interval),
-          next_checkpoint_t((limit <= 1 || kl == 0) ? std::numeric_limits<uint64_t>::max() : kl),
+          B(std::move(B)),
           use_getblock_opt(use_getblock_opt),
           stats_enabled(streaming_stats_enabled.load(std::memory_order_relaxed)) {
         form id = form::identity(D);
@@ -318,116 +314,17 @@ class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
         }
     }
 
-    void OnIteration(int type, void* data, uint64_t iteration) override {
-        iteration++;
-        if (iteration > wanted_iter) {
-            return;
-        }
+    uint64_t wanted_iterations() const { return wanted_iter; }
 
-        if (progress_cb != nullptr && progress_interval != 0 && iteration >= next_progress) {
-            progress_cb(next_progress, progress_user_data);
-            next_progress += progress_interval;
-        }
+	    uint64_t checkpoint_stride() const { return kl; }
 
-        if (iteration == next_checkpoint_t) {
-            uint64_t pos = iteration / kl;
-            if (pos < limit) {
-                form checkpoint;
-                auto started_at = std::chrono::steady_clock::time_point{};
-                if (stats_enabled) {
-                    started_at = std::chrono::steady_clock::now();
-                }
-                SetForm(type, data, &checkpoint);
-                process_checkpoint(pos, checkpoint, /*record_stats=*/true);
-                if (iteration >= batch_start_iteration && iteration <= batch_end_iteration) {
-                    current_batch_checkpoints.push_back(BatchCheckpoint{pos, checkpoint});
-                }
-                if (stats_enabled) {
-                    checkpoint_event_total_ns += static_cast<uint64_t>(
-                        std::chrono::duration_cast<std::chrono::nanoseconds>(
-                            std::chrono::steady_clock::now() - started_at)
-                            .count());
-                }
-            }
+	    uint64_t checkpoint_limit() const { return limit; }
 
-            const uint64_t next_pos = pos + 1;
-            if (next_pos < limit && kl != 0 &&
-                next_pos <= std::numeric_limits<uint64_t>::max() / kl) {
-                next_checkpoint_t = next_pos * kl;
-            } else {
-                next_checkpoint_t = std::numeric_limits<uint64_t>::max();
-            }
-        }
-
-        if (iteration == wanted_iter) {
-            SetForm(type, data, &result);
-            has_result = true;
-        }
-    }
-
-    void OnBatchStart(uint64_t base_iteration, uint64_t batch_size) override {
-        current_batch_checkpoints.clear();
-        if (batch_size == 0) {
-            batch_start_iteration = 1;
-            batch_end_iteration = 0;
-            next_checkpoint_t = std::numeric_limits<uint64_t>::max();
-            return;
-        }
-        // `base_iteration` is the number of completed iterations before this batch.
-        // `OnIteration` normalizes to 1-based (`iteration++`), so this batch is [base+1, base+size].
-        batch_start_iteration = base_iteration + 1;
-        if (std::numeric_limits<uint64_t>::max() - base_iteration < batch_size) {
-            batch_end_iteration = std::numeric_limits<uint64_t>::max();
-        } else {
-            batch_end_iteration = base_iteration + batch_size;
-        }
-
-        if (kl == 0 || limit <= 1) {
-            next_checkpoint_t = std::numeric_limits<uint64_t>::max();
-            return;
-        }
-
-        const uint64_t first_iteration = saturating_add_u64(base_iteration, 1);
-        const uint64_t numerator = saturating_add_u64(first_iteration, kl - 1);
-        uint64_t first_pos = numerator / kl;
-        if (first_pos == 0) {
-            first_pos = 1;
-        }
-
-        if (first_pos < limit && first_pos <= std::numeric_limits<uint64_t>::max() / kl) {
-            next_checkpoint_t = first_pos * kl;
-        } else {
-            next_checkpoint_t = std::numeric_limits<uint64_t>::max();
-        }
-    }
-
-    void OnBatchReplay(uint64_t base_iteration, uint64_t batch_size) override {
-        for (const BatchCheckpoint& entry : current_batch_checkpoints) {
-            rollback_checkpoint(entry.index, entry.checkpoint);
-        }
-        OnBatchStart(base_iteration, batch_size);
-    }
-
-    void process_checkpoint(uint64_t i, const form& checkpoint, bool record_stats) {
-        apply_checkpoint(i, checkpoint, record_stats);
-    }
-
-  private:
-    struct BatchCheckpoint {
-        uint64_t index;
-        form checkpoint;
-    };
-
-    void rollback_checkpoint(uint64_t i, const form& checkpoint) {
-        form inverse_checkpoint = checkpoint.inverse();
-        apply_checkpoint(i, inverse_checkpoint, /*record_stats=*/false);
-    }
-
-    void apply_checkpoint(uint64_t i, const form& checkpoint, bool record_stats) {
-        const bool do_stats = stats_enabled && record_stats;
-        auto started_at = std::chrono::steady_clock::time_point{};
-        if (do_stats) {
-            started_at = std::chrono::steady_clock::now();
+	    void process_checkpoint(uint64_t i, const form& checkpoint, bool record_stats = true) {
+	        const bool do_stats = stats_enabled && record_stats;
+	        auto started_at = std::chrono::steady_clock::time_point{};
+	        if (do_stats) {
+	            started_at = std::chrono::steady_clock::now();
         }
 
         uint64_t local_updates = 0;
@@ -452,23 +349,18 @@ class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
                     std::chrono::steady_clock::now() - started_at)
                     .count());
         }
-    }
+	    }
 
-  public:
-    bool init_ok() const { return getblock_ok; }
+	    bool init_ok() const { return getblock_ok; }
 
-    bool ok() const { return has_result; }
+	    form finalize_proof() const {
+	        auto started_at = std::chrono::steady_clock::time_point{};
+	        if (stats_enabled) {
+	            started_at = std::chrono::steady_clock::now();
+	        }
 
-    const form& y() const { return result; }
-
-    form finalize_proof() {
-        auto started_at = std::chrono::steady_clock::time_point{};
-        if (stats_enabled) {
-            started_at = std::chrono::steady_clock::now();
-        }
-
-        PulmarkReducer reducer;
-        form id = form::identity(D);
+	        PulmarkReducer reducer;
+	        form id = form::identity(D);
 
         uint64_t k1 = k / 2;
         uint64_t k0 = k - k1;
@@ -485,8 +377,13 @@ class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
 
             for (uint64_t b1 = 0; b1 < span_k1; b1++) {
                 form z = id;
-                for (uint64_t b0 = 0; b0 < span_k0; b0++) {
-                    nucomp_form(z, z, bucket(static_cast<uint32_t>(j), b1 * span_k0 + b0), D, L);
+                for (uint64_t b0 = 0; b0 < (1ULL << k0); b0++) {
+                    nucomp_form(
+                        z,
+                        z,
+                        bucket(static_cast<uint32_t>(j), b1 * (1ULL << k0) + b0),
+                        D,
+                        L);
                 }
                 z = FastPowFormNucomp(
                     z,
@@ -499,8 +396,13 @@ class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
 
             for (uint64_t b0 = 0; b0 < span_k0; b0++) {
                 form z = id;
-                for (uint64_t b1 = 0; b1 < span_k1; b1++) {
-                    nucomp_form(z, z, bucket(static_cast<uint32_t>(j), b1 * span_k0 + b0), D, L);
+                for (uint64_t b1 = 0; b1 < (1ULL << k1); b1++) {
+                    nucomp_form(
+                        z,
+                        z,
+                        bucket(static_cast<uint32_t>(j), b1 * (1ULL << k0) + b0),
+                        D,
+                        L);
                 }
                 z = FastPowFormNucomp(z, D, integer(b0), L, reducer);
                 nucomp_form(x, x, z, D, L);
@@ -516,13 +418,19 @@ class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
                     .count());
         }
         return x;
-    }
+	    }
 
-    bool stats_ok() const { return stats_enabled; }
+	    bool stats_ok() const { return stats_enabled; }
 
-    LastStreamingStats stats() const {
-        LastStreamingStats out;
-        out.checkpoint_total_ns = checkpoint_total_ns;
+	    void record_checkpoint_event_ns(uint64_t ns) {
+	        if (stats_enabled) {
+	            checkpoint_event_total_ns += ns;
+	        }
+	    }
+
+	    LastStreamingStats stats() const {
+	        LastStreamingStats out;
+	        out.checkpoint_total_ns = checkpoint_total_ns;
         out.checkpoint_event_total_ns = checkpoint_event_total_ns;
         out.finalize_total_ns = finalize_total_ns;
         out.checkpoint_calls = checkpoint_calls;
@@ -542,22 +450,15 @@ class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
         return buckets[idx];
     }
 
+    integer& D;
+    integer& L;
     uint64_t wanted_iter;
     uint32_t k;
-    uint32_t l;
-    uint64_t kl;
-    uint64_t limit;
-    integer B;
-    uint64_t progress_interval;
-    ChiavdfProgressCallback progress_cb;
-    void* progress_user_data;
-    uint64_t next_progress;
-    uint64_t next_checkpoint_t = std::numeric_limits<uint64_t>::max();
-    size_t bucket_span = 0;
-
-    std::vector<form> buckets;
-    form result;
-    bool has_result = false;
+	    uint32_t l;
+	    uint64_t kl;
+	    uint64_t limit;
+	    integer B;
+	    std::vector<form> buckets;
 
     bool use_getblock_opt;
     bool getblock_ok = true;
@@ -569,12 +470,12 @@ class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
     uint64_t batch_end_iteration = 0;
     std::vector<BatchCheckpoint> current_batch_checkpoints;
 
-    bool stats_enabled;
-    uint64_t checkpoint_total_ns = 0;
-    uint64_t checkpoint_event_total_ns = 0;
-    uint64_t finalize_total_ns = 0;
-    uint64_t checkpoint_calls = 0;
-    uint64_t bucket_updates = 0;
+	    bool stats_enabled;
+	    uint64_t checkpoint_total_ns = 0;
+	    uint64_t checkpoint_event_total_ns = 0;
+	    mutable uint64_t finalize_total_ns = 0;
+	    uint64_t checkpoint_calls = 0;
+	    uint64_t bucket_updates = 0;
 
     bool init_getblock_opt_state() {
         if (k == 0) {
@@ -582,6 +483,7 @@ class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
         }
         uint64_t k_u64 = static_cast<uint64_t>(k);
         if (wanted_iter < k_u64) {
+            getblock_next_p = 0;
             return true;
         }
 
@@ -621,6 +523,284 @@ class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
 
         return b;
     }
+};
+
+class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
+  public:
+    StreamingOneWesolowskiCallback(
+        integer& discriminant,
+        uint64_t wanted_iter,
+        uint32_t k,
+        uint32_t l,
+        uint64_t limit,
+        integer B,
+        bool use_getblock_opt,
+        uint64_t progress_interval,
+        ChiavdfProgressCallback progress_cb,
+        void* progress_user_data)
+        : WesolowskiCallback(discriminant),
+          buckets(
+              this->D,
+              this->L,
+              wanted_iter,
+              k,
+              l,
+              limit,
+              std::move(B),
+              use_getblock_opt),
+          progress_interval(progress_interval),
+          progress_cb(progress_cb),
+          progress_user_data(progress_user_data),
+          next_progress(progress_interval) {}
+
+    bool init_ok() const { return buckets.init_ok(); }
+
+    void OnIteration(int type, void* data, uint64_t iteration) override {
+        iteration++;
+        if (iteration > buckets.wanted_iterations()) {
+            return;
+        }
+
+        if (progress_cb != nullptr && progress_interval != 0 && iteration >= next_progress) {
+            progress_cb(next_progress, progress_user_data);
+            next_progress += progress_interval;
+        }
+
+	        uint64_t stride = buckets.checkpoint_stride();
+	        if (stride != 0 && iteration % stride == 0) {
+	            uint64_t pos = iteration / stride;
+	            if (pos < buckets.checkpoint_limit()) {
+	                form checkpoint;
+	                auto started_at = std::chrono::steady_clock::time_point{};
+	                const bool do_stats = buckets.stats_ok();
+	                if (do_stats) {
+	                    started_at = std::chrono::steady_clock::now();
+	                }
+	                SetForm(type, data, &checkpoint);
+	                buckets.process_checkpoint(pos, checkpoint);
+	                if (do_stats) {
+	                    buckets.record_checkpoint_event_ns(static_cast<uint64_t>(
+	                        std::chrono::duration_cast<std::chrono::nanoseconds>(
+	                            std::chrono::steady_clock::now() - started_at)
+	                            .count()));
+	                }
+	            }
+	        }
+
+        if (iteration == buckets.wanted_iterations()) {
+            SetForm(type, data, &result);
+            has_result = true;
+        }
+	    }
+
+	    void process_checkpoint(uint64_t i, const form& checkpoint, bool record_stats = true) {
+	        buckets.process_checkpoint(i, checkpoint, record_stats);
+	    }
+
+    bool ok() const { return has_result; }
+
+	    const form& y() const { return result; }
+
+	    form finalize_proof() const { return buckets.finalize_proof(); }
+
+	    bool stats_ok() const { return buckets.stats_ok(); }
+
+	    LastStreamingStats stats() const { return buckets.stats(); }
+
+	  private:
+	    StreamingWesolowskiBuckets buckets;
+    uint64_t progress_interval;
+    ChiavdfProgressCallback progress_cb;
+    void* progress_user_data;
+    uint64_t next_progress;
+
+    form result;
+    bool has_result = false;
+};
+
+struct BatchJobState {
+    size_t index;
+    uint64_t wanted_iter;
+    uint32_t k;
+    uint32_t l;
+    uint64_t kl;
+    uint64_t limit;
+    form y_ref;
+    StreamingWesolowskiBuckets buckets;
+    uint64_t next_checkpoint_t;
+    bool done = false;
+
+    BatchJobState(
+        size_t index,
+        uint64_t wanted_iter,
+        uint32_t k,
+        uint32_t l,
+        uint64_t limit,
+        form y_ref,
+        StreamingWesolowskiBuckets buckets)
+        : index(index),
+          wanted_iter(wanted_iter),
+          k(k),
+          l(l),
+          kl(static_cast<uint64_t>(k) * static_cast<uint64_t>(l)),
+          limit(limit),
+          y_ref(std::move(y_ref)),
+          buckets(std::move(buckets)),
+          next_checkpoint_t(static_cast<uint64_t>(k) * static_cast<uint64_t>(l)) {}
+};
+
+class BatchOneWesolowskiCallback final : public WesolowskiCallback {
+  public:
+    BatchOneWesolowskiCallback(
+        integer& D,
+        const integer& shared_D,
+        const integer& shared_L,
+        int d_bits,
+        ChiavdfByteArray* out_arrays,
+        size_t job_count,
+        std::atomic<bool>& stopped,
+        std::vector<BatchJobState> jobs,
+        uint64_t progress_interval,
+        ChiavdfProgressCallback progress_cb,
+        void* progress_user_data)
+        : WesolowskiCallback(D),
+          shared_D(shared_D),
+          shared_L(shared_L),
+          d_bits(d_bits),
+          out_arrays(out_arrays),
+          job_count(job_count),
+          stopped(stopped),
+          jobs(std::move(jobs)),
+          progress_interval(progress_interval),
+          progress_cb(progress_cb),
+          progress_user_data(progress_user_data),
+          next_progress(progress_interval) {}
+
+	    void initialize(const form& x0) {
+	        for (auto& job : jobs) {
+	            job.buckets.process_checkpoint(/*i=*/0, x0, /*record_stats=*/false);
+
+	            // Set first checkpoint event at t=kl, but only if it corresponds to i < limit.
+	            if (job.limit <= 1) {
+	                job.next_checkpoint_t = std::numeric_limits<uint64_t>::max();
+            }
+        }
+        recompute_next_event();
+    }
+
+    void OnIteration(int type, void* data, uint64_t iteration) override {
+        iteration++;
+        if (progress_cb != nullptr && progress_interval != 0 && iteration >= next_progress) {
+            progress_cb(next_progress, progress_user_data);
+            next_progress += progress_interval;
+        }
+        if (iteration != next_event) {
+            return;
+        }
+
+        form checkpoint;
+        SetForm(type, data, &checkpoint);
+
+        for (auto& job : jobs) {
+            if (job.done) {
+                continue;
+            }
+
+            if (job.next_checkpoint_t == iteration) {
+                uint64_t i = iteration / job.kl;
+                if (i < job.limit) {
+                    job.buckets.process_checkpoint(i, checkpoint);
+                }
+                job.next_checkpoint_t += job.kl;
+            }
+
+            if (job.wanted_iter == iteration) {
+                if (!(checkpoint == job.y_ref)) {
+                    fatal_error = true;
+                    stopped.store(true);
+                    return;
+                }
+                spawn_finalize_job(job);
+            }
+        }
+
+        recompute_next_event();
+    }
+
+    bool ok() const { return !fatal_error; }
+
+    void join_finalizers() {
+        for (auto& t : finalizers) {
+            if (t.joinable()) {
+                t.join();
+            }
+        }
+        finalizers.clear();
+    }
+
+  private:
+    void spawn_finalize_job(BatchJobState& job) {
+        job.done = true;
+        job.next_checkpoint_t = std::numeric_limits<uint64_t>::max();
+
+        size_t idx = job.index;
+        form y_ref = std::move(job.y_ref);
+        StreamingWesolowskiBuckets buckets = std::move(job.buckets);
+
+        finalizers.emplace_back([this, idx, y_ref = std::move(y_ref), buckets = std::move(buckets)]() mutable {
+            try {
+                form proof_form = buckets.finalize_proof();
+                std::vector<unsigned char> y_serialized = SerializeForm(y_ref, d_bits);
+                std::vector<unsigned char> proof_serialized = SerializeForm(proof_form, d_bits);
+                if (y_serialized.empty() || proof_serialized.empty()) {
+                    out_arrays[idx] = empty_result();
+                    return;
+                }
+
+                const size_t total = y_serialized.size() + proof_serialized.size();
+                uint8_t* out = new uint8_t[total];
+                std::copy(y_serialized.begin(), y_serialized.end(), out);
+                std::copy(proof_serialized.begin(), proof_serialized.end(), out + y_serialized.size());
+                out_arrays[idx] = ChiavdfByteArray{out, total};
+            } catch (...) {
+                out_arrays[idx] = empty_result();
+            }
+        });
+    }
+
+    void recompute_next_event() {
+        uint64_t next = std::numeric_limits<uint64_t>::max();
+        bool any_active = false;
+
+        for (const auto& job : jobs) {
+            if (job.done) {
+                continue;
+            }
+            any_active = true;
+            next = std::min(next, job.wanted_iter);
+            next = std::min(next, job.next_checkpoint_t);
+        }
+
+        if (!any_active) {
+            stopped.store(true);
+        }
+        next_event = next;
+    }
+
+    const integer& shared_D;
+    const integer& shared_L;
+    int d_bits;
+    ChiavdfByteArray* out_arrays;
+    size_t job_count;
+    std::atomic<bool>& stopped;
+    std::vector<BatchJobState> jobs;
+    std::vector<std::thread> finalizers;
+    uint64_t next_event = std::numeric_limits<uint64_t>::max();
+    uint64_t progress_interval;
+    ChiavdfProgressCallback progress_cb;
+    void* progress_user_data;
+    uint64_t next_progress;
+    bool fatal_error = false;
 };
 
 ChiavdfByteArray chiavdf_prove_one_weso_fast_streaming_impl(
@@ -702,7 +882,7 @@ ChiavdfByteArray chiavdf_prove_one_weso_fast_streaming_impl(
         k,
         l,
         limit,
-        B,
+        std::move(B),
         use_getblock_opt,
         progress_interval,
         progress_cb,
@@ -973,73 +1153,6 @@ extern "C" bool chiavdf_get_last_streaming_stats(
     return true;
 }
 
-extern "C" ChiavdfByteArray* chiavdf_prove_one_weso_fast_streaming_getblock_opt_batch_with_progress(
-    const uint8_t* challenge_hash,
-    size_t challenge_size,
-    const uint8_t* x_s,
-    size_t x_s_size,
-    size_t discriminant_size_bits,
-    const ChiavdfBatchJob* jobs,
-    size_t job_count,
-    uint64_t progress_interval,
-    ChiavdfProgressCallback progress_cb,
-    void* progress_user_data) {
-    if (challenge_hash == nullptr || challenge_size == 0 || x_s == nullptr || x_s_size == 0) {
-        return nullptr;
-    }
-    if (discriminant_size_bits == 0 || jobs == nullptr || job_count == 0) {
-        return nullptr;
-    }
-
-    ChiavdfByteArray* out_arrays = nullptr;
-    try {
-        out_arrays = new ChiavdfByteArray[job_count];
-        for (size_t idx = 0; idx < job_count; ++idx) {
-            out_arrays[idx] = empty_result();
-        }
-
-        uint64_t completed_iters = 0;
-        for (size_t idx = 0; idx < job_count; ++idx) {
-            const ChiavdfBatchJob& job = jobs[idx];
-            if (job.y_ref_s == nullptr || job.y_ref_s_size == 0 || job.num_iterations == 0) {
-                free_byte_array_batch_internal(out_arrays, job_count);
-                return nullptr;
-            }
-
-            BatchProgressContext progress_ctx;
-            progress_ctx.completed_before = completed_iters;
-            progress_ctx.progress_cb = progress_cb;
-            progress_ctx.progress_user_data = progress_user_data;
-            const bool use_progress = progress_cb != nullptr && progress_interval != 0;
-
-            out_arrays[idx] = chiavdf_prove_one_weso_fast_streaming_getblock_opt_with_progress(
-                challenge_hash,
-                challenge_size,
-                x_s,
-                x_s_size,
-                job.y_ref_s,
-                job.y_ref_s_size,
-                discriminant_size_bits,
-                job.num_iterations,
-                progress_interval,
-                use_progress ? batch_progress_trampoline : nullptr,
-                use_progress ? static_cast<void*>(&progress_ctx) : nullptr);
-
-            if (out_arrays[idx].data == nullptr || out_arrays[idx].length == 0) {
-                free_byte_array_batch_internal(out_arrays, job_count);
-                return nullptr;
-            }
-
-            completed_iters = saturating_add_u64(completed_iters, job.num_iterations);
-        }
-
-        return out_arrays;
-    } catch (...) {
-        free_byte_array_batch_internal(out_arrays, job_count);
-        return nullptr;
-    }
-}
-
 extern "C" ChiavdfByteArray* chiavdf_prove_one_weso_fast_streaming_getblock_opt_batch(
     const uint8_t* challenge_hash,
     size_t challenge_size,
@@ -1061,8 +1174,156 @@ extern "C" ChiavdfByteArray* chiavdf_prove_one_weso_fast_streaming_getblock_opt_
         /*progress_user_data=*/nullptr);
 }
 
+extern "C" ChiavdfByteArray* chiavdf_prove_one_weso_fast_streaming_getblock_opt_batch_with_progress(
+    const uint8_t* challenge_hash,
+    size_t challenge_size,
+    const uint8_t* x_s,
+    size_t x_s_size,
+    size_t discriminant_size_bits,
+    const ChiavdfBatchJob* jobs,
+    size_t job_count,
+    uint64_t progress_interval,
+    ChiavdfProgressCallback progress_cb,
+    void* progress_user_data) {
+    try {
+        std::call_once(init_once, init_chiavdf_fast);
+
+        if (challenge_hash == nullptr || challenge_size == 0 || x_s == nullptr || x_s_size == 0 ||
+            jobs == nullptr || job_count == 0 || discriminant_size_bits == 0) {
+            return nullptr;
+        }
+
+        for (size_t idx = 0; idx < job_count; idx++) {
+            if (jobs[idx].y_ref_s == nullptr || jobs[idx].y_ref_s_size == 0 ||
+                jobs[idx].num_iterations == 0) {
+                return nullptr;
+            }
+        }
+
+        std::vector<uint8_t> challenge_hash_bytes(challenge_hash, challenge_hash + challenge_size);
+        integer D = CreateDiscriminant(challenge_hash_bytes, static_cast<int>(discriminant_size_bits));
+        integer L = root(-D, 4);
+
+        form x0 = DeserializeForm(D, x_s, x_s_size);
+
+        int d_bits = D.num_bits();
+
+        auto* out_arrays = new ChiavdfByteArray[job_count]();
+
+        uint64_t t_max = 0;
+        std::vector<BatchJobState> job_states;
+        job_states.reserve(job_count);
+
+        const uint64_t budget = bucket_memory_budget_bytes.load(std::memory_order_relaxed);
+        const uint64_t per_job_budget = (budget == 0 || job_count == 0)
+                                            ? budget
+                                            : (budget / static_cast<uint64_t>(job_count));
+
+        for (size_t idx = 0; idx < job_count; idx++) {
+            uint64_t num_iterations = jobs[idx].num_iterations;
+            t_max = std::max(t_max, num_iterations);
+
+            form y_ref = DeserializeForm(D, jobs[idx].y_ref_s, jobs[idx].y_ref_s_size);
+
+            uint32_t k;
+            uint32_t l;
+            bool tuned = false;
+            if (num_iterations >= (1 << 16)) {
+                tuned = tune_streaming_parameters(
+                    num_iterations,
+                    discriminant_size_bits,
+                    per_job_budget,
+                    l,
+                    k);
+            }
+            if (!tuned) {
+                if (num_iterations >= (1 << 16)) {
+                    ApproximateParameters(num_iterations, l, k);
+                } else {
+                    k = 10;
+                    l = 1;
+                }
+            }
+            if (k == 0) {
+                k = 1;
+            }
+            if (l == 0) {
+                l = 1;
+            }
+
+            uint64_t kl = static_cast<uint64_t>(k) * static_cast<uint64_t>(l);
+            uint64_t limit = num_iterations / kl;
+            if (num_iterations % kl) {
+                limit++;
+            }
+
+            integer B = GetB(D, x0, y_ref);
+
+            StreamingWesolowskiBuckets buckets(
+                D,
+                L,
+                num_iterations,
+                k,
+                l,
+                limit,
+                std::move(B),
+                /*use_getblock_opt=*/true);
+
+            if (!buckets.init_ok()) {
+                chiavdf_free_byte_array_batch(out_arrays, job_count);
+                return nullptr;
+            }
+
+            job_states.emplace_back(
+                idx,
+                num_iterations,
+                k,
+                l,
+                limit,
+                std::move(y_ref),
+                std::move(buckets));
+        }
+
+        std::atomic<bool> stopped(false);
+        BatchOneWesolowskiCallback weso(
+            D,
+            D,
+            L,
+            d_bits,
+            out_arrays,
+            job_count,
+            stopped,
+            std::move(job_states),
+            progress_interval,
+            progress_cb,
+            progress_user_data);
+        weso.initialize(x0);
+
+        FastStorage* fast_storage = nullptr;
+        repeated_square(t_max, x0, D, L, &weso, fast_storage, stopped);
+
+        weso.join_finalizers();
+
+        if (!weso.ok()) {
+            chiavdf_free_byte_array_batch(out_arrays, job_count);
+            return nullptr;
+        }
+
+        return out_arrays;
+    } catch (...) {
+        return nullptr;
+    }
+}
+
 extern "C" void chiavdf_free_byte_array_batch(ChiavdfByteArray* arrays, size_t count) {
-    free_byte_array_batch_internal(arrays, count);
+    if (arrays == nullptr) {
+        return;
+    }
+    for (size_t idx = 0; idx < count; idx++) {
+        delete[] arrays[idx].data;
+        arrays[idx] = empty_result();
+    }
+    delete[] arrays;
 }
 
 extern "C" void chiavdf_free_byte_array(ChiavdfByteArray array) { delete[] array.data; }

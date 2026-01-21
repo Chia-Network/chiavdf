@@ -55,6 +55,12 @@ bool chiavdf_get_last_streaming_stats(
     uint64_t* out_checkpoint_calls,
     uint64_t* out_bucket_updates);
 
+typedef struct {
+    const uint8_t* y_ref_s;
+    size_t y_ref_s_size;
+    uint64_t num_iterations;
+} ChiavdfBatchJob;
+
 // Computes a compact (witness_type=0) Wesolowski proof using the fast engine.
 //
 // On success, returns `y || proof` where:
@@ -144,8 +150,20 @@ ChiavdfByteArray chiavdf_prove_one_weso_fast_streaming_getblock_opt_with_progres
     ChiavdfProgressCallback progress_cb,
     void* progress_user_data);
 
-// Batch variant: computes one proof per `jobs[i]` using a shared API surface.
-// Returns an array of `job_count` results on success; caller owns/frees it.
+// Computes multiple compact (witness_type=0) Wesolowski proofs in one shared
+// squaring run ("Trick 2"), using the streaming algorithm (Trick 1) and the
+// GetBlock precomputation optimization.
+//
+// All jobs in the batch must share the same:
+// - `challenge_hash`
+// - `x_s` (input form bytes)
+// - `discriminant_size_bits`
+//
+// Returns an array of `job_count` byte arrays, each containing `y || proof` on
+// success. The caller must free the returned array using
+// `chiavdf_free_byte_array_batch(...)`.
+//
+// On fatal error (including output mismatch), returns NULL.
 ChiavdfByteArray* chiavdf_prove_one_weso_fast_streaming_getblock_opt_batch(
     const uint8_t* challenge_hash,
     size_t challenge_size,
@@ -155,7 +173,9 @@ ChiavdfByteArray* chiavdf_prove_one_weso_fast_streaming_getblock_opt_batch(
     const ChiavdfBatchJob* jobs,
     size_t job_count);
 
-// Same as batch API above, with optional aggregate progress callback.
+// Same as `chiavdf_prove_one_weso_fast_streaming_getblock_opt_batch`, but
+// optionally invokes `progress_cb` from the proving thread every
+// `progress_interval` squaring iterations completed.
 ChiavdfByteArray* chiavdf_prove_one_weso_fast_streaming_getblock_opt_batch_with_progress(
     const uint8_t* challenge_hash,
     size_t challenge_size,

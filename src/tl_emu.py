@@ -24,7 +24,7 @@ import asyncio, random, sys
 # proof for witness type=0: proof value (100 bytes as compressed form)
 
 # VDF client -> Timelord
-# "STOP"
+# 0-length
 
 # Timelord -> VDF client
 # "ACK"
@@ -68,17 +68,14 @@ async def read_conn(reader, writer, d, idx, task):
     try:
         while True:
             data = await reader.read(4)
-            if data == b"STOP":
+            size = int.from_bytes(data, 'big')
+            if size == 0:
                 await send_msg(writer, b"ACK")
                 print("Closing connection for VDF %d" % (idx,))
                 clear_conn_idx(idx)
                 writer.close()
                 task.cancel()
                 break
-
-            size = int.from_bytes(data, 'big')
-            if not size:
-                raise ValueError("Empty proof!")
 
             data = await reader.readexactly(size)
             data = bytes.fromhex(data.decode())

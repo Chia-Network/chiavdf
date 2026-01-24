@@ -311,7 +311,6 @@ int gcd_base_bits = 50;
 int gcd_128_max_iter = 3;
 
 int main(int argc, char* argv[]) try {
-    init_gmp();
     if (argc != 4) {
       std::cerr << "Usage: ./vdf_client <host> <port> <counter>\n";
       return 1;

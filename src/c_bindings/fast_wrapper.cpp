@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <limits>
 #include <mutex>
+#include <queue>
 #include <thread>
 #include <vector>
 
@@ -628,6 +629,7 @@ struct BatchJobState {
     form y_ref;
     StreamingWesolowskiBuckets buckets;
     uint64_t next_checkpoint_t;
+    uint64_t next_event_t;
     bool done = false;
 
     BatchJobState(
@@ -646,7 +648,10 @@ struct BatchJobState {
           limit(limit),
           y_ref(std::move(y_ref)),
           buckets(std::move(buckets)),
-          next_checkpoint_t(static_cast<uint64_t>(k) * static_cast<uint64_t>(l)) {}
+          next_checkpoint_t(
+              (limit <= 1) ? std::numeric_limits<uint64_t>::max()
+                           : (static_cast<uint64_t>(k) * static_cast<uint64_t>(l))),
+          next_event_t(std::min(wanted_iter, next_checkpoint_t)) {}
 };
 
 class BatchOneWesolowskiCallback final : public WesolowskiCallback {
@@ -673,20 +678,17 @@ class BatchOneWesolowskiCallback final : public WesolowskiCallback {
           jobs(std::move(jobs)),
           progress_interval(progress_interval),
           progress_cb(progress_cb),
-          progress_user_data(progress_user_data),
-          next_progress(progress_interval) {}
+	          progress_user_data(progress_user_data),
+	          next_progress(progress_interval) {}
 
 	    void initialize(const form& x0) {
-	        for (auto& job : jobs) {
+	        for (size_t job_pos = 0; job_pos < jobs.size(); job_pos++) {
+	            auto& job = jobs[job_pos];
 	            job.buckets.process_checkpoint(/*i=*/0, x0, /*record_stats=*/false);
-
-	            // Set first checkpoint event at t=kl, but only if it corresponds to i < limit.
-	            if (job.limit <= 1) {
-	                job.next_checkpoint_t = std::numeric_limits<uint64_t>::max();
-            }
-        }
-        recompute_next_event();
-    }
+	            schedule_job(job_pos);
+	        }
+	        refresh_next_event();
+	    }
 
     void OnIteration(int type, void* data, uint64_t iteration) override {
         iteration++;
@@ -701,8 +703,15 @@ class BatchOneWesolowskiCallback final : public WesolowskiCallback {
         form checkpoint;
         SetForm(type, data, &checkpoint);
 
-        for (auto& job : jobs) {
-            if (job.done) {
+        while (!event_queue.empty()) {
+            const JobEvent next = event_queue.top();
+            if (next.t != iteration) {
+                break;
+            }
+            event_queue.pop();
+
+            BatchJobState& job = jobs[next.job_pos];
+            if (job.done || job.next_event_t != iteration) {
                 continue;
             }
 
@@ -711,7 +720,13 @@ class BatchOneWesolowskiCallback final : public WesolowskiCallback {
                 if (i < job.limit) {
                     job.buckets.process_checkpoint(i, checkpoint);
                 }
-                job.next_checkpoint_t += job.kl;
+
+                const uint64_t next_i = i + 1;
+                if (next_i < job.limit) {
+                    job.next_checkpoint_t = next_i * job.kl;
+                } else {
+                    job.next_checkpoint_t = std::numeric_limits<uint64_t>::max();
+                }
             }
 
             if (job.wanted_iter == iteration) {
@@ -722,9 +737,13 @@ class BatchOneWesolowskiCallback final : public WesolowskiCallback {
                 }
                 spawn_finalize_job(job);
             }
+
+            if (!job.done) {
+                schedule_job(next.job_pos);
+            }
         }
 
-        recompute_next_event();
+        refresh_next_event();
     }
 
     bool ok() const { return !fatal_error; }
@@ -739,9 +758,44 @@ class BatchOneWesolowskiCallback final : public WesolowskiCallback {
     }
 
   private:
+    struct JobEvent {
+        uint64_t t;
+        size_t job_pos;
+    };
+
+    struct JobEventGreater {
+        bool operator()(const JobEvent& a, const JobEvent& b) const noexcept { return a.t > b.t; }
+    };
+
+    void schedule_job(size_t job_pos) {
+        BatchJobState& job = jobs[job_pos];
+        if (job.done) {
+            job.next_event_t = std::numeric_limits<uint64_t>::max();
+            return;
+        }
+        job.next_event_t = std::min(job.wanted_iter, job.next_checkpoint_t);
+        event_queue.push(JobEvent{job.next_event_t, job_pos});
+    }
+
+    void refresh_next_event() {
+        while (!event_queue.empty()) {
+            const JobEvent next = event_queue.top();
+            const BatchJobState& job = jobs[next.job_pos];
+            if (job.done || job.next_event_t != next.t) {
+                event_queue.pop();
+                continue;
+            }
+            next_event = next.t;
+            return;
+        }
+        next_event = std::numeric_limits<uint64_t>::max();
+        stopped.store(true);
+    }
+
     void spawn_finalize_job(BatchJobState& job) {
         job.done = true;
         job.next_checkpoint_t = std::numeric_limits<uint64_t>::max();
+        job.next_event_t = std::numeric_limits<uint64_t>::max();
 
         size_t idx = job.index;
         form y_ref = std::move(job.y_ref);
@@ -768,25 +822,6 @@ class BatchOneWesolowskiCallback final : public WesolowskiCallback {
         });
     }
 
-    void recompute_next_event() {
-        uint64_t next = std::numeric_limits<uint64_t>::max();
-        bool any_active = false;
-
-        for (const auto& job : jobs) {
-            if (job.done) {
-                continue;
-            }
-            any_active = true;
-            next = std::min(next, job.wanted_iter);
-            next = std::min(next, job.next_checkpoint_t);
-        }
-
-        if (!any_active) {
-            stopped.store(true);
-        }
-        next_event = next;
-    }
-
     const integer& shared_D;
     const integer& shared_L;
     int d_bits;
@@ -795,6 +830,7 @@ class BatchOneWesolowskiCallback final : public WesolowskiCallback {
     std::atomic<bool>& stopped;
     std::vector<BatchJobState> jobs;
     std::vector<std::thread> finalizers;
+    std::priority_queue<JobEvent, std::vector<JobEvent>, JobEventGreater> event_queue;
     uint64_t next_event = std::numeric_limits<uint64_t>::max();
     uint64_t progress_interval;
     ChiavdfProgressCallback progress_cb;

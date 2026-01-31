@@ -4,7 +4,7 @@
  */
 #if defined(ARCH_ARM)
 
-void (*gcd_unsigned_arm_uv_callback)(int index, const array<array<uint64, 2>, 2>& uv, int parity) = nullptr;
+thread_local void (*gcd_unsigned_arm_uv_callback)(int index, const array<array<uint64, 2>, 2>& uv, int parity) = nullptr;
 
 namespace {
 

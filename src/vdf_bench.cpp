@@ -4,6 +4,7 @@
 #include "parameters.h"
 #include "asm_main.h"
 #include "integer.h"
+#include "vdf.h"
 #include "vdf_new.h"
 #include "nucomp.h"
 #include "picosha2.h"
@@ -17,6 +18,9 @@
 #include <cstdlib>
 
 #define CH_SIZE 32
+
+int gcd_base_bits = 50;
+int gcd_128_max_iter = 3;
 
 static void usage(const char *progname)
 {
@@ -117,8 +121,5 @@ int main(int argc, char **argv)
 }
 
 #if defined(ARCH_ARM)
-int gcd_base_bits = 50;
-int gcd_128_max_iter = 3;
-#include "vdf.h"
 #include "asm_arm_fallback_impl.inc"
 #endif

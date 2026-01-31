@@ -2,8 +2,8 @@
 #define GCD_UNSIGNED_H
 
 #ifdef ARCH_ARM
-// Callback used by ARM fallback to capture UV matrix at each gcd_unsigned iteration.
-extern void (*gcd_unsigned_arm_uv_callback)(int index, const array<array<uint64, 2>, 2>& uv, int parity);
+// Callback used by ARM fallback to capture UV matrix at each gcd_unsigned iteration (thread-local so concurrent threads do not overwrite each other).
+extern thread_local void (*gcd_unsigned_arm_uv_callback)(int index, const array<array<uint64, 2>, 2>& uv, int parity);
 #endif
 
 //threshold is 0 to calculate the normal gcd

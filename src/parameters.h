@@ -38,7 +38,7 @@ bool enable_avx512_ifma=false;
     #define ARCH_X86
 #elif defined(__x86_64__) || defined(_M_X64)
     #define ARCH_X64
-#elif (defined(__arm__) && defined(__ARM_ARCH) && __ARM_ARCH >= 5) || (defined(_M_ARM) && _M_ARM >= 5) || defined(__ARM_FEATURE_CLZ) /* ARM (Architecture Version 5) */
+#elif defined(__aarch64__) || (defined(__arm__) && defined(__ARM_ARCH) && __ARM_ARCH >= 5) || (defined(_M_ARM) && _M_ARM >= 5) || defined(__ARM_FEATURE_CLZ) /* ARM (aarch64 or Architecture Version 5+) */
     #define ARCH_ARM
 #endif
 

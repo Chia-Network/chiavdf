@@ -352,3 +352,7 @@ catch (std::exception& e) {
     std::cerr << "Exception: " << e.what() << "\n";
     return 1;
 }
+
+#if defined(ARCH_ARM)
+#include "asm_arm_fallback_impl.inc"
+#endif

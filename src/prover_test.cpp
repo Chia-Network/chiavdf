@@ -74,3 +74,7 @@ int main() {
         delete(fast_storage);
     delete(weso);
 }
+
+#if defined(ARCH_ARM)
+#include "asm_arm_fallback_impl.inc"
+#endif

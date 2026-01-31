@@ -11,7 +11,8 @@ static_assert(sizeof(unsigned long int)==8, "");
 static_assert(sizeof(long int)==8, "");
 
 static uint64 get_time_cycles() {
-    // Returns the time in EDX:EAX.
+#if defined(ARCH_X86) || defined(ARCH_X64)
+    // Returns the time in EDX:EAX (x86 rdtsc).
     uint64 high;
     uint64 low;
     asm volatile(
@@ -23,6 +24,11 @@ static uint64 get_time_cycles() {
     : "=a"(low), "=d"(high) :: "memory");
 
     return (high<<32) | low;
+#elif defined(ARCH_ARM)
+    return static_cast<uint64>(__builtin_readcyclecounter());
+#else
+    return 0;
+#endif
 }
 
 #ifdef ENABLE_TRACK_CYCLES
@@ -456,12 +462,12 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz {
     bool operator>(const mpz_struct* t) const { return mpz_cmp(*this, t)>0; }
     bool operator!=(const mpz_struct* t) const { return mpz_cmp(*this, t)!=0; }
 
-    bool operator<(int64 i) const { return mpz_cmp_si(*this, i)<0; }
-    bool operator<=(int64 i) const { return mpz_cmp_si(*this, i)<=0; }
-    bool operator==(int64 i) const { return mpz_cmp_si(*this, i)==0; }
-    bool operator>=(int64 i) const { return mpz_cmp_si(*this, i)>=0; }
-    bool operator>(int64 i) const { return mpz_cmp_si(*this, i)>0; }
-    bool operator!=(int64 i) const { return mpz_cmp_si(*this, i)!=0; }
+    bool operator<(int64 i) const { return mpz_cmp_si(_(), i)<0; }
+    bool operator<=(int64 i) const { return mpz_cmp_si(_(), i)<=0; }
+    bool operator==(int64 i) const { return mpz_cmp_si(_(), i)==0; }
+    bool operator>=(int64 i) const { return mpz_cmp_si(_(), i)>=0; }
+    bool operator>(int64 i) const { return mpz_cmp_si(_(), i)>0; }
+    bool operator!=(int64 i) const { return mpz_cmp_si(_(), i)!=0; }
 
     bool operator<(uint64 i) const { return mpz_cmp_ui(_(), i)<0; }
     bool operator<=(uint64 i) const { return mpz_cmp_ui(_(), i)<=0; }
@@ -789,9 +795,14 @@ template<class mpz_type> bool gcd_unsigned(
         assert((uint64(data.out_uv_addr)&63)==0); //should be cache line aligned
     }
 
-    int error_code=hasAVX2()?
+    int error_code=
+#if defined(ARCH_ARM)
+        asm_code::asm_arm_func_gcd_unsigned(&data);
+#else
+        hasAVX2()?
         asm_code::asm_avx2_func_gcd_unsigned(&data):
         asm_code::asm_cel_func_gcd_unsigned(&data);
+#endif
 
     if (error_code!=0) {
         c_thread_state.raise_error();

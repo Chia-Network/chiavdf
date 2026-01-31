@@ -60,6 +60,17 @@ If you're running a timelord, the following tests are available, depending of wh
 
 Those tests will simulate the vdf_client and verify for correctness the produced proofs.
 
+## Running tests
+
+**C++ tests** (vdf_client, prover_test, 1weso_test, 2weso_test): build from `src/` with
+`make -f Makefile.vdf-client` (requires GMP and Boost; on macOS with Homebrew, install
+with `brew install gmp boost`). Then run `./1weso_test`, `./2weso_test`, `./prover_test`
+as above. On **ARM** (aarch64/arm64) the fast VDF path uses a C++ GCD fallback instead of
+x86 assembly, so these tests run correctly but are slower than on x86.
+
+**Python tests**: run `pytest tests/ -v` after installing the package (e.g. `pip install -e .`).
+They require the chiavdf extension to be built (CMake, GMP, pybind11).
+
 ## Contributing and workflow
 
 Contributions are welcome and more details are available in chia-blockchain's

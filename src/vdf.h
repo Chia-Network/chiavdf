@@ -3,7 +3,9 @@
 
 #include "include.h"
 
+#if defined(ARCH_X86) || defined(ARCH_X64)
 #include <x86intrin.h>
+#endif
 
 #include "parameters.h"
 

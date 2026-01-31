@@ -11,6 +11,15 @@ LDLIBS += -lgmpxx -lgmp -pthread
 CXXFLAGS += -flto -std=c++1z -D VDF_MODE=0 -D FAST_MACHINE=1 -pthread $(NOPIE) -fvisibility=hidden
 ifeq ($(UNAME),Darwin)
 CXXFLAGS += -D CHIAOSX=1
+# Homebrew (common on macOS) installs boost/gmp to /opt/homebrew or /usr/local
+ifneq ($(wildcard /opt/homebrew/include/boost/asio.hpp),)
+CXXFLAGS += -I/opt/homebrew/include
+LDFLAGS += -L/opt/homebrew/lib
+endif
+ifneq ($(wildcard /usr/local/include/boost/asio.hpp),)
+CXXFLAGS += -I/usr/local/include
+LDFLAGS += -L/usr/local/lib
+endif
 endif
 
 OPT_CFLAGS = -O3 -g
@@ -27,13 +36,24 @@ endif
 
 .PHONY: all clean
 
+ARCH := $(shell uname -m)
+# aarch64 (Linux), arm64 (macOS Apple Silicon)
+ifneq ($(filter $(ARCH),aarch64 arm64),)
+# ARM: use C++ fallback for GCD (no x86 assembly); implementation is in each BIN via .inc
+ASM_OBJS =
+CXXFLAGS += -D ARCH_ARM
+else
+# x86: use hand-tuned assembly
+ASM_OBJS = asm_compiled.o avx2_asm_compiled.o avx512_asm_compiled.o
+endif
+
 BINS = vdf_client prover_test 1weso_test 2weso_test vdf_bench
 all: $(BINS)
 
 clean:
 	rm -f *.o hw/*.o $(BINS) compile_asm emu_hw_test hw_test hw_vdf_client emu_hw_vdf_client
 
-$(BINS) avx512_test: %: %.o lzcnt.o asm_compiled.o avx2_asm_compiled.o avx512_asm_compiled.o
+$(BINS) avx512_test: %: %.o lzcnt.o $(ASM_OBJS)
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 $(addsuffix .o,$(BINS)) avx512_test.o: CXXFLAGS += $(OPT_CFLAGS)

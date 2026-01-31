@@ -4,6 +4,8 @@
 #ifdef ARCH_ARM
 // Callback used by ARM fallback to capture UV matrix at each gcd_unsigned iteration (thread-local so concurrent threads do not overwrite each other).
 extern thread_local void (*gcd_unsigned_arm_uv_callback)(int index, const array<array<uint64, 2>, 2>& uv, int parity);
+// Set by gcd_unsigned when it falls back to slow path (valid=false); ARM fallback checks this and returns -1 to match x86 asm behavior.
+extern thread_local bool gcd_unsigned_arm_fell_back_to_slow;
 #endif
 
 //threshold is 0 to calculate the normal gcd
@@ -70,6 +72,9 @@ template<int size> void gcd_unsigned(
     vector<array<array<uint64, 2>, 2>> matricies;
     vector<int> local_parities;
     bool valid=true;
+#ifdef ARCH_ARM
+    gcd_unsigned_arm_fell_back_to_slow = false;
+#endif
 
     while (true) {
         assert(ab[0]>=ab[1] && !ab[1].is_negative());
@@ -91,6 +96,9 @@ template<int size> void gcd_unsigned(
 
         if (ab[0]<=threshold) {
             valid=false;
+#ifdef ARCH_ARM
+            gcd_unsigned_arm_fell_back_to_slow = true;
+#endif
             print( "    gcd_unsigned slow 1" );
             break;
         }
@@ -223,6 +231,9 @@ template<int size> void gcd_unsigned(
             //todo assert(false); //very unlikely to happen if there are no bugs
 
             valid=false;
+#ifdef ARCH_ARM
+            gcd_unsigned_arm_fell_back_to_slow = true;
+#endif
             break;
 
             /*had_slow=true;

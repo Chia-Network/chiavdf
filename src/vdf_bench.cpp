@@ -115,3 +115,10 @@ int main(int argc, char **argv)
     }
     return 0;
 }
+
+#if defined(ARCH_ARM)
+int gcd_base_bits = 50;
+int gcd_128_max_iter = 3;
+#include "vdf.h"
+#include "asm_arm_fallback_impl.inc"
+#endif

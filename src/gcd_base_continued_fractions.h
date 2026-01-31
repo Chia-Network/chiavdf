@@ -649,7 +649,7 @@ bool gcd_base_continued_fraction(vector2& ab, matrix2& uv, bool is_lehmer, doubl
 
     //print( "        gcd_base", iter_table+iter_slow, iter_table, iter_slow );
 
-    #ifdef TEST_ASM
+    #if defined(TEST_ASM) && !defined(ARCH_ARM)
     #ifndef GENERATE_ASM_TRACKING_DATA
     if (test_asm_run) {
         if (test_asm_print) {

@@ -182,6 +182,9 @@ struct asm_func_gcd_unsigned_data {
 
 extern "C" int asm_avx2_func_gcd_unsigned(asm_func_gcd_unsigned_data* data);
 extern "C" int asm_cel_func_gcd_unsigned(asm_func_gcd_unsigned_data* data);
+#if defined(ARCH_ARM)
+extern "C" int asm_arm_func_gcd_unsigned(asm_func_gcd_unsigned_data* data);
+#endif
 #ifdef COMPILE_ASM
 void compile_asm_gcd_unsigned() {
     EXPAND_MACROS_SCOPE_PUBLIC;

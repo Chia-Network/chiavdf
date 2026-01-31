@@ -213,7 +213,7 @@ bool gcd_128(
         //todo break;
     }
 
-    #ifdef TEST_ASM
+    #if defined(TEST_ASM) && !defined(ARCH_ARM)
     #ifndef GENERATE_ASM_TRACKING_DATA
     if (test_asm_run) {
         if (test_asm_print) {

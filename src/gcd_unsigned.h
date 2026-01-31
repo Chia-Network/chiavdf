@@ -1,6 +1,11 @@
 #ifndef GCD_UNSIGNED_H
 #define GCD_UNSIGNED_H
 
+#ifdef ARCH_ARM
+// Callback used by ARM fallback to capture UV matrix at each gcd_unsigned iteration.
+extern void (*gcd_unsigned_arm_uv_callback)(int index, const array<array<uint64, 2>, 2>& uv, int parity);
+#endif
+
 //threshold is 0 to calculate the normal gcd
 template<int size> void gcd_unsigned_slow(
     array<fixed_integer<uint64, size>, 2>& ab,
@@ -207,6 +212,11 @@ template<int size> void gcd_unsigned(
 
             matricies.push_back(uv_uint64);
             local_parities.push_back(local_parity);
+#ifdef ARCH_ARM
+            if (gcd_unsigned_arm_uv_callback) {
+                gcd_unsigned_arm_uv_callback(static_cast<int>(matricies.size()) - 1, uv_uint64, local_parity);
+            }
+#endif
         } else {
             //can just make the gcd fail if this happens in the asm code
             print( "    gcd_unsigned slow" );
@@ -253,7 +263,7 @@ template<int size> void gcd_unsigned(
         }
     }
 
-    #ifdef TEST_ASM
+    #if defined(TEST_ASM) && !defined(ARCH_ARM)
     if (test_asm_run) {
         if (test_asm_print) {
             print( "test asm gcd_unsigned", test_asm_counter );

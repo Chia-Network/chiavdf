@@ -43,6 +43,9 @@ endif
 
 .PHONY: all clean
 
+# Run from src/ as: make -f Makefile.vdf-client [clean|all|target]
+# (Using -f is required so make finds this file; plain "make clean" may use another Makefile.)
+
 # aarch64 (Linux), arm64 (macOS Apple Silicon). ARCH set at top for NOPIE.
 ifneq ($(filter $(ARCH),aarch64 arm64),)
 # ARM: use C++ fallback for GCD (no x86 assembly); implementation is in each BIN via .inc
@@ -57,7 +60,7 @@ BINS = vdf_client prover_test 1weso_test 2weso_test vdf_bench
 all: $(BINS)
 
 clean:
-	rm -f *.o hw/*.o $(BINS) compile_asm emu_hw_test hw_test hw_vdf_client emu_hw_vdf_client
+	rm -f *.o *.s hw/*.o $(BINS) compile_asm emu_hw_test hw_test hw_vdf_client emu_hw_vdf_client
 
 $(BINS) avx512_test: %: %.o lzcnt.o $(ASM_OBJS)
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)

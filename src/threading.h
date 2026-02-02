@@ -813,8 +813,7 @@ template<class mpz_type> bool gcd_unsigned(
 
     assert(data.iter>=0 && data.iter<=gcd_max_iterations); //total number of iterations performed
     bool is_even=((data.iter-1)&1)==0; //parity of last iteration (can be -1 when iter==0)
-    /* When iter==0 (e.g. ARM "gcd_128 break 1"), result was computed via slow path and is in as[1], bs[1]. */
-    c_results.end_index=(data.iter==0) ? 1 : ((is_even)? 1 : 0);
+    c_results.end_index=(is_even)? 1 : 0;
 
     c_results.as[0].finish(gcd_size);
     c_results.as[1].finish(gcd_size);

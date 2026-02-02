@@ -99,7 +99,9 @@ template<int size> void gcd_unsigned(
 #ifdef ARCH_ARM
             gcd_unsigned_arm_fell_back_to_slow = true;
 #endif
+#if !defined(ARCH_ARM)
             print( "    gcd_unsigned slow 1" );
+#endif
             break;
         }
 
@@ -227,7 +229,9 @@ template<int size> void gcd_unsigned(
 #endif
         } else {
             //can just make the gcd fail if this happens in the asm code
+#if !defined(ARCH_ARM)
             print( "    gcd_unsigned slow" );
+#endif
             //todo assert(false); //very unlikely to happen if there are no bugs
 
             valid=false;

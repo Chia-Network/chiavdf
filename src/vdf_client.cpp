@@ -321,6 +321,12 @@ int main(int argc, char* argv[]) try {
       gcd_base_bits = 63;
       gcd_128_max_iter = 2;
     }
+#if defined(ARCH_ARM)
+    else {
+      gcd_base_bits = 50;
+      gcd_128_max_iter = 3;
+    }
+#endif
 
     boost::asio::io_context io_context;
 

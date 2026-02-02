@@ -1,14 +1,21 @@
 UNAME := $(shell uname)
+ARCH := $(shell uname -m)
 
 ifneq (,$(findstring clang, $(shell $(CXX) --version)))
 NOPIE = -fno-PIE
 else
 NOPIE = -no-pie
 endif
+# macOS arm64 ignores -no_pie and warns; omit to avoid deprecation warning
+ifeq ($(UNAME),Darwin)
+ifneq ($(filter $(ARCH),arm64),)
+NOPIE =
+endif
+endif
 
 LDFLAGS += -flto $(NOPIE) -g
 LDLIBS += -lgmpxx -lgmp -pthread
-CXXFLAGS += -flto -std=c++1z -D VDF_MODE=0 -D FAST_MACHINE=1 -pthread $(NOPIE) -fvisibility=hidden
+CXXFLAGS += -flto -std=c++1z -D FAST_MACHINE=1 -pthread $(NOPIE) -fvisibility=hidden
 ifeq ($(UNAME),Darwin)
 CXXFLAGS += -D CHIAOSX=1
 # Homebrew (common on macOS) installs boost/gmp to /opt/homebrew or /usr/local
@@ -36,8 +43,7 @@ endif
 
 .PHONY: all clean
 
-ARCH := $(shell uname -m)
-# aarch64 (Linux), arm64 (macOS Apple Silicon)
+# aarch64 (Linux), arm64 (macOS Apple Silicon). ARCH set at top for NOPIE.
 ifneq ($(filter $(ARCH),aarch64 arm64),)
 # ARM: use C++ fallback for GCD (no x86 assembly); implementation is in each BIN via .inc
 ASM_OBJS =
@@ -57,6 +63,11 @@ $(BINS) avx512_test: %: %.o lzcnt.o $(ASM_OBJS)
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 $(addsuffix .o,$(BINS)) avx512_test.o: CXXFLAGS += $(OPT_CFLAGS)
+
+# Production binary: VDF_MODE=0 (is_vdf_test=false).
+vdf_client.o: CXXFLAGS += -D VDF_MODE=0
+# Test binaries: VDF_MODE=1 (is_vdf_test=true) so their asserts and test logic run correctly.
+1weso_test.o 2weso_test.o prover_test.o vdf_bench.o: CXXFLAGS += -D VDF_MODE=1
 
 lzcnt.o: refcode/lzcnt.c
 	$(CC) -c refcode/lzcnt.c

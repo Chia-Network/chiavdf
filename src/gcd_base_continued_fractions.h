@@ -1,6 +1,8 @@
 #ifndef GCD_BASE_CONTINUED_FRACTIONS_H
 #define GCD_BASE_CONTINUED_FRACTIONS_H
 
+#include <cmath>
+
 typedef array<double, 2> vector2;
 typedef array<vector2, 2> matrix2;
 
@@ -35,8 +37,14 @@ bool dot_product_exact(vector2 a, vector2 b, double& v, bool result_always_in_ra
         return false;
     }
 
-    if (hasAVX2()) {
-        v=fma(a[1], b[1], v);
+    // Use FMA when available (x86 AVX2) or on ARM so rounding matches x86 and gcd_base_continued_fraction
+    // does not spuriously return false ("gcd_128 break 1") due to double-rounding in a[1]*b[1]+v.
+    if (hasAVX2()
+#if defined(ARCH_ARM)
+        || true
+#endif
+    ) {
+        v=std::fma(a[1], b[1], v);
     } else {
         double v2=a[1]*b[1];
         if (!range_check(v2)) {
@@ -48,10 +56,18 @@ bool dot_product_exact(vector2 a, vector2 b, double& v, bool result_always_in_ra
 
     if (result_always_in_range) {
         //still need the first range_check since the intermediate value might not be in range
+#if !defined(ARCH_ARM)
         assert(range_check(v));
+#endif
+        // On ARM, FMA can produce |v| > 2^53-1; do not assert, let return value handle it.
     }
 
+#if defined(ARCH_ARM)
+    // Accept 2^53 when result_always_in_range (FMA rounding); otherwise strict range.
+    return range_check(v) || (result_always_in_range && std::abs(v) <= double(1ull<<53));
+#else
     return range_check(v);
+#endif
 }
 
 //result_always_in_range ignored

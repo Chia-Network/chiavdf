@@ -93,7 +93,9 @@ bool gcd_128(
 
         matrix2 uv_double;
         if (!gcd_base_continued_fraction(ab_double, uv_double, is_lehmer || (shift_amount!=0), ab_threshold_double)) {
+#if !defined(ARCH_ARM)
             print( "        gcd_128 break 1" ); //this is fine
+#endif
             break;
         }
 
@@ -102,7 +104,9 @@ bool gcd_128(
         if (0) {
             matrix2 uv_double_2;
             if (!gcd_base_continued_fraction_2(ab_double_2, uv_double_2, is_lehmer || (shift_amount!=0), ab_threshold_double)) {
+#if !defined(ARCH_ARM)
                 print( "        gcd_128 break 2" );
+#endif
                 break;
             }
 
@@ -122,7 +126,9 @@ bool gcd_128(
             uv_uint64_new=uv_double_int;
         } else {
             if (!multiply_exact(uv_double_int, uv_uint64, uv_uint64_new)) {
+#if !defined(ARCH_ARM)
                 print( "        gcd_128 slow 1" ); //calculated a bunch of quotients and threw all of them away, which is bad
+#endif
                 break;
             }
         }
@@ -188,14 +194,18 @@ bool gcd_128(
 
             //CMOV
             if (!(even? passed_even : passed_odd)) {
+#if !defined(ARCH_ARM)
                 print( "        gcd_128 slow 5" ); //throwing away a bunch of quotients because the last one is bad
+#endif
                 break;
             }
         }
 
         if (a_new<=ab_threshold) {
             if (debug_output) print( "8:" );
+#if !defined(ARCH_ARM)
             print( "        gcd_128 slow 6" ); //still throwing away quotients
+#endif
             break;
         }
 

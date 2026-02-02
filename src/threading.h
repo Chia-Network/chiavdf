@@ -200,7 +200,7 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz {
     static_assert(expected_size>=1 && expected_size<=padded_size, "");
 
     bool was_reallocated() const {
-        return c_mpz._mp_d!=data;
+        return c_mpz._mp_d != reinterpret_cast<const mp_limb_t*>(data);
     }
 
     //can't call any mpz functions here because it is global
@@ -224,7 +224,7 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz {
 
         //if c_mpz.data wasn't reallocated, it has to point to this instance's data and not some other instance's data
         //if mpz_swap was used, this might be violated
-        assert((uint64(c_mpz._mp_d)&63)==16 || c_mpz._mp_d==data);
+        assert((uint64(c_mpz._mp_d)&63)==16 || c_mpz._mp_d==reinterpret_cast<mp_limb_t*>(data));
         mpz_clear(&c_mpz);
     }
 
@@ -621,9 +621,11 @@ struct thread_state {
             }
 
             if (spin_counter>max_spin_counter) {
+#if !defined(ARCH_ARM)
                 if (is_vdf_test) {
                     print( "spin_counter too high", is_slave );
                 }
+#endif
 
                 raise_error();
                 break;
@@ -810,9 +812,9 @@ template<class mpz_type> bool gcd_unsigned(
     }
 
     assert(data.iter>=0 && data.iter<=gcd_max_iterations); //total number of iterations performed
-    bool is_even=((data.iter-1)&1)==0; //parity of last iteration (can be -1)
-
-    c_results.end_index=(is_even)? 1 : 0;
+    bool is_even=((data.iter-1)&1)==0; //parity of last iteration (can be -1 when iter==0)
+    /* When iter==0 (e.g. ARM "gcd_128 break 1"), result was computed via slow path and is in as[1], bs[1]. */
+    c_results.end_index=(data.iter==0) ? 1 : ((is_even)? 1 : 0);
 
     c_results.as[0].finish(gcd_size);
     c_results.as[1].finish(gcd_size);

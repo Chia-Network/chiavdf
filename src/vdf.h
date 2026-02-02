@@ -185,9 +185,9 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
         }
 
         num_iterations+=actual_iterations;
-        if (num_iterations >= last_checkpoint) {
-            weso->iterations = num_iterations;
+        weso->iterations = num_iterations;
 
+        if (num_iterations >= last_checkpoint) {
             // n-weso specific logic.
             if (fast_algorithm) {
                 if (fast_storage != NULL) {
@@ -233,7 +233,7 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
                 form f_copy_2=f;
                 weso->reduce(f_copy_2);
 
-                repeated_square_original(*weso->vdfo, f_copy, D, L, actual_iterations);
+                repeated_square_original(*weso->vdfo, f_copy, D, L, 0, actual_iterations, nullptr);
                 assert(f_copy==f_copy_2);
             }
         #endif

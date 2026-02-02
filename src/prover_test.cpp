@@ -36,6 +36,13 @@ int main() {
       gcd_base_bits=63;
       gcd_128_max_iter=2;
     }
+#if defined(ARCH_ARM)
+    else
+    {
+      gcd_base_bits=50;
+      gcd_128_max_iter=3;
+    }
+#endif
     std::vector<uint8_t> challenge_hash({0, 0, 1, 2, 3, 3, 4, 4});
     integer D = CreateDiscriminant(challenge_hash, 1024);
 

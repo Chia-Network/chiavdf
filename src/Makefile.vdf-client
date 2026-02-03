@@ -6,6 +6,17 @@ NOPIE = -fno-PIE
 else
 NOPIE = -no-pie
 endif
+# CPU-specific tuning (only for local macOS ARM builds).
+# NOTE: this reduces portability of produced binaries; do NOT enable for non-macOS or non-arm64.
+ifeq ($(UNAME),Darwin)
+ifneq ($(filter $(ARCH),arm64),)
+ifneq ($(filter true 1 yes,$(CI) $(GITHUB_ACTIONS)),)
+CPU_TUNE_FLAGS =
+else
+CPU_TUNE_FLAGS = -mcpu=native
+endif
+endif
+endif
 # macOS arm64 ignores -no_pie and warns; omit to avoid deprecation warning
 ifeq ($(UNAME),Darwin)
 ifneq ($(filter $(ARCH),arm64),)
@@ -15,7 +26,7 @@ endif
 
 LDFLAGS += -flto $(NOPIE) -g
 LDLIBS += -lgmpxx -lgmp -pthread
-CXXFLAGS += -flto -std=c++1z -D FAST_MACHINE=1 -pthread $(NOPIE) -fvisibility=hidden
+CXXFLAGS += -flto -std=c++1z -D FAST_MACHINE=1 -pthread $(NOPIE) -fvisibility=hidden $(CPU_TUNE_FLAGS)
 ifeq ($(UNAME),Darwin)
 CXXFLAGS += -D CHIAOSX=1
 # Homebrew (common on macOS) installs boost/gmp to /opt/homebrew or /usr/local

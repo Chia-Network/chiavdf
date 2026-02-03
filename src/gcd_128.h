@@ -1,6 +1,8 @@
 #ifndef GCD_128_H
 #define GCD_128_H
 
+#include <cmath>
+
 bool gcd_128(
     array<uint128, 2>& ab, array<array<uint64, 2>, 2>& uv_uint64, int& uv_uint64_parity, bool is_lehmer, uint128 ab_threshold=0
 ) {
@@ -101,6 +103,21 @@ bool gcd_128(
 
         if (debug_output) print( "4:", uv_double[0][0], uv_double[1][0], uv_double[0][1], uv_double[1][1], ab_double[0], ab_double[1] );
 
+        // Tight contract at the boundary between the double-based partial GCD and the integer GCD:
+        // reject any result that violates expected invariants (ordered, nonnegative `ab`, exact-integer doubles).
+        if (!(ab_double[0] >= ab_double[1] && ab_double[1] >= 0)) {
+            break;
+        }
+
+        auto to_uint64_exact = [](double v, uint64& out) -> bool {
+            double a = std::abs(v);
+            if (!std::isfinite(a)) return false;
+            if (!range_check(a)) return false;     // doubles are only exact for integers up to 2^53-1
+            if (std::floor(a) != a) return false;  // must be an integer value
+            out = uint64(a);
+            return true;
+        };
+
         if (0) {
             matrix2 uv_double_2;
             if (!gcd_base_continued_fraction_2(ab_double_2, uv_double_2, is_lehmer || (shift_amount!=0), ab_threshold_double)) {
@@ -114,9 +131,17 @@ bool gcd_128(
             assert(ab_double==ab_double_2);
         }
 
+        uint64 u00, u01, u10, u11;
+        if (!to_uint64_exact(uv_double[0][0], u00) ||
+            !to_uint64_exact(uv_double[0][1], u01) ||
+            !to_uint64_exact(uv_double[1][0], u10) ||
+            !to_uint64_exact(uv_double[1][1], u11)) {
+            break;
+        }
+
         array<array<uint64,2>,2> uv_double_int={
-            array<uint64,2>{uint64(abs(uv_double[0][0])), uint64(abs(uv_double[0][1]))},
-            array<uint64,2>{uint64(abs(uv_double[1][0])), uint64(abs(uv_double[1][1]))}
+            array<uint64,2>{u00, u01},
+            array<uint64,2>{u10, u11}
         };
 
         int uv_double_parity=(uv_double[1][1]<0)? 1 : 0; //sign bit
@@ -159,6 +184,12 @@ bool gcd_128(
 
         uint128 a_new_s=a_new_1-a_new_2;
         uint128 b_new_s=b_new_1-b_new_2;
+
+        // The rest of the pipeline assumes unsigned inputs with `a >= b` always.
+        // If the partial-GCD produced cofactors that violate this, treat as no-progress and fall back.
+        if (a_new_s < b_new_s) {
+            break;
+        }
 
         //if this assert hit, one of the quotients is wrong. the base case is not supposed to return incorrect quotients
         //assert(a_new_s>=b_new_s && b_new_s>=0);

@@ -37,13 +37,12 @@ bool dot_product_exact(vector2 a, vector2 b, double& v, bool result_always_in_ra
         return false;
     }
 
-    // Use FMA when available (x86 AVX2) or on ARM so rounding matches x86 and gcd_base_continued_fraction
-    // does not spuriously return false ("gcd_128 break 1") due to double-rounding in a[1]*b[1]+v.
-    if (hasAVX2()
+    // Use FMA when available to avoid double-rounding:
+    // `fma(a, b, c)` computes \(a\cdot b + c\) with a single rounding step.
 #if defined(ARCH_ARM)
-        || true
-#endif
-    ) {
+    v=std::fma(a[1], b[1], v);
+#else
+    if (hasAVX2()) {
         v=std::fma(a[1], b[1], v);
     } else {
         double v2=a[1]*b[1];
@@ -53,21 +52,14 @@ bool dot_product_exact(vector2 a, vector2 b, double& v, bool result_always_in_ra
 
         v+=v2;
     }
+#endif
 
     if (result_always_in_range) {
         //still need the first range_check since the intermediate value might not be in range
-#if !defined(ARCH_ARM)
         assert(range_check(v));
-#endif
-        // On ARM, FMA can produce |v| > 2^53-1; do not assert, let return value handle it.
     }
 
-#if defined(ARCH_ARM)
-    // Accept 2^53 when result_always_in_range (FMA rounding); otherwise strict range.
-    return range_check(v) || (result_always_in_range && std::abs(v) <= double(1ull<<53));
-#else
     return range_check(v);
-#endif
 }
 
 //result_always_in_range ignored
@@ -472,10 +464,7 @@ bool gcd_base_continued_fraction(vector2& ab, matrix2& uv, bool is_lehmer, doubl
     bool test_asm_print=false; //(test_asm_counter%1000==0);
     bool debug_output=false;
 
-#if !defined(ARCH_ARM)
     assert(ab[0]>=ab[1] && ab[1]>=0);
-#endif
-    // On ARM, caller may pass ab[0]<ab[1] in edge cases; we break or return false from inner logic instead of asserting.
 
     uv=identity_matrix();
 
@@ -509,9 +498,7 @@ bool gcd_base_continued_fraction(vector2& ab, matrix2& uv, bool is_lehmer, doubl
 
         if (debug_output) print( "2:", q );
 
-#if !defined(ARCH_ARM)
         assert(ab[0]>=ab[1] && ab[1]>=0);
-#endif
 
         vector2 new_ab;
         matrix2 new_uv;
@@ -599,14 +586,8 @@ bool gcd_base_continued_fraction(vector2& ab, matrix2& uv, bool is_lehmer, doubl
         //will check it even if the table is used. shouldn't affect performance
         if (is_lehmer) {
             double ab_delta=new_ab[0]-new_ab[1];
-#if !defined(ARCH_ARM)
             assert(range_check(ab_delta)); //both are nonnegative so the subtraction can't increase the magnitude
-#endif
-#if defined(ARCH_ARM)
-            if (ab_delta < 0) break;  // FMA rounding can rarely produce new_ab[0]<new_ab[1]; bail instead of assert
-#else
             assert(ab_delta>=0); //ab[0] has to be greater
-#endif
 
             //the magnitudes add for these
             //however, the comparison is ab_delta >= u_delta or v_delta, and ab_delta>=0, so the values of u_delta and v_delta can
@@ -623,14 +604,11 @@ bool gcd_base_continued_fraction(vector2& ab, matrix2& uv, bool is_lehmer, doubl
 
             bool even=(new_uv[1][1]>=0);
 
-#if !defined(ARCH_ARM)
             if (even) {
                 assert(range_check(ab_delta+new_uv[0][1]));
             } else {
                 assert(range_check(ab_delta+new_uv[0][0]));
             }
-#endif
-            // On ARM, FMA can produce |new_uv| up to 2^53; allow same relaxed range as in dot_product_exact.
 
             bool passed=
                 new_ab[1]>=-new_uv[1][0] && ab_delta+new_uv[0][1]>=new_uv[1][1] && // even parity. for odd parity this is always true
@@ -664,16 +642,18 @@ bool gcd_base_continued_fraction(vector2& ab, matrix2& uv, bool is_lehmer, doubl
         //print( "            gcd_base quotient", q );
 
         //print( "foo" );
-#if !defined(ARCH_ARM)
         {
             //this would overflow a double; it works with modular arithmetic
-            int64 a_expected=int64(uv[0][0])*int64(ab_start[0]) + int64(uv[0][1])*int64(ab_start[1]);
-            int64 b_expected=int64(uv[1][0])*int64(ab_start[0]) + int64(uv[1][1])*int64(ab_start[1]);
-            assert(int64(ab[0])==a_expected);
-            assert(int64(ab[1])==b_expected);
+            // Use int128 to avoid UB under UBSan (int64 products can overflow even when algorithm is correct).
+            int128 a_expected =
+                int128(int64(uv[0][0])) * int128(int64(ab_start[0])) +
+                int128(int64(uv[0][1])) * int128(int64(ab_start[1]));
+            int128 b_expected =
+                int128(int64(uv[1][0])) * int128(int64(ab_start[0])) +
+                int128(int64(uv[1][1])) * int128(int64(ab_start[1]));
+            assert(int128(int64(ab[0])) == a_expected);
+            assert(int128(int64(ab[1])) == b_expected);
         }
-#endif
-        // On ARM, uv/ab can be up to 2^53; products overflow int64 and double->int64 is undefined for |v|>2^63-1.
 
         if (iter>=gcd_base_max_iter) {
             break;

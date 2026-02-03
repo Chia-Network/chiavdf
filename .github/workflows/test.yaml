@@ -42,7 +42,9 @@ jobs:
     - name: Build vdf-client on Mac
       if: startsWith(matrix.os, 'mac')
       run: |
-        brew install boost
+        if ! brew list boost >/dev/null 2>&1; then
+          brew install --formula --quiet boost
+        fi
         cd src
         make -f Makefile.vdf-client clean
         make ${{ matrix.config }} -f Makefile.vdf-client

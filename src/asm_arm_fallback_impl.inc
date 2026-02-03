@@ -4,6 +4,8 @@
  */
 #if defined(ARCH_ARM)
 
+#include <atomic>
+
 thread_local void (*gcd_unsigned_arm_uv_callback)(int index, const array<array<uint64, 2>, 2>& uv, int parity) = nullptr;
 thread_local bool gcd_unsigned_arm_fell_back_to_slow = false;
 
@@ -58,11 +60,14 @@ extern "C" int asm_arm_func_gcd_unsigned(asm_code::asm_func_gcd_unsigned_data* d
     assert(data->a_2 != nullptr && data->b_2 != nullptr);
     assert(data->threshold != nullptr);
 
+    // Load inputs in caller order: data->a = original a, data->b = original b.
     fixed_integer<uint64, gcd_size> a, b, threshold;
     load_limbs_to_fixed_integer(data->a, a);
     load_limbs_to_fixed_integer(data->b, b);
     load_limbs_to_fixed_integer(data->threshold, threshold);
 
+    // gcd_unsigned requires ab[0] >= ab[1]. If a < b, swap so (a,b) -> (b,a); we track
+    // inputs_swapped so we can store results and UV matrices back in original (a, b) order.
     bool inputs_swapped = (a < b);
     if (inputs_swapped) {
         std::swap(a, b);
@@ -78,11 +83,15 @@ extern "C" int asm_arm_func_gcd_unsigned(asm_code::asm_func_gcd_unsigned_data* d
     int parity = 1;
 
     g_arm_gcd_data = data;
-    g_arm_inputs_swapped = inputs_swapped;
+    g_arm_inputs_swapped = inputs_swapped;  // used by arm_uv_callback and when storing results
     gcd_unsigned_arm_uv_callback = arm_uv_callback;
 
     gcd_unsigned<gcd_size>(ab, uv, parity, threshold);
 
+    // When gcd_unsigned sets valid=false and falls back to the slow algorithm (e.g. gcd_128
+    // failed to make progress), it sets gcd_unsigned_arm_fell_back_to_slow. We must return -1
+    // so the caller gets an error and retries; otherwise we would report success with
+    // incomplete UV matrix data (only iterations before the fallback) and wrong iter count.
     if (gcd_unsigned_arm_fell_back_to_slow) {
         gcd_unsigned_arm_uv_callback = nullptr;
         g_arm_gcd_data = nullptr;
@@ -98,10 +107,12 @@ extern "C" int asm_arm_func_gcd_unsigned(asm_code::asm_func_gcd_unsigned_data* d
     g_arm_inputs_swapped = false;
     g_arm_iter_count = 0;
 
+    // Store results so that data->a/data->a_2 always get the result for original a (first input)
+    // and data->b/data->b_2 for original b (second input). When we swapped, internal ab[0]
+    // is result for original b and ab[1] for original a, so we store accordingly.
     if (inputs_swapped) {
-        // ab[0] is result for original b, ab[1] for original a
-        store_fixed_integer_to_limbs(ab[1], data->a_2);
-        store_fixed_integer_to_limbs(ab[0], data->b_2);
+        store_fixed_integer_to_limbs(ab[1], data->a_2);   // result for original a
+        store_fixed_integer_to_limbs(ab[0], data->b_2);   // result for original b
         store_fixed_integer_to_limbs(ab[1], data->a);
         store_fixed_integer_to_limbs(ab[0], data->b);
     } else {
@@ -113,8 +124,11 @@ extern "C" int asm_arm_func_gcd_unsigned(asm_code::asm_func_gcd_unsigned_data* d
 
     data->iter = iter;
 
+    // Match x86: after N iterations (indices 0..N-1), final counter is start + (N-1). See asm_gcd_unsigned.h comment and gcd_unsigned.h assert.
+    // Use atomic store so TSAN does not report a data race with fence_absolute's atomic load (out_uv_counter_addr points at std::atomic<uint64>).
     if (data->out_uv_counter_addr) {
-        *data->out_uv_counter_addr = data->uv_counter_start + iter - 1;
+        reinterpret_cast<std::atomic<uint64>*>(data->out_uv_counter_addr)->store(
+            data->uv_counter_start + iter - 1, std::memory_order_release);
     }
     if (data->out_uv_addr && iter > 0) {
         data->out_uv_addr[(iter - 1) * 8 + 5] = 1;

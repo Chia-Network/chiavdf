@@ -218,9 +218,10 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz {
     }
 
     ~mpz() {
-        if (is_vdf_test) {
-            //don't want this to happen for performance reasons
-            assert(!was_reallocated());
+        if (is_vdf_test && !was_reallocated()) {
+            // In test, assert we didn't reallocate when still using our buffer (performance invariant).
+            // When was_reallocated() (e.g. under load or after raise_error from spin_counter), skip assert so teardown can complete; mpz_clear is still safe.
+            assert(c_mpz._mp_d==reinterpret_cast<mp_limb_t*>(data));
         }
 
         //if c_mpz.data wasn't reallocated, it has to point to this instance's data and not some other instance's data

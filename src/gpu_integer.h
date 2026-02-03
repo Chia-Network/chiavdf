@@ -603,10 +603,10 @@ template<class type, int size> struct fixed_integer {
 
         type start=get_limb(start_limb)>>(start_offset);
 
-        //the shift is undefined for start_offset==0
+        if (start_offset==0) return start;
+        // Shift by bits_per_limb (e.g. 64) is undefined for 64-bit type; skip when start_offset==0.
         type end=get_limb(start_limb+1)<<(bits_per_limb-start_offset);
-
-        return (start_offset==0)? start : (start | end);
+        return start | end;
     }
 };
 

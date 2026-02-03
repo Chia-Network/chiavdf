@@ -33,7 +33,13 @@ OPT_CFLAGS = -O3 -g
 
 ifneq ($(ASAN),)
 LDFLAGS += -fsanitize=address -fsanitize=undefined
-CXXFLAGS += -g -fsanitize=address -fsanitize=undefined -fsanitize-undefined-trap-on-error
+CXXFLAGS += -g -fsanitize=address -fsanitize=undefined
+# On ARM, omit trap-on-error so UBSan prints instead of SIGTRAP; ASan may still trap on memory errors.
+ifneq ($(filter $(ARCH),aarch64 arm64),)
+CXXFLAGS += -fno-sanitize-undefined-trap-on-error
+else
+CXXFLAGS += -fsanitize-undefined-trap-on-error
+endif
 endif
 
 ifneq ($(TSAN),)

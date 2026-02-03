@@ -25,7 +25,8 @@ static uint64 get_time_cycles() {
 
     return (high<<32) | low;
 #elif defined(ARCH_ARM)
-    return static_cast<uint64>(__builtin_readcyclecounter());
+    /* PMU (e.g. PMCCNTR_EL0) is not available in user space on macOS and can be restricted elsewhere; __builtin_readcyclecounter() can trap (SIGTRAP). Return 0 so ENABLE_TRACK_CYCLES is a no-op on ARM. */
+    return 0;
 #else
     return 0;
 #endif

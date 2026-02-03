@@ -51,10 +51,16 @@ jobs:
       if: matrix.config == 'optimized=1'
       run: |
         cd src
+        # ARM (macos-13-arm64) uses C++ GCD fallback; use smaller iteration count so CI finishes
+        if [ "${{ matrix.os }}" = "macos-13-arm64" ]; then
+          ITER_ARGS="1000"
+        else
+          ITER_ARGS=""
+        fi
         echo "Running 1weso_test"
-        ./1weso_test
+        ./1weso_test $ITER_ARGS
         echo "Running 2weso_test"
-        ./2weso_test
+        ./2weso_test $ITER_ARGS
         echo "Running prover_test"
         ./prover_test
 

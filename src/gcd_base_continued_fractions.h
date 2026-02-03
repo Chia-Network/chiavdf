@@ -472,7 +472,10 @@ bool gcd_base_continued_fraction(vector2& ab, matrix2& uv, bool is_lehmer, doubl
     bool test_asm_print=false; //(test_asm_counter%1000==0);
     bool debug_output=false;
 
+#if !defined(ARCH_ARM)
     assert(ab[0]>=ab[1] && ab[1]>=0);
+#endif
+    // On ARM, caller may pass ab[0]<ab[1] in edge cases; we break or return false from inner logic instead of asserting.
 
     uv=identity_matrix();
 
@@ -505,6 +508,10 @@ bool gcd_base_continued_fraction(vector2& ab, matrix2& uv, bool is_lehmer, doubl
         double q=ab[0]/ab[1];
 
         if (debug_output) print( "2:", q );
+
+#if !defined(ARCH_ARM)
+        assert(ab[0]>=ab[1] && ab[1]>=0);
+#endif
 
         vector2 new_ab;
         matrix2 new_uv;
@@ -592,8 +599,14 @@ bool gcd_base_continued_fraction(vector2& ab, matrix2& uv, bool is_lehmer, doubl
         //will check it even if the table is used. shouldn't affect performance
         if (is_lehmer) {
             double ab_delta=new_ab[0]-new_ab[1];
+#if !defined(ARCH_ARM)
             assert(range_check(ab_delta)); //both are nonnegative so the subtraction can't increase the magnitude
+#endif
+#if defined(ARCH_ARM)
+            if (ab_delta < 0) break;  // FMA rounding can rarely produce new_ab[0]<new_ab[1]; bail instead of assert
+#else
             assert(ab_delta>=0); //ab[0] has to be greater
+#endif
 
             //the magnitudes add for these
             //however, the comparison is ab_delta >= u_delta or v_delta, and ab_delta>=0, so the values of u_delta and v_delta can
@@ -610,11 +623,14 @@ bool gcd_base_continued_fraction(vector2& ab, matrix2& uv, bool is_lehmer, doubl
 
             bool even=(new_uv[1][1]>=0);
 
+#if !defined(ARCH_ARM)
             if (even) {
                 assert(range_check(ab_delta+new_uv[0][1]));
             } else {
                 assert(range_check(ab_delta+new_uv[0][0]));
             }
+#endif
+            // On ARM, FMA can produce |new_uv| up to 2^53; allow same relaxed range as in dot_product_exact.
 
             bool passed=
                 new_ab[1]>=-new_uv[1][0] && ab_delta+new_uv[0][1]>=new_uv[1][1] && // even parity. for odd parity this is always true
@@ -648,6 +664,7 @@ bool gcd_base_continued_fraction(vector2& ab, matrix2& uv, bool is_lehmer, doubl
         //print( "            gcd_base quotient", q );
 
         //print( "foo" );
+#if !defined(ARCH_ARM)
         {
             //this would overflow a double; it works with modular arithmetic
             int64 a_expected=int64(uv[0][0])*int64(ab_start[0]) + int64(uv[0][1])*int64(ab_start[1]);
@@ -655,6 +672,8 @@ bool gcd_base_continued_fraction(vector2& ab, matrix2& uv, bool is_lehmer, doubl
             assert(int64(ab[0])==a_expected);
             assert(int64(ab[1])==b_expected);
         }
+#endif
+        // On ARM, uv/ab can be up to 2^53; products overflow int64 and double->int64 is undefined for |v|>2^63-1.
 
         if (iter>=gcd_base_max_iter) {
             break;

@@ -2,10 +2,15 @@
 #define GCD_UNSIGNED_H
 
 #ifdef ARCH_ARM
+    #include <atomic>
 // Callback used by ARM fallback to capture UV matrix at each gcd_unsigned iteration (thread-local so concurrent threads do not overwrite each other).
 extern thread_local void (*gcd_unsigned_arm_uv_callback)(int index, const array<array<uint64, 2>, 2>& uv, int parity);
 // Set by gcd_unsigned when it falls back to slow path (valid=false); ARM fallback checks this and returns -1 to match x86 asm behavior.
 extern thread_local bool gcd_unsigned_arm_fell_back_to_slow;
+// Count how often we fallback because `ab[0] < ab[1]` (invariant violation).
+extern std::atomic<uint64_t> gcd_unsigned_arm_bad_order_fallbacks;
+// Count how often we fallback because `gcd_128(...)` returned false (no progress / bad quotient discovery).
+extern std::atomic<uint64_t> gcd_unsigned_arm_gcd128_fail_fallbacks;
 #endif
 
 //threshold is 0 to calculate the normal gcd
@@ -71,8 +76,12 @@ template<int size> void gcd_unsigned(
 
     int iter=0;
 
+    // These vectors are only needed for the x86 TEST_ASM self-check block at the end.
+    // On ARM (and in normal builds) they add avoidable allocation/branch overhead in the hot loop.
+#if defined(TEST_ASM)
     vector<array<array<uint64, 2>, 2>> matricies;
     vector<int> local_parities;
+#endif
     bool valid=true;
 #ifdef ARCH_ARM
     gcd_unsigned_arm_fell_back_to_slow = false;
@@ -208,14 +217,18 @@ template<int size> void gcd_unsigned(
 
             ab[0]=a_new;
             ab[1]=b_new;
-#if defined(ARCH_ARM)
-            // Maintain ab[0] >= ab[1] so later code and next iteration do not hit bad loads.
+            // The algorithm assumes unsigned inputs with `ab[0] >= ab[1]` for every iteration.
+            // If that invariant is violated (e.g. due to a bad cofactor matrix from gcd_128),
+            // do NOT "fix it up" by swapping (that changes the meaning of UV/parity).
+            // Instead, force a fallback (same behavior as when gcd_128 can't make progress).
             if (ab[0] < ab[1]) {
-                std::swap(ab[0], ab[1]);
-                std::swap(uv[0], uv[1]);
-                parity = -parity;
-            }
+                valid=false;
+#ifdef ARCH_ARM
+                ++gcd_unsigned_arm_bad_order_fallbacks;
+                gcd_unsigned_arm_fell_back_to_slow = true;
 #endif
+                break;
+            }
 
             //bx and by are nonnegative
             auto dot=[&](uint64 ax, uint64 ay, int_t bx, int_t by) -> int_t {
@@ -235,8 +248,10 @@ template<int size> void gcd_unsigned(
             //todo: don't do this; just make it 0 even, 1 odd
             parity*=1-local_parity-local_parity;
 
+#if defined(TEST_ASM)
             matricies.push_back(uv_uint64);
             local_parities.push_back(local_parity);
+#endif
 #ifdef ARCH_ARM
             if (gcd_unsigned_arm_uv_callback) {
                 gcd_unsigned_arm_uv_callback(static_cast<int>(matricies.size()) - 1, uv_uint64, local_parity);
@@ -251,6 +266,7 @@ template<int size> void gcd_unsigned(
 
             valid=false;
 #ifdef ARCH_ARM
+            ++gcd_unsigned_arm_gcd128_fail_fallbacks;
             gcd_unsigned_arm_fell_back_to_slow = true;
 #endif
             break;
@@ -274,7 +290,7 @@ template<int size> void gcd_unsigned(
         ++iter;
     }
 
-    {
+    if (is_vdf_test) {
         auto ab2=ab_start;
         auto uv2=uv_start;
         int parity2=parity_start;

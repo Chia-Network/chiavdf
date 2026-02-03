@@ -8,6 +8,8 @@
 
 thread_local void (*gcd_unsigned_arm_uv_callback)(int index, const array<array<uint64, 2>, 2>& uv, int parity) = nullptr;
 thread_local bool gcd_unsigned_arm_fell_back_to_slow = false;
+std::atomic<uint64_t> gcd_unsigned_arm_bad_order_fallbacks{0};
+std::atomic<uint64_t> gcd_unsigned_arm_gcd128_fail_fallbacks{0};
 
 namespace {
 
@@ -41,9 +43,13 @@ void arm_uv_callback(int index, const array<array<uint64, 2>, 2>& uv, int parity
 }
 
 void load_limbs_to_fixed_integer(uint64* limbs, fixed_integer<uint64, gcd_size>& out) {
-    integer tmp;
-    mpz_import(tmp.impl, gcd_size, -1, sizeof(uint64), -1, 0, limbs);
-    out = fixed_integer<uint64, gcd_size>(tmp);
+    // `fixed_integer<uint64, gcd_size>` stores little-endian 64-bit limbs in `out[0..gcd_size-1]`
+    // (mapped to `data[1..]`). The `asm_func_gcd_unsigned_data` limb buffers are already in the
+    // same format, so we can copy directly. Avoid GMP conversions in this hot path.
+    out.set_negative(false);
+    for (int i = 0; i < gcd_size; i++) {
+        out[i] = limbs[i];
+    }
 }
 
 void store_fixed_integer_to_limbs(const fixed_integer<uint64, gcd_size>& in, uint64* limbs) {
@@ -54,7 +60,9 @@ void store_fixed_integer_to_limbs(const fixed_integer<uint64, gcd_size>& in, uin
 
 }  // namespace
 
-extern "C" int asm_arm_func_gcd_unsigned(asm_code::asm_func_gcd_unsigned_data* data) {
+namespace asm_code {
+
+extern "C" int asm_arm_func_gcd_unsigned(asm_func_gcd_unsigned_data* data) {
     assert(data != nullptr);
     assert(data->a != nullptr && data->b != nullptr);
     assert(data->a_2 != nullptr && data->b_2 != nullptr);
@@ -136,5 +144,7 @@ extern "C" int asm_arm_func_gcd_unsigned(asm_code::asm_func_gcd_unsigned_data* d
 
     return 0;
 }
+
+} // namespace asm_code
 
 #endif

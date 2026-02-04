@@ -22,7 +22,7 @@ inline std::atomic<uint64> fence_timeouts{0};
 inline std::atomic<uint64> fence_total_wait_ns{0};
 inline std::atomic<uint64> fence_max_wait_ns{0};
 inline std::atomic<uint64> fence_max_gap{0};
-inline std::atomic<uint64> fence_last_log_ns{0};
+inline std::atomic<uint64> fence_last_log_ticks{0};
 
 static inline void atomic_max_u64(std::atomic<uint64>& a, uint64 v) {
     uint64 cur = a.load(std::memory_order_relaxed);
@@ -732,7 +732,6 @@ struct thread_state {
         // clock reads unless we are stalled for a while.
         uint64 start_ticks = 0;
         uint64 last_progress_ticks = 0;
-        uint64 last_log_ticks = 0;
         bool timing_started = false;
 
         uint64 spin_counter=0;
@@ -775,7 +774,6 @@ struct thread_state {
                     timing_started = true;
                     start_ticks = now_ticks;
                     last_progress_ticks = now_ticks;
-                    last_log_ticks = now_ticks;
                 }
                 if (progress_seen) {
                     last_progress_ticks = now_ticks;
@@ -794,11 +792,10 @@ struct thread_state {
                     }
 
                     // Rate-limited log (avoid flooding / perturbing timing).
-                    // Keep the global rate-limit in ns (shared across call sites).
-                    const uint64 now_ns = fence_ticks_to_ns(now_ticks);
-                    uint64 expected = fence_last_log_ns.load(std::memory_order_relaxed);
-                    if (now_ns - expected > log_interval_ns &&
-                        fence_last_log_ns.compare_exchange_strong(expected, now_ns, std::memory_order_relaxed)) {
+                    // Use the same tick unit as `fence_now_ticks()` for cheap comparisons.
+                    uint64 expected = fence_last_log_ticks.load(std::memory_order_relaxed);
+                    if (now_ticks - expected > log_interval_ticks &&
+                        fence_last_log_ticks.compare_exchange_strong(expected, now_ticks, std::memory_order_relaxed)) {
                         print("spin_counter too high", is_slave);
                     }
                 }

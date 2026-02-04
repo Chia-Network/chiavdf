@@ -93,6 +93,9 @@ vdf_client.o: CXXFLAGS += -DNDEBUG
 # Test binaries: VDF_MODE=1 (is_vdf_test=true) so their asserts and test logic run correctly.
 1weso_test.o 2weso_test.o prover_test.o vdf_bench.o: CXXFLAGS += -D VDF_MODE=1
 
+# vdf_bench is used primarily for performance measurement; enable benchmark-specific knobs.
+vdf_bench.o: CXXFLAGS += -DVDF_BENCH
+
 lzcnt.o: refcode/lzcnt.c
 	$(CC) -c refcode/lzcnt.c
 

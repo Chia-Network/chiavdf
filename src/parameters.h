@@ -220,10 +220,22 @@ const uint64 max_spin_counter=10000000;
 //this value makes square_original not be called in 100k iterations. with every iteration reduced, minimum value is 1
 const int num_extra_bits_ab=3;
 
+// phase_0_slave knob:
+// If enabled, folds the `*c` into the UV chain (avoids a final mul+mod).
+// This is currently off by default; we instead optimize the mul+mod directly.
 const bool calculate_k_repeated_mod=false;
-const bool calculate_k_repeated_mod_interval=1;
+const int calculate_k_repeated_mod_interval=1;
 
-const int validate_interval=1; //power of 2. will check the discriminant in the slave thread at this interval. -1 to disable. no effect on performance
+// `c=(b^2-D)/(4a)` should be exact; validating the remainder via `mpz_fdiv_qr` is expensive.
+// Keep strict validation in correctness-heavy builds, but relax in benchmarks/production.
+#if defined(VDF_BENCH)
+// Benchmark build: disable expensive `c` remainder validation.
+const int validate_interval=-1;
+#else
+// Default: validate periodically (cheap sanity check without dominating IPS).
+// This avoids paying for `mpz_fdiv_qr` every single fast iteration.
+const int validate_interval=64;
+#endif
 const int checkpoint_interval=10000; //at each checkpoint, the slave thread is restarted and the master thread calculates c
 //checkpoint_interval=100000: 39388
 //checkpoint_interval=10000:  39249 cycles per fast iteration

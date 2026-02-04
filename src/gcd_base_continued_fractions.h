@@ -99,7 +99,7 @@ template<class type> bool multiply_exact(
 struct continued_fraction {
     vector<int> values;
 
-    matrix2 get_matrix() {
+    matrix2 get_matrix() const {
         matrix2 res=identity_matrix();
 
         for (int i : values) {
@@ -132,7 +132,7 @@ struct continued_fraction {
         return res;
     }
 
-    bool is_superset_of(continued_fraction& targ) {
+    bool is_superset_of(const continued_fraction& targ) const {
         if (values.size()>targ.values.size()) {
             return false;
         }
@@ -148,7 +148,7 @@ struct continued_fraction {
 
     //rounds to 0; need to add 1 ulp to the fraction to get the possible range
     //if is_exact is true then the result is inside the continued fraction
-    double get_bound(bool parity, bool& is_exact) {
+    double get_bound(bool parity, bool& is_exact) const {
         assert(!values.empty());
 
         bool first=true;
@@ -183,7 +183,7 @@ struct continued_fraction {
     //everything inside the bound starts with this continued fraction
     //something outside the bound might also start with this continued fraction
     //>= first, < second
-    pair<double, double> get_bound() {
+    pair<double, double> get_bound() const {
         bool a_exact=false;
         double a=get_bound(false, a_exact);
 
@@ -275,17 +275,19 @@ template<class type> struct double_table {
         return make_pair(*(double*)&res_low, *(double*)&res_high);
     }
 
-    bool lookup(double v, type& res) {
+    // Return a pointer to the table entry for `v`, or nullptr if out of range.
+    //
+    // This avoids copying large `type` values (notably `continued_fraction`, which
+    // contains a `std::vector<int>` and would allocate on each lookup).
+    const type* lookup(double v) const {
         assert(v>=1);
-
-        res=type();
 
         uint64 v_bits=*(uint64*)&v;
         uint64 v_bits_shifted=v_bits>>right_shift_amount;
 
         assert(v_bits_shifted>=range_start_shifted); //since v>=1
         if (v_bits_shifted<range_start_shifted || v_bits_shifted>=range_end_shifted) {
-            return false;
+            return nullptr;
         }
 
         //the table doesn't work if v is exactly between two slots
@@ -294,11 +296,10 @@ template<class type> struct double_table {
             (v_bits & (delta-1)) == 0 ||
             (v_bits & (delta-1)) == delta-1
         ) {
-            return false;
+            return nullptr;
         }
 
-        res=data.at(v_bits_shifted-range_start_shifted);
-        return true;
+        return &data.at(v_bits_shifted-range_start_shifted);
     }
 
     //will assign all entries >= range.first and < range.second
@@ -505,14 +506,17 @@ bool gcd_base_continued_fraction(vector2& ab, matrix2& uv, bool is_lehmer, doubl
 
         bool used_table=false;
 
-        continued_fraction f;
-        if (enable_table && c_table.lookup(q, f)) {
-            assert(!f.values.empty()); //table should be set up not to have empty values
+        if (enable_table) {
+            const continued_fraction* f = c_table.lookup(q);
+            if (f) {
+                assert(!f->values.empty()); //table should be set up not to have empty values
 
-            if (debug_output) print( "3:", f.get_matrix()[0][0], f.get_matrix()[1][0], f.get_matrix()[0][1], f.get_matrix()[1][1] );
+                const matrix2 fm = f->get_matrix();
 
-            bool new_ab_valid=multiply_exact(f.get_matrix(), ab, new_ab, true); //a and b can only be reduced in magnitude
-            bool new_uv_valid=multiply_exact(f.get_matrix(), uv, new_uv);
+                if (debug_output) print( "3:", fm[0][0], fm[1][0], fm[0][1], fm[1][1] );
+
+                bool new_ab_valid=multiply_exact(fm, ab, new_ab, true); //a and b can only be reduced in magnitude
+                bool new_uv_valid=multiply_exact(fm, uv, new_uv);
             bool new_a_valid=(new_ab[0]>ab_threshold);
 
             if (debug_output) print( "4:", new_ab_valid, new_uv_valid, new_a_valid );
@@ -529,6 +533,7 @@ bool gcd_base_continued_fraction(vector2& ab, matrix2& uv, bool is_lehmer, doubl
                     //if ab_threshold is not 0, need to keep going since the partial gcd is about to terminate
                     //break;
                 //}
+            }
             }
         }
 

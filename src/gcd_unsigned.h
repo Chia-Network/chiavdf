@@ -311,17 +311,19 @@ template<int size> bool gcd_unsigned(
 
             // Update accumulated cofactors (unsigned).
             // This is hot; avoid lambda + by-value parameter copies.
-            int_t tmp0 = uv[0];
-            int_t tmp1 = uv[1];
-            tmp0 *= uv_00;
-            tmp1 *= uv_01;
-            int_t new_uv_0 = int_t(tmp0 + tmp1);
+            // Avoid `operator+` (which creates a size+1 temporary) to reduce memmoves.
+            // The algorithm only relies on the low `size` limbs (same semantics as truncation).
+            int_t new_uv_0 = uv[0];
+            new_uv_0 *= uv_00;
+            int_t add_uv_0 = uv[1];
+            add_uv_0 *= uv_01;
+            new_uv_0 += add_uv_0;
 
-            tmp0 = uv[0];
-            tmp1 = uv[1];
-            tmp0 *= uv_10;
-            tmp1 *= uv_11;
-            int_t new_uv_1 = int_t(tmp0 + tmp1);
+            int_t new_uv_1 = uv[0];
+            new_uv_1 *= uv_10;
+            int_t add_uv_1 = uv[1];
+            add_uv_1 *= uv_11;
+            new_uv_1 += add_uv_1;
 
             uv[0]=new_uv_0;
             uv[1]=new_uv_1;

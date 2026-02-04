@@ -38,6 +38,57 @@ static inline uint64 now_ns_steady() {
     ).count();
 }
 
+// A cheaper monotonic timestamp for tight spin loops.
+//
+// On macOS/ARM, `std::chrono::steady_clock::now()` is relatively expensive (ends up in
+// `clock_gettime*`); `mach_absolute_time()` is substantially cheaper and monotonic.
+static inline uint64 fence_now_ticks() {
+#if defined(__APPLE__) && defined(ARCH_ARM)
+    return mach_absolute_time();
+#else
+    // Fallback: keep using steady_clock outside Apple/ARM.
+    return now_ns_steady();
+#endif
+}
+
+static inline uint64 fence_ns_to_ticks(uint64 ns) {
+#if defined(__APPLE__) && defined(ARCH_ARM)
+    static mach_timebase_info_data_t tb = []() {
+        mach_timebase_info_data_t t{};
+        (void)mach_timebase_info(&t);
+        if (t.numer == 0) t.numer = 1;
+        if (t.denom == 0) t.denom = 1;
+        return t;
+    }();
+    // ns = ticks * numer / denom  =>  ticks = ns * denom / numer
+    __uint128_t v = (__uint128_t)ns * (__uint128_t)tb.denom;
+    v /= (__uint128_t)tb.numer;
+    if (v > (__uint128_t)~uint64(0)) return ~uint64(0);
+    return (uint64)v;
+#else
+    // On non-Apple/ARM, our tick unit is already ns.
+    return ns;
+#endif
+}
+
+static inline uint64 fence_ticks_to_ns(uint64 ticks) {
+#if defined(__APPLE__) && defined(ARCH_ARM)
+    static mach_timebase_info_data_t tb = []() {
+        mach_timebase_info_data_t t{};
+        (void)mach_timebase_info(&t);
+        if (t.numer == 0) t.numer = 1;
+        if (t.denom == 0) t.denom = 1;
+        return t;
+    }();
+    __uint128_t v = (__uint128_t)ticks * (__uint128_t)tb.numer;
+    v /= (__uint128_t)tb.denom;
+    if (v > (__uint128_t)~uint64(0)) return ~uint64(0);
+    return (uint64)v;
+#else
+    return ticks;
+#endif
+}
+
 static uint64 get_time_cycles() {
 #if defined(ARCH_X86) || defined(ARCH_X64)
     // Returns the time in EDX:EAX (x86 rdtsc).
@@ -648,6 +699,17 @@ struct thread_state {
             return true;
         }
 
+        // Fast path: most fences are already satisfied by the time we check.
+        // Avoid setting up timers/backoff state unless we actually need to wait.
+        {
+            auto& other_val = other_counter().counter_value;
+            const uint64 other_v = other_val.load(std::memory_order_acquire);
+            if (other_v >= t_v) {
+                last_fence = t_v;
+                return true;
+            }
+        }
+
         // Steps 1-3:
         // - Track wait stats to understand how often we block and for how long.
         // - Use a wall-clock timeout (spin iteration counts vary wildly by CPU/optimizer).
@@ -662,57 +724,81 @@ struct thread_state {
 #endif
         constexpr uint64 log_interval_ns = 1ull * 1000ull * 1000ull * 1000ull; // 1s
 
-        const uint64 start_ns = now_ns_steady();
+        // Convert timeout thresholds into local tick units once.
+        const uint64 fence_timeout_ticks = fence_ns_to_ticks(fence_timeout_ns);
+        const uint64 log_interval_ticks = fence_ns_to_ticks(log_interval_ns);
+
+        // Make timing/diagnostics lazy: most fences complete quickly. Avoid any
+        // clock reads unless we are stalled for a while.
+        uint64 start_ticks = 0;
+        uint64 last_progress_ticks = 0;
+        uint64 last_log_ticks = 0;
+        bool timing_started = false;
+
         uint64 spin_counter=0;
-        uint64 last_other_v = other_counter().counter_value;
-        uint64 last_progress_ns = start_ns;
+        auto& other_val = other_counter().counter_value;
+        auto& this_err = this_counter().error_flag;
+        auto& other_err = other_counter().error_flag;
+
+        uint64 last_other_v = other_val.load(std::memory_order_acquire);
         uint64 backoff_us = 0;
         bool progress_seen = false;
 
         if (is_vdf_test) {
             fence_wait_calls.fetch_add(1, std::memory_order_relaxed);
         }
-        while (other_counter().counter_value < t_v) {
-            const uint64 other_v = other_counter().counter_value;
+        while (true) {
+            const uint64 other_v = other_val.load(std::memory_order_acquire);
+            if (other_v >= t_v) break;
 
-            if (this_counter().error_flag.load() || other_counter().error_flag.load()) {
+            if (this_err.load(std::memory_order_relaxed) || other_err.load(std::memory_order_relaxed)) {
                 raise_error();
                 break;
             }
 
             // Progress-aware timeout: only abort if the other counter stalls for too long.
             //
-            // NOTE: `steady_clock::now()` can be relatively expensive on some platforms.
-            // Only sample time occasionally (every 1024 spins) to keep the fast path cheap.
-            uint64 now_ns = 0;
             if (other_v != last_other_v) {
                 last_other_v = other_v;
                 progress_seen = true;
             }
 
-            // Time sampling / timeout check.
-            if ((spin_counter & 0x3FF) == 0) { // every 1024 spins
-                now_ns = now_ns_steady();
+            // Two-tier time sampling:
+            // - spin/yield for a while with zero clock reads
+            // - only start clock sampling if we appear stalled
+            //
+            // This keeps the per-spin overhead tiny on macOS/ARM.
+            uint64 now_ticks = 0;
+            if ((spin_counter >= (1u << 16)) && ((spin_counter & 0xFFFF) == 0)) { // every 65536 spins after warmup
+                now_ticks = fence_now_ticks();
+                if (!timing_started) {
+                    timing_started = true;
+                    start_ticks = now_ticks;
+                    last_progress_ticks = now_ticks;
+                    last_log_ticks = now_ticks;
+                }
                 if (progress_seen) {
-                    last_progress_ns = now_ns;
+                    last_progress_ticks = now_ticks;
                     progress_seen = false;
                 }
             }
 
-            if (now_ns != 0 && now_ns - last_progress_ns > fence_timeout_ns) {
+            if (now_ticks != 0 && (now_ticks - last_progress_ticks) > fence_timeout_ticks) {
                 if (is_vdf_test) {
                     fence_timeouts.fetch_add(1, std::memory_order_relaxed);
-                    atomic_max_u64(fence_max_wait_ns, now_ns - start_ns);
-                    fence_total_wait_ns.fetch_add(now_ns - start_ns, std::memory_order_relaxed);
+                    const uint64 wait_ns = fence_ticks_to_ns(now_ticks - start_ticks);
+                    atomic_max_u64(fence_max_wait_ns, wait_ns);
+                    fence_total_wait_ns.fetch_add(wait_ns, std::memory_order_relaxed);
                     if (t_v > other_v) {
                         atomic_max_u64(fence_max_gap, t_v - other_v);
                     }
 
                     // Rate-limited log (avoid flooding / perturbing timing).
+                    // Keep the global rate-limit in ns (shared across call sites).
+                    const uint64 now_ns = fence_ticks_to_ns(now_ticks);
                     uint64 expected = fence_last_log_ns.load(std::memory_order_relaxed);
                     if (now_ns - expected > log_interval_ns &&
-                        fence_last_log_ns.compare_exchange_strong(
-                            expected, now_ns, std::memory_order_relaxed)) {
+                        fence_last_log_ns.compare_exchange_strong(expected, now_ns, std::memory_order_relaxed)) {
                         print("spin_counter too high", is_slave);
                     }
                 }
@@ -726,10 +812,24 @@ struct thread_state {
             // - then yield periodically
             // - then sleep in small increments to let the other thread run
             ++spin_counter;
+            // macOS/ARM is sensitive to producer starvation when the consumer spins too hard,
+            // but calling `std::this_thread::yield()` too frequently shows up as kernel
+            // `swtch_pri` time. Use a two-tier backoff:
+            // - very cheap CPU hint (`yield` instruction) while spinning
+            // - only call OS scheduler yield occasionally
+#if defined(ARCH_ARM)
+            if (spin_counter < (1u << 14)) {
+                asm volatile("yield" ::: "memory");
+            } else if ((spin_counter & 0xFFF) == 0) { // every 4096 spins after warmup
+                std::this_thread::yield();
+                if (backoff_us < 50) backoff_us = 50;
+            }
+#else
             if ((spin_counter & 0x3FF) == 0) { // every 1024 spins
                 std::this_thread::yield();
                 if (backoff_us < 50) backoff_us = 50;
             }
+#endif
             if ((spin_counter & 0x7FFF) == 0) { // every 32768 spins
                 if (backoff_us < 1000) backoff_us = (backoff_us == 0) ? 50 : std::min<uint64>(backoff_us * 2, 1000);
                 std::this_thread::sleep_for(std::chrono::microseconds(backoff_us));
@@ -746,8 +846,12 @@ struct thread_state {
         }
 
         if (is_vdf_test) {
-            const uint64 end_ns = now_ns_steady();
-            const uint64 wait_ns = end_ns - start_ns;
+            // Avoid an unconditional clock read for fast fences.
+            uint64 wait_ns = 0;
+            if (timing_started) {
+                const uint64 end_ticks = fence_now_ticks();
+                wait_ns = fence_ticks_to_ns(end_ticks - start_ticks);
+            }
             fence_total_wait_ns.fetch_add(wait_ns, std::memory_order_relaxed);
             atomic_max_u64(fence_max_wait_ns, wait_ns);
         }
@@ -772,7 +876,9 @@ struct thread_state {
             raise_error();
         }
 
-        this_counter().counter_value=t_v;
+        // Publish progress with release ordering so consumers (acquire loads) can
+        // safely observe the corresponding produced data.
+        this_counter().counter_value.store(t_v, std::memory_order_release);
 
         return !(this_counter().error_flag);
     }

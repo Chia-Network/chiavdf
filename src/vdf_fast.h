@@ -427,13 +427,21 @@ struct square_state_type {
         int num_multiplications=0;
 
         int gcd_index=0;
+        // Reduce synchronization overhead: if the producer counter is already far
+        // ahead, avoid calling `fence()` (and its backoff logic) for every entry.
+        const uint64 base_abs = c_thread_state.counter_start + uint64(counter_start_phase_0);
         while (true) {
             const gcd_uv_entry* c_entry=nullptr;
-            {
-                TRACK_CYCLES //357
-                if (!gcd_1_0.get_entry(counter_start_phase_0, gcd_index, &c_entry)) {
-                    TRACK_CYCLES_ABORT
-                    return false;
+            const uint64 other_abs = c_thread_state.other_counter().counter_value.load(std::memory_order_acquire);
+            if (other_abs >= base_abs + uint64(gcd_index) + 1u) {
+                c_entry = &gcd_1_0.uv_entries[gcd_index];
+            } else {
+                {
+                    TRACK_CYCLES //357
+                    if (!gcd_1_0.get_entry(counter_start_phase_0, gcd_index, &c_entry)) {
+                        TRACK_CYCLES_ABORT
+                        return false;
+                    }
                 }
             }
 

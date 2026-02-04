@@ -281,7 +281,10 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
                 }
             }
 
-            prev_was_single_slow_step = true;
+            // Only tag "after single slow step" when it was actually a single step.
+            // (When recovery is enabled we may do a burst of slow steps; the next fast batch
+            // should not be attributed as "entered after single slow".)
+            prev_was_single_slow_step = (slow_recovery_iters == 1);
 
             #ifdef VDF_TEST
                 num_iterations_slow += slow_recovery_iters;

@@ -384,8 +384,17 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
     #ifdef VDF_TEST
         const bool diag = (!quiet_mode) && chiavdf_diag_enabled();
         if (diag) {
-            print( "fast average batch size", double(num_iterations_fast)/double(num_calls_fast) );
-            print( "fast iterations per slow iteration", double(num_iterations_fast)/double(num_iterations_slow) );
+            if (num_calls_fast != 0) {
+                print("fast average batch size", double(num_iterations_fast) / double(num_calls_fast));
+            } else {
+                print("fast average batch size", "n/a");
+            }
+
+            if (num_iterations_slow != 0) {
+                print("fast iterations per slow iteration", double(num_iterations_fast) / double(num_iterations_slow));
+            } else {
+                print("fast iterations per slow iteration", "n/a");
+            }
             if (a_not_high_enough_fails != 0) {
                 print( "fast early-terminations due to a<=L", a_not_high_enough_fails );
                 print( "  after 1-iter slow step", a_not_high_enough_fails_after_single_slow );

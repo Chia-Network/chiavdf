@@ -10,15 +10,6 @@ fuzz_target!(|data: ([u8; 10], [u8; 100], Vec<u8>, u64, u64)| -> Corpus {
     if !create_discriminant(&seed, &mut disc) {
         return Corpus::Reject;
     };
-    // Resource-bound the fuzz input so the target doesn't burn CI CPU/RAM.
-    const MAX_ITERS: u64 = 1024;
-    const MAX_RECURSION: u64 = 4;
-    verify_n_wesolowski(
-        &disc,
-        &element,
-        &proof,
-        iters % MAX_ITERS,
-        recursion % MAX_RECURSION,
-    );
+    verify_n_wesolowski(&disc, &element, &proof, iters, recursion);
     Corpus::Keep
 });

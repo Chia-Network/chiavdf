@@ -105,11 +105,22 @@ extern "C" int asm_arm_func_gcd_unsigned(asm_func_gcd_unsigned_data* data) {
 
     data->iter = iter;
 
-    // Match x86: after N iterations (indices 0..N-1), final counter is start + (N-1).
+    // Match x86 protocol:
+    // - The consumer starts at the sentinel entry (iter == -1, stored at uv_entries[0]).
+    // - If N>0 iterations were produced, the final real entry (iter==N-1) must have exit_flag=1.
+    // - If N==0, the sentinel entry itself must have exit_flag=1 so the consumer terminates
+    //   without ever reading an uninitialized "iter 0" entry.
+    //
     // The per-iteration publication happens inside `gcd_unsigned()` above; here we only
-    // publish the final value again after setting the exit_flag so consumers see it.
-    if (data->out_uv_addr && iter > 0) {
-        data->out_uv_addr[(iter - 1) * 8 + 5] = 1;
+    // set the terminal exit_flag and then publish the final counter value again so
+    // consumers (acquire) observe it.
+    if (data->out_uv_addr) {
+        if (iter > 0) {
+            data->out_uv_addr[(iter - 1) * 8 + 5] = 1;
+        } else {
+            // iter == 0: out_uv_addr points at entry for iter 0; the sentinel is one entry before.
+            data->out_uv_addr[-8 + 5] = 1;
+        }
     }
     if (data->out_uv_counter_addr) {
         reinterpret_cast<std::atomic<uint64>*>(data->out_uv_counter_addr)->store(

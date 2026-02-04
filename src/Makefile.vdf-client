@@ -49,7 +49,7 @@ endif
 
 ifneq ($(TSAN),)
 LDFLAGS += -fsanitize=thread
-CXXFLAGS += -g -fsanitize=thread
+CXXFLAGS += -g -fsanitize=thread -DCHIAVDF_TSAN=1
 endif
 
 .PHONY: all clean tests

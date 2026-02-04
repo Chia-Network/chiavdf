@@ -235,7 +235,20 @@ const int checkpoint_interval=10000; //at each checkpoint, the slave thread is r
     //#define GENERATE_ASM_TRACKING_DATA
     //#define ENABLE_TRACK_CYCLES
     const bool vdf_test_correctness=false;
+    // ThreadSanitizer does not understand our custom counter-based synchronization
+    // between the master/slave fast-squaring threads (it reports races on shared
+    // stack storage even when counters establish a happens-before). Disable the
+    // fast worker thread under TSAN so CI can run cleanly.
+    //
+    // We support multiple TSAN detection paths:
+    // - compiler-defined: `__SANITIZE_THREAD__` (GCC/Clang)
+    // - clang feature-test: `__has_feature(thread_sanitizer)`
+    // - build-system define: `CHIAVDF_TSAN` (set by Makefile when TSAN=1)
+#if defined(CHIAVDF_TSAN) || defined(__SANITIZE_THREAD__) || (defined(__has_feature) && __has_feature(thread_sanitizer))
+    const bool enable_threads=false;
+#else
     const bool enable_threads=true;
+#endif
 #endif
 
 // ==== production ====
@@ -246,7 +259,11 @@ const int checkpoint_interval=10000; //at each checkpoint, the slave thread is r
     const double random_error_injection_rate=0; //0 to 1
 
     const bool vdf_test_correctness=false;
+#if defined(CHIAVDF_TSAN) || defined(__SANITIZE_THREAD__) || (defined(__has_feature) && __has_feature(thread_sanitizer))
+    const bool enable_threads=false;
+#else
     const bool enable_threads=true;
+#endif
 
     //#define ENABLE_TRACK_CYCLES
 #endif

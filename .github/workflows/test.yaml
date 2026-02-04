@@ -36,7 +36,6 @@ jobs:
       run: |
         sudo apt-get install libgmp-dev libboost-python-dev libpython3-dev libboost-system-dev build-essential -y
         cd src
-        make -f Makefile.vdf-client clean
         make ${{ matrix.config }} -f Makefile.vdf-client
 
     - name: Build vdf-client on Mac
@@ -46,7 +45,6 @@ jobs:
           brew install --formula --quiet boost
         fi
         cd src
-        make -f Makefile.vdf-client clean
         make ${{ matrix.config }} -f Makefile.vdf-client
 
     - name: Test vdf-client

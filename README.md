@@ -65,6 +65,39 @@ Those tests will simulate the vdf_client and verify for correctness the produced
 **C++ tests**: build from `src/` with `make -f Makefile.vdf-client` (requires GMP and Boost).
 On ARM (aarch64/arm64) a C++ GCD path is used; tests pass but run slower than on x86.
 
+### Optional diagnostics (macOS arm64 / performance work)
+
+This repo contains **extra diagnostic prints** that are useful when doing performance work (e.g. attributing why the fast path bails, tuning `--recover-a`, or understanding ARM GCD fallback behavior). These diagnostics are **disabled by default** to keep normal runs/CI output clean (for example, `vdf_bench` prints just `XXX.XK ips` by default).
+
+- **Enable diagnostics**: set **`CHIAVDF_DIAG=1`** (or **`CHIAVDF_VDF_TEST_STATS=1`**) for the command you’re running.
+
+Examples (Apple Silicon / macOS arm64):
+
+```bash
+cd src
+make optimized=1 -f Makefile.vdf-client clean vdf_bench 1weso_test
+
+# Benchmark with extra optimization stats (slow-fallback attribution, recovery stats, etc.)
+CHIAVDF_DIAG=1 ./vdf_bench square_asm 2000000 --recover-a
+
+# 1weso_test with extra fast/slow + recovery summary
+CHIAVDF_DIAG=1 ./1weso_test 1000
+```
+
+Notes:
+
+- **`vdf_bench` script compatibility**: some older scripts pass an extra positional `N`/`Y` argument (e.g. `./vdf_bench square_asm 400000 N --recover-a`). This is accepted and ignored for backwards compatibility.
+
+Why you would enable this:
+
+- **Fast-path bailout attribution** (e.g. `a<=L` vs other guards) to guide the next optimization.
+- **Recovery tuning**: see how often recovery triggers and how many slow iters it needed.
+- **ARM64 GCD diagnostics** (when built for ARM) to spot instability/fallback causes without always profiling.
+
+### CI notes (contributors)
+
+- **Rust fuzzing**: on pull requests, fuzz targets are run with a short time budget to keep CI fast; on `main`/release workflows they run longer for better coverage.
+
 ## Contributing and workflow
 
 Contributions are welcome and more details are available in chia-blockchain's

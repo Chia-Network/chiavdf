@@ -47,6 +47,7 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <cstring>
 #include "proof_common.h"
 #include "provers.h"
 #include "util.h"
@@ -81,6 +82,17 @@ bool debug_mode = false;
 bool fast_algorithm = false;
 bool two_weso = false;
 bool quiet_mode = false;
+
+static inline bool chiavdf_env_truthy(const char* name) {
+    const char* v = std::getenv(name);
+    if (!v) return false;
+    return std::strcmp(v, "1") == 0 || std::strcmp(v, "true") == 0 || std::strcmp(v, "yes") == 0 ||
+           std::strcmp(v, "on") == 0;
+}
+
+static inline bool chiavdf_diag_enabled() {
+    return chiavdf_env_truthy("CHIAVDF_DIAG") || chiavdf_env_truthy("CHIAVDF_VDF_TEST_STATS");
+}
 
 // vdf_fast uses shared master/slave counters keyed by `square_state.pairindex`.
 // The upstream chiavdf binaries run one VDF per process and hardcode `pairindex=0`.
@@ -347,23 +359,26 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
     }
 
     #ifdef VDF_TEST
-        print( "fast average batch size", double(num_iterations_fast)/double(num_calls_fast) );
-        print( "fast iterations per slow iteration", double(num_iterations_fast)/double(num_iterations_slow) );
-        if (a_not_high_enough_fails != 0) {
-            print( "fast early-terminations due to a<=L", a_not_high_enough_fails );
-            print( "  after 1-iter slow step", a_not_high_enough_fails_after_single_slow );
-            print( "  delta_bits (a_bits-L_bits) min/max/avg",
-                   a_not_high_enough_min_delta_bits,
-                   a_not_high_enough_max_delta_bits,
-                   double(a_not_high_enough_sum_delta_bits) / double(a_not_high_enough_fails) );
-            print( "  delta_limbs (a_limbs-L_limbs) min/max/avg",
-                   a_not_high_enough_min_delta_limbs,
-                   a_not_high_enough_max_delta_limbs,
-                   double(a_not_high_enough_sum_delta_limbs) / double(a_not_high_enough_fails) );
-            if (a_not_high_enough_recovery_calls != 0) {
-                print( "  slow recovery iters total/avg",
-                       a_not_high_enough_recovery_iters,
-                       double(a_not_high_enough_recovery_iters) / double(a_not_high_enough_recovery_calls) );
+        const bool diag = (!quiet_mode) && chiavdf_diag_enabled();
+        if (diag) {
+            print( "fast average batch size", double(num_iterations_fast)/double(num_calls_fast) );
+            print( "fast iterations per slow iteration", double(num_iterations_fast)/double(num_iterations_slow) );
+            if (a_not_high_enough_fails != 0) {
+                print( "fast early-terminations due to a<=L", a_not_high_enough_fails );
+                print( "  after 1-iter slow step", a_not_high_enough_fails_after_single_slow );
+                print( "  delta_bits (a_bits-L_bits) min/max/avg",
+                       a_not_high_enough_min_delta_bits,
+                       a_not_high_enough_max_delta_bits,
+                       double(a_not_high_enough_sum_delta_bits) / double(a_not_high_enough_fails) );
+                print( "  delta_limbs (a_limbs-L_limbs) min/max/avg",
+                       a_not_high_enough_min_delta_limbs,
+                       a_not_high_enough_max_delta_limbs,
+                       double(a_not_high_enough_sum_delta_limbs) / double(a_not_high_enough_fails) );
+                if (a_not_high_enough_recovery_calls != 0) {
+                    print( "  slow recovery iters total/avg",
+                           a_not_high_enough_recovery_iters,
+                           double(a_not_high_enough_recovery_iters) / double(a_not_high_enough_recovery_calls) );
+                }
             }
         }
     #endif
@@ -643,13 +658,15 @@ class ProverManager {
         std::cout << "Got proof for iteration: " << iteration << ". ("
                   << proof_segments.size() - 1 << "-wesolowski proof)\n";
         std::cout << "Proof: " << proof.hex() << "\n";
-        std::cout << "Current weso iteration: " << vdf_iteration;
-        if (vdf_iteration >= iteration) {
-            std::cout << ". Extra proof time (in VDF iterations): " << (vdf_iteration - iteration) << "\n";
-        } else {
-            // Avoid unsigned underflow spam (shows up as a huge 2^64-... number).
-            std::cout << ". Extra proof time (in VDF iterations): " << 0
-                      << " (weso behind by " << (iteration - vdf_iteration) << ")\n";
+        if (!quiet_mode && chiavdf_diag_enabled()) {
+            std::cout << "Current weso iteration: " << vdf_iteration;
+            if (vdf_iteration >= iteration) {
+                std::cout << ". Extra proof time (in VDF iterations): " << (vdf_iteration - iteration) << "\n";
+            } else {
+                // Avoid unsigned underflow spam (shows up as a huge 2^64-... number).
+                std::cout << ". Extra proof time (in VDF iterations): " << 0
+                          << " (weso behind by " << (iteration - vdf_iteration) << ")\n";
+            }
         }
         return proof;
     }

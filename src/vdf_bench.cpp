@@ -16,6 +16,7 @@
 #include "create_discriminant.h"
 
 #include <cstdlib>
+#include <cstring>
 
 #define CH_SIZE 32
 
@@ -32,6 +33,17 @@ extern std::atomic<uint64_t> gcd_unsigned_arm_exact_division_repairs;
 static void usage(const char *progname)
 {
     fprintf(stderr, "Usage: %s {square_asm|square|discr} N [--recover-a]\n", progname);
+    fprintf(stderr, "  --recover-a : enable adaptive slow recovery when fast path bails due to a<=L\n");
+    fprintf(stderr, "  (compat)    : an optional 'N'/'Y' argument is accepted and ignored\n");
+    fprintf(stderr, "Diagnostics:\n");
+    fprintf(stderr, "  Set CHIAVDF_DIAG=1 (or CHIAVDF_VDF_TEST_STATS=1) to print extended optimization stats.\n");
+}
+
+static bool env_truthy(const char* name) {
+    const char* v = std::getenv(name);
+    if (!v) return false;
+    return std::strcmp(v, "1") == 0 || std::strcmp(v, "true") == 0 || std::strcmp(v, "yes") == 0 ||
+           std::strcmp(v, "on") == 0;
 }
 
 int main(int argc, char **argv)
@@ -46,7 +58,24 @@ int main(int argc, char **argv)
         return 1;
     }
     int iters = atoi(argv[2]);
-    const bool enable_recover_a = (argc >= 4 && !strcmp(argv[3], "--recover-a"));
+    bool enable_recover_a = false;
+    // Extended diagnostics are *only* enabled via env vars (so CI / normal runs stay quiet).
+    const bool diag = env_truthy("CHIAVDF_DIAG") ||
+                      env_truthy("CHIAVDF_VDF_TEST_STATS") ||
+                      env_truthy("CHIAVDF_BENCH_DIAG");
+    for (int a = 3; a < argc; a++) {
+        if (!std::strcmp(argv[a], "--recover-a")) {
+            enable_recover_a = true;
+        } else if (!std::strcmp(argv[a], "N") || !std::strcmp(argv[a], "Y")) {
+            // Backwards compatibility: some scripts call `./vdf_bench square_asm N ...`.
+            // Diagnostics remain strictly env-gated; this flag is ignored.
+            continue;
+        } else {
+            fprintf(stderr, "Unknown argument: %s\n", argv[a]);
+            usage(argv[0]);
+            return 1;
+        }
+    }
     auto D = integer("-141140317794792668862943332656856519378482291428727287413318722089216448567155737094768903643716404517549715385664163360316296284155310058980984373770517398492951860161717960368874227473669336541818575166839209228684755811071416376384551902149780184532086881683576071479646499601330824259260645952517205526679");
 
     form y = form::generator(D);
@@ -211,54 +240,74 @@ int main(int argc, char **argv)
     auto t2 = std::chrono::high_resolution_clock::now();
     int duration = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
     if (!duration) {
-        printf("WARNING: too few iterations, results will be inaccurate!\n");
+        if (diag) {
+            printf("WARNING: too few iterations, results will be inaccurate!\n");
+        }
         duration = 1;
     }
-    printf("Time: %d ms; ", duration);
+
     if (is_comp) {
-        if (is_asm)
-            printf("n_slow: %d (ab_valid: %d, a_high_enough: %d, other: %d); ",
-                   n_slow, n_slow_ab_valid, n_slow_a_high_enough, n_slow_other);
-        if (is_asm && enable_recover_a) {
-            printf("recovery: on; fast_bails: %d (ab_valid:%d a_high_enough:%d gcd:%d other:%d); recovery_calls: %d; recovery_slow_iters: %d; ",
-                   n_fast_bails,
-                   n_fast_bails_ab_valid,
-                   n_fast_bails_a_high_enough,
-                   n_fast_bails_gcd_failed,
-                   n_fast_bails_other,
-                   n_recovery_calls,
-                   n_recovery_iters);
-        }
-        if (is_asm && n_fast_bails_a_high_enough != 0) {
-            // Delta stats are per fast-bail (not per slow iteration).
-            printf("a<=L after single slow: %d; a<=L delta_bits min/max/avg: %d/%d/%.2f; delta_limbs min/max/avg: %d/%d/%.2f; ",
-                   n_a_high_enough_fail_after_single_slow,
-                   min_a_high_enough_delta_bits,
-                   max_a_high_enough_delta_bits,
-                   double(sum_a_high_enough_delta_bits) / double(n_fast_bails_a_high_enough),
-                   min_a_high_enough_delta_limbs,
-                   max_a_high_enough_delta_limbs,
-                   double(sum_a_high_enough_delta_limbs) / double(n_fast_bails_a_high_enough));
-        }
+        if (diag) {
+            printf("Time: %d ms; ", duration);
+            if (is_asm) {
+                printf("n_slow: %d (ab_valid: %d, a_high_enough: %d, other: %d); ",
+                       n_slow, n_slow_ab_valid, n_slow_a_high_enough, n_slow_other);
+                if (enable_recover_a) {
+                    printf("recovery: on; ");
+                }
+            }
+            if (is_asm && enable_recover_a) {
+                printf("fast_bails: %d (ab_valid:%d a_high_enough:%d gcd:%d other:%d); recovery_calls: %d; recovery_slow_iters: %d; ",
+                       n_fast_bails,
+                       n_fast_bails_ab_valid,
+                       n_fast_bails_a_high_enough,
+                       n_fast_bails_gcd_failed,
+                       n_fast_bails_other,
+                       n_recovery_calls,
+                       n_recovery_iters);
+            }
+            if (is_asm && n_fast_bails_a_high_enough != 0) {
+                // Delta stats are per fast-bail (not per slow iteration).
+                printf("a<=L after single slow: %d; a<=L delta_bits min/max/avg: %d/%d/%.2f; delta_limbs min/max/avg: %d/%d/%.2f; ",
+                       n_a_high_enough_fail_after_single_slow,
+                       min_a_high_enough_delta_bits,
+                       max_a_high_enough_delta_bits,
+                       double(sum_a_high_enough_delta_bits) / double(n_fast_bails_a_high_enough),
+                       min_a_high_enough_delta_limbs,
+                       max_a_high_enough_delta_limbs,
+                       double(sum_a_high_enough_delta_limbs) / double(n_fast_bails_a_high_enough));
+            }
 
 #if defined(ARCH_ARM)
-        if (is_asm) {
-            const uint64_t bad_order = gcd_unsigned_arm_bad_order_fallbacks.load(std::memory_order_relaxed);
-            const uint64_t gcd128_fail = gcd_unsigned_arm_gcd128_fail_fallbacks.load(std::memory_order_relaxed);
-            const uint64_t repairs = gcd_unsigned_arm_exact_division_repairs.load(std::memory_order_relaxed);
-            printf("gcd_bad_order: %llu; gcd128_fail: %llu; gcd_repairs: %llu; ",
-                   (unsigned long long)bad_order,
-                   (unsigned long long)gcd128_fail,
-                   (unsigned long long)repairs);
-        }
+            if (is_asm) {
+                const uint64_t bad_order = gcd_unsigned_arm_bad_order_fallbacks.load(std::memory_order_relaxed);
+                const uint64_t gcd128_fail = gcd_unsigned_arm_gcd128_fail_fallbacks.load(std::memory_order_relaxed);
+                const uint64_t repairs = gcd_unsigned_arm_exact_division_repairs.load(std::memory_order_relaxed);
+                printf("gcd_bad_order: %llu; gcd128_fail: %llu; gcd_repairs: %llu; ",
+                       (unsigned long long)bad_order,
+                       (unsigned long long)gcd128_fail,
+                       (unsigned long long)repairs);
+            }
 #endif
+        }
 
-        printf("speed: %d.%dK ips\n", iters/duration, iters*10/duration % 10);
-        printf("a = %s\n", y.a.to_string().c_str());
-        printf("b = %s\n", y.b.to_string().c_str());
-        printf("c = %s\n", y.c.to_string().c_str());
+        if (diag) {
+            printf("speed: %d.%dK ips\n", iters/duration, iters*10/duration % 10);
+        } else {
+            // Default output: keep it minimal and stable for scripts/CI logs.
+            printf("%d.%dK ips\n", iters/duration, iters*10/duration % 10);
+        }
+        if (diag) {
+            printf("a = %s\n", y.a.to_string().c_str());
+            printf("b = %s\n", y.b.to_string().c_str());
+            printf("c = %s\n", y.c.to_string().c_str());
+        }
     } else {
-        printf("speed: %d.%d ms/discr\n", duration/iters, duration*10/iters % 10);
+        if (diag) {
+            printf("Time: %d ms; speed: %d.%d ms/discr\n", duration, duration/iters, duration*10/iters % 10);
+        } else {
+            printf("%d.%d ms/discr\n", duration/iters, duration*10/iters % 10);
+        }
     }
     return 0;
 }

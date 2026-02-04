@@ -24,6 +24,10 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CARGO_PROFILE_RELEASE_LTO: false
+      # CI runtime control:
+      # - On PRs, keep fuzzing short so the workflow doesn't take ~40 minutes.
+      # - On main/release runs, allow longer fuzzing for better coverage.
+      FUZZ_MAX_TOTAL_TIME: ${{ github.event_name == 'pull_request' && '60' || '600' }}
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@nightly
@@ -34,7 +38,7 @@ jobs:
       - name: Cargo fuzz
         run: |
           cd rust_bindings
-          cargo fuzz list | xargs -I "%" sh -c "cargo +nightly fuzz run % -- -max_total_time=600 || exit 255"
+          cargo fuzz list | xargs -I "%" sh -c "cargo +nightly fuzz run % -- -max_total_time=${FUZZ_MAX_TOTAL_TIME} -timeout=10 || exit 255"
 
   lint:
     name: Lint

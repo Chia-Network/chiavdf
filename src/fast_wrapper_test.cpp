@@ -27,13 +27,15 @@ int main(int argc, char** argv) {
 
     // BQFC "generator" special encoding: first byte has BQFC_IS_GEN bit set (0x08).
     // `DeserializeForm()` only reads `str[0]` for special forms but insists on size==BQFC_FORM_SIZE (100).
-    const uint8_t x_gen_flag = 0x08;
     constexpr size_t form_size = 100;
+    static_assert(form_size == 100, "BQFC special form encoding expects 100 bytes");
+    uint8_t x_gen_form[form_size] = {0};
+    x_gen_form[0] = 0x08;
 
     ChiavdfByteArray fast = chiavdf_prove_one_weso_fast(
         challenge_hash,
         challenge_size,
-        &x_gen_flag,
+        x_gen_form,
         form_size,
         discriminant_bits,
         iters);
@@ -55,7 +57,7 @@ int main(int argc, char** argv) {
     ChiavdfByteArray streaming = chiavdf_prove_one_weso_fast_streaming_getblock_opt(
         challenge_hash,
         challenge_size,
-        &x_gen_flag,
+        x_gen_form,
         form_size,
         y_ref,
         y_ref_size,

@@ -115,7 +115,7 @@ Why you would enable this:
 
 ### CI notes (contributors)
 
-- **Rust fuzzing**: on pull requests, fuzz targets are run with a short time budget to keep CI fast; on `main`/release workflows they run longer for better coverage.
+- **Rust fuzzing**: fuzz targets run in CI on pull requests, pushes to `main`, and published releases. They run **in parallel** (GitHub Actions matrix), with a fixed time budget (10 minutes / `-max_total_time=600`) per fuzz target.
 
 ## Contributing and workflow
 

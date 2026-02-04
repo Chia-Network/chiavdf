@@ -564,29 +564,23 @@ template<class type, int size> struct fixed_integer {
 
     //"0" has 1 bit
     int num_bits() const {
-        type v=0;
-        int num_full=0;
-
+        constexpr int bits_per_limb = int(sizeof(type) * 8);
         for (int x=size-1;x>=0;--x) {
-            if (v==0) {
-                v=(*this)[x];
-                num_full=x;
+            type v = (*this)[x];
+            if (v == 0) continue;
+
+            int v_bits;
+            if constexpr (sizeof(type) == 8) {
+                v_bits = 64 - __builtin_clzll(v);
+            } else {
+                static_assert(sizeof(type) == 4, "unexpected limb size");
+                v_bits = 32 - __builtin_clz(v);
             }
+            return x * bits_per_limb + v_bits;
         }
 
-        int v_bits;
-        if (v==0) {
-            v_bits=1;
-            assert(num_full==0);
-        } else
-        if (sizeof(v)==8) {
-            v_bits=64-__builtin_clzll(v);
-        } else{
-            assert(sizeof(v)==4);
-            v_bits=32-__builtin_clz(v);
-        }
-
-        return num_full*sizeof(type)*8 + v_bits;
+        // "0" has 1 bit by convention in this codebase.
+        return 1;
     }
 
     type window(int start_bit) const {

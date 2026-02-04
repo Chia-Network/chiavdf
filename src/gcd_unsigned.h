@@ -68,11 +68,17 @@ template<int size> bool gcd_unsigned(
 ) {
     typedef fixed_integer<uint64, size> int_t;
 
+#if defined(TEST_ASM) && !defined(ARCH_ARM)
     static int test_asm_counter=0;
     ++test_asm_counter;
 
     bool test_asm_run=true;
     bool test_asm_print=(test_asm_counter%1000==0);
+#else
+    // Avoid any per-call "test asm" bookkeeping on ARM / non-TEST_ASM builds.
+    bool test_asm_run=false;
+    bool test_asm_print=false;
+#endif
     bool debug_output=false;
 
 #if !defined(ARCH_ARM)
@@ -81,9 +87,19 @@ template<int size> bool gcd_unsigned(
     assert(!uv[0].is_negative() && !uv[1].is_negative());
 #endif
 
-    auto ab_start=ab;
-    auto uv_start=uv;
-    int parity_start=parity;
+    const bool producing_uv_stream = (stream_out != nullptr && stream_out->out_uv_addr != nullptr);
+
+    // Only snapshot inputs when we might actually use them (slow self-check path).
+    // On ARM we typically produce a UV stream for the fast-thread consumer, so this avoids
+    // a few large fixed-integer copies per call.
+    array<int_t, 2> ab_start;
+    array<int_t, 2> uv_start;
+    int parity_start=0;
+    if (is_vdf_test && !producing_uv_stream) {
+        ab_start=ab;
+        uv_start=uv;
+        parity_start=parity;
+    }
     int a_num_bits_old=-1;
 
     int iter=0;
@@ -96,7 +112,6 @@ template<int size> bool gcd_unsigned(
 #endif
     bool valid=true;
 
-    const bool producing_uv_stream = (stream_out != nullptr && stream_out->out_uv_addr != nullptr);
     if (stream_out) {
         stream_out->iter_count = 0;
         stream_out->ok = true;
@@ -288,15 +303,19 @@ template<int size> bool gcd_unsigned(
             ab[0]=a_new;
             ab[1]=b_new;
 
-            //bx and by are nonnegative
-            auto dot=[&](uint64 ax, uint64 ay, int_t bx, int_t by) -> int_t {
-                bx*=ax;
-                by*=ay;
-                return int_t(bx+by);
-            };
+            // Update accumulated cofactors (unsigned).
+            // This is hot; avoid lambda + by-value parameter copies.
+            int_t tmp0 = uv[0];
+            int_t tmp1 = uv[1];
+            tmp0 *= uv_00;
+            tmp1 *= uv_01;
+            int_t new_uv_0 = int_t(tmp0 + tmp1);
 
-            int_t new_uv_0=dot(uv_00, uv_01, uv[0], uv[1]);
-            int_t new_uv_1=dot(uv_10, uv_11, uv[0], uv[1]);
+            tmp0 = uv[0];
+            tmp1 = uv[1];
+            tmp0 *= uv_10;
+            tmp1 *= uv_11;
+            int_t new_uv_1 = int_t(tmp0 + tmp1);
 
             uv[0]=new_uv_0;
             uv[1]=new_uv_1;
@@ -327,8 +346,6 @@ template<int size> bool gcd_unsigned(
                 }
                 entry[4] = static_cast<uint64>(local_parity); // 0 even, 1 odd
                 entry[5] = 0;
-                entry[6] = 0;
-                entry[7] = 0;
             }
         } else {
             //can just make the gcd fail if this happens in the asm code

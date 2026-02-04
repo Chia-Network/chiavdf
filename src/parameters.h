@@ -34,6 +34,13 @@ bool bAVX2=false;
 
 bool enable_avx512_ifma=false;
 
+// GCC does not provide `__has_feature`, but we use it in preprocessor conditionals
+// to detect ThreadSanitizer under Clang. Provide a compatibility definition so
+// `#if __has_feature(...)`-style checks are valid on all compilers.
+#ifndef __has_feature
+#define __has_feature(x) 0
+#endif
+
 #if defined(__i386) || defined(_M_IX86)
     #define ARCH_X86
 #elif defined(__x86_64__) || defined(_M_X64)

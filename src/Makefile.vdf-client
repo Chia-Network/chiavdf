@@ -52,7 +52,7 @@ LDFLAGS += -fsanitize=thread
 CXXFLAGS += -g -fsanitize=thread
 endif
 
-.PHONY: all clean
+.PHONY: all clean tests
 
 # Run from src/ as: make -f Makefile.vdf-client [clean|all|target]
 # (Using -f is required so make finds this file; plain "make clean" may use another Makefile.)
@@ -67,16 +67,24 @@ else
 ASM_OBJS = asm_compiled.o avx2_asm_compiled.o avx512_asm_compiled.o
 endif
 
-BINS = vdf_client prover_test 1weso_test 2weso_test vdf_bench fast_wrapper_test
+# Default binaries built by `make -f Makefile.vdf-client`.
+#
+# NOTE: `setup.py` calls `make -C src -f Makefile.vdf-client` during wheel builds.
+# Keep this list limited to the binaries that are installed/used by the Python package.
+BINS = vdf_client prover_test 1weso_test 2weso_test vdf_bench
+
+# Optional/test-only binaries (build explicitly via `make ... tests` or `make ... fast_wrapper_test`).
+TEST_BINS = fast_wrapper_test
+
 all: $(BINS)
 
 clean:
-	rm -f *.o *.s hw/*.o c_bindings/*.o $(BINS) compile_asm emu_hw_test hw_test hw_vdf_client emu_hw_vdf_client libchiavdf_fastc.a
+	rm -f *.o *.s hw/*.o c_bindings/*.o $(BINS) $(TEST_BINS) compile_asm emu_hw_test hw_test hw_vdf_client emu_hw_vdf_client libchiavdf_fastc.a
 
-$(filter-out fast_wrapper_test,$(BINS)) avx512_test: %: %.o lzcnt.o $(ASM_OBJS)
+$(BINS) avx512_test: %: %.o lzcnt.o $(ASM_OBJS)
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-$(addsuffix .o,$(BINS)) avx512_test.o: CXXFLAGS += $(OPT_CFLAGS)
+$(addsuffix .o,$(BINS) $(TEST_BINS)) avx512_test.o: CXXFLAGS += $(OPT_CFLAGS)
 
 # Production binary: VDF_MODE=0 (is_vdf_test=false).
 vdf_client.o: CXXFLAGS += -D VDF_MODE=0
@@ -106,6 +114,8 @@ c_bindings/fast_wrapper.o: CXXFLAGS += $(OPT_CFLAGS) -D VDF_MODE=0 -DNDEBUG
 # Wrapper test links against the wrapper library and does not include `vdf.h`.
 fast_wrapper_test: fast_wrapper_test.o $(FASTLIB)
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+
+tests: $(TEST_BINS)
 
 asm_compiled.s: compile_asm
 	./compile_asm

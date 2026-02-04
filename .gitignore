@@ -30,6 +30,7 @@ src/vdf_client
 src/1weso_test
 src/2weso_test
 src/prover_test
+src/fast_wrapper_test
 src/emu_hw_test
 src/hw_test
 src/emu_hw_vdf_client
@@ -40,7 +41,9 @@ src/hw_vdf_client
 *.whl
 *.egg-info
 *.o
+*.o.tmp
 *.s
+*.dSYM/
 
 # external library
 /src/hw/libft4222

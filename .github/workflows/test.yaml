@@ -37,6 +37,7 @@ jobs:
         sudo apt-get install libgmp-dev libboost-python-dev libpython3-dev libboost-system-dev build-essential -y
         cd src
         make ${{ matrix.config }} -f Makefile.vdf-client
+        make ${{ matrix.config }} -f Makefile.vdf-client tests
 
     - name: Build vdf-client on Mac
       if: startsWith(matrix.os, 'mac')
@@ -46,6 +47,7 @@ jobs:
         fi
         cd src
         make ${{ matrix.config }} -f Makefile.vdf-client
+        make ${{ matrix.config }} -f Makefile.vdf-client tests
 
     - name: Test vdf-client
       if: matrix.config == 'optimized=1'
@@ -63,6 +65,10 @@ jobs:
         ./2weso_test $ITER_ARGS
         echo "Running prover_test"
         ./prover_test
+        echo "Running vdf_diag_helper_test"
+        ./vdf_diag_helper_test
+        echo "Running vdf_diag_recovery_test"
+        ./vdf_diag_recovery_test
 
     - name: Test vdf-client
       if: matrix.config != 'optimized=1'
@@ -72,6 +78,10 @@ jobs:
         ./1weso_test 1000
         echo "Running 2weso_test"
         ./2weso_test 1000
+        echo "Running vdf_diag_helper_test"
+        ./vdf_diag_helper_test
+        echo "Running vdf_diag_recovery_test"
+        ./vdf_diag_recovery_test
 
     # macos thread sanitizer will give false positives on ./prover_test because
     # it prints to std::cout from multiple threads. Which is allowed by the

@@ -94,6 +94,26 @@ static inline bool chiavdf_diag_enabled() {
     return chiavdf_env_truthy("CHIAVDF_DIAG") || chiavdf_env_truthy("CHIAVDF_VDF_TEST_STATS");
 }
 
+// `repeated_square()` and `vdf_bench` attribute some fast-path bailouts as occurring
+// "after a single slow step". That label is only meaningful when the recovery path
+// actually performed exactly one slow iteration (not a burst).
+static inline bool chiavdf_diag_is_single_slow_step(uint64 slow_iters) {
+    return slow_iters == 1;
+}
+
+#ifdef VDF_TEST
+// Optional test hook: if set, `repeated_square()` will write its diagnostic counters
+// here before returning. This keeps the production API unchanged while allowing
+// deterministic regression tests for diagnostic attribution.
+struct chiavdf_vdf_test_diag_stats {
+    uint64 a_not_high_enough_fails = 0;
+    uint64 a_not_high_enough_fails_after_single_slow = 0;
+    uint64 a_not_high_enough_recovery_iters = 0;
+    uint64 a_not_high_enough_recovery_calls = 0;
+};
+inline thread_local chiavdf_vdf_test_diag_stats* chiavdf_vdf_test_diag_stats_sink = nullptr;
+#endif
+
 // vdf_fast uses shared master/slave counters keyed by `square_state.pairindex`.
 // The upstream chiavdf binaries run one VDF per process and hardcode `pairindex=0`.
 // In embedded/multi-worker setups, multiple VDF computations can run concurrently
@@ -284,7 +304,7 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
             // Only tag "after single slow step" when it was actually a single step.
             // (When recovery is enabled we may do a burst of slow steps; the next fast batch
             // should not be attributed as "entered after single slow".)
-            prev_was_single_slow_step = (slow_recovery_iters == 1);
+            prev_was_single_slow_step = chiavdf_diag_is_single_slow_step(slow_recovery_iters);
 
             #ifdef VDF_TEST
                 num_iterations_slow += slow_recovery_iters;
@@ -383,6 +403,14 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
                            double(a_not_high_enough_recovery_iters) / double(a_not_high_enough_recovery_calls) );
                 }
             }
+        }
+
+        if (chiavdf_vdf_test_diag_stats_sink != nullptr) {
+            chiavdf_vdf_test_diag_stats_sink->a_not_high_enough_fails = a_not_high_enough_fails;
+            chiavdf_vdf_test_diag_stats_sink->a_not_high_enough_fails_after_single_slow =
+                a_not_high_enough_fails_after_single_slow;
+            chiavdf_vdf_test_diag_stats_sink->a_not_high_enough_recovery_iters = a_not_high_enough_recovery_iters;
+            chiavdf_vdf_test_diag_stats_sink->a_not_high_enough_recovery_calls = a_not_high_enough_recovery_calls;
         }
     #endif
 }

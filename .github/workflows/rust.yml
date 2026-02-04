@@ -37,15 +37,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
 
       - name: Cache cargo registry + build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: actions/cache@v4
         with:
-          # Share a single cache across all fuzz targets in the matrix.
-          shared-key: rust-fuzz
-          cache-on-failure: true
-          # Extra directories (beyond cargo registry/git + target/) that are worth caching.
-          cache-directories: |
+          path: |
             ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
             rust_bindings/fuzz/corpus
+          key: ${{ runner.os }}-rust-fuzz-${{ hashFiles('Cargo.lock') }}
 
       - name: Install cargo-fuzz
         run: |

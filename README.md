@@ -79,6 +79,11 @@ cd src
 make -f Makefile.vdf-client all tests
 ```
 
+### `prover_test` runtime (CI-friendly by default)
+
+`prover_test` now runs a **short correctness test by default** (so it’s CI-friendly).
+To restore the historical long/soak behavior, run it with **`CHIAVDF_PROVER_TEST_LONG=1`**.
+
 ### Optional diagnostics (macOS arm64 / performance work)
 
 This repo contains **extra diagnostic prints** that are useful when doing performance work (e.g. attributing why the fast path bails, tuning `--recover-a`, or understanding ARM GCD fallback behavior). These diagnostics are **disabled by default** to keep normal runs/CI output clean (for example, `vdf_bench` prints just `XXX.XK ips` by default).

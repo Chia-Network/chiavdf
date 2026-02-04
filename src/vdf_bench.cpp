@@ -32,10 +32,7 @@ int main(int argc, char **argv)
     assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
     init_gmp();
     set_rounding_mode();
-#if defined(ARCH_ARM)
-    gcd_base_bits = 50;
-    gcd_128_max_iter = 3;
-#endif
+    init_gcd_params_for_cpu();
 
     if (argc < 3) {
         usage(argv[0]);

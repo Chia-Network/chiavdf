@@ -67,13 +67,13 @@ else
 ASM_OBJS = asm_compiled.o avx2_asm_compiled.o avx512_asm_compiled.o
 endif
 
-BINS = vdf_client prover_test 1weso_test 2weso_test vdf_bench
+BINS = vdf_client prover_test 1weso_test 2weso_test vdf_bench fast_wrapper_test
 all: $(BINS)
 
 clean:
 	rm -f *.o *.s hw/*.o c_bindings/*.o $(BINS) compile_asm emu_hw_test hw_test hw_vdf_client emu_hw_vdf_client libchiavdf_fastc.a
 
-$(BINS) avx512_test: %: %.o lzcnt.o $(ASM_OBJS)
+$(filter-out fast_wrapper_test,$(BINS)) avx512_test: %: %.o lzcnt.o $(ASM_OBJS)
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 $(addsuffix .o,$(BINS)) avx512_test.o: CXXFLAGS += $(OPT_CFLAGS)
@@ -102,6 +102,10 @@ $(FASTLIB): $(FASTLIB_OBJS)
 
 # Wrapper is intended for production use.
 c_bindings/fast_wrapper.o: CXXFLAGS += $(OPT_CFLAGS) -D VDF_MODE=0 -DNDEBUG
+
+# Wrapper test links against the wrapper library and does not include `vdf.h`.
+fast_wrapper_test: fast_wrapper_test.o $(FASTLIB)
+	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 asm_compiled.s: compile_asm
 	./compile_asm

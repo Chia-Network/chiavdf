@@ -34,18 +34,7 @@ int main(int argc, char const* argv[]) try
     assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
     init_gmp();
     debug_mode = true;
-    if(hasAVX2())
-    {
-      gcd_base_bits=63;
-      gcd_128_max_iter=2;
-    }
-#if defined(ARCH_ARM)
-    else
-    {
-      gcd_base_bits=50;
-      gcd_128_max_iter=3;
-    }
-#endif
+    init_gcd_params_for_cpu();
     std::vector<uint8_t> challenge_hash({0, 0, 1, 2, 3, 3, 4, 4});
     integer D = CreateDiscriminant(challenge_hash, 1024);
 

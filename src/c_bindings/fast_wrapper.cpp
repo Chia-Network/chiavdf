@@ -45,15 +45,7 @@ thread_local LastStreamingStats last_streaming_stats;
 void init_chiavdf_fast() {
     init_gmp();
     set_rounding_mode();
-
-    // Match the vdf_client runtime selection for AVX2.
-    if (hasAVX2()) {
-        gcd_base_bits = 63;
-        gcd_128_max_iter = 2;
-    } else {
-        gcd_base_bits = 50;
-        gcd_128_max_iter = 3;
-    }
+    init_gcd_params_for_cpu();
 
     // Ensure we run the one-wesolowski path by default.
     fast_algorithm = false;

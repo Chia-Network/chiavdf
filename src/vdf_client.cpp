@@ -316,17 +316,7 @@ int main(int argc, char* argv[]) try {
       std::cerr << "Usage: ./vdf_client <host> <port> <counter>\n";
       return 1;
     }
-
-    if(hasAVX2()) {
-      gcd_base_bits = 63;
-      gcd_128_max_iter = 2;
-    }
-#if defined(ARCH_ARM)
-    else {
-      gcd_base_bits = 50;
-      gcd_128_max_iter = 3;
-    }
-#endif
+    init_gcd_params_for_cpu();
 
     boost::asio::io_context io_context;
 

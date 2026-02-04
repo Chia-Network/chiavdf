@@ -89,6 +89,23 @@ inline bool hasAVX2()
   return bAVX2;
 }
 
+// Initialize the runtime GCD tuning knobs based on CPU features.
+//
+// These are globals declared as `extern` in this header and defined by each
+// binary / wrapper entry point.
+inline void init_gcd_params_for_cpu()
+{
+    // Conservative defaults that work well across architectures (including ARM).
+    gcd_base_bits = 50;
+    gcd_128_max_iter = 3;
+
+    // More aggressive settings for the AVX2+ADX fast path.
+    if (hasAVX2()) {
+        gcd_base_bits = 63;
+        gcd_128_max_iter = 2;
+    }
+}
+
 /*
 divide_table_index bits
 10 - 0m1.269s

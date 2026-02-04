@@ -65,6 +65,20 @@ Those tests will simulate the vdf_client and verify for correctness the produced
 **C++ tests**: build from `src/` with `make -f Makefile.vdf-client` (requires GMP and Boost).
 On ARM (aarch64/arm64) a C++ GCD path is used; tests pass but run slower than on x86.
 
+### Build targets (`Makefile.vdf-client`)
+
+`Makefile.vdf-client` separates the “main” binaries from optional/extra test binaries:
+
+- **Default build (`all`)**: builds `vdf_client`, `1weso_test`, `2weso_test`, `prover_test`, and `vdf_bench`.
+- **Extra tests (`tests`)**: builds additional test-only binaries (for example `vdf_diag_helper_test`, `vdf_diag_recovery_test`, and `fast_wrapper_test`).
+
+To build **everything** (main binaries + extra tests):
+
+```bash
+cd src
+make -f Makefile.vdf-client all tests
+```
+
 ### Optional diagnostics (macOS arm64 / performance work)
 
 This repo contains **extra diagnostic prints** that are useful when doing performance work (e.g. attributing why the fast path bails, tuning `--recover-a`, or understanding ARM GCD fallback behavior). These diagnostics are **disabled by default** to keep normal runs/CI output clean (for example, `vdf_bench` prints just `XXX.XK ips` by default).

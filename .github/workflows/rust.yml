@@ -20,21 +20,43 @@ permissions:
 
 jobs:
   fuzz_targets:
-    name: Run fuzzers
+    name: Run fuzzers (${{ matrix.target }})
     runs-on: ubuntu-latest
     env:
       CARGO_PROFILE_RELEASE_LTO: false
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - create_discriminant
+          - prove
+          - verify
+          - verify_n_wesolowski
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@nightly
 
-      - name: Install cargo-fuzz
-        run: cargo +nightly install cargo-fuzz
+      - name: Cache cargo registry + build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Share a single cache across all fuzz targets in the matrix.
+          shared-key: rust-fuzz
+          cache-on-failure: true
+          # Extra directories (beyond cargo registry/git + target/) that are worth caching.
+          cache-directories: |
+            ~/.cargo/bin
+            rust_bindings/fuzz/corpus
 
-      - name: Cargo fuzz
+      - name: Install cargo-fuzz
+        run: |
+          if ! command -v cargo-fuzz >/dev/null 2>&1; then
+            cargo +nightly install cargo-fuzz --locked
+          fi
+
+      - name: Cargo fuzz (${{ matrix.target }})
         run: |
           cd rust_bindings
-          cargo fuzz list | xargs -I "%" sh -c "cargo +nightly fuzz run % -- -max_total_time=600 || exit 255"
+          cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=600
 
   lint:
     name: Lint

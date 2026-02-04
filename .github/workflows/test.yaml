@@ -34,6 +34,8 @@ jobs:
     - name: Build vdf-client on Ubuntu
       if: startsWith(matrix.os, 'ubuntu')
       run: |
+        # Avoid transient 404s from stale apt indices / mirror lag.
+        sudo apt-get update -y -o Acquire::Retries=3
         sudo apt-get install libgmp-dev libboost-python-dev libpython3-dev libboost-system-dev build-essential -y
         cd src
         make ${{ matrix.config }} -f Makefile.vdf-client

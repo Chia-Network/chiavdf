@@ -139,7 +139,10 @@ jobs:
 
       - name: Install libclang-dev on Linux
         if: matrix.os.name == 'Ubuntu'
-        run: sudo apt-get install libclang-dev -y
+        run: |
+          # Avoid transient 404s from stale apt indices / mirror lag.
+          sudo apt-get update -y -o Acquire::Retries=3
+          sudo apt-get install libclang-dev -y
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable

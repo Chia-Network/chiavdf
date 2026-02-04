@@ -63,7 +63,21 @@ extern "C" int asm_arm_func_gcd_unsigned(asm_func_gcd_unsigned_data* data) {
     // Emit the asm-style per-iteration UV stream directly (no callback/side-channel).
     gcd_unsigned_uv_stream_out stream;
     stream.out_uv_addr = data->out_uv_addr;
+    if (data->out_uv_counter_addr) {
+        stream.out_uv_counter = reinterpret_cast<std::atomic<uint64>*>(data->out_uv_counter_addr);
+        stream.uv_counter_start = data->uv_counter_start;
+    }
     stream.inputs_swapped = inputs_swapped;
+
+    // Publish the iter=-1 entry (uv_entries[0]): only exit_flag is meaningful.
+    // Follow the x86 protocol: set counter to `uv_counter_start + (-1)` after writing it.
+    if (data->out_uv_addr) {
+        data->out_uv_addr[-8 + 5] = 0;
+    }
+    if (stream.out_uv_counter) {
+        stream.out_uv_counter->store(stream.uv_counter_start - 1, std::memory_order_release);
+    }
+
     gcd_unsigned<gcd_size>(ab, uv, parity, threshold, &stream);
 
     // If the fast path couldn't produce a stream (gcd_128 failed or invariant violated),
@@ -91,18 +105,17 @@ extern "C" int asm_arm_func_gcd_unsigned(asm_func_gcd_unsigned_data* data) {
 
     data->iter = iter;
 
-    // Match x86: after N iterations (indices 0..N-1), final counter is start + (N-1). See asm_gcd_unsigned.h comment and gcd_unsigned.h assert.
-    // Use atomic store so TSAN does not report a data race with fence_absolute's atomic load (out_uv_counter_addr points at std::atomic<uint64>).
-    if (data->out_uv_counter_addr) {
-        reinterpret_cast<std::atomic<uint64>*>(data->out_uv_counter_addr)->store(
-            data->uv_counter_start + iter - 1, std::memory_order_release);
-    }
-    // Initialize the iter=-1 entry (uv_entries[0]): only exit_flag is meaningful.
-    if (data->out_uv_addr) {
-        data->out_uv_addr[-8 + 5] = 0;
-    }
+    // Match x86: after N iterations (indices 0..N-1), final counter is start + (N-1).
+    // The per-iteration publication happens inside `gcd_unsigned()` above; here we only
+    // publish the final value again after setting the exit_flag so consumers see it.
     if (data->out_uv_addr && iter > 0) {
         data->out_uv_addr[(iter - 1) * 8 + 5] = 1;
+    }
+    if (data->out_uv_counter_addr) {
+        reinterpret_cast<std::atomic<uint64>*>(data->out_uv_counter_addr)->store(
+            // After N iterations (0..N-1), last published counter is start + (N-1).
+            // Publish again *after* setting exit_flag so consumers see it.
+            data->uv_counter_start + iter - 1, std::memory_order_release);
     }
 
     return 0;

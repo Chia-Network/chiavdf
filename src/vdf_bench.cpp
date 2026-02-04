@@ -56,6 +56,10 @@ int main(int argc, char **argv)
     int n_slow_a_high_enough = 0;
     int n_slow_other = 0;
     int n_fast_bails = 0;
+    int n_fast_bails_a_high_enough = 0;
+    int n_fast_bails_ab_valid = 0;
+    int n_fast_bails_gcd_failed = 0;
+    int n_fast_bails_other = 0;
     int n_a_high_enough_fail_after_single_slow = 0;
     int64_t sum_a_high_enough_delta_bits = 0;
     int64_t sum_a_high_enough_delta_limbs = 0;
@@ -96,6 +100,12 @@ int main(int argc, char **argv)
             done = repeated_square_fast(sq_state, y, D, L, 0, iters - i, NULL);
             if (!done) {
                 ++n_fast_bails;
+                switch (sq_state.last_fail.reason) {
+                    case square_state_type::fast_fail_ab_invalid: ++n_fast_bails_ab_valid; break;
+                    case square_state_type::fast_fail_a_not_high_enough: ++n_fast_bails_a_high_enough; break;
+                    case square_state_type::fast_fail_gcd_failed: ++n_fast_bails_gcd_failed; break;
+                    default: ++n_fast_bails_other; break;
+                }
                 if (sq_state.last_fail.reason == square_state_type::fast_fail_a_not_high_enough) {
                     if (sq_state.last_fail.after_single_slow) {
                         ++n_a_high_enough_fail_after_single_slow;
@@ -149,13 +159,16 @@ int main(int argc, char **argv)
 
                 i += slow_iters;
                 n_slow += slow_iters;
-                prev_was_single_slow_step = true;
+                // Only tag "after single slow step" when it was actually a single step.
+                // (When recovery is enabled we may do a burst of slow steps; the next fast batch
+                // should not be attributed as "entered after single slow".)
+                prev_was_single_slow_step = (slow_iters == 1);
                 if (!ab_valid) {
-                    n_slow_ab_valid++;
+                    n_slow_ab_valid += slow_iters;
                 } else if (!a_high_enough) {
-                    n_slow_a_high_enough++;
+                    n_slow_a_high_enough += slow_iters;
                 } else {
-                    n_slow_other++;
+                    n_slow_other += slow_iters;
                 }
             } else if (done == ~0ULL) {
                 printf("Fail\n");
@@ -207,18 +220,25 @@ int main(int argc, char **argv)
             printf("n_slow: %d (ab_valid: %d, a_high_enough: %d, other: %d); ",
                    n_slow, n_slow_ab_valid, n_slow_a_high_enough, n_slow_other);
         if (is_asm && enable_recover_a) {
-            printf("recovery: on; fast_bails: %d; recovery_calls: %d; recovery_slow_iters: %d; ",
-                   n_fast_bails, n_recovery_calls, n_recovery_iters);
+            printf("recovery: on; fast_bails: %d (ab_valid:%d a_high_enough:%d gcd:%d other:%d); recovery_calls: %d; recovery_slow_iters: %d; ",
+                   n_fast_bails,
+                   n_fast_bails_ab_valid,
+                   n_fast_bails_a_high_enough,
+                   n_fast_bails_gcd_failed,
+                   n_fast_bails_other,
+                   n_recovery_calls,
+                   n_recovery_iters);
         }
-        if (is_asm && n_slow_a_high_enough != 0) {
-            printf("a<=L after slow: %d; a<=L delta_bits min/max/avg: %d/%d/%.2f; delta_limbs min/max/avg: %d/%d/%.2f; ",
+        if (is_asm && n_fast_bails_a_high_enough != 0) {
+            // Delta stats are per fast-bail (not per slow iteration).
+            printf("a<=L after single slow: %d; a<=L delta_bits min/max/avg: %d/%d/%.2f; delta_limbs min/max/avg: %d/%d/%.2f; ",
                    n_a_high_enough_fail_after_single_slow,
                    min_a_high_enough_delta_bits,
                    max_a_high_enough_delta_bits,
-                   double(sum_a_high_enough_delta_bits) / double(n_slow_a_high_enough),
+                   double(sum_a_high_enough_delta_bits) / double(n_fast_bails_a_high_enough),
                    min_a_high_enough_delta_limbs,
                    max_a_high_enough_delta_limbs,
-                   double(sum_a_high_enough_delta_limbs) / double(n_slow_a_high_enough));
+                   double(sum_a_high_enough_delta_limbs) / double(n_fast_bails_a_high_enough));
         }
 
 #if defined(ARCH_ARM)

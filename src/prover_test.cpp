@@ -7,6 +7,13 @@ int segments = 7;
 int thread_count = 3;
 std::atomic<bool> stop_signal{false};
 
+static bool env_truthy(const char* name) {
+    const char* v = std::getenv(name);
+    if (!v) return false;
+    return std::strcmp(v, "1") == 0 || std::strcmp(v, "true") == 0 || std::strcmp(v, "yes") == 0 ||
+           std::strcmp(v, "on") == 0;
+}
+
 Proof CreateProof(integer D, ProverManager& pm, uint64_t iteration) {
     Proof proof = pm.Prove(iteration);
     if (!stop_signal) {
@@ -56,10 +63,30 @@ int main() {
     ProverManager pm(D, (FastAlgorithmCallback*)weso, fast_storage, segments, thread_count);
     pm.start();
     std::vector<std::thread> threads;
-    for (int i = 0; i <= 30; i++) {
-        threads.emplace_back(CreateProof, D, std::ref(pm), (1 << 21) * i + 60000);
+
+    // This binary is used by CI as a correctness test. Historically it also served as a 5-minute
+    // soak/stress test; that dominates the wall-clock runtime of the "all tests" run.
+    //
+    // Default behavior: run a short correctness test (a few proofs) and exit promptly.
+    // Long/soak mode: set `CHIAVDF_PROVER_TEST_LONG=1` to keep the historical behavior.
+    const bool long_mode = env_truthy("CHIAVDF_PROVER_TEST_LONG");
+    const bool is_ci = (std::getenv("CI") != nullptr) || (std::getenv("GITHUB_ACTIONS") != nullptr);
+
+    if (long_mode) {
+        for (int i = 0; i <= 30; i++) {
+            threads.emplace_back(CreateProof, D, std::ref(pm), (1ULL << 21) * uint64_t(i) + 60000);
+        }
+        std::this_thread::sleep_for(std::chrono::seconds(300));
+    } else {
+        // Keep iterations small enough to complete quickly on CI runners.
+        const int max_i = is_ci ? 3 : 6;
+        for (int i = 0; i < max_i; i++) {
+            threads.emplace_back(CreateProof, D, std::ref(pm), (1ULL << 18) * uint64_t(i) + 60000);
+        }
+        for (auto& t : threads) t.join();
+        threads.clear();
     }
-    std::this_thread::sleep_for (std::chrono::seconds(300));
+
     stop_signal = true;
     std::cout << "Stopping everything.\n";
     pm.stop();

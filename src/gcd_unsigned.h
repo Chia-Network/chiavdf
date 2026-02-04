@@ -1,8 +1,9 @@
 #ifndef GCD_UNSIGNED_H
 #define GCD_UNSIGNED_H
 
+#include <atomic>
+
 #ifdef ARCH_ARM
-    #include <atomic>
 // Count how often we fallback because `ab[0] < ab[1]` (invariant violation).
 extern std::atomic<uint64_t> gcd_unsigned_arm_bad_order_fallbacks;
 // Count how often we fallback because `gcd_128(...)` returned false (no progress / bad quotient discovery).
@@ -19,6 +20,11 @@ extern std::atomic<uint64_t> gcd_unsigned_arm_exact_division_repairs;
 // located at `out_uv_addr - 8`.
 struct gcd_unsigned_uv_stream_out {
     uint64* out_uv_addr = nullptr;
+    // Optional counter to publish availability of each streamed entry.
+    // If non-null, the producer must store `uv_counter_start + iter_index` (release)
+    // after writing the entry for that iteration index.
+    std::atomic<uint64>* out_uv_counter = nullptr;
+    uint64 uv_counter_start = 0;
     bool inputs_swapped = false; // if true, store UV in original (a,b) order
     int iter_count = 0;          // number of streamed iterations produced
     bool ok = true;              // false if fast path couldn't produce a stream
@@ -346,6 +352,16 @@ template<int size> bool gcd_unsigned(
                 }
                 entry[4] = static_cast<uint64>(local_parity); // 0 even, 1 odd
                 entry[5] = 0;
+                // Publish that this entry is ready.
+                if (stream_out->out_uv_counter) {
+                    stream_out->out_uv_counter->store(
+                        // Match the x86 asm producer/consumer protocol: publish iter `i`
+                        // as `uv_counter_start + i`. This intentionally makes the consumer
+                        // one entry behind so the final entry isn't observed before the
+                        // producer sets its `exit_flag`.
+                        stream_out->uv_counter_start + static_cast<uint64>(iter),
+                        std::memory_order_release);
+                }
             }
         } else {
             //can just make the gcd fail if this happens in the asm code

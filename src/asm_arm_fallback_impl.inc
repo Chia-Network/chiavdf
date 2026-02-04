@@ -6,41 +6,11 @@
 
 #include <atomic>
 
-thread_local void (*gcd_unsigned_arm_uv_callback)(int index, const array<array<uint64, 2>, 2>& uv, int parity) = nullptr;
-thread_local bool gcd_unsigned_arm_fell_back_to_slow = false;
 std::atomic<uint64_t> gcd_unsigned_arm_bad_order_fallbacks{0};
 std::atomic<uint64_t> gcd_unsigned_arm_gcd128_fail_fallbacks{0};
+std::atomic<uint64_t> gcd_unsigned_arm_exact_division_repairs{0};
 
 namespace {
-
-thread_local asm_code::asm_func_gcd_unsigned_data* g_arm_gcd_data = nullptr;
-thread_local int g_arm_iter_count = 0;
-// When inputs are swapped (a < b), UV columns are for (b, a). We write in original (a, b) order.
-thread_local bool g_arm_inputs_swapped = false;
-
-void arm_uv_callback(int index, const array<array<uint64, 2>, 2>& uv, int parity) {
-    g_arm_iter_count = index + 1;
-    asm_code::asm_func_gcd_unsigned_data* data = g_arm_gcd_data;
-    if (!data || !data->out_uv_addr) return;
-
-    uint64* entry = data->out_uv_addr + index * 8;
-    if (g_arm_inputs_swapped) {
-        // uv col0 = coeff for b, col1 = coeff for a; caller expects (a, b) order
-        entry[0] = uv[0][1];
-        entry[1] = uv[1][1];
-        entry[2] = uv[0][0];
-        entry[3] = uv[1][0];
-    } else {
-        entry[0] = uv[0][0];
-        entry[1] = uv[1][0];
-        entry[2] = uv[0][1];
-        entry[3] = uv[1][1];
-    }
-    entry[4] = static_cast<uint64>(parity);
-    entry[5] = 0;
-    entry[6] = 0;
-    entry[7] = 0;
-}
 
 void load_limbs_to_fixed_integer(uint64* limbs, fixed_integer<uint64, gcd_size>& out) {
     // `fixed_integer<uint64, gcd_size>` stores little-endian 64-bit limbs in `out[0..gcd_size-1]`
@@ -90,30 +60,19 @@ extern "C" int asm_arm_func_gcd_unsigned(asm_func_gcd_unsigned_data* data) {
     uv[1] = fixed_integer<uint64, gcd_size>(integer(0));
     int parity = 1;
 
-    g_arm_gcd_data = data;
-    g_arm_inputs_swapped = inputs_swapped;  // used by arm_uv_callback and when storing results
-    gcd_unsigned_arm_uv_callback = arm_uv_callback;
+    // Emit the asm-style per-iteration UV stream directly (no callback/side-channel).
+    gcd_unsigned_uv_stream_out stream;
+    stream.out_uv_addr = data->out_uv_addr;
+    stream.inputs_swapped = inputs_swapped;
+    gcd_unsigned<gcd_size>(ab, uv, parity, threshold, &stream);
 
-    gcd_unsigned<gcd_size>(ab, uv, parity, threshold);
-
-    // When gcd_unsigned sets valid=false and falls back to the slow algorithm (e.g. gcd_128
-    // failed to make progress), it sets gcd_unsigned_arm_fell_back_to_slow. We must return -1
-    // so the caller gets an error and retries; otherwise we would report success with
-    // incomplete UV matrix data (only iterations before the fallback) and wrong iter count.
-    if (gcd_unsigned_arm_fell_back_to_slow) {
-        gcd_unsigned_arm_uv_callback = nullptr;
-        g_arm_gcd_data = nullptr;
-        g_arm_inputs_swapped = false;
-        g_arm_iter_count = 0;
-        gcd_unsigned_arm_fell_back_to_slow = false;
+    // If the fast path couldn't produce a stream (gcd_128 failed or invariant violated),
+    // fail like the x86 asm path does.
+    if (!stream.ok) {
         return -1;
     }
 
-    gcd_unsigned_arm_uv_callback = nullptr;
-    int iter = g_arm_iter_count;
-    g_arm_gcd_data = nullptr;
-    g_arm_inputs_swapped = false;
-    g_arm_iter_count = 0;
+    const int iter = stream.iter_count;
 
     // Store results so that data->a/data->a_2 always get the result for original a (first input)
     // and data->b/data->b_2 for original b (second input). When we swapped, internal ab[0]
@@ -137,6 +96,10 @@ extern "C" int asm_arm_func_gcd_unsigned(asm_func_gcd_unsigned_data* data) {
     if (data->out_uv_counter_addr) {
         reinterpret_cast<std::atomic<uint64>*>(data->out_uv_counter_addr)->store(
             data->uv_counter_start + iter - 1, std::memory_order_release);
+    }
+    // Initialize the iter=-1 entry (uv_entries[0]): only exit_flag is meaningful.
+    if (data->out_uv_addr) {
+        data->out_uv_addr[-8 + 5] = 0;
     }
     if (data->out_uv_addr && iter > 0) {
         data->out_uv_addr[(iter - 1) * 8 + 5] = 1;

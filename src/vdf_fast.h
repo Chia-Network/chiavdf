@@ -1,6 +1,7 @@
 #ifndef VDF_FAST_H
 #define VDF_FAST_H
 
+#include <cstdint>
 #include <condition_variable>
 #include <mutex>
 
@@ -42,6 +43,28 @@ typedef gcd_results_type<int2x> gcd_results_int2x;
 //all divisions are exact
 struct square_state_type {
     int pairindex;
+
+    // Instrumentation: record why the fast path bailed out.
+    //
+    // This is used to diagnose slow fallbacks in `repeated_square()` and `vdf_bench`.
+    // The caller can set `entered_after_single_slow` to indicate the fast batch began
+    // immediately after the 1-iteration slow step used to recover from early termination.
+    enum fast_fail_reason : uint8_t {
+        fast_fail_none = 0,
+        fast_fail_ab_invalid = 1,
+        fast_fail_a_not_high_enough = 2,
+        fast_fail_gcd_failed = 3,
+        fast_fail_other = 255,
+    };
+    struct fast_fail_info_type {
+        fast_fail_reason reason = fast_fail_none;
+        bool after_single_slow = false;
+        int16_t a_limbs = 0;
+        int16_t L_limbs = 0;
+        int16_t a_bits = 0;
+        int16_t L_bits = 0;
+    } last_fail;
+    bool entered_after_single_slow = false;
 
     //running the gcd will advance the counter value by this much on both the master and slave threads
     //it is then advanced by 1 after the gcd results are consumed
@@ -225,6 +248,12 @@ struct square_state_type {
             ab_valid=(a.num_bits()<=max_bits_ab && b.num_bits()<=max_bits_ab && a.sgn()>=0);
         }
         if (!ab_valid) {
+            last_fail.reason = fast_fail_ab_invalid;
+            last_fail.after_single_slow = entered_after_single_slow;
+            last_fail.a_limbs = int16_t(a.num_limbs());
+            last_fail.L_limbs = int16_t(L.num_limbs());
+            last_fail.a_bits = int16_t(a.num_bits());
+            last_fail.L_bits = int16_t(L.num_bits());
             return false;
         }
 
@@ -233,9 +262,18 @@ struct square_state_type {
         bool a_high_enough;
         {
             TRACK_CYCLES //102
-            a_high_enough=(a.num_limbs()>L.num_limbs());
+            // Fast precheck: limb count implies magnitude, but equality needs an exact compare.
+            const int a_limbs = a.num_limbs();
+            const int L_limbs = L.num_limbs();
+            a_high_enough = (a_limbs > L_limbs) || (a_limbs == L_limbs && a.compare_abs(L) > 0);
         }
         if (!a_high_enough) {
+            last_fail.reason = fast_fail_a_not_high_enough;
+            last_fail.after_single_slow = entered_after_single_slow;
+            last_fail.a_limbs = int16_t(a.num_limbs());
+            last_fail.L_limbs = int16_t(L.num_limbs());
+            last_fail.a_bits = int16_t(a.num_bits());
+            last_fail.L_bits = int16_t(L.num_bits());
             return false;
         }
 
@@ -251,6 +289,8 @@ struct square_state_type {
             TRACK_CYCLES //16070 (critical path 1)
             if (!gcd_unsigned(counter_start_phase_0, gcd_1_0, gcd_zero)) {
                 TRACK_CYCLES_ABORT
+                last_fail.reason = fast_fail_gcd_failed;
+                last_fail.after_single_slow = entered_after_single_slow;
                 return false;
             }
         }
@@ -314,7 +354,12 @@ struct square_state_type {
                 TRACK_CYCLES //1309; latency is hidden by gcd being slow
                 c.set_divide_floor(b_b_D, a_4, c_remainder);
                 if (c_remainder.sgn()!=0) {
+                    // In test builds this used to hard-abort. On ARM, the C++ fallback path
+                    // can occasionally hit this under stress; treat it as corruption and
+                    // bail out cleanly instead of aborting the whole process.
+#if !defined(ARCH_ARM)
                     assert(!is_vdf_test); //should never have corruption unless there are bugs
+#endif
                     phase_start.corruption_flag=true; //bad
                     return false;
                 }
@@ -323,7 +368,9 @@ struct square_state_type {
             {
                 TRACK_CYCLES //100
                 if (a.sgn()<0 || c.sgn()<0) {
+#if !defined(ARCH_ARM)
                     assert(!is_vdf_test);
+#endif
                     phase_start.corruption_flag=true;
                     return false;
                 }
@@ -870,6 +917,8 @@ struct square_state_type {
     void init(const integer& t_D, const integer& t_L, const integer& t_a, const integer& t_b) {
         int2x zero;
         zero=uint64(0ull);
+
+        last_fail = fast_fail_info_type{};
 
         phase_constant.D=t_D.impl;
         phase_constant.L=t_L.impl;

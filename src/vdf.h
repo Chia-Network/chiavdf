@@ -121,10 +121,24 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
         uint64 num_calls_fast=0;
         uint64 num_iterations_fast=0;
         uint64 num_iterations_slow=0;
+
+        // Diagnose early termination: how often the fast path bails due to `a <= L`,
+        // and whether it happens right after the 1-iteration slow step.
+        uint64 a_not_high_enough_fails = 0;
+        uint64 a_not_high_enough_fails_after_single_slow = 0;
+        uint64 a_not_high_enough_recovery_iters = 0;
+        uint64 a_not_high_enough_recovery_calls = 0;
+        int64 a_not_high_enough_sum_delta_bits = 0;
+        int64 a_not_high_enough_sum_delta_limbs = 0;
+        int a_not_high_enough_min_delta_bits = (1 << 30);
+        int a_not_high_enough_max_delta_bits = -(1 << 30);
+        int a_not_high_enough_min_delta_limbs = (1 << 30);
+        int a_not_high_enough_max_delta_limbs = -(1 << 30);
     #endif
 
     uint64_t num_iterations = 0;
     uint64_t last_checkpoint = 0;
+    thread_local bool prev_was_single_slow_step = false;
 
     while (!stopped) {
         uint64 c_checkpoint_interval=checkpoint_interval;
@@ -164,6 +178,8 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
         // This works single threaded
         square_state_type square_state;
         square_state.pairindex=vdf_fast_pairindex();
+        square_state.entered_after_single_slow = prev_was_single_slow_step;
+        prev_was_single_slow_step = false;
 
         uint64 actual_iterations=repeated_square_fast(square_state, f, D, L, num_iterations, batch_size, weso);
 
@@ -192,20 +208,82 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
         }
 
         if (actual_iterations<batch_size) {
+            #ifdef VDF_TEST
+                if (square_state.last_fail.reason == square_state_type::fast_fail_a_not_high_enough) {
+                    ++a_not_high_enough_fails;
+                    if (square_state.last_fail.after_single_slow) {
+                        ++a_not_high_enough_fails_after_single_slow;
+                    }
+                    const int delta_bits = int(square_state.last_fail.a_bits) - int(square_state.last_fail.L_bits);
+                    const int delta_limbs = int(square_state.last_fail.a_limbs) - int(square_state.last_fail.L_limbs);
+                    a_not_high_enough_sum_delta_bits += delta_bits;
+                    a_not_high_enough_sum_delta_limbs += delta_limbs;
+                    a_not_high_enough_min_delta_bits = std::min(a_not_high_enough_min_delta_bits, delta_bits);
+                    a_not_high_enough_max_delta_bits = std::max(a_not_high_enough_max_delta_bits, delta_bits);
+                    a_not_high_enough_min_delta_limbs = std::min(a_not_high_enough_min_delta_limbs, delta_limbs);
+                    a_not_high_enough_max_delta_limbs = std::max(a_not_high_enough_max_delta_limbs, delta_limbs);
+                }
+            #endif
+
             //the fast algorithm terminated prematurely for whatever reason. f is still valid
             //it might terminate prematurely again (e.g. gcd quotient too large), so will do one iteration of the slow algorithm
             //this will also reduce f if the fast algorithm terminated because it was too big
+            uint64 slow_recovery_iters = 1;
             repeated_square_original(*weso->vdfo, f, D, L, num_iterations+actual_iterations, 1, weso);
 
+            // If we bailed because `a <= L`, the next fast attempt often fails again immediately
+            // (observed on ARM). Keep doing a few slow squarings until we re-enter the fast regime.
+            if (square_state.last_fail.reason == square_state_type::fast_fail_a_not_high_enough) {
+                const int delta_bits = int(square_state.last_fail.a_bits) - int(square_state.last_fail.L_bits);
+                const int delta_limbs = int(square_state.last_fail.a_limbs) - int(square_state.last_fail.L_limbs);
+
+                // Adaptive cap: the further `a` is below `L`, the more slow iterations we allow to
+                // recover, to avoid a "slow1 -> fast-fail -> slow1 -> ..." loop.
+                uint64 max_slow_recovery_iters = 2;
+                if (delta_limbs <= -3 || delta_bits <= -256) max_slow_recovery_iters = 16;
+                else if (delta_limbs <= -2 || delta_bits <= -192) max_slow_recovery_iters = 12;
+                else if (delta_limbs <= -1 || delta_bits <= -128) max_slow_recovery_iters = 8;
+                else if (delta_bits <= -64) max_slow_recovery_iters = 4;
+
+                // If the planned cap wasn't enough (still `a <= L`), extend once (bounded).
+                bool extended_once = false;
+                constexpr uint64 kAbsoluteMaxSlowRecoveryIters = 32;
+                for (;;) {
+                    while (slow_recovery_iters < max_slow_recovery_iters) {
+                        const bool a_nonneg = (f.a.impl->_mp_size >= 0);
+                        const bool a_high_enough_now = a_nonneg && (mpz_cmpabs(f.a.impl, L.impl) > 0);
+                        if (a_high_enough_now) break;
+                        repeated_square_original(*weso->vdfo, f, D, L,
+                                                num_iterations + actual_iterations + slow_recovery_iters,
+                                                1, weso);
+                        ++slow_recovery_iters;
+                    }
+
+                    const bool a_nonneg = (f.a.impl->_mp_size >= 0);
+                    const bool a_high_enough_now = a_nonneg && (mpz_cmpabs(f.a.impl, L.impl) > 0);
+                    if (a_high_enough_now) break;
+
+                    if (extended_once) break;
+                    extended_once = true;
+                    max_slow_recovery_iters = std::min<uint64>(kAbsoluteMaxSlowRecoveryIters, max_slow_recovery_iters * 2);
+                }
+            }
+
+            prev_was_single_slow_step = true;
+
             #ifdef VDF_TEST
-                ++num_iterations_slow;
+                num_iterations_slow += slow_recovery_iters;
+                if (square_state.last_fail.reason == square_state_type::fast_fail_a_not_high_enough) {
+                    a_not_high_enough_recovery_iters += slow_recovery_iters;
+                    ++a_not_high_enough_recovery_calls;
+                }
                 if (vdf_test_correctness) {
                     assert(actual_iterations==0);
                     print( "fast vdf terminated prematurely", num_iterations );
                 }
             #endif
 
-            ++actual_iterations;
+            actual_iterations += slow_recovery_iters;
         }
 
         num_iterations+=actual_iterations;
@@ -271,6 +349,23 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
     #ifdef VDF_TEST
         print( "fast average batch size", double(num_iterations_fast)/double(num_calls_fast) );
         print( "fast iterations per slow iteration", double(num_iterations_fast)/double(num_iterations_slow) );
+        if (a_not_high_enough_fails != 0) {
+            print( "fast early-terminations due to a<=L", a_not_high_enough_fails );
+            print( "  after 1-iter slow step", a_not_high_enough_fails_after_single_slow );
+            print( "  delta_bits (a_bits-L_bits) min/max/avg",
+                   a_not_high_enough_min_delta_bits,
+                   a_not_high_enough_max_delta_bits,
+                   double(a_not_high_enough_sum_delta_bits) / double(a_not_high_enough_fails) );
+            print( "  delta_limbs (a_limbs-L_limbs) min/max/avg",
+                   a_not_high_enough_min_delta_limbs,
+                   a_not_high_enough_max_delta_limbs,
+                   double(a_not_high_enough_sum_delta_limbs) / double(a_not_high_enough_fails) );
+            if (a_not_high_enough_recovery_calls != 0) {
+                print( "  slow recovery iters total/avg",
+                       a_not_high_enough_recovery_iters,
+                       double(a_not_high_enough_recovery_iters) / double(a_not_high_enough_recovery_calls) );
+            }
+        }
     #endif
 }
 
@@ -548,9 +643,14 @@ class ProverManager {
         std::cout << "Got proof for iteration: " << iteration << ". ("
                   << proof_segments.size() - 1 << "-wesolowski proof)\n";
         std::cout << "Proof: " << proof.hex() << "\n";
-        std::cout << "Current weso iteration: " << vdf_iteration
-                  << ". Extra proof time (in VDF iterations): " << vdf_iteration - iteration
-                  << "\n";
+        std::cout << "Current weso iteration: " << vdf_iteration;
+        if (vdf_iteration >= iteration) {
+            std::cout << ". Extra proof time (in VDF iterations): " << (vdf_iteration - iteration) << "\n";
+        } else {
+            // Avoid unsigned underflow spam (shows up as a huge 2^64-... number).
+            std::cout << ". Extra proof time (in VDF iterations): " << 0
+                      << " (weso behind by " << (iteration - vdf_iteration) << ")\n";
+        }
         return proof;
     }
 

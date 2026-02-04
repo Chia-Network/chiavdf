@@ -3,15 +3,26 @@
 
 #ifdef ARCH_ARM
     #include <atomic>
-// Callback used by ARM fallback to capture UV matrix at each gcd_unsigned iteration (thread-local so concurrent threads do not overwrite each other).
-extern thread_local void (*gcd_unsigned_arm_uv_callback)(int index, const array<array<uint64, 2>, 2>& uv, int parity);
-// Set by gcd_unsigned when it falls back to slow path (valid=false); ARM fallback checks this and returns -1 to match x86 asm behavior.
-extern thread_local bool gcd_unsigned_arm_fell_back_to_slow;
 // Count how often we fallback because `ab[0] < ab[1]` (invariant violation).
 extern std::atomic<uint64_t> gcd_unsigned_arm_bad_order_fallbacks;
 // Count how often we fallback because `gcd_128(...)` returned false (no progress / bad quotient discovery).
 extern std::atomic<uint64_t> gcd_unsigned_arm_gcd128_fail_fallbacks;
+// Count how often we repaired a bad/failed gcd_128 step by doing an exact single-quotient division step.
+extern std::atomic<uint64_t> gcd_unsigned_arm_exact_division_repairs;
 #endif
+
+// Optional output stream for producing the per-iteration UV matrices in the
+// asm producer/consumer format (u0,u1,v0,v1,parity,exit_flag,...).
+//
+// When `out_uv_addr` is non-null, it is assumed to point at the storage for
+// iteration 0 (e.g. `&uv_entries[1]` interpreted as `uint64*`), and entry -1 is
+// located at `out_uv_addr - 8`.
+struct gcd_unsigned_uv_stream_out {
+    uint64* out_uv_addr = nullptr;
+    bool inputs_swapped = false; // if true, store UV in original (a,b) order
+    int iter_count = 0;          // number of streamed iterations produced
+    bool ok = true;              // false if fast path couldn't produce a stream
+};
 
 //threshold is 0 to calculate the normal gcd
 template<int size> void gcd_unsigned_slow(
@@ -48,11 +59,12 @@ template<int size> void gcd_unsigned_slow(
 
 //uv is <1,0> to calculate |u| and <0,1> to calculate |v|
 //parity is negated for each quotient
-template<int size> void gcd_unsigned(
+template<int size> bool gcd_unsigned(
     array<fixed_integer<uint64, size>, 2>& ab,
     array<fixed_integer<uint64, size>, 2>& uv,
     int& parity,
-    fixed_integer<uint64, size> threshold=fixed_integer<uint64, size>(integer(0))
+    fixed_integer<uint64, size> threshold=fixed_integer<uint64, size>(integer(0)),
+    gcd_unsigned_uv_stream_out* stream_out=nullptr
 ) {
     typedef fixed_integer<uint64, size> int_t;
 
@@ -78,14 +90,17 @@ template<int size> void gcd_unsigned(
 
     // These vectors are only needed for the x86 TEST_ASM self-check block at the end.
     // On ARM (and in normal builds) they add avoidable allocation/branch overhead in the hot loop.
-#if defined(TEST_ASM)
+#if defined(TEST_ASM) && !defined(ARCH_ARM)
     vector<array<array<uint64, 2>, 2>> matricies;
     vector<int> local_parities;
 #endif
     bool valid=true;
-#ifdef ARCH_ARM
-    gcd_unsigned_arm_fell_back_to_slow = false;
-#endif
+
+    const bool producing_uv_stream = (stream_out != nullptr && stream_out->out_uv_addr != nullptr);
+    if (stream_out) {
+        stream_out->iter_count = 0;
+        stream_out->ok = true;
+    }
 
     while (true) {
 #if !defined(ARCH_ARM)
@@ -109,9 +124,6 @@ template<int size> void gcd_unsigned(
 
         if (ab[0]<=threshold) {
             valid=false;
-#ifdef ARCH_ARM
-            gcd_unsigned_arm_fell_back_to_slow = true;
-#endif
 #if !defined(ARCH_ARM)
             print( "    gcd_unsigned slow 1" );
 #endif
@@ -168,7 +180,30 @@ template<int size> void gcd_unsigned(
 
         array<array<uint64, 2>, 2> uv_uint64;
         int local_parity; //1 if odd, 0 if even
-        if (gcd_128(ab_head, uv_uint64, local_parity, shift_amount!=0, threshold_head)) {
+
+        auto set_exact_single_quotient_step = [&]() -> bool {
+            // Exact Euclid step: q = a/b (must fit in uint64 for asm-style UV stream).
+            // This is slower than the Lehmer/continued-fraction step but avoids falling back to
+            // `square_original` (much more expensive) when gcd_128 is unstable on ARM.
+            int_t q = ab[0] / ab[1];
+            if (q.is_negative()) return false;
+            for (int i = 1; i < size; i++) {
+                if (q[i] != 0) {
+                    return false;
+                }
+            }
+            const uint64 q64 = q[0];
+
+            uv_uint64[0][0] = 0;
+            uv_uint64[0][1] = 1;
+            uv_uint64[1][0] = 1;
+            uv_uint64[1][1] = q64;
+            local_parity = 1; // one quotient => odd
+            return true;
+        };
+
+        if (gcd_128(ab_head, uv_uint64, local_parity, shift_amount!=0, threshold_head) ||
+            set_exact_single_quotient_step()) {
             //int local_parity=(uv_double[1][1]<0)? 1 : 0; //sign bit
             bool even=(local_parity==0);
 
@@ -215,20 +250,43 @@ template<int size> void gcd_unsigned(
             //do not do any of this stuff; instead return an array of matricies
             //the array is processed while it is being generated so it is cache line aligned, has a counter, etc
 
-            ab[0]=a_new;
-            ab[1]=b_new;
             // The algorithm assumes unsigned inputs with `ab[0] >= ab[1]` for every iteration.
-            // If that invariant is violated (e.g. due to a bad cofactor matrix from gcd_128),
-            // do NOT "fix it up" by swapping (that changes the meaning of UV/parity).
-            // Instead, force a fallback (same behavior as when gcd_128 can't make progress).
-            if (ab[0] < ab[1]) {
-                valid=false;
+            // If the cofactor matrix violates this, retry once with an exact single-quotient step.
+            if (a_new < b_new) {
 #ifdef ARCH_ARM
                 ++gcd_unsigned_arm_bad_order_fallbacks;
-                gcd_unsigned_arm_fell_back_to_slow = true;
 #endif
-                break;
+                if (!set_exact_single_quotient_step()) {
+                    valid=false;
+                    break;
+                }
+                even = (local_parity == 0);
+
+                uv_00=uv_uint64[0][0];
+                uv_01=uv_uint64[0][1];
+                uv_10=uv_uint64[1][0];
+                uv_11=uv_uint64[1][1];
+
+                a_new_1=ab[0]; a_new_1*=uv_00; a_new_1.set_negative(!even);
+                a_new_2=ab[1]; a_new_2*=uv_01; a_new_2.set_negative(even);
+                b_new_1=ab[0]; b_new_1*=uv_10; b_new_1.set_negative(even);
+                b_new_2=ab[1]; b_new_2*=uv_11; b_new_2.set_negative(!even);
+
+                if (!even) {
+                    a_new=int_t(a_new_2 + a_new_1);
+                    b_new=int_t(b_new_1 + b_new_2);
+                } else {
+                    a_new=int_t(a_new_1 + a_new_2);
+                    b_new=int_t(b_new_2 + b_new_1);
+                }
+
+#ifdef ARCH_ARM
+                ++gcd_unsigned_arm_exact_division_repairs;
+#endif
             }
+
+            ab[0]=a_new;
+            ab[1]=b_new;
 
             //bx and by are nonnegative
             auto dot=[&](uint64 ax, uint64 ay, int_t bx, int_t by) -> int_t {
@@ -248,15 +306,30 @@ template<int size> void gcd_unsigned(
             //todo: don't do this; just make it 0 even, 1 odd
             parity*=1-local_parity-local_parity;
 
-#if defined(TEST_ASM)
+#if defined(TEST_ASM) && !defined(ARCH_ARM)
             matricies.push_back(uv_uint64);
             local_parities.push_back(local_parity);
 #endif
-#ifdef ARCH_ARM
-            if (gcd_unsigned_arm_uv_callback) {
-                gcd_unsigned_arm_uv_callback(static_cast<int>(matricies.size()) - 1, uv_uint64, local_parity);
+
+            if (producing_uv_stream) {
+                uint64* entry = stream_out->out_uv_addr + iter * 8;
+                if (stream_out->inputs_swapped) {
+                    // uv col0 = coeff for b, col1 = coeff for a; caller expects (a, b) order
+                    entry[0] = uv_uint64[0][1];
+                    entry[1] = uv_uint64[1][1];
+                    entry[2] = uv_uint64[0][0];
+                    entry[3] = uv_uint64[1][0];
+                } else {
+                    entry[0] = uv_uint64[0][0];
+                    entry[1] = uv_uint64[1][0];
+                    entry[2] = uv_uint64[0][1];
+                    entry[3] = uv_uint64[1][1];
+                }
+                entry[4] = static_cast<uint64>(local_parity); // 0 even, 1 odd
+                entry[5] = 0;
+                entry[6] = 0;
+                entry[7] = 0;
             }
-#endif
         } else {
             //can just make the gcd fail if this happens in the asm code
 #if !defined(ARCH_ARM)
@@ -267,7 +340,6 @@ template<int size> void gcd_unsigned(
             valid=false;
 #ifdef ARCH_ARM
             ++gcd_unsigned_arm_gcd128_fail_fallbacks;
-            gcd_unsigned_arm_fell_back_to_slow = true;
 #endif
             break;
 
@@ -290,7 +362,15 @@ template<int size> void gcd_unsigned(
         ++iter;
     }
 
-    if (is_vdf_test) {
+    if (stream_out) {
+        stream_out->iter_count = iter;
+        stream_out->ok = valid;
+    }
+
+    // When producing an asm-style UV stream, we must not fall back to the slow
+    // algorithm here (there is no equivalent per-iteration UV stream for it).
+    // Treat "valid=false" as caller-visible failure instead.
+    if (is_vdf_test && !producing_uv_stream) {
         auto ab2=ab_start;
         auto uv2=uv_start;
         int parity2=parity_start;
@@ -408,6 +488,8 @@ template<int size> void gcd_unsigned(
     assert(integer(ab[0])>integer(threshold));
     assert(integer(ab[1])<=integer(threshold));
 #endif
+
+    return valid;
 }
 
 // end Headerguard GCD_UNSIGNED_H

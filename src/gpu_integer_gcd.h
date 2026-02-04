@@ -59,7 +59,7 @@ template<int size> fixed_gcd_res<size> gcd(
         parity=1;
     }
 
-    gcd_unsigned(ab, uv, parity, threshold);
+    (void)gcd_unsigned(ab, uv, parity, threshold);
 
     // sa+bt=g ; all nonnegative
     // (-s)(-a)+bt=g

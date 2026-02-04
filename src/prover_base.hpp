@@ -77,12 +77,40 @@ class Prover {
         uint64_t k0 = k - k1;
         form x = id;
 
+        const size_t num_buckets = static_cast<size_t>(1ULL << static_cast<uint64_t>(k));
+        std::vector<form> ys(num_buckets);
+        std::vector<uint32_t> ys_gen(num_buckets, 0);
+        uint32_t cur_gen = 1;
+
+        auto ensure_bucket_initialized = [&](size_t idx) {
+            if (ys_gen[idx] != cur_gen) {
+                ys[idx] = id;
+                ys_gen[idx] = cur_gen;
+            }
+        };
+
+        auto maybe_mul_bucket = [&](form& out, size_t idx) {
+            // Multiplying by identity is a no-op; skip buckets that were never written this generation.
+            if (ys_gen[idx] == cur_gen) {
+                nucomp_form(out, out, ys[idx], D, L);
+            }
+        };
+
         for (int64_t j = l - 1; j >= 0; j--) {
             x = FastPowFormNucomp(x, D, integer(1 << k), L, reducer);
 
-            std::vector<form> ys((1 << k));
-            for (uint64_t i = 0; i < (1UL << k); i++)
-                ys[i] = id;
+            // New generation: treat all buckets as identity until written.
+            // Avoids reinitializing `ys` every time (expensive on ARM).
+            if (cur_gen == 0) {
+                std::fill(ys_gen.begin(), ys_gen.end(), 0);
+                cur_gen = 1;
+            } else {
+                ++cur_gen;
+                if (cur_gen == 0) {
+                    std::fill(ys_gen.begin(), ys_gen.end(), 0);
+                    cur_gen = 1;
+                }
+            }
 
             form *tmp;
             uint64_t limit = num_iterations / (k * l);
@@ -128,6 +156,7 @@ class Prover {
                 {
                     if (!PerformExtraStep()) return;
                     tmp = GetForm(i);
+                    ensure_bucket_initialized(static_cast<size_t>(b));
                     nucomp_form(ys[b], ys[b], *tmp, D, L);
                 }
             }
@@ -136,7 +165,8 @@ class Prover {
                 form z = id;
                 for (uint64_t b0 = 0; b0 < (1UL << k0); b0++) {
                     if (!PerformExtraStep()) return;
-                    nucomp_form(z, z, ys[b1 * (1 << k0) + b0], D, L);
+                    const size_t idx = static_cast<size_t>(b1) * static_cast<size_t>(1ULL << k0) + static_cast<size_t>(b0);
+                    maybe_mul_bucket(z, idx);
                 }
                 z = FastPowFormNucomp(z, D, integer(b1 * (1 << k0)), L, reducer);
                 nucomp_form(x, x, z, D, L);
@@ -146,7 +176,8 @@ class Prover {
                 form z = id;
                 for (uint64_t b1 = 0; b1 < (1UL << k1); b1++) {
                     if (!PerformExtraStep()) return;
-                    nucomp_form(z, z, ys[b1 * (1 << k0) + b0], D, L);
+                    const size_t idx = static_cast<size_t>(b1) * static_cast<size_t>(1ULL << k0) + static_cast<size_t>(b0);
+                    maybe_mul_bucket(z, idx);
                 }
                 z = FastPowFormNucomp(z, D, integer(b0), L, reducer);
                 nucomp_form(x, x, z, D, L);

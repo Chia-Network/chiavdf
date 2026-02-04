@@ -191,11 +191,7 @@ exponent    fraction    base_bits   base_iter   128_iter    seconds
 3           10          50          5           3           0m1.379s
 ***/
 
-#if defined(ARCH_ARM)
-const uint64 max_spin_counter=50000000;  // ARM C++ fallback is slower; allow more spin before "spin_counter too high"
-#else
 const uint64 max_spin_counter=10000000;
-#endif
 
 //this value makes square_original not be called in 100k iterations. with every iteration reduced, minimum value is 1
 const int num_extra_bits_ab=3;
@@ -204,7 +200,7 @@ const bool calculate_k_repeated_mod=false;
 const bool calculate_k_repeated_mod_interval=1;
 
 const int validate_interval=1; //power of 2. will check the discriminant in the slave thread at this interval. -1 to disable. no effect on performance
-inline int checkpoint_interval=10000; //at each checkpoint, the slave thread is restarted and the master thread calculates c (tests may set smaller for small iteration counts)
+const int checkpoint_interval=10000; //at each checkpoint, the slave thread is restarted and the master thread calculates c
 //checkpoint_interval=100000: 39388
 //checkpoint_interval=10000:  39249 cycles per fast iteration
 //checkpoint_interval=1000:   38939

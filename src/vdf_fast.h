@@ -1,6 +1,9 @@
 #ifndef VDF_FAST_H
 #define VDF_FAST_H
 
+#include <condition_variable>
+#include <mutex>
+
 typedef mpz< 9, 16> mpz_9 ; //3 cache lines
 typedef mpz<17, 24> mpz_17; //4 cache lines
 typedef mpz<25, 32> mpz_25; //5 cache lines
@@ -311,10 +314,7 @@ struct square_state_type {
                 TRACK_CYCLES //1309; latency is hidden by gcd being slow
                 c.set_divide_floor(b_b_D, a_4, c_remainder);
                 if (c_remainder.sgn()!=0) {
-#if !defined(ARCH_ARM)
                     assert(!is_vdf_test); //should never have corruption unless there are bugs
-#endif
-                    // On ARM, FMA/rounding in earlier steps can make the division inexact; treat as corruption without aborting.
                     phase_start.corruption_flag=true; //bad
                     return false;
                 }
@@ -323,9 +323,7 @@ struct square_state_type {
             {
                 TRACK_CYCLES //100
                 if (a.sgn()<0 || c.sgn()<0) {
-#if !defined(ARCH_ARM)
                     assert(!is_vdf_test);
-#endif
                     phase_start.corruption_flag=true;
                     return false;
                 }
@@ -1079,11 +1077,81 @@ uint64 repeated_square_fast_multithread(square_state_type &square_state, form& f
 
     square_state.init(D, L, f.a, f.b);
 
-    thread slave_thread(repeated_square_fast_work, std::ref(square_state), false, base, iterations, std::ref(nuduplListener));
+    // Thread creation/join is surprisingly expensive on macOS/ARM, and the fast
+    // squaring path may run many small batches when it terminates early.
+    // Reuse a persistent worker thread per caller thread.
+    struct slave_worker {
+        std::mutex m;
+        std::condition_variable cv;
+        bool stop = false;
+        bool job_ready = false;
+        bool job_done = false;
 
-    repeated_square_fast_work(square_state, true, base, iterations, nuduplListener);
+        square_state_type* state = nullptr;
+        bool is_slave = false;
+        uint64 base = 0;
+        uint64 iterations = 0;
+        INUDUPLListener* listener = nullptr;
 
-    slave_thread.join(); //slave thread can't get stuck; is supposed to error out instead
+        std::thread th;
+
+        slave_worker() {
+            th = std::thread([this]() { this->run(); });
+        }
+
+        ~slave_worker() {
+            {
+                std::lock_guard<std::mutex> lk(m);
+                stop = true;
+                cv.notify_all();
+            }
+            if (th.joinable()) th.join();
+        }
+
+        void run() {
+            std::unique_lock<std::mutex> lk(m);
+            for (;;) {
+                cv.wait(lk, [&]() { return stop || job_ready; });
+                if (stop) return;
+
+                square_state_type* st = state;
+                const bool slave = is_slave;
+                const uint64 b = base;
+                const uint64 iters = iterations;
+                INUDUPLListener* lis = listener;
+
+                job_ready = false;
+                lk.unlock();
+                repeated_square_fast_work(*st, slave, b, iters, lis);
+                lk.lock();
+
+                job_done = true;
+                cv.notify_all();
+            }
+        }
+
+        void start(square_state_type& st, bool slave, uint64 b, uint64 iters, INUDUPLListener* lis) {
+            std::lock_guard<std::mutex> lk(m);
+            state = &st;
+            is_slave = slave;
+            base = b;
+            iterations = iters;
+            listener = lis;
+            job_done = false;
+            job_ready = true;
+            cv.notify_all();
+        }
+
+        void wait_done() {
+            std::unique_lock<std::mutex> lk(m);
+            cv.wait(lk, [&]() { return job_done; });
+        }
+    };
+
+    static thread_local slave_worker worker;
+    worker.start(square_state, /*is_slave=*/false, base, iterations, nuduplListener);
+    repeated_square_fast_work(square_state, /*is_slave=*/true, base, iterations, nuduplListener);
+    worker.wait_done();
 
     uint64 res;
     square_state.assign(f.a, f.b, f.c, res);

@@ -44,13 +44,7 @@ OPT_CFLAGS = -O3 -g
 
 ifneq ($(ASAN),)
 LDFLAGS += -fsanitize=address -fsanitize=undefined
-CXXFLAGS += -g -fsanitize=address -fsanitize=undefined
-# On ARM, omit trap-on-error so UBSan prints instead of SIGTRAP; ASan may still trap on memory errors.
-ifneq ($(filter $(ARCH),aarch64 arm64),)
-CXXFLAGS += -fno-sanitize-undefined-trap-on-error
-else
-CXXFLAGS += -fsanitize-undefined-trap-on-error
-endif
+CXXFLAGS += -g -fsanitize=address -fsanitize=undefined -fsanitize-undefined-trap-on-error
 endif
 
 ifneq ($(TSAN),)
@@ -77,7 +71,7 @@ BINS = vdf_client prover_test 1weso_test 2weso_test vdf_bench
 all: $(BINS)
 
 clean:
-	rm -f *.o *.s hw/*.o $(BINS) compile_asm emu_hw_test hw_test hw_vdf_client emu_hw_vdf_client
+	rm -f *.o *.s hw/*.o c_bindings/*.o $(BINS) compile_asm emu_hw_test hw_test hw_vdf_client emu_hw_vdf_client libchiavdf_fastc.a
 
 $(BINS) avx512_test: %: %.o lzcnt.o $(ASM_OBJS)
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
@@ -86,11 +80,28 @@ $(addsuffix .o,$(BINS)) avx512_test.o: CXXFLAGS += $(OPT_CFLAGS)
 
 # Production binary: VDF_MODE=0 (is_vdf_test=false).
 vdf_client.o: CXXFLAGS += -D VDF_MODE=0
+# Also compile out asserts for production performance.
+vdf_client.o: CXXFLAGS += -DNDEBUG
 # Test binaries: VDF_MODE=1 (is_vdf_test=true) so their asserts and test logic run correctly.
 1weso_test.o 2weso_test.o prover_test.o vdf_bench.o: CXXFLAGS += -D VDF_MODE=1
 
 lzcnt.o: refcode/lzcnt.c
 	$(CC) -c refcode/lzcnt.c
+
+#
+# Static library: fast C wrapper (streaming proving)
+#
+FASTLIB = libchiavdf_fastc.a
+FASTLIB_OBJS = c_bindings/fast_wrapper.o lzcnt.o $(ASM_OBJS)
+
+.PHONY: fastlib
+fastlib: $(FASTLIB)
+
+$(FASTLIB): $(FASTLIB_OBJS)
+	$(AR) rcs $@ $^
+
+# Wrapper is intended for production use.
+c_bindings/fast_wrapper.o: CXXFLAGS += $(OPT_CFLAGS) -D VDF_MODE=0 -DNDEBUG
 
 asm_compiled.s: compile_asm
 	./compile_asm

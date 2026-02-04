@@ -793,3 +793,9 @@ extern "C" bool chiavdf_get_last_streaming_stats(
 }
 
 extern "C" void chiavdf_free_byte_array(ChiavdfByteArray array) { delete[] array.data; }
+
+#if defined(ARCH_ARM)
+// Provide the ARM fallback implementation inside the fast wrapper build.
+// This must be included from exactly one translation unit.
+#include "../asm_arm_fallback_impl.inc"
+#endif

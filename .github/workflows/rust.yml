@@ -124,6 +124,13 @@ jobs:
         if: matrix.os.name == 'macOS'
         run: echo "LIBRARY_PATH=$(brew --prefix)/lib:$LIBRARY_PATH" >> $GITHUB_ENV
 
+      - name: Install build deps on MacOS
+        if: matrix.os.name == 'macOS'
+        run: |
+          # Self-hosted macOS runners may not have these preinstalled.
+          command -v cmake >/dev/null 2>&1 || brew install --formula --quiet cmake
+          command -v gmp-config >/dev/null 2>&1 || brew install --formula --quiet gmp
+
       - name: Install MPIR on Windows
         if: matrix.os.name == 'Windows'
         run: |

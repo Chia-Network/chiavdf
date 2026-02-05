@@ -56,7 +56,11 @@ jobs:
         echo "Running 2weso_test"
         ./2weso_test
         echo "Running prover_test"
-        ./prover_test
+        if [[ "${{ matrix.os }}" == ubuntu* ]]; then
+          ./prover_test
+        else
+          CHIAVDF_PROVER_TEST_FAST=1 ./prover_test
+        fi
 
     - name: Test vdf-client
       if: matrix.config != 'optimized=1'
@@ -75,7 +79,11 @@ jobs:
       run: |
         cd src
         echo "Running prover_test"
-        ./prover_test
+        if [[ "${{ matrix.os }}" == ubuntu* ]]; then
+          ./prover_test
+        else
+          CHIAVDF_PROVER_TEST_FAST=1 ./prover_test
+        fi
 
     - name: Benchmark vdf-client
       if: matrix.config == 'optimized=1'

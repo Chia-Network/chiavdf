@@ -59,6 +59,7 @@ If you're running a timelord, the following tests are available, depending of wh
 `./prover_test`, in case you're running a timelord that extends the chain and you're running the fast algorithm.
 
 Those tests will simulate the vdf_client and verify for correctness the produced proofs.
+Note: `prover_test` is a **soak/stress test by default**; set `CHIAVDF_PROVER_TEST_FAST=1` for a quick correctness run.
 
 ## Running tests
 
@@ -70,7 +71,7 @@ On ARM (aarch64/arm64) a C++ GCD path is used; tests pass but run slower than on
 `Makefile.vdf-client` separates the “main” binaries from optional/extra test binaries:
 
 - **Default build (`all`)**: builds `vdf_client`, `1weso_test`, `2weso_test`, `prover_test`, and `vdf_bench`.
-- **Extra tests (`tests`)**: builds additional test-only binaries (for example `vdf_diag_helper_test`, `vdf_diag_recovery_test`, and `fast_wrapper_test`).
+- **Extra tests (`tests`)**: builds additional test-only binaries (for example `fast_wrapper_test`).
 
 To build **everything** (main binaries + extra tests):
 
@@ -79,16 +80,16 @@ cd src
 make -f Makefile.vdf-client all tests
 ```
 
-### `prover_test` runtime (CI-friendly by default)
+### `prover_test` runtime (soak by default)
 
-`prover_test` now runs a **short correctness test by default** (so it’s CI-friendly).
-To restore the historical long/soak behavior, run it with **`CHIAVDF_PROVER_TEST_LONG=1`**.
+`prover_test` runs a **long/soak test by default** (historical behavior).
+To run a short correctness test (CI-friendly), set **`CHIAVDF_PROVER_TEST_FAST=1`**.
+CI runs `prover_test` in fast mode.
 
-### Optional diagnostics (macOS arm64 / performance work)
+### Optional diagnostics (performance work)
 
-This repo contains **extra diagnostic prints** that are useful when doing performance work (e.g. attributing why the fast path bails, tuning `--recover-a`, or understanding ARM GCD fallback behavior). These diagnostics are **disabled by default** to keep normal runs/CI output clean (for example, `vdf_bench` prints just `XXX.XK ips` by default).
-
-- **Enable diagnostics**: set **`CHIAVDF_DIAG=1`** (or **`CHIAVDF_VDF_TEST_STATS=1`**) for the command you’re running.
+Extra performance diagnostics are **disabled by default** (so normal runs/CI output stays clean).
+Enable them per-command with **`CHIAVDF_DIAG=1`** (or **`CHIAVDF_VDF_TEST_STATS=1`**).
 
 Examples (Apple Silicon / macOS arm64):
 
@@ -96,22 +97,20 @@ Examples (Apple Silicon / macOS arm64):
 cd src
 make optimized=1 -f Makefile.vdf-client clean vdf_bench 1weso_test
 
-# Benchmark with extra optimization stats (slow-fallback attribution, recovery stats, etc.)
+# Benchmark with extra optimization stats
 CHIAVDF_DIAG=1 ./vdf_bench square_asm 2000000 --recover-a
 
-# 1weso_test with extra fast/slow + recovery summary
+# 1weso_test with extra summary
 CHIAVDF_DIAG=1 ./1weso_test 1000
 ```
 
 Notes:
 
 - **`vdf_bench` script compatibility**: some older scripts pass an extra positional `N`/`Y` argument (e.g. `./vdf_bench square_asm 400000 N --recover-a`). This is accepted and ignored for backwards compatibility.
-
-Why you would enable this:
-
-- **Fast-path bailout attribution** (e.g. `a<=L` vs other guards) to guide the next optimization.
-- **Recovery tuning**: see how often recovery triggers and how many slow iters it needed.
-- **ARM64 GCD diagnostics** (when built for ARM) to spot instability/fallback causes without always profiling.
+- **Diagnostics env vars**: `CHIAVDF_BENCH_DIAG` was removed; use `CHIAVDF_DIAG=1` or `CHIAVDF_VDF_TEST_STATS=1`.
+- **ARM vs x86**:
+  - On **ARM** (aarch64/arm64), `repeated_square()` uses the C++ **NUDUPL** path; `square_asm` is treated as a NUDUPL benchmark for compatibility (no phased/asm squaring pipeline on ARM).
+  - On **x86/x64**, `square_asm` exercises the phased pipeline; some diagnostics (bailout/recovery attribution) are specific to that path.
 
 ### CI notes (contributors)
 

@@ -67,12 +67,12 @@ int main() {
     // This binary is used by CI as a correctness test. Historically it also served as a 5-minute
     // soak/stress test; that dominates the wall-clock runtime of the "all tests" run.
     //
-    // Default behavior: run a short correctness test (a few proofs) and exit promptly.
-    // Long/soak mode: set `CHIAVDF_PROVER_TEST_LONG=1` to keep the historical behavior.
-    const bool long_mode = env_truthy("CHIAVDF_PROVER_TEST_LONG");
+    // Default behavior: run the historical long/soak test.
+    // Fast/CI-friendly mode: set `CHIAVDF_PROVER_TEST_FAST=1` to run just a few proofs and exit.
+    const bool fast_mode = env_truthy("CHIAVDF_PROVER_TEST_FAST");
     const bool is_ci = (std::getenv("CI") != nullptr) || (std::getenv("GITHUB_ACTIONS") != nullptr);
 
-    if (long_mode) {
+    if (!fast_mode) {
         for (int i = 0; i <= 30; i++) {
             threads.emplace_back(CreateProof, D, std::ref(pm), (1ULL << 21) * uint64_t(i) + 60000);
         }

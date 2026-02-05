@@ -31,8 +31,6 @@ src/1weso_test
 src/2weso_test
 src/prover_test
 src/fast_wrapper_test
-src/vdf_diag_helper_test
-src/vdf_diag_recovery_test
 src/emu_hw_test
 src/hw_test
 src/emu_hw_vdf_client

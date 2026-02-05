@@ -32,7 +32,7 @@ extern std::atomic<uint64_t> gcd_unsigned_arm_exact_division_repairs;
 
 static void usage(const char *progname)
 {
-    fprintf(stderr, "Usage: %s {square_asm|square|discr} N [--recover-a]\n", progname);
+    fprintf(stderr, "Usage: %s {square_asm|square|square_vdf|discr} N [--recover-a]\n", progname);
     fprintf(stderr, "  --recover-a : enable adaptive slow recovery when fast path bails due to a<=L\n");
     fprintf(stderr, "  (compat)    : an optional 'N'/'Y' argument is accepted and ignored\n");
     fprintf(stderr, "Diagnostics:\n");
@@ -44,6 +44,44 @@ static bool env_truthy(const char* name) {
     if (!v) return false;
     return std::strcmp(v, "1") == 0 || std::strcmp(v, "true") == 0 || std::strcmp(v, "yes") == 0 ||
            std::strcmp(v, "on") == 0;
+}
+
+static void print_diag_build_info() {
+    // Keep this simple and stable for log parsing.
+    fprintf(stderr, "diag_build: arch=");
+#if defined(ARCH_ARM)
+    fprintf(stderr, "arm");
+#elif defined(ARCH_X64)
+    fprintf(stderr, "x64");
+#elif defined(ARCH_X86)
+    fprintf(stderr, "x86");
+#else
+    fprintf(stderr, "unknown");
+#endif
+    fprintf(stderr, " vdf_mode=%d", int(VDF_MODE));
+
+    fprintf(stderr, " tsan=");
+#if defined(CHIAVDF_TSAN) || defined(__SANITIZE_THREAD__) || (defined(__has_feature) && __has_feature(thread_sanitizer))
+    fprintf(stderr, "1");
+#else
+    fprintf(stderr, "0");
+#endif
+
+    fprintf(stderr, " asan=");
+#if defined(__SANITIZE_ADDRESS__)
+    fprintf(stderr, "1");
+#else
+    fprintf(stderr, "0");
+#endif
+
+    fprintf(stderr, " ubsan=");
+#if defined(__SANITIZE_UNDEFINED__)
+    fprintf(stderr, "1");
+#else
+    fprintf(stderr, "0");
+#endif
+
+    fprintf(stderr, "\n");
 }
 
 int main(int argc, char **argv)
@@ -61,8 +99,7 @@ int main(int argc, char **argv)
     bool enable_recover_a = false;
     // Extended diagnostics are *only* enabled via env vars (so CI / normal runs stay quiet).
     const bool diag = env_truthy("CHIAVDF_DIAG") ||
-                      env_truthy("CHIAVDF_VDF_TEST_STATS") ||
-                      env_truthy("CHIAVDF_BENCH_DIAG");
+                      env_truthy("CHIAVDF_VDF_TEST_STATS");
     for (int a = 3; a < argc; a++) {
         if (!std::strcmp(argv[a], "--recover-a")) {
             enable_recover_a = true;
@@ -75,6 +112,10 @@ int main(int argc, char **argv)
             usage(argv[0]);
             return 1;
         }
+    }
+    if (diag) {
+        print_diag_build_info();
+        fprintf(stderr, "diag_cmd: mode=%s iters=%d recover_a=%d\n", argv[1], iters, enable_recover_a ? 1 : 0);
     }
     auto D = integer("-141140317794792668862943332656856519378482291428727287413318722089216448567155737094768903643716404517549715385664163360316296284155310058980984373770517398492951860161717960368874227473669336541818575166839209228684755811071416376384551902149780184532086881683576071479646499601330824259260645952517205526679");
 
@@ -100,10 +141,26 @@ int main(int argc, char **argv)
     int n_recovery_iters = 0;
     PulmarkReducer reducer;
     bool is_comp = true, is_asm = false;
+    bool print_abc = true;
+
+    struct NullWeso : public WesolowskiCallback {
+        explicit NullWeso(integer& D) : WesolowskiCallback(D) {}
+        void OnIteration(int, void*, uint64_t) override {}
+    };
 
 
     auto t1 = std::chrono::high_resolution_clock::now();
     if (!strcmp(argv[1], "square_asm")) {
+#if defined(ARCH_ARM)
+        // ARM does not use the phased pipeline; treat `square_asm` as a NUDUPL benchmark for
+        // script compatibility (many callers hardcode `square_asm`).
+        for (i = 0; i < iters; i++) {
+            nudupl_form(y, y, D, L);
+            if (__GMP_ABS(y.a.impl->_mp_size) > 8) {
+                reducer.reduce(y);
+            }
+        }
+#else
         is_asm = true;
         bool prev_was_single_slow_step = false;
         for (i = 0; i < iters; ) {
@@ -206,6 +263,7 @@ int main(int argc, char **argv)
                 i += done;
             }
         }
+#endif
     } else if (!strcmp(argv[1], "square")) {
         for (i = 0; i < iters; i++) {
             nudupl_form(y, y, D, L);
@@ -213,6 +271,17 @@ int main(int argc, char **argv)
                 reducer.reduce(y);
             }
         }
+    } else if (!strcmp(argv[1], "square_vdf")) {
+        // Benchmark the same squaring path used by the main loop (`repeated_square`), including
+        // the ARM-specific fast/slow selection and recovery behavior.
+        NullWeso weso(D);
+        FastStorage* fast_storage = nullptr;
+        std::atomic<bool> stopped{false};
+        repeated_square(/*iterations=*/(uint64_t)iters, y, D, L, &weso, fast_storage, stopped);
+        // `repeated_square()` takes its `form` argument by value, so we don't have a cheap way to
+        // capture the final form here without adding overhead that would skew IPS.
+        // Avoid printing the (unchanged) `a/b/c` values for this mode.
+        print_abc = false;
     } else if (!strcmp(argv[1], "discr")) {
         uint8_t ch[CH_SIZE];
         std::vector<uint8_t> ch_vec;
@@ -297,7 +366,7 @@ int main(int argc, char **argv)
             // Default output: keep it minimal and stable for scripts/CI logs.
             printf("%d.%dK ips\n", iters/duration, iters*10/duration % 10);
         }
-        if (diag) {
+        if (diag && print_abc) {
             printf("a = %s\n", y.a.to_string().c_str());
             printf("b = %s\n", y.b.to_string().c_str());
             printf("c = %s\n", y.c.to_string().c_str());

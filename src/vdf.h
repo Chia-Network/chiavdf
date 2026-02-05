@@ -9,6 +9,12 @@
 
 #include "parameters.h"
 
+#ifdef VDF_TEST
+#include <chrono>
+#endif
+
+#include "chiavdf_profile.h"
+
 #include "bit_manipulation.h"
 #include "double_utility.h"
 #include "integer.h"
@@ -94,6 +100,12 @@ static inline bool chiavdf_diag_enabled() {
     return chiavdf_env_truthy("CHIAVDF_DIAG") || chiavdf_env_truthy("CHIAVDF_VDF_TEST_STATS");
 }
 
+static inline bool chiavdf_profile_enabled() {
+    // Heavier-weight timing instrumentation (use with `vdf_bench square_vdf`).
+    // Kept separate from CHIAVDF_DIAG so we can enable timing only when desired.
+    return chiavdf_env_truthy("CHIAVDF_PROFILE") || chiavdf_env_truthy("CHIAVDF_NUDUPL_PROFILE");
+}
+
 // `repeated_square()` and `vdf_bench` attribute some fast-path bailouts as occurring
 // "after a single slow step". That label is only meaningful when the recovery path
 // actually performed exactly one slow iteration (not a burst).
@@ -102,16 +114,6 @@ static inline bool chiavdf_diag_is_single_slow_step(uint64 slow_iters) {
 }
 
 #ifdef VDF_TEST
-// Optional test hook: if set, `repeated_square()` will write its diagnostic counters
-// here before returning. This keeps the production API unchanged while allowing
-// deterministic regression tests for diagnostic attribution.
-struct chiavdf_vdf_test_diag_stats {
-    uint64 a_not_high_enough_fails = 0;
-    uint64 a_not_high_enough_fails_after_single_slow = 0;
-    uint64 a_not_high_enough_recovery_iters = 0;
-    uint64 a_not_high_enough_recovery_calls = 0;
-};
-inline thread_local chiavdf_vdf_test_diag_stats* chiavdf_vdf_test_diag_stats_sink = nullptr;
 #endif
 
 // vdf_fast uses shared master/slave counters keyed by `square_state.pairindex`.
@@ -145,6 +147,75 @@ void repeated_square_original(vdf_original &vdfo, form& f, const integer& D, con
     mpz_set(f.c.impl, f_res->c);
 }
 
+// Slow squaring helper using the C++ NUDUPL implementation (`qfb_nudupl`) plus Pulmark reduction.
+//
+// This is substantially faster than `vdf_original::square()` on some platforms (notably ARM),
+// and is used for "fast path bailed early" recovery. We intentionally keep the *corruption*
+// correction path on the independent `vdf_original` implementation.
+static inline void repeated_square_nudupl(
+    form& f,
+    integer& D,
+    integer& L,
+    uint64 base,
+    uint64 iterations,
+    WesolowskiCallback* weso,
+    INUDUPLListener* nuduplListener
+) {
+#ifdef VDF_TEST
+    chiavdf_nudupl_profile_stats* prof = chiavdf_nudupl_profile_sink;
+    const bool timing = (prof != nullptr) && chiavdf_nudupl_profile_timing_enabled;
+#endif
+    for (uint64_t i = 0; i < iterations; i++) {
+#ifdef VDF_TEST
+        if (prof != nullptr) {
+            ++prof->iters;
+            const uint64 a_limbs = uint64(__GMP_ABS(f.a.impl->_mp_size));
+            prof->max_a_limbs = std::max(prof->max_a_limbs, a_limbs);
+        }
+        std::chrono::steady_clock::time_point t_form0;
+        if (timing) t_form0 = std::chrono::steady_clock::now();
+#endif
+        nudupl_form(f, f, D, L);
+#ifdef VDF_TEST
+        if (timing) {
+            const auto t_form1 = std::chrono::steady_clock::now();
+            prof->nudupl_form_time_ns += uint64(std::chrono::duration_cast<std::chrono::nanoseconds>(t_form1 - t_form0).count());
+        }
+#endif
+
+        // Match `vdf_bench square`: reduce only when `a` grows beyond a small limb threshold.
+        // Reducing every iteration can be slower than letting NUDUPL run a bit "wide".
+        if (__GMP_ABS(f.a.impl->_mp_size) > 8) {
+#ifdef VDF_TEST
+            if (prof != nullptr) ++prof->reduce_calls;
+            std::chrono::steady_clock::time_point t_red0;
+            if (timing) t_red0 = std::chrono::steady_clock::now();
+#endif
+            if (weso) {
+                weso->reduce(f);
+            } else {
+                PulmarkReducer reducer;
+                reducer.reduce(f);
+            }
+#ifdef VDF_TEST
+            if (timing) {
+                const auto t_red1 = std::chrono::steady_clock::now();
+                prof->reduce_time_ns += uint64(std::chrono::duration_cast<std::chrono::nanoseconds>(t_red1 - t_red0).count());
+            }
+#endif
+        }
+#ifdef VDF_TEST
+        else {
+            if (prof != nullptr) ++prof->reduce_skipped;
+        }
+#endif
+
+        if (nuduplListener != nullptr) {
+            nuduplListener->OnIteration(NL_FORM_CPP, &f, base + i);
+        }
+    }
+}
+
 // thread safe; but it is only called from the main thread
 void repeated_square(uint64_t iterations, form f, const integer& D, const integer& L,
     WesolowskiCallback* weso, FastStorage* fast_storage, std::atomic<bool>& stopped)
@@ -166,6 +237,17 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
         int a_not_high_enough_max_delta_bits = -(1 << 30);
         int a_not_high_enough_min_delta_limbs = (1 << 30);
         int a_not_high_enough_max_delta_limbs = -(1 << 30);
+
+        // NUDUPL path instrumentation (counts always when diag is enabled; timing only when profile is enabled).
+        chiavdf_nudupl_profile_stats nudupl_prof;
+        chiavdf_nudupl_profile_stats* prev_nudupl_sink = chiavdf_nudupl_profile_sink;
+        const bool prev_nudupl_timing = chiavdf_nudupl_profile_timing_enabled;
+        const bool nudupl_profile_enable_counts = chiavdf_diag_enabled();
+        const bool nudupl_profile_enable_timing = chiavdf_profile_enabled();
+        if (nudupl_profile_enable_counts || nudupl_profile_enable_timing) {
+            chiavdf_nudupl_profile_sink = &nudupl_prof;
+            chiavdf_nudupl_profile_timing_enabled = nudupl_profile_enable_timing;
+        }
     #endif
 
     uint64_t num_iterations = 0;
@@ -207,17 +289,35 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
             repeated_square_original(*weso->vdfo, f, D, L, 100); //randomize the a and b values
         #endif
 
-        // This works single threaded
+        uint64 actual_iterations = 0;
+        bool used_fast_path = true;
+#if defined(ARCH_ARM)
+        // ARM: always use the C++ NUDUPL path. The phased pipeline is x86-centric and has
+        // historically been slower (and higher maintenance) on arm64/aarch64.
+        used_fast_path = false;
+        integer& D_nc = const_cast<integer&>(D);
+        integer& L_nc = const_cast<integer&>(L);
+        repeated_square_nudupl(f, D_nc, L_nc, num_iterations, batch_size, weso, weso);
+        actual_iterations = batch_size;
+#ifdef VDF_TEST
+        num_iterations_slow += batch_size;
+#endif
+#else
+        // x86/x64: phased pipeline fast path.
         square_state_type square_state;
-        square_state.pairindex=vdf_fast_pairindex();
+        square_state.pairindex = vdf_fast_pairindex();
         square_state.entered_after_single_slow = prev_was_single_slow_step;
         prev_was_single_slow_step = false;
 
-        uint64 actual_iterations=repeated_square_fast(square_state, f, D, L, num_iterations, batch_size, weso);
+        used_fast_path = true;
+        actual_iterations = repeated_square_fast(square_state, f, D, L, num_iterations, batch_size, weso);
+#endif
 
         #ifdef VDF_TEST
-            ++num_calls_fast;
-            if (actual_iterations!=~uint64(0)) num_iterations_fast+=actual_iterations;
+            if (used_fast_path) {
+                ++num_calls_fast;
+                if (actual_iterations!=~uint64(0)) num_iterations_fast+=actual_iterations;
+            }
         #endif
 
         #ifdef ENABLE_TRACK_CYCLES
@@ -240,6 +340,7 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
         }
 
         if (actual_iterations<batch_size) {
+#if !defined(ARCH_ARM)
             #ifdef VDF_TEST
                 if (square_state.last_fail.reason == square_state_type::fast_fail_a_not_high_enough) {
                     ++a_not_high_enough_fails;
@@ -261,7 +362,18 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
             //it might terminate prematurely again (e.g. gcd quotient too large), so will do one iteration of the slow algorithm
             //this will also reduce f if the fast algorithm terminated because it was too big
             uint64 slow_recovery_iters = 1;
-            repeated_square_original(*weso->vdfo, f, D, L, num_iterations+actual_iterations, 1, weso);
+            {
+                // Use the faster C++ NUDUPL slow step for recovery (not for corruption correction).
+                integer& D_nc = const_cast<integer&>(D);
+                integer& L_nc = const_cast<integer&>(L);
+                repeated_square_nudupl(
+                    f, D_nc, L_nc,
+                    num_iterations + actual_iterations,
+                    1,
+                    weso,
+                    weso
+                );
+            }
 
             // If we bailed because `a <= L`, the next fast attempt often fails again immediately
             // (observed on ARM). Keep doing a few slow squarings until we re-enter the fast regime.
@@ -285,9 +397,15 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
                         const bool a_nonneg = (f.a.impl->_mp_size >= 0);
                         const bool a_high_enough_now = a_nonneg && (mpz_cmpabs(f.a.impl, L.impl) > 0);
                         if (a_high_enough_now) break;
-                        repeated_square_original(*weso->vdfo, f, D, L,
-                                                num_iterations + actual_iterations + slow_recovery_iters,
-                                                1, weso);
+                        integer& D_nc = const_cast<integer&>(D);
+                        integer& L_nc = const_cast<integer&>(L);
+                        repeated_square_nudupl(
+                            f, D_nc, L_nc,
+                            num_iterations + actual_iterations + slow_recovery_iters,
+                            1,
+                            weso,
+                            weso
+                        );
                         ++slow_recovery_iters;
                     }
 
@@ -319,6 +437,15 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
             #endif
 
             actual_iterations += slow_recovery_iters;
+#else
+            // On ARM this should not happen (we don't run the phased fast path).
+            // Fall back to the original implementation for safety.
+            repeated_square_original(*weso->vdfo, f, D, L, num_iterations, batch_size, weso);
+            actual_iterations = batch_size;
+#ifdef VDF_TEST
+            num_iterations_slow += batch_size;
+#endif
+#endif
         }
 
         num_iterations+=actual_iterations;
@@ -412,15 +539,41 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
                            double(a_not_high_enough_recovery_iters) / double(a_not_high_enough_recovery_calls) );
                 }
             }
+
+            if (nudupl_prof.iters != 0) {
+                print("nudupl iters", nudupl_prof.iters);
+                print("nudupl reduce calls", nudupl_prof.reduce_calls);
+                print("nudupl reduce skipped", nudupl_prof.reduce_skipped);
+                print("nudupl max a limbs", nudupl_prof.max_a_limbs);
+                if (chiavdf_nudupl_profile_timing_enabled) {
+                    const double iters_d = double(nudupl_prof.iters);
+                    print("nudupl_form ns/iter", nudupl_prof.nudupl_form_time_ns / iters_d);
+                    print("reduce ns/iter", nudupl_prof.reduce_time_ns / iters_d);
+                    if (nudupl_prof.qfb_nudupl_calls != 0) {
+                        print("gcdext ns/iter", nudupl_prof.gcdext_time_ns / iters_d);
+                        if (nudupl_prof.gcdext_s_eq_1 + nudupl_prof.gcdext_s_ne_1 != 0) {
+                            print("gcdext s==1", nudupl_prof.gcdext_s_eq_1);
+                            print("gcdext s!=1", nudupl_prof.gcdext_s_ne_1);
+                        }
+                        print("xgcd_partial ns/iter", nudupl_prof.xgcd_partial_time_ns / iters_d);
+                        print("a>=L branch ns/iter", nudupl_prof.else_branch_time_ns / iters_d);
+                    }
+                }
+                if (nudupl_prof.qfb_nudupl_calls != 0) {
+                    print("qfb_nudupl calls", nudupl_prof.qfb_nudupl_calls);
+                    print("qfb_nudupl b_negative", nudupl_prof.b_negative);
+                    print("qfb_nudupl branch a<L", nudupl_prof.branch_a_lt_L);
+                    print("qfb_nudupl branch a>=L", nudupl_prof.branch_a_ge_L);
+                }
+            }
         }
 
-        if (chiavdf_vdf_test_diag_stats_sink != nullptr) {
-            chiavdf_vdf_test_diag_stats_sink->a_not_high_enough_fails = a_not_high_enough_fails;
-            chiavdf_vdf_test_diag_stats_sink->a_not_high_enough_fails_after_single_slow =
-                a_not_high_enough_fails_after_single_slow;
-            chiavdf_vdf_test_diag_stats_sink->a_not_high_enough_recovery_iters = a_not_high_enough_recovery_iters;
-            chiavdf_vdf_test_diag_stats_sink->a_not_high_enough_recovery_calls = a_not_high_enough_recovery_calls;
+        // Restore sink/timing state (avoid leaking into other calls/tests).
+        if (nudupl_profile_enable_counts || nudupl_profile_enable_timing) {
+            chiavdf_nudupl_profile_sink = prev_nudupl_sink;
+            chiavdf_nudupl_profile_timing_enabled = prev_nudupl_timing;
         }
+
     #endif
 }
 

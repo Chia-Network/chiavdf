@@ -52,6 +52,15 @@ public:
                 mpz_set(mulf->c.impl, f->c);
                 break;
             }
+            case NL_FORM_CPP:
+            {
+                // C++ form type (`struct form { integer a,b,c; }`).
+                form* f = (form*)data;
+                mpz_set(mulf->a.impl, f->a.impl);
+                mpz_set(mulf->b.impl, f->b.impl);
+                mpz_set(mulf->c.impl, f->c.impl);
+                break;
+            }
             default:
                 cout << "Unknown case" << endl;
         }

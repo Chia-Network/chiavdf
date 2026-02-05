@@ -1067,7 +1067,11 @@ struct square_state_type {
 };
 
 #define NL_SQUARESTATE 1
+// NL_FORM: legacy "slow path" event payload is `vdf_original::form*`.
 #define NL_FORM 2
+// NL_FORM_CPP: event payload is `form*` (the main C++ form type from `vdf_new.h` / `vdf_base.hpp`).
+// Used by `FastStorage` and by C++ slow-squaring helpers.
+#define NL_FORM_CPP 3
 
 class INUDUPLListener{
 public:

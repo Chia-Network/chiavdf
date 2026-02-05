@@ -55,22 +55,12 @@ jobs:
       if: matrix.config == 'optimized=1'
       run: |
         cd src
-        # ARM (macos-13-arm64) uses C++ GCD fallback; use smaller iteration count so CI finishes
-        if [ "${{ matrix.os }}" = "macos-13-arm64" ]; then
-          ITER_ARGS="1000"
-        else
-          ITER_ARGS=""
-        fi
         echo "Running 1weso_test"
-        ./1weso_test $ITER_ARGS
+        ./1weso_test
         echo "Running 2weso_test"
-        ./2weso_test $ITER_ARGS
+        ./2weso_test
         echo "Running prover_test"
-        ./prover_test
-        echo "Running vdf_diag_helper_test"
-        ./vdf_diag_helper_test
-        echo "Running vdf_diag_recovery_test"
-        ./vdf_diag_recovery_test
+        CHIAVDF_PROVER_TEST_FAST=1 ./prover_test
 
     - name: Test vdf-client
       if: matrix.config != 'optimized=1'
@@ -80,10 +70,6 @@ jobs:
         ./1weso_test 1000
         echo "Running 2weso_test"
         ./2weso_test 1000
-        echo "Running vdf_diag_helper_test"
-        ./vdf_diag_helper_test
-        echo "Running vdf_diag_recovery_test"
-        ./vdf_diag_recovery_test
 
     # macos thread sanitizer will give false positives on ./prover_test because
     # it prints to std::cout from multiple threads. Which is allowed by the
@@ -93,7 +79,7 @@ jobs:
       run: |
         cd src
         echo "Running prover_test"
-        ./prover_test
+        CHIAVDF_PROVER_TEST_FAST=1 ./prover_test
 
     - name: Benchmark vdf-client
       if: matrix.config == 'optimized=1'

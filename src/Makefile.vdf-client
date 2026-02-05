@@ -43,11 +43,11 @@ endif
 
 .PHONY: all clean
 
-# aarch64 (Linux), arm64 (macOS Apple Silicon): no x86 asm objects
-ifneq ($(filter $(ARCH),aarch64 arm64),)
-ASM_OBJS =
-else
+# Only x86_64 builds use the x86 asm objects
+ifeq ($(ARCH),x86_64)
 ASM_OBJS = asm_compiled.o avx2_asm_compiled.o avx512_asm_compiled.o
+else
+ASM_OBJS =
 endif
 
 BINS = vdf_client prover_test 1weso_test 2weso_test vdf_bench

@@ -193,17 +193,17 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
         #endif
 
         uint64 actual_iterations = 0;
-#if defined(ARCH_ARM)
-        // ARM: use the C++ NUDUPL path (faster and lower maintenance than the phased pipeline).
+#if defined(ARCH_X86) || defined(ARCH_X64)
+        // x86/x64: use the phased pipeline.
+        square_state_type square_state;
+        square_state.pairindex = 0;
+        actual_iterations = repeated_square_fast(square_state, f, D, L, num_iterations, batch_size, weso);
+#else
+        // Non-x86: use the C++ NUDUPL path (faster and lower maintenance than the phased pipeline).
         integer& D_nc = const_cast<integer&>(D);
         integer& L_nc = const_cast<integer&>(L);
         repeated_square_nudupl(f, D_nc, L_nc, num_iterations, batch_size, weso, weso);
         actual_iterations = batch_size;
-#else
-        // This works single threaded
-        square_state_type square_state;
-        square_state.pairindex=0;
-        actual_iterations = repeated_square_fast(square_state, f, D, L, num_iterations, batch_size, weso);
 #endif
 
         #ifdef VDF_TEST

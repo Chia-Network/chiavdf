@@ -124,6 +124,12 @@ static inline void repeated_square_nudupl(
     INUDUPLListener* nuduplListener
 ) {
     vdf_original::form f_view;
+    // Defensive fallback: if `weso` is null, use a Pulmark reducer.
+    // Construct it once per call (it does heap work) rather than per reduction.
+    std::optional<PulmarkReducer> fallback_reducer;
+    if (weso == nullptr) {
+        fallback_reducer.emplace();
+    }
     for (uint64_t i = 0; i < iterations; i++) {
         nudupl_form(f, f, D, L);
 
@@ -133,8 +139,7 @@ static inline void repeated_square_nudupl(
             if (weso) {
                 weso->reduce(f);
             } else {
-                PulmarkReducer reducer;
-                reducer.reduce(f);
+                fallback_reducer->reduce(f);
             }
         }
 

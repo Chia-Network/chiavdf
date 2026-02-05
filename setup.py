@@ -3,6 +3,7 @@ import platform
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 from setuptools import Command, Extension, setup
 from setuptools.command.build import build
@@ -134,6 +135,11 @@ class CMakeBuild(build_ext):
 build.sub_commands.append(("build_hook", lambda x: True))  # type: ignore
 install.sub_commands.append(("install_hook", lambda x: True))
 
+# Wheel metadata generation on Windows can run with a non-UTF8 default encoding.
+# Read `README.md` explicitly as UTF-8 so `long_description` is robust across runners.
+_readme_path = Path(__file__).resolve().parent / "README.md"
+_long_description = _readme_path.read_text(encoding="utf-8")
+
 setup(
     name="chiavdf",
     author="Florin Chirica",
@@ -141,7 +147,7 @@ setup(
     description="Chia vdf verification (wraps C++)",
     license="Apache-2.0",
     python_requires=">=3.9",
-    long_description=open("README.md").read(),
+    long_description=_long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/Chia-Network/chiavdf",
     ext_modules=[CMakeExtension("chiavdf", "src")],

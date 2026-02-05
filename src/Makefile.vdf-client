@@ -6,6 +6,12 @@ NOPIE = -fno-PIE
 else
 NOPIE = -no-pie
 endif
+# macOS arm64 ignores -no_pie and warns; omit to avoid deprecation warnings
+ifeq ($(UNAME),Darwin)
+ifneq ($(filter $(ARCH),arm64),)
+NOPIE =
+endif
+endif
 
 LDFLAGS += -flto $(NOPIE) -g
 LDLIBS += -lgmpxx -lgmp -pthread

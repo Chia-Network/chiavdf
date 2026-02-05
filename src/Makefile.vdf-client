@@ -18,6 +18,8 @@ LDLIBS += -lgmpxx -lgmp -pthread
 CXXFLAGS += -flto -std=c++1z -D VDF_MODE=0 -D FAST_MACHINE=1 -pthread $(NOPIE) -fvisibility=hidden
 ifeq ($(UNAME),Darwin)
 CXXFLAGS += -D CHIAOSX=1
+# Ensure HW client binaries can locate USB driver dylibs bundled in-tree.
+LDFLAGS += -Wl,-rpath,@executable_path/hw/libft4222
 # Homebrew (common on macOS) installs boost/gmp to /opt/homebrew or /usr/local
 ifneq ($(wildcard /opt/homebrew/include/boost/asio.hpp),)
 CXXFLAGS += -I/opt/homebrew/include
@@ -78,15 +80,22 @@ compile_asm: compile_asm.o
 
 HW_OBJS = $(addprefix hw/,hw_util.o hw_proof.o hw_interface.o chia_driver.o ftdi_driver.o vdf_driver.o pll_freqs.o) vdf_base.o lzcnt.o
 EMU_OBJS = hw/emu_funcs.o hw/emu_runner.o
+ifeq ($(UNAME),Darwin)
+HW_LIB = hw/libft4222/libft4222.dylib
+HW_FTD2XX_LIB = hw/libft4222/libftd2xx.dylib
+HW_LIBS = $(HW_LIB) $(HW_FTD2XX_LIB)
+else
 HW_LIB = hw/libft4222/build-x86_64/libft4222.so
+HW_LIBS = $(HW_LIB)
+endif
 
-hw_test: hw/hw_test.o $(HW_OBJS) $(HW_LIB) hw/real_hw.o
+hw_test: hw/hw_test.o $(HW_OBJS) $(HW_LIBS) hw/real_hw.o
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 emu_hw_test: hw/hw_test.o $(HW_OBJS) $(EMU_OBJS)
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-hw_vdf_client: hw/hw_vdf_client.o $(HW_OBJS) $(HW_LIB) hw/real_hw.o
+hw_vdf_client: hw/hw_vdf_client.o $(HW_OBJS) $(HW_LIBS) hw/real_hw.o
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 emu_hw_vdf_client: hw/hw_vdf_client.o $(HW_OBJS) $(EMU_OBJS)

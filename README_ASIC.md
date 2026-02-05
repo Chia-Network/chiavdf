@@ -2,6 +2,8 @@
 
 ## Initial setup
 
+### Linux (x86_64)
+
 Download and unpack LibFT4222 library:
 ```bash
 # in chiavdf directory
@@ -9,6 +11,32 @@ wget https://ftdichip.com/wp-content/uploads/2022/06/libft4222-linux-1.4.4.170.t
 mkdir src/hw/libft4222
 tar -C src/hw/libft4222 -xf libft4222-linux-1.4.4.170.tgz
 ln -s libft4222.so.1.4.4.170 src/hw/libft4222/build-x86_64/libft4222.so
+```
+
+### macOS (Apple Silicon / arm64)
+
+Download and unpack LibFT4222 library:
+
+```bash
+# in chiavdf directory
+curl -L -o LibFT4222-mac.zip https://ftdichip.com/wp-content/uploads/2024/03/LibFT4222-mac-v1.4.4.190.zip
+unzip -q LibFT4222-mac.zip
+hdiutil attach -nobrowse -readonly libft4222.1.4.4.190.dmg
+
+mkdir -p src/hw/libft4222
+cp /Volumes/ft4222/ftd2xx.h src/hw/libft4222/
+cp /Volumes/ft4222/libft4222.h src/hw/libft4222/
+cp /Volumes/ft4222/WinTypes.h src/hw/libft4222/
+cp /Volumes/ft4222/build/libft4222.1.4.4.190.dylib src/hw/libft4222/
+cp /Volumes/ft4222/build/libftd2xx.dylib src/hw/libft4222/
+hdiutil detach /Volumes/ft4222
+
+ln -sf libft4222.1.4.4.190.dylib src/hw/libft4222/libft4222.dylib
+
+# Make dylibs relocatable and loadable from the build tree.
+install_name_tool -id "@rpath/libftd2xx.dylib" src/hw/libft4222/libftd2xx.dylib
+install_name_tool -id "@rpath/libft4222.dylib" src/hw/libft4222/libft4222.1.4.4.190.dylib
+install_name_tool -change "libftd2xx.dylib" "@rpath/libftd2xx.dylib" src/hw/libft4222/libft4222.1.4.4.190.dylib
 ```
 
 Build binaries:
@@ -20,12 +48,14 @@ make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
 Connect the Chia VDF ASIC device and verify that it is detected:
 ```bash
 # in chiavdf/src/ directory
-LD_LIBRARY_PATH=hw/libft4222/build-x86_64 ./hw_vdf_client --list
+LD_LIBRARY_PATH=hw/libft4222/build-x86_64 ./hw_vdf_client --list  # Linux
+./hw_vdf_client --list                                            # macOS
 ```
 
 If the device is shown in the list, check if it's working:
 ```bash
-LD_LIBRARY_PATH=hw/libft4222/build-x86_64 ./hw_test
+LD_LIBRARY_PATH=hw/libft4222/build-x86_64 ./hw_test  # Linux
+./hw_test                                            # macOS
 ```
 
 Output should contain lines similar to the following:
@@ -45,7 +75,8 @@ chia start timelord-only
 Start hardware VDF client (`8000` specifies timelord's port number):
 ```bash
 # in chiavdf/src/ directory
-LD_LIBRARY_PATH=hw/libft4222/build-x86_64 ./hw_vdf_client 8000
+LD_LIBRARY_PATH=hw/libft4222/build-x86_64 ./hw_vdf_client 8000  # Linux
+./hw_vdf_client 8000                                            # macOS
 ```
 
 The VDF client accepts a number of options:

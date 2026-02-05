@@ -119,3 +119,71 @@ jobs:
           glue_url: ${{ secrets.GLUE_API_URL }}
           glue_project: "chiavdf-hw"
           glue_path: "trigger"
+
+  build-hw-macos-arm64:
+    name: Build HW VDF Client (macOS arm64)
+    runs-on: [macos-13-arm64]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: Chia-Network/actions/setup-python@main
+        name: Install Python
+        with:
+          python-version: "3.10"
+
+      - name: Set Env
+        uses: Chia-Network/actions/setjobenv@main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install deps
+        run: |
+          brew install boost gmp
+
+      - name: Download USB drivers (FT4222H)
+        run: |
+          # NOTE: the older `LibFT4222-mac-v1.4.4.48.zip` is x86_64-only.
+          # This newer package includes universal dylibs (arm64/arm64e/x86_64).
+          mkdir libft4222
+          cd libft4222
+          curl -L -o LibFT4222-mac.zip https://ftdichip.com/wp-content/uploads/2024/03/LibFT4222-mac-v1.4.4.190.zip
+          unzip -q LibFT4222-mac.zip
+
+          MOUNT_DIR="$PWD/ft4222-mount"
+          hdiutil attach -nobrowse -readonly -mountpoint "$MOUNT_DIR" libft4222.1.4.4.190.dmg
+          cp "$MOUNT_DIR/ftd2xx.h" .
+          cp "$MOUNT_DIR/libft4222.h" .
+          cp "$MOUNT_DIR/WinTypes.h" .
+          cp "$MOUNT_DIR/build/libft4222.1.4.4.190.dylib" .
+          cp "$MOUNT_DIR/build/libftd2xx.dylib" .
+          hdiutil detach "$MOUNT_DIR"
+
+          # Create stable names expected by Makefile.
+          ln -sf libft4222.1.4.4.190.dylib libft4222.dylib
+
+          # Make dylibs relocatable and loadable from the build tree.
+          install_name_tool -id "@rpath/libftd2xx.dylib" libftd2xx.dylib
+          install_name_tool -id "@rpath/libft4222.dylib" libft4222.1.4.4.190.dylib
+          install_name_tool -change "libftd2xx.dylib" "@rpath/libftd2xx.dylib" libft4222.1.4.4.190.dylib
+
+          ln -s ${{ github.workspace }}/libft4222 ${{ github.workspace }}/src/hw/libft4222
+
+      - name: Compile
+        working-directory: "${{ github.workspace }}/src"
+        run: make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: hw-vdf-macos-arm64
+          path: |
+            ${{ github.workspace }}/src/emu_hw_test
+            ${{ github.workspace }}/src/hw_test
+            ${{ github.workspace }}/src/hw_vdf_client
+            ${{ github.workspace }}/src/emu_hw_vdf_client
+            ${{ github.workspace }}/src/hw/libft4222/libft4222.dylib
+            ${{ github.workspace }}/src/hw/libft4222/libft4222.1.4.4.190.dylib
+            ${{ github.workspace }}/src/hw/libft4222/libftd2xx.dylib

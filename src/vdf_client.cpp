@@ -316,7 +316,11 @@ int main(int argc, char* argv[]) try {
       std::cerr << "Usage: ./vdf_client <host> <port> <counter>\n";
       return 1;
     }
-    init_gcd_params_for_cpu();
+
+    if(hasAVX2()) {
+      gcd_base_bits = 63;
+      gcd_128_max_iter = 2;
+    }
 
     boost::asio::io_context io_context;
 
@@ -348,7 +352,3 @@ catch (std::exception& e) {
     std::cerr << "Exception: " << e.what() << "\n";
     return 1;
 }
-
-#if defined(ARCH_ARM)
-#include "asm_arm_fallback_impl.inc"
-#endif

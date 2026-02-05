@@ -3,11 +3,6 @@
 
 #include "alloc.hpp"
 #include <atomic>
-#include <chrono>
-#include <thread>
-#if defined(__APPLE__) && defined(ARCH_ARM)
-#include <mach/mach_time.h>
-#endif
 
 //mp_limb_t is an unsigned integer
 static_assert(sizeof(mp_limb_t)==8, "");
@@ -15,83 +10,8 @@ static_assert(sizeof(mp_limb_t)==8, "");
 static_assert(sizeof(unsigned long int)==8, "");
 static_assert(sizeof(long int)==8, "");
 
-// Fence wait instrumentation (used to diagnose "spin_counter too high").
-// Header-only: use inline variables (C++17).
-inline std::atomic<uint64> fence_wait_calls{0};
-inline std::atomic<uint64> fence_timeouts{0};
-inline std::atomic<uint64> fence_total_wait_ns{0};
-inline std::atomic<uint64> fence_max_wait_ns{0};
-inline std::atomic<uint64> fence_max_gap{0};
-inline std::atomic<uint64> fence_last_log_ticks{0};
-
-static inline void atomic_max_u64(std::atomic<uint64>& a, uint64 v) {
-    uint64 cur = a.load(std::memory_order_relaxed);
-    while (cur < v && !a.compare_exchange_weak(cur, v, std::memory_order_relaxed)) {
-        // `cur` updated by compare_exchange_weak
-    }
-}
-
-static inline uint64 now_ns_steady() {
-    using clock = std::chrono::steady_clock;
-    return (uint64)std::chrono::duration_cast<std::chrono::nanoseconds>(
-        clock::now().time_since_epoch()
-    ).count();
-}
-
-// A cheaper monotonic timestamp for tight spin loops.
-//
-// On macOS/ARM, `std::chrono::steady_clock::now()` is relatively expensive (ends up in
-// `clock_gettime*`); `mach_absolute_time()` is substantially cheaper and monotonic.
-static inline uint64 fence_now_ticks() {
-#if defined(__APPLE__) && defined(ARCH_ARM)
-    return mach_absolute_time();
-#else
-    // Fallback: keep using steady_clock outside Apple/ARM.
-    return now_ns_steady();
-#endif
-}
-
-static inline uint64 fence_ns_to_ticks(uint64 ns) {
-#if defined(__APPLE__) && defined(ARCH_ARM)
-    static mach_timebase_info_data_t tb = []() {
-        mach_timebase_info_data_t t{};
-        (void)mach_timebase_info(&t);
-        if (t.numer == 0) t.numer = 1;
-        if (t.denom == 0) t.denom = 1;
-        return t;
-    }();
-    // ns = ticks * numer / denom  =>  ticks = ns * denom / numer
-    __uint128_t v = (__uint128_t)ns * (__uint128_t)tb.denom;
-    v /= (__uint128_t)tb.numer;
-    if (v > (__uint128_t)~uint64(0)) return ~uint64(0);
-    return (uint64)v;
-#else
-    // On non-Apple/ARM, our tick unit is already ns.
-    return ns;
-#endif
-}
-
-static inline uint64 fence_ticks_to_ns(uint64 ticks) {
-#if defined(__APPLE__) && defined(ARCH_ARM)
-    static mach_timebase_info_data_t tb = []() {
-        mach_timebase_info_data_t t{};
-        (void)mach_timebase_info(&t);
-        if (t.numer == 0) t.numer = 1;
-        if (t.denom == 0) t.denom = 1;
-        return t;
-    }();
-    __uint128_t v = (__uint128_t)ticks * (__uint128_t)tb.numer;
-    v /= (__uint128_t)tb.denom;
-    if (v > (__uint128_t)~uint64(0)) return ~uint64(0);
-    return (uint64)v;
-#else
-    return ticks;
-#endif
-}
-
 static uint64 get_time_cycles() {
-#if defined(ARCH_X86) || defined(ARCH_X64)
-    // Returns the time in EDX:EAX (x86 rdtsc).
+    // Returns the time in EDX:EAX.
     uint64 high;
     uint64 low;
     asm volatile(
@@ -103,18 +23,6 @@ static uint64 get_time_cycles() {
     : "=a"(low), "=d"(high) :: "memory");
 
     return (high<<32) | low;
-#elif defined(ARCH_ARM)
-    // Best-effort monotonic timer on ARM. This is only used for optional cycle
-    // tracking / profiling; it must not trap in user space.
-    #if defined(__APPLE__)
-        return mach_absolute_time();
-    #else
-        // Fall back to 0 if no safe counter is available.
-        return 0;
-    #endif
-#else
-    return 0;
-#endif
 }
 
 #ifdef ENABLE_TRACK_CYCLES
@@ -286,7 +194,7 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz {
     static_assert(expected_size>=1 && expected_size<=padded_size, "");
 
     bool was_reallocated() const {
-        return c_mpz._mp_d != reinterpret_cast<const mp_limb_t*>(data);
+        return c_mpz._mp_d!=data;
     }
 
     //can't call any mpz functions here because it is global
@@ -303,14 +211,14 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz {
     }
 
     ~mpz() {
-        // Reallocations are allowed (GMP will use our allocator). They are just
-        // undesirable for performance.
-        //
-        // If `mpz_swap()` were ever used on this wrapper, `_mp_d` could end up
-        // pointing at another instance's in-place buffer (cacheline-aligned,
-        // not heap allocated). Detect that: heap allocations from `mp_alloc_func`
-        // are always 8 (mod 16) due to the +8 offset.
-        assert(((uint64(c_mpz._mp_d) & 15) == 8) || (c_mpz._mp_d == reinterpret_cast<mp_limb_t*>(data)));
+        if (is_vdf_test) {
+            //don't want this to happen for performance reasons
+            assert(!was_reallocated());
+        }
+
+        //if c_mpz.data wasn't reallocated, it has to point to this instance's data and not some other instance's data
+        //if mpz_swap was used, this might be violated
+        assert((uint64(c_mpz._mp_d)&63)==16 || c_mpz._mp_d==data);
         mpz_clear(&c_mpz);
     }
 
@@ -548,12 +456,12 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz {
     bool operator>(const mpz_struct* t) const { return mpz_cmp(*this, t)>0; }
     bool operator!=(const mpz_struct* t) const { return mpz_cmp(*this, t)!=0; }
 
-    bool operator<(int64 i) const { return mpz_cmp_si(_(), i)<0; }
-    bool operator<=(int64 i) const { return mpz_cmp_si(_(), i)<=0; }
-    bool operator==(int64 i) const { return mpz_cmp_si(_(), i)==0; }
-    bool operator>=(int64 i) const { return mpz_cmp_si(_(), i)>=0; }
-    bool operator>(int64 i) const { return mpz_cmp_si(_(), i)>0; }
-    bool operator!=(int64 i) const { return mpz_cmp_si(_(), i)!=0; }
+    bool operator<(int64 i) const { return mpz_cmp_si(*this, i)<0; }
+    bool operator<=(int64 i) const { return mpz_cmp_si(*this, i)<=0; }
+    bool operator==(int64 i) const { return mpz_cmp_si(*this, i)==0; }
+    bool operator>=(int64 i) const { return mpz_cmp_si(*this, i)>=0; }
+    bool operator>(int64 i) const { return mpz_cmp_si(*this, i)>0; }
+    bool operator!=(int64 i) const { return mpz_cmp_si(*this, i)!=0; }
 
     bool operator<(uint64 i) const { return mpz_cmp_ui(_(), i)<0; }
     bool operator<=(uint64 i) const { return mpz_cmp_ui(_(), i)<=0; }
@@ -656,8 +564,8 @@ struct alignas(64) thread_counter {
     }
 };
 
-thread_counter master_counter[512];
-thread_counter slave_counter[512];
+thread_counter master_counter[100];
+thread_counter slave_counter[100];
 
 struct thread_state {
     int pairindex;
@@ -699,158 +607,27 @@ struct thread_state {
             return true;
         }
 
-        // Fast path: most fences are already satisfied by the time we check.
-        // Avoid setting up timers/backoff state unless we actually need to wait.
-        {
-            auto& other_val = other_counter().counter_value;
-            const uint64 other_v = other_val.load(std::memory_order_acquire);
-            if (other_v >= t_v) {
-                last_fence = t_v;
-                return true;
-            }
-        }
-
-        // Steps 1-3:
-        // - Track wait stats to understand how often we block and for how long.
-        // - Use a wall-clock timeout (spin iteration counts vary wildly by CPU/optimizer).
-        // - Use backoff (yield/sleep) to avoid starving the producer thread on ARM64.
-        //
-        // Timeout is conservative: it should only trigger on true stalls/deadlocks.
-        // ARM64 fallback can legitimately go longer between counter increments.
-#if defined(ARCH_ARM)
-        constexpr uint64 fence_timeout_ns = 2ull * 1000ull * 1000ull * 1000ull; // 2s
-#else
-        constexpr uint64 fence_timeout_ns = 200ull * 1000ull * 1000ull; // 200ms
-#endif
-        constexpr uint64 log_interval_ns = 1ull * 1000ull * 1000ull * 1000ull; // 1s
-
-        // Convert timeout thresholds into local tick units once.
-        const uint64 fence_timeout_ticks = fence_ns_to_ticks(fence_timeout_ns);
-        const uint64 log_interval_ticks = fence_ns_to_ticks(log_interval_ns);
-
-        // Make timing/diagnostics lazy: most fences complete quickly. Avoid any
-        // clock reads unless we are stalled for a while.
-        uint64 start_ticks = 0;
-        uint64 last_progress_ticks = 0;
-        bool timing_started = false;
-
         uint64 spin_counter=0;
-        auto& other_val = other_counter().counter_value;
-        auto& this_err = this_counter().error_flag;
-        auto& other_err = other_counter().error_flag;
-
-        uint64 last_other_v = other_val.load(std::memory_order_acquire);
-        uint64 backoff_us = 0;
-        bool progress_seen = false;
-
-        if (is_vdf_test) {
-            fence_wait_calls.fetch_add(1, std::memory_order_relaxed);
-        }
-        while (true) {
-            const uint64 other_v = other_val.load(std::memory_order_acquire);
-            if (other_v >= t_v) break;
-
-            if (this_err.load(std::memory_order_relaxed) || other_err.load(std::memory_order_relaxed)) {
+        while (other_counter().counter_value < t_v) {
+            if (this_counter().error_flag.load() || other_counter().error_flag.load()) {
                 raise_error();
                 break;
             }
 
-            // Progress-aware timeout: only abort if the other counter stalls for too long.
-            //
-            if (other_v != last_other_v) {
-                last_other_v = other_v;
-                progress_seen = true;
-            }
-
-            // Two-tier time sampling:
-            // - spin/yield for a while with zero clock reads
-            // - only start clock sampling if we appear stalled
-            //
-            // This keeps the per-spin overhead tiny on macOS/ARM.
-            uint64 now_ticks = 0;
-            if ((spin_counter >= (1u << 16)) && ((spin_counter & 0xFFFF) == 0)) { // every 65536 spins after warmup
-                now_ticks = fence_now_ticks();
-                if (!timing_started) {
-                    timing_started = true;
-                    start_ticks = now_ticks;
-                    last_progress_ticks = now_ticks;
-                }
-                if (progress_seen) {
-                    last_progress_ticks = now_ticks;
-                    progress_seen = false;
-                }
-            }
-
-            if (now_ticks != 0 && (now_ticks - last_progress_ticks) > fence_timeout_ticks) {
+            if (spin_counter>max_spin_counter) {
                 if (is_vdf_test) {
-                    fence_timeouts.fetch_add(1, std::memory_order_relaxed);
-                    const uint64 wait_ns = fence_ticks_to_ns(now_ticks - start_ticks);
-                    atomic_max_u64(fence_max_wait_ns, wait_ns);
-                    fence_total_wait_ns.fetch_add(wait_ns, std::memory_order_relaxed);
-                    if (t_v > other_v) {
-                        atomic_max_u64(fence_max_gap, t_v - other_v);
-                    }
-
-                    // Rate-limited log (avoid flooding / perturbing timing).
-                    // Use the same tick unit as `fence_now_ticks()` for cheap comparisons.
-                    uint64 expected = fence_last_log_ticks.load(std::memory_order_relaxed);
-                    if (now_ticks - expected > log_interval_ticks &&
-                        fence_last_log_ticks.compare_exchange_strong(expected, now_ticks, std::memory_order_relaxed)) {
-                        print("spin_counter too high", is_slave);
-                    }
+                    print( "spin_counter too high", is_slave );
                 }
 
                 raise_error();
                 break;
             }
 
-            // Backoff strategy:
-            // - spin briefly
-            // - then yield periodically
-            // - then sleep in small increments to let the other thread run
             ++spin_counter;
-            // macOS/ARM is sensitive to producer starvation when the consumer spins too hard,
-            // but calling `std::this_thread::yield()` too frequently shows up as kernel
-            // `swtch_pri` time. Use a two-tier backoff:
-            // - very cheap CPU hint (`yield` instruction) while spinning
-            // - only call OS scheduler yield occasionally
-#if defined(ARCH_ARM)
-            if (spin_counter < (1u << 14)) {
-                asm volatile("yield" ::: "memory");
-            } else if ((spin_counter & 0xFFF) == 0) { // every 4096 spins after warmup
-                std::this_thread::yield();
-                if (backoff_us < 50) backoff_us = 50;
-            }
-#else
-            if ((spin_counter & 0x3FF) == 0) { // every 1024 spins
-                std::this_thread::yield();
-                if (backoff_us < 50) backoff_us = 50;
-            }
-#endif
-            if ((spin_counter & 0x7FFF) == 0) { // every 32768 spins
-                if (backoff_us < 1000) backoff_us = (backoff_us == 0) ? 50 : std::min<uint64>(backoff_us * 2, 1000);
-                std::this_thread::sleep_for(std::chrono::microseconds(backoff_us));
-            }
-
-            // Keep some stats even when not timing out.
-            if (is_vdf_test && (spin_counter & 0xFFFF) == 0) {
-                atomic_max_u64(fence_max_gap, (t_v > other_v) ? (t_v - other_v) : 0);
-            }
         }
 
         if (!(this_counter().error_flag)) {
             last_fence=t_v;
-        }
-
-        if (is_vdf_test) {
-            // Avoid an unconditional clock read for fast fences.
-            uint64 wait_ns = 0;
-            if (timing_started) {
-                const uint64 end_ticks = fence_now_ticks();
-                wait_ns = fence_ticks_to_ns(end_ticks - start_ticks);
-            }
-            fence_total_wait_ns.fetch_add(wait_ns, std::memory_order_relaxed);
-            atomic_max_u64(fence_max_wait_ns, wait_ns);
         }
 
         return !(this_counter().error_flag);
@@ -873,9 +650,7 @@ struct thread_state {
             raise_error();
         }
 
-        // Publish progress with release ordering so consumers (acquire loads) can
-        // safely observe the corresponding produced data.
-        this_counter().counter_value.store(t_v, std::memory_order_release);
+        this_counter().counter_value=t_v;
 
         return !(this_counter().error_flag);
     }
@@ -1014,14 +789,9 @@ template<class mpz_type> bool gcd_unsigned(
         assert((uint64(data.out_uv_addr)&63)==0); //should be cache line aligned
     }
 
-    int error_code=
-#if defined(ARCH_ARM)
-        asm_code::asm_arm_func_gcd_unsigned(&data);
-#else
-        hasAVX2()?
+    int error_code=hasAVX2()?
         asm_code::asm_avx2_func_gcd_unsigned(&data):
         asm_code::asm_cel_func_gcd_unsigned(&data);
-#endif
 
     if (error_code!=0) {
         c_thread_state.raise_error();
@@ -1029,7 +799,8 @@ template<class mpz_type> bool gcd_unsigned(
     }
 
     assert(data.iter>=0 && data.iter<=gcd_max_iterations); //total number of iterations performed
-    bool is_even=((data.iter-1)&1)==0; //parity of last iteration (can be -1 when iter==0)
+    bool is_even=((data.iter-1)&1)==0; //parity of last iteration (can be -1)
+
     c_results.end_index=(is_even)? 1 : 0;
 
     c_results.as[0].finish(gcd_size);

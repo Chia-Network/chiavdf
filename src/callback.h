@@ -2,6 +2,7 @@
 #define CALLBACK_H
 
 #include "util.h"
+#include "nudupl_listener.h"
 
 // Applies to n-weso.
 const int kWindowSize = 20;
@@ -32,6 +33,7 @@ public:
         switch(type) {
             case NL_SQUARESTATE:
             {
+#if defined(ARCH_X86) || defined(ARCH_X64)
                 //cout << "NL_SQUARESTATE" << endl;
                 uint64 res;
 
@@ -39,6 +41,11 @@ public:
 
                 if(!square_state->assign(mulf->a, mulf->b, mulf->c, res))
                     cout << "square_state->assign failed" << endl;
+#else
+                // Phased pipeline is x86/x64-only.
+                (void)data;
+                cout << "NL_SQUARESTATE unsupported on this architecture" << endl;
+#endif
                 break;
             }
             case NL_FORM:
@@ -50,15 +57,6 @@ public:
                 mpz_set(mulf->a.impl, f->a);
                 mpz_set(mulf->b.impl, f->b);
                 mpz_set(mulf->c.impl, f->c);
-                break;
-            }
-            case NL_FORM_CPP:
-            {
-                // C++ form type (`struct form { integer a,b,c; }`).
-                form* f = (form*)data;
-                mpz_set(mulf->a.impl, f->a.impl);
-                mpz_set(mulf->b.impl, f->b.impl);
-                mpz_set(mulf->c.impl, f->c.impl);
                 break;
             }
             default:

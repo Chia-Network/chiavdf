@@ -9,17 +9,10 @@
 
 #include "parameters.h"
 
-#ifdef VDF_TEST
-#include <chrono>
-#endif
-
-#include "chiavdf_profile.h"
-
 #include "bit_manipulation.h"
 #include "double_utility.h"
 #include "integer.h"
-
-#include "asm_main.h"
+#include "alloc.hpp"
 
 #include "vdf_original.h"
 
@@ -29,21 +22,30 @@
 #include "gpu_integer.h"
 #include "gpu_integer_divide.h"
 
+#include "nucomp.h"
+
+#include "nudupl_listener.h"
+
+#if defined(ARCH_X86) || defined(ARCH_X64)
+#include "asm_main.h"
+
 #include "gcd_base_continued_fractions.h"
 //#include "gcd_base_divide_table.h"
 #include "gcd_128.h"
 #include "gcd_unsigned.h"
 
-#include "gpu_integer_gcd.h"
-
 #include "asm_types.h"
 
 #include "threading.h"
 #include "avx512_integer.h"
-#include "nucomp.h"
 #include "vdf_fast.h"
+#endif
 
+#include "gpu_integer_gcd.h"
+
+#if defined(ARCH_X86) || defined(ARCH_X64)
 #include "vdf_test.h"
+#endif
 #include <map>
 #include <algorithm>
 
@@ -53,7 +55,6 @@
 
 #include <chrono>
 #include <condition_variable>
-#include <cstring>
 #include "proof_common.h"
 #include "provers.h"
 #include "util.h"
@@ -87,45 +88,6 @@ std::mutex new_event_mutex, cout_lock;
 bool debug_mode = false;
 bool fast_algorithm = false;
 bool two_weso = false;
-bool quiet_mode = false;
-
-static inline bool chiavdf_env_truthy(const char* name) {
-    const char* v = std::getenv(name);
-    if (!v) return false;
-    return std::strcmp(v, "1") == 0 || std::strcmp(v, "true") == 0 || std::strcmp(v, "yes") == 0 ||
-           std::strcmp(v, "on") == 0;
-}
-
-static inline bool chiavdf_diag_enabled() {
-    return chiavdf_env_truthy("CHIAVDF_DIAG") || chiavdf_env_truthy("CHIAVDF_VDF_TEST_STATS");
-}
-
-static inline bool chiavdf_profile_enabled() {
-    // Heavier-weight timing instrumentation (use with `vdf_bench square_vdf`).
-    // Kept separate from CHIAVDF_DIAG so we can enable timing only when desired.
-    return chiavdf_env_truthy("CHIAVDF_PROFILE") || chiavdf_env_truthy("CHIAVDF_NUDUPL_PROFILE");
-}
-
-// `repeated_square()` and `vdf_bench` attribute some fast-path bailouts as occurring
-// "after a single slow step". That label is only meaningful when the recovery path
-// actually performed exactly one slow iteration (not a burst).
-static inline bool chiavdf_diag_is_single_slow_step(uint64 slow_iters) {
-    return slow_iters == 1;
-}
-
-#ifdef VDF_TEST
-#endif
-
-// vdf_fast uses shared master/slave counters keyed by `square_state.pairindex`.
-// The upstream chiavdf binaries run one VDF per process and hardcode `pairindex=0`.
-// In embedded/multi-worker setups, multiple VDF computations can run concurrently
-// in the same process; they must not share a pairindex.
-static inline int vdf_fast_pairindex() {
-    constexpr int kSlots = int(sizeof(master_counter) / sizeof(master_counter[0]));
-    static std::atomic<int> next_slot{0};
-    thread_local int slot = next_slot.fetch_add(1, std::memory_order_relaxed) % kSlots;
-    return slot;
-}
 
 //always works
 void repeated_square_original(vdf_original &vdfo, form& f, const integer& D, const integer& L, uint64 base, uint64 iterations, INUDUPLListener *nuduplListener) {
@@ -149,9 +111,9 @@ void repeated_square_original(vdf_original &vdfo, form& f, const integer& D, con
 
 // Slow squaring helper using the C++ NUDUPL implementation (`qfb_nudupl`) plus Pulmark reduction.
 //
-// This is substantially faster than `vdf_original::square()` on some platforms (notably ARM),
-// and is used for "fast path bailed early" recovery. We intentionally keep the *corruption*
-// correction path on the independent `vdf_original` implementation.
+// This is substantially faster than `vdf_original::square()` on some platforms (notably ARM).
+// We intentionally keep the *corruption* correction path on the independent `vdf_original`
+// implementation.
 static inline void repeated_square_nudupl(
     form& f,
     integer& D,
@@ -161,57 +123,28 @@ static inline void repeated_square_nudupl(
     WesolowskiCallback* weso,
     INUDUPLListener* nuduplListener
 ) {
-#ifdef VDF_TEST
-    chiavdf_nudupl_profile_stats* prof = chiavdf_nudupl_profile_sink;
-    const bool timing = (prof != nullptr) && chiavdf_nudupl_profile_timing_enabled;
-#endif
+    vdf_original::form f_view;
     for (uint64_t i = 0; i < iterations; i++) {
-#ifdef VDF_TEST
-        if (prof != nullptr) {
-            ++prof->iters;
-            const uint64 a_limbs = uint64(__GMP_ABS(f.a.impl->_mp_size));
-            prof->max_a_limbs = std::max(prof->max_a_limbs, a_limbs);
-        }
-        std::chrono::steady_clock::time_point t_form0;
-        if (timing) t_form0 = std::chrono::steady_clock::now();
-#endif
         nudupl_form(f, f, D, L);
-#ifdef VDF_TEST
-        if (timing) {
-            const auto t_form1 = std::chrono::steady_clock::now();
-            prof->nudupl_form_time_ns += uint64(std::chrono::duration_cast<std::chrono::nanoseconds>(t_form1 - t_form0).count());
-        }
-#endif
 
-        // Match `vdf_bench square`: reduce only when `a` grows beyond a small limb threshold.
-        // Reducing every iteration can be slower than letting NUDUPL run a bit "wide".
+        // Reduce only when `a` grows beyond a small limb threshold. Reducing every iteration
+        // can be slower than letting NUDUPL run a bit "wide".
         if (__GMP_ABS(f.a.impl->_mp_size) > 8) {
-#ifdef VDF_TEST
-            if (prof != nullptr) ++prof->reduce_calls;
-            std::chrono::steady_clock::time_point t_red0;
-            if (timing) t_red0 = std::chrono::steady_clock::now();
-#endif
             if (weso) {
                 weso->reduce(f);
             } else {
                 PulmarkReducer reducer;
                 reducer.reduce(f);
             }
-#ifdef VDF_TEST
-            if (timing) {
-                const auto t_red1 = std::chrono::steady_clock::now();
-                prof->reduce_time_ns += uint64(std::chrono::duration_cast<std::chrono::nanoseconds>(t_red1 - t_red0).count());
-            }
-#endif
         }
-#ifdef VDF_TEST
-        else {
-            if (prof != nullptr) ++prof->reduce_skipped;
-        }
-#endif
 
         if (nuduplListener != nullptr) {
-            nuduplListener->OnIteration(NL_FORM_CPP, &f, base + i);
+            // Present the C++ `form` as a `vdf_original::form` view so existing callbacks can
+            // consume it without any new type tags.
+            f_view.a[0] = f.a.impl[0];
+            f_view.b[0] = f.b.impl[0];
+            f_view.c[0] = f.c.impl[0];
+            nuduplListener->OnIteration(NL_FORM, &f_view, base + i);
         }
     }
 }
@@ -224,35 +157,10 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
         uint64 num_calls_fast=0;
         uint64 num_iterations_fast=0;
         uint64 num_iterations_slow=0;
-
-        // Diagnose early termination: how often the fast path bails due to `a <= L`,
-        // and whether it happens right after the 1-iteration slow step.
-        uint64 a_not_high_enough_fails = 0;
-        uint64 a_not_high_enough_fails_after_single_slow = 0;
-        uint64 a_not_high_enough_recovery_iters = 0;
-        uint64 a_not_high_enough_recovery_calls = 0;
-        int64 a_not_high_enough_sum_delta_bits = 0;
-        int64 a_not_high_enough_sum_delta_limbs = 0;
-        int a_not_high_enough_min_delta_bits = (1 << 30);
-        int a_not_high_enough_max_delta_bits = -(1 << 30);
-        int a_not_high_enough_min_delta_limbs = (1 << 30);
-        int a_not_high_enough_max_delta_limbs = -(1 << 30);
-
-        // NUDUPL path instrumentation (counts always when diag is enabled; timing only when profile is enabled).
-        chiavdf_nudupl_profile_stats nudupl_prof;
-        chiavdf_nudupl_profile_stats* prev_nudupl_sink = chiavdf_nudupl_profile_sink;
-        const bool prev_nudupl_timing = chiavdf_nudupl_profile_timing_enabled;
-        const bool nudupl_profile_enable_counts = chiavdf_diag_enabled();
-        const bool nudupl_profile_enable_timing = chiavdf_profile_enabled();
-        if (nudupl_profile_enable_counts || nudupl_profile_enable_timing) {
-            chiavdf_nudupl_profile_sink = &nudupl_prof;
-            chiavdf_nudupl_profile_timing_enabled = nudupl_profile_enable_timing;
-        }
     #endif
 
     uint64_t num_iterations = 0;
     uint64_t last_checkpoint = 0;
-    thread_local bool prev_was_single_slow_step = false;
 
     while (!stopped) {
         uint64 c_checkpoint_interval=checkpoint_interval;
@@ -265,24 +173,14 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
                 f_copy=f;
                 c_checkpoint_interval=1;
 
+                #if defined(ARCH_X86) || defined(ARCH_X64)
                 f_copy_3=f;
                 f_copy_3_valid=square_fast_impl(f_copy_3, D, L, num_iterations);
+                #endif
             }
         #endif
 
-        // Don't overshoot the requested iteration count.
-        // This matters for tests and for callers that stop immediately after reaching `iters`
-        // (otherwise we may run an entire extra batch before noticing we're done).
         uint64 batch_size=c_checkpoint_interval;
-        if (iterations != 0) {
-            if (num_iterations >= iterations) {
-                break;
-            }
-            const uint64 remaining = iterations - num_iterations;
-            if (remaining < batch_size) {
-                batch_size = remaining;
-            }
-        }
 
         #ifdef ENABLE_TRACK_CYCLES
             print( "track cycles enabled; results will be wrong" );
@@ -290,34 +188,22 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
         #endif
 
         uint64 actual_iterations = 0;
-        bool used_fast_path = true;
 #if defined(ARCH_ARM)
-        // ARM: always use the C++ NUDUPL path. The phased pipeline is x86-centric and has
-        // historically been slower (and higher maintenance) on arm64/aarch64.
-        used_fast_path = false;
+        // ARM: use the C++ NUDUPL path (faster and lower maintenance than the phased pipeline).
         integer& D_nc = const_cast<integer&>(D);
         integer& L_nc = const_cast<integer&>(L);
         repeated_square_nudupl(f, D_nc, L_nc, num_iterations, batch_size, weso, weso);
         actual_iterations = batch_size;
-#ifdef VDF_TEST
-        num_iterations_slow += batch_size;
-#endif
 #else
-        // x86/x64: phased pipeline fast path.
+        // This works single threaded
         square_state_type square_state;
-        square_state.pairindex = vdf_fast_pairindex();
-        square_state.entered_after_single_slow = prev_was_single_slow_step;
-        prev_was_single_slow_step = false;
-
-        used_fast_path = true;
+        square_state.pairindex=0;
         actual_iterations = repeated_square_fast(square_state, f, D, L, num_iterations, batch_size, weso);
 #endif
 
         #ifdef VDF_TEST
-            if (used_fast_path) {
-                ++num_calls_fast;
-                if (actual_iterations!=~uint64(0)) num_iterations_fast+=actual_iterations;
-            }
+            ++num_calls_fast;
+            if (actual_iterations!=~uint64(0)) num_iterations_fast+=actual_iterations;
         #endif
 
         #ifdef ENABLE_TRACK_CYCLES
@@ -340,118 +226,26 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
         }
 
         if (actual_iterations<batch_size) {
-#if !defined(ARCH_ARM)
-            #ifdef VDF_TEST
-                if (square_state.last_fail.reason == square_state_type::fast_fail_a_not_high_enough) {
-                    ++a_not_high_enough_fails;
-                    if (square_state.last_fail.after_single_slow) {
-                        ++a_not_high_enough_fails_after_single_slow;
-                    }
-                    const int delta_bits = int(square_state.last_fail.a_bits) - int(square_state.last_fail.L_bits);
-                    const int delta_limbs = int(square_state.last_fail.a_limbs) - int(square_state.last_fail.L_limbs);
-                    a_not_high_enough_sum_delta_bits += delta_bits;
-                    a_not_high_enough_sum_delta_limbs += delta_limbs;
-                    a_not_high_enough_min_delta_bits = std::min(a_not_high_enough_min_delta_bits, delta_bits);
-                    a_not_high_enough_max_delta_bits = std::max(a_not_high_enough_max_delta_bits, delta_bits);
-                    a_not_high_enough_min_delta_limbs = std::min(a_not_high_enough_min_delta_limbs, delta_limbs);
-                    a_not_high_enough_max_delta_limbs = std::max(a_not_high_enough_max_delta_limbs, delta_limbs);
-                }
-            #endif
-
             //the fast algorithm terminated prematurely for whatever reason. f is still valid
             //it might terminate prematurely again (e.g. gcd quotient too large), so will do one iteration of the slow algorithm
             //this will also reduce f if the fast algorithm terminated because it was too big
-            uint64 slow_recovery_iters = 1;
-            {
-                // Use the faster C++ NUDUPL slow step for recovery (not for corruption correction).
-                integer& D_nc = const_cast<integer&>(D);
-                integer& L_nc = const_cast<integer&>(L);
-                repeated_square_nudupl(
-                    f, D_nc, L_nc,
-                    num_iterations + actual_iterations,
-                    1,
-                    weso,
-                    weso
-                );
-            }
-
-            // If we bailed because `a <= L`, the next fast attempt often fails again immediately
-            // (observed on ARM). Keep doing a few slow squarings until we re-enter the fast regime.
-            if (square_state.last_fail.reason == square_state_type::fast_fail_a_not_high_enough) {
-                const int delta_bits = int(square_state.last_fail.a_bits) - int(square_state.last_fail.L_bits);
-                const int delta_limbs = int(square_state.last_fail.a_limbs) - int(square_state.last_fail.L_limbs);
-
-                // Adaptive cap: the further `a` is below `L`, the more slow iterations we allow to
-                // recover, to avoid a "slow1 -> fast-fail -> slow1 -> ..." loop.
-                uint64 max_slow_recovery_iters = 2;
-                if (delta_limbs <= -3 || delta_bits <= -256) max_slow_recovery_iters = 16;
-                else if (delta_limbs <= -2 || delta_bits <= -192) max_slow_recovery_iters = 12;
-                else if (delta_limbs <= -1 || delta_bits <= -128) max_slow_recovery_iters = 8;
-                else if (delta_bits <= -64) max_slow_recovery_iters = 4;
-
-                // If the planned cap wasn't enough (still `a <= L`), extend once (bounded).
-                bool extended_once = false;
-                constexpr uint64 kAbsoluteMaxSlowRecoveryIters = 32;
-                for (;;) {
-                    while (slow_recovery_iters < max_slow_recovery_iters) {
-                        const bool a_nonneg = (f.a.impl->_mp_size >= 0);
-                        const bool a_high_enough_now = a_nonneg && (mpz_cmpabs(f.a.impl, L.impl) > 0);
-                        if (a_high_enough_now) break;
-                        integer& D_nc = const_cast<integer&>(D);
-                        integer& L_nc = const_cast<integer&>(L);
-                        repeated_square_nudupl(
-                            f, D_nc, L_nc,
-                            num_iterations + actual_iterations + slow_recovery_iters,
-                            1,
-                            weso,
-                            weso
-                        );
-                        ++slow_recovery_iters;
-                    }
-
-                    const bool a_nonneg = (f.a.impl->_mp_size >= 0);
-                    const bool a_high_enough_now = a_nonneg && (mpz_cmpabs(f.a.impl, L.impl) > 0);
-                    if (a_high_enough_now) break;
-
-                    if (extended_once) break;
-                    extended_once = true;
-                    max_slow_recovery_iters = std::min<uint64>(kAbsoluteMaxSlowRecoveryIters, max_slow_recovery_iters * 2);
-                }
-            }
-
-            // Only tag "after single slow step" when it was actually a single step.
-            // (When recovery is enabled we may do a burst of slow steps; the next fast batch
-            // should not be attributed as "entered after single slow".)
-            prev_was_single_slow_step = chiavdf_diag_is_single_slow_step(slow_recovery_iters);
+            repeated_square_original(*weso->vdfo, f, D, L, num_iterations+actual_iterations, 1, weso);
 
             #ifdef VDF_TEST
-                num_iterations_slow += slow_recovery_iters;
-                if (square_state.last_fail.reason == square_state_type::fast_fail_a_not_high_enough) {
-                    a_not_high_enough_recovery_iters += slow_recovery_iters;
-                    ++a_not_high_enough_recovery_calls;
-                }
+                ++num_iterations_slow;
                 if (vdf_test_correctness) {
                     assert(actual_iterations==0);
                     print( "fast vdf terminated prematurely", num_iterations );
                 }
             #endif
 
-            actual_iterations += slow_recovery_iters;
-#else
-            // On ARM this should not happen (we don't run the phased fast path).
-            // Fall back to the original implementation for safety.
-            repeated_square_original(*weso->vdfo, f, D, L, num_iterations, batch_size, weso);
-            actual_iterations = batch_size;
-#ifdef VDF_TEST
-            num_iterations_slow += batch_size;
-#endif
-#endif
+            ++actual_iterations;
         }
 
         num_iterations+=actual_iterations;
-        weso->iterations = num_iterations;
-
         if (num_iterations >= last_checkpoint) {
+            weso->iterations = num_iterations;
+
             // n-weso specific logic.
             if (fast_algorithm) {
                 if (fast_storage != NULL) {
@@ -497,83 +291,20 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
                 form f_copy_2=f;
                 weso->reduce(f_copy_2);
 
-                repeated_square_original(*weso->vdfo, f_copy, D, L, 0, actual_iterations, nullptr);
+                repeated_square_original(*weso->vdfo, f_copy, D, L, actual_iterations);
                 assert(f_copy==f_copy_2);
             }
         #endif
     }
-    if (!quiet_mode) {
+    {
         // this shouldn't be needed but avoids some false positive in TSAN
         std::lock_guard<std::mutex> lk(cout_lock);
         std::cout << "VDF loop finished. Total iters: " << num_iterations << "\n" << std::flush;
     }
 
     #ifdef VDF_TEST
-        const bool diag = (!quiet_mode) && chiavdf_diag_enabled();
-        if (diag) {
-            if (num_calls_fast != 0) {
-                print("fast average batch size", double(num_iterations_fast) / double(num_calls_fast));
-            } else {
-                print("fast average batch size", "n/a");
-            }
-
-            if (num_iterations_slow != 0) {
-                print("fast iterations per slow iteration", double(num_iterations_fast) / double(num_iterations_slow));
-            } else {
-                print("fast iterations per slow iteration", "n/a");
-            }
-            if (a_not_high_enough_fails != 0) {
-                print( "fast early-terminations due to a<=L", a_not_high_enough_fails );
-                print( "  after 1-iter slow step", a_not_high_enough_fails_after_single_slow );
-                print( "  delta_bits (a_bits-L_bits) min/max/avg",
-                       a_not_high_enough_min_delta_bits,
-                       a_not_high_enough_max_delta_bits,
-                       double(a_not_high_enough_sum_delta_bits) / double(a_not_high_enough_fails) );
-                print( "  delta_limbs (a_limbs-L_limbs) min/max/avg",
-                       a_not_high_enough_min_delta_limbs,
-                       a_not_high_enough_max_delta_limbs,
-                       double(a_not_high_enough_sum_delta_limbs) / double(a_not_high_enough_fails) );
-                if (a_not_high_enough_recovery_calls != 0) {
-                    print( "  slow recovery iters total/avg",
-                           a_not_high_enough_recovery_iters,
-                           double(a_not_high_enough_recovery_iters) / double(a_not_high_enough_recovery_calls) );
-                }
-            }
-
-            if (nudupl_prof.iters != 0) {
-                print("nudupl iters", nudupl_prof.iters);
-                print("nudupl reduce calls", nudupl_prof.reduce_calls);
-                print("nudupl reduce skipped", nudupl_prof.reduce_skipped);
-                print("nudupl max a limbs", nudupl_prof.max_a_limbs);
-                if (chiavdf_nudupl_profile_timing_enabled) {
-                    const double iters_d = double(nudupl_prof.iters);
-                    print("nudupl_form ns/iter", nudupl_prof.nudupl_form_time_ns / iters_d);
-                    print("reduce ns/iter", nudupl_prof.reduce_time_ns / iters_d);
-                    if (nudupl_prof.qfb_nudupl_calls != 0) {
-                        print("gcdext ns/iter", nudupl_prof.gcdext_time_ns / iters_d);
-                        if (nudupl_prof.gcdext_s_eq_1 + nudupl_prof.gcdext_s_ne_1 != 0) {
-                            print("gcdext s==1", nudupl_prof.gcdext_s_eq_1);
-                            print("gcdext s!=1", nudupl_prof.gcdext_s_ne_1);
-                        }
-                        print("xgcd_partial ns/iter", nudupl_prof.xgcd_partial_time_ns / iters_d);
-                        print("a>=L branch ns/iter", nudupl_prof.else_branch_time_ns / iters_d);
-                    }
-                }
-                if (nudupl_prof.qfb_nudupl_calls != 0) {
-                    print("qfb_nudupl calls", nudupl_prof.qfb_nudupl_calls);
-                    print("qfb_nudupl b_negative", nudupl_prof.b_negative);
-                    print("qfb_nudupl branch a<L", nudupl_prof.branch_a_lt_L);
-                    print("qfb_nudupl branch a>=L", nudupl_prof.branch_a_ge_L);
-                }
-            }
-        }
-
-        // Restore sink/timing state (avoid leaking into other calls/tests).
-        if (nudupl_profile_enable_counts || nudupl_profile_enable_timing) {
-            chiavdf_nudupl_profile_sink = prev_nudupl_sink;
-            chiavdf_nudupl_profile_timing_enabled = prev_nudupl_timing;
-        }
-
+        print( "fast average batch size", double(num_iterations_fast)/double(num_calls_fast) );
+        print( "fast iterations per slow iteration", double(num_iterations_fast)/double(num_iterations_slow) );
     #endif
 }
 
@@ -604,7 +335,7 @@ Proof ProveOneWesolowski(uint64_t iters, integer& D, form f, OneWesolowskiCallba
     proof_serialized = SerializeForm(proof_form, d_bits);
     Proof proof(y_serialized, proof_serialized);
     proof.witness_type = 0;
-    if (!quiet_mode) {
+    {
         // this shouldn't be needed but avoids some false positive in TSAN
         std::lock_guard<std::mutex> lk(cout_lock);
         std::cout << "Got simple weso proof: " << proof.hex() << "\n";
@@ -851,16 +582,9 @@ class ProverManager {
         std::cout << "Got proof for iteration: " << iteration << ". ("
                   << proof_segments.size() - 1 << "-wesolowski proof)\n";
         std::cout << "Proof: " << proof.hex() << "\n";
-        if (!quiet_mode && chiavdf_diag_enabled()) {
-            std::cout << "Current weso iteration: " << vdf_iteration;
-            if (vdf_iteration >= iteration) {
-                std::cout << ". Extra proof time (in VDF iterations): " << (vdf_iteration - iteration) << "\n";
-            } else {
-                // Avoid unsigned underflow spam (shows up as a huge 2^64-... number).
-                std::cout << ". Extra proof time (in VDF iterations): " << 0
-                          << " (weso behind by " << (iteration - vdf_iteration) << ")\n";
-            }
-        }
+        std::cout << "Current weso iteration: " << vdf_iteration
+                  << ". Extra proof time (in VDF iterations): " << vdf_iteration - iteration
+                  << "\n";
         return proof;
     }
 

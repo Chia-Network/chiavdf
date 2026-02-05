@@ -32,11 +32,7 @@ before-build = "python -m pip install --upgrade pip"
 
 [tool.cibuildwheel.macos]
 build-verbosity = 0
-before-all = """
-command -v gmp-config >/dev/null 2>&1 || brew install --formula --quiet gmp
-test -f /opt/homebrew/include/boost/version.hpp || test -f /usr/local/include/boost/version.hpp || brew install --formula --quiet boost
-command -v cmake >/dev/null 2>&1 || brew install --formula --quiet cmake
-"""
+before-all = "brew install gmp boost cmake"
 before-build = "python -m pip install --upgrade pip"
 environment = {MACOSX_DEPLOYMENT_TARGET="13", SYSTEM_VERSION_COMPAT=0, BUILD_VDF_CLIENT="N"}
 

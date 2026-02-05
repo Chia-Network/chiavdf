@@ -1,35 +1,6 @@
 #ifndef GCD_UNSIGNED_H
 #define GCD_UNSIGNED_H
 
-#include <atomic>
-
-#ifdef ARCH_ARM
-// Count how often we fallback because `ab[0] < ab[1]` (invariant violation).
-extern std::atomic<uint64_t> gcd_unsigned_arm_bad_order_fallbacks;
-// Count how often we fallback because `gcd_128(...)` returned false (no progress / bad quotient discovery).
-extern std::atomic<uint64_t> gcd_unsigned_arm_gcd128_fail_fallbacks;
-// Count how often we repaired a bad/failed gcd_128 step by doing an exact single-quotient division step.
-extern std::atomic<uint64_t> gcd_unsigned_arm_exact_division_repairs;
-#endif
-
-// Optional output stream for producing the per-iteration UV matrices in the
-// asm producer/consumer format (u0,u1,v0,v1,parity,exit_flag,...).
-//
-// When `out_uv_addr` is non-null, it is assumed to point at the storage for
-// iteration 0 (e.g. `&uv_entries[1]` interpreted as `uint64*`), and entry -1 is
-// located at `out_uv_addr - 8`.
-struct gcd_unsigned_uv_stream_out {
-    uint64* out_uv_addr = nullptr;
-    // Optional counter to publish availability of each streamed entry.
-    // If non-null, the producer must store `uv_counter_start + iter_index` (release)
-    // after writing the entry for that iteration index.
-    std::atomic<uint64>* out_uv_counter = nullptr;
-    uint64 uv_counter_start = 0;
-    bool inputs_swapped = false; // if true, store UV in original (a,b) order
-    int iter_count = 0;          // number of streamed iterations produced
-    bool ok = true;              // false if fast path couldn't produce a stream
-};
-
 //threshold is 0 to calculate the normal gcd
 template<int size> void gcd_unsigned_slow(
     array<fixed_integer<uint64, size>, 2>& ab,
@@ -65,68 +36,38 @@ template<int size> void gcd_unsigned_slow(
 
 //uv is <1,0> to calculate |u| and <0,1> to calculate |v|
 //parity is negated for each quotient
-template<int size> bool gcd_unsigned(
+template<int size> void gcd_unsigned(
     array<fixed_integer<uint64, size>, 2>& ab,
     array<fixed_integer<uint64, size>, 2>& uv,
     int& parity,
-    fixed_integer<uint64, size> threshold=fixed_integer<uint64, size>(integer(0)),
-    gcd_unsigned_uv_stream_out* stream_out=nullptr
+    fixed_integer<uint64, size> threshold=fixed_integer<uint64, size>(integer(0))
 ) {
     typedef fixed_integer<uint64, size> int_t;
 
-#if defined(TEST_ASM) && !defined(ARCH_ARM)
     static int test_asm_counter=0;
     ++test_asm_counter;
 
     bool test_asm_run=true;
     bool test_asm_print=(test_asm_counter%1000==0);
-#else
-    // Avoid any per-call "test asm" bookkeeping on ARM / non-TEST_ASM builds.
-    bool test_asm_run=false;
-    bool test_asm_print=false;
-#endif
     bool debug_output=false;
 
-#if !defined(ARCH_ARM)
     assert(ab[0]>=ab[1] && !ab[1].is_negative());
     assert(!ab[0].is_negative() && !ab[1].is_negative());
     assert(!uv[0].is_negative() && !uv[1].is_negative());
-#endif
 
-    const bool producing_uv_stream = (stream_out != nullptr && stream_out->out_uv_addr != nullptr);
-
-    // Only snapshot inputs when we might actually use them (slow self-check path).
-    // On ARM we typically produce a UV stream for the fast-thread consumer, so this avoids
-    // a few large fixed-integer copies per call.
-    array<int_t, 2> ab_start;
-    array<int_t, 2> uv_start;
-    int parity_start=0;
-    if (is_vdf_test && !producing_uv_stream) {
-        ab_start=ab;
-        uv_start=uv;
-        parity_start=parity;
-    }
+    auto ab_start=ab;
+    auto uv_start=uv;
+    int parity_start=parity;
     int a_num_bits_old=-1;
 
     int iter=0;
 
-    // These vectors are only needed for the x86 TEST_ASM self-check block at the end.
-    // On ARM (and in normal builds) they add avoidable allocation/branch overhead in the hot loop.
-#if defined(TEST_ASM) && !defined(ARCH_ARM)
     vector<array<array<uint64, 2>, 2>> matricies;
     vector<int> local_parities;
-#endif
     bool valid=true;
 
-    if (stream_out) {
-        stream_out->iter_count = 0;
-        stream_out->ok = true;
-    }
-
     while (true) {
-#if !defined(ARCH_ARM)
         assert(ab[0]>=ab[1] && !ab[1].is_negative());
-#endif
 
         if (debug_output) {
             print( "" );
@@ -145,9 +86,7 @@ template<int size> bool gcd_unsigned(
 
         if (ab[0]<=threshold) {
             valid=false;
-#if !defined(ARCH_ARM)
             print( "    gcd_unsigned slow 1" );
-#endif
             break;
         }
 
@@ -201,30 +140,7 @@ template<int size> bool gcd_unsigned(
 
         array<array<uint64, 2>, 2> uv_uint64;
         int local_parity; //1 if odd, 0 if even
-
-        auto set_exact_single_quotient_step = [&]() -> bool {
-            // Exact Euclid step: q = a/b (must fit in uint64 for asm-style UV stream).
-            // This is slower than the Lehmer/continued-fraction step but avoids falling back to
-            // `square_original` (much more expensive) when gcd_128 is unstable on ARM.
-            int_t q = ab[0] / ab[1];
-            if (q.is_negative()) return false;
-            for (int i = 1; i < size; i++) {
-                if (q[i] != 0) {
-                    return false;
-                }
-            }
-            const uint64 q64 = q[0];
-
-            uv_uint64[0][0] = 0;
-            uv_uint64[0][1] = 1;
-            uv_uint64[1][0] = 1;
-            uv_uint64[1][1] = q64;
-            local_parity = 1; // one quotient => odd
-            return true;
-        };
-
-        if (gcd_128(ab_head, uv_uint64, local_parity, shift_amount!=0, threshold_head) ||
-            set_exact_single_quotient_step()) {
+        if (gcd_128(ab_head, uv_uint64, local_parity, shift_amount!=0, threshold_head)) {
             //int local_parity=(uv_double[1][1]<0)? 1 : 0; //sign bit
             bool even=(local_parity==0);
 
@@ -262,68 +178,24 @@ template<int size> bool gcd_unsigned(
             }
 
             //this allows the add function to be optimized
-#if !defined(ARCH_ARM)
             assert(!a_new.is_negative());
             assert(!b_new.is_negative());
-#endif
-            // On ARM, gcd_128/FMA path can produce edge cases; skip to avoid spurious trap.
 
             //do not do any of this stuff; instead return an array of matricies
             //the array is processed while it is being generated so it is cache line aligned, has a counter, etc
 
-            // The algorithm assumes unsigned inputs with `ab[0] >= ab[1]` for every iteration.
-            // If the cofactor matrix violates this, retry once with an exact single-quotient step.
-            if (a_new < b_new) {
-#ifdef ARCH_ARM
-                ++gcd_unsigned_arm_bad_order_fallbacks;
-#endif
-                if (!set_exact_single_quotient_step()) {
-                    valid=false;
-                    break;
-                }
-                even = (local_parity == 0);
-
-                uv_00=uv_uint64[0][0];
-                uv_01=uv_uint64[0][1];
-                uv_10=uv_uint64[1][0];
-                uv_11=uv_uint64[1][1];
-
-                a_new_1=ab[0]; a_new_1*=uv_00; a_new_1.set_negative(!even);
-                a_new_2=ab[1]; a_new_2*=uv_01; a_new_2.set_negative(even);
-                b_new_1=ab[0]; b_new_1*=uv_10; b_new_1.set_negative(even);
-                b_new_2=ab[1]; b_new_2*=uv_11; b_new_2.set_negative(!even);
-
-                if (!even) {
-                    a_new=int_t(a_new_2 + a_new_1);
-                    b_new=int_t(b_new_1 + b_new_2);
-                } else {
-                    a_new=int_t(a_new_1 + a_new_2);
-                    b_new=int_t(b_new_2 + b_new_1);
-                }
-
-#ifdef ARCH_ARM
-                ++gcd_unsigned_arm_exact_division_repairs;
-#endif
-            }
-
             ab[0]=a_new;
             ab[1]=b_new;
 
-            // Update accumulated cofactors (unsigned).
-            // This is hot; avoid lambda + by-value parameter copies.
-            // Avoid `operator+` (which creates a size+1 temporary) to reduce memmoves.
-            // The algorithm only relies on the low `size` limbs (same semantics as truncation).
-            int_t new_uv_0 = uv[0];
-            new_uv_0 *= uv_00;
-            int_t add_uv_0 = uv[1];
-            add_uv_0 *= uv_01;
-            new_uv_0 += add_uv_0;
+            //bx and by are nonnegative
+            auto dot=[&](uint64 ax, uint64 ay, int_t bx, int_t by) -> int_t {
+                bx*=ax;
+                by*=ay;
+                return int_t(bx+by);
+            };
 
-            int_t new_uv_1 = uv[0];
-            new_uv_1 *= uv_10;
-            int_t add_uv_1 = uv[1];
-            add_uv_1 *= uv_11;
-            new_uv_1 += add_uv_1;
+            int_t new_uv_0=dot(uv_00, uv_01, uv[0], uv[1]);
+            int_t new_uv_1=dot(uv_10, uv_11, uv[0], uv[1]);
 
             uv[0]=new_uv_0;
             uv[1]=new_uv_1;
@@ -333,49 +205,14 @@ template<int size> bool gcd_unsigned(
             //todo: don't do this; just make it 0 even, 1 odd
             parity*=1-local_parity-local_parity;
 
-#if defined(TEST_ASM) && !defined(ARCH_ARM)
             matricies.push_back(uv_uint64);
             local_parities.push_back(local_parity);
-#endif
-
-            if (producing_uv_stream) {
-                uint64* entry = stream_out->out_uv_addr + iter * 8;
-                if (stream_out->inputs_swapped) {
-                    // uv col0 = coeff for b, col1 = coeff for a; caller expects (a, b) order
-                    entry[0] = uv_uint64[0][1];
-                    entry[1] = uv_uint64[1][1];
-                    entry[2] = uv_uint64[0][0];
-                    entry[3] = uv_uint64[1][0];
-                } else {
-                    entry[0] = uv_uint64[0][0];
-                    entry[1] = uv_uint64[1][0];
-                    entry[2] = uv_uint64[0][1];
-                    entry[3] = uv_uint64[1][1];
-                }
-                entry[4] = static_cast<uint64>(local_parity); // 0 even, 1 odd
-                entry[5] = 0;
-                // Publish that this entry is ready.
-                if (stream_out->out_uv_counter) {
-                    stream_out->out_uv_counter->store(
-                        // Match the x86 asm producer/consumer protocol: publish iter `i`
-                        // as `uv_counter_start + i`. This intentionally makes the consumer
-                        // one entry behind so the final entry isn't observed before the
-                        // producer sets its `exit_flag`.
-                        stream_out->uv_counter_start + static_cast<uint64>(iter),
-                        std::memory_order_release);
-                }
-            }
         } else {
             //can just make the gcd fail if this happens in the asm code
-#if !defined(ARCH_ARM)
             print( "    gcd_unsigned slow" );
-#endif
             //todo assert(false); //very unlikely to happen if there are no bugs
 
             valid=false;
-#ifdef ARCH_ARM
-            ++gcd_unsigned_arm_gcd128_fail_fallbacks;
-#endif
             break;
 
             /*had_slow=true;
@@ -397,29 +234,18 @@ template<int size> bool gcd_unsigned(
         ++iter;
     }
 
-    if (stream_out) {
-        stream_out->iter_count = iter;
-        stream_out->ok = valid;
-    }
-
-    // When producing an asm-style UV stream, we must not fall back to the slow
-    // algorithm here (there is no equivalent per-iteration UV stream for it).
-    // Treat "valid=false" as caller-visible failure instead.
-    if (is_vdf_test && !producing_uv_stream) {
+    {
         auto ab2=ab_start;
         auto uv2=uv_start;
         int parity2=parity_start;
         gcd_unsigned_slow(ab2, uv2, parity2, threshold);
 
         if (valid) {
-#if !defined(ARCH_ARM)
             assert(integer(ab[0]) == integer(ab2[0]));
             assert(integer(ab[1]) == integer(ab2[1]));
             assert(integer(uv[0]) == integer(uv2[0]));
             assert(integer(uv[1]) == integer(uv2[1]));
             assert(parity==parity2);
-#endif
-            // On ARM, fast path (gcd_128/FMA) can differ from slow path due to rounding; skip consistency assert.
         } else {
             ab=ab2;
             uv=uv2;
@@ -427,7 +253,7 @@ template<int size> bool gcd_unsigned(
         }
     }
 
-    #if defined(TEST_ASM) && !defined(ARCH_ARM)
+    #ifdef TEST_ASM
     if (test_asm_run) {
         if (test_asm_print) {
             print( "test asm gcd_unsigned", test_asm_counter );
@@ -519,12 +345,8 @@ template<int size> bool gcd_unsigned(
     }
     #endif
 
-#if !defined(ARCH_ARM)
     assert(integer(ab[0])>integer(threshold));
     assert(integer(ab[1])<=integer(threshold));
-#endif
-
-    return valid;
 }
 
 // end Headerguard GCD_UNSIGNED_H

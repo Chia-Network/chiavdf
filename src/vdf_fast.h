@@ -1,10 +1,6 @@
 #ifndef VDF_FAST_H
 #define VDF_FAST_H
 
-#include <cstdint>
-#include <condition_variable>
-#include <mutex>
-
 typedef mpz< 9, 16> mpz_9 ; //3 cache lines
 typedef mpz<17, 24> mpz_17; //4 cache lines
 typedef mpz<25, 32> mpz_25; //5 cache lines
@@ -43,28 +39,6 @@ typedef gcd_results_type<int2x> gcd_results_int2x;
 //all divisions are exact
 struct square_state_type {
     int pairindex;
-
-    // Instrumentation: record why the fast path bailed out.
-    //
-    // This is used to diagnose slow fallbacks in `repeated_square()` and `vdf_bench`.
-    // The caller can set `entered_after_single_slow` to indicate the fast batch began
-    // immediately after the 1-iteration slow step used to recover from early termination.
-    enum fast_fail_reason : uint8_t {
-        fast_fail_none = 0,
-        fast_fail_ab_invalid = 1,
-        fast_fail_a_not_high_enough = 2,
-        fast_fail_gcd_failed = 3,
-        fast_fail_other = 255,
-    };
-    struct fast_fail_info_type {
-        fast_fail_reason reason = fast_fail_none;
-        bool after_single_slow = false;
-        int16_t a_limbs = 0;
-        int16_t L_limbs = 0;
-        int16_t a_bits = 0;
-        int16_t L_bits = 0;
-    } last_fail;
-    bool entered_after_single_slow = false;
 
     //running the gcd will advance the counter value by this much on both the master and slave threads
     //it is then advanced by 1 after the gcd results are consumed
@@ -248,12 +222,6 @@ struct square_state_type {
             ab_valid=(a.num_bits()<=max_bits_ab && b.num_bits()<=max_bits_ab && a.sgn()>=0);
         }
         if (!ab_valid) {
-            last_fail.reason = fast_fail_ab_invalid;
-            last_fail.after_single_slow = entered_after_single_slow;
-            last_fail.a_limbs = int16_t(a.num_limbs());
-            last_fail.L_limbs = int16_t(L.num_limbs());
-            last_fail.a_bits = int16_t(a.num_bits());
-            last_fail.L_bits = int16_t(L.num_bits());
             return false;
         }
 
@@ -262,18 +230,9 @@ struct square_state_type {
         bool a_high_enough;
         {
             TRACK_CYCLES //102
-            // Fast precheck: limb count implies magnitude, but equality needs an exact compare.
-            const int a_limbs = a.num_limbs();
-            const int L_limbs = L.num_limbs();
-            a_high_enough = (a_limbs > L_limbs) || (a_limbs == L_limbs && a.compare_abs(L) > 0);
+            a_high_enough=(a.num_limbs()>L.num_limbs());
         }
         if (!a_high_enough) {
-            last_fail.reason = fast_fail_a_not_high_enough;
-            last_fail.after_single_slow = entered_after_single_slow;
-            last_fail.a_limbs = int16_t(a.num_limbs());
-            last_fail.L_limbs = int16_t(L.num_limbs());
-            last_fail.a_bits = int16_t(a.num_bits());
-            last_fail.L_bits = int16_t(L.num_bits());
             return false;
         }
 
@@ -289,8 +248,6 @@ struct square_state_type {
             TRACK_CYCLES //16070 (critical path 1)
             if (!gcd_unsigned(counter_start_phase_0, gcd_1_0, gcd_zero)) {
                 TRACK_CYCLES_ABORT
-                last_fail.reason = fast_fail_gcd_failed;
-                last_fail.after_single_slow = entered_after_single_slow;
                 return false;
             }
         }
@@ -354,12 +311,7 @@ struct square_state_type {
                 TRACK_CYCLES //1309; latency is hidden by gcd being slow
                 c.set_divide_floor(b_b_D, a_4, c_remainder);
                 if (c_remainder.sgn()!=0) {
-                    // In test builds this used to hard-abort. On ARM, the C++ fallback path
-                    // can occasionally hit this under stress; treat it as corruption and
-                    // bail out cleanly instead of aborting the whole process.
-#if !defined(ARCH_ARM)
                     assert(!is_vdf_test); //should never have corruption unless there are bugs
-#endif
                     phase_start.corruption_flag=true; //bad
                     return false;
                 }
@@ -368,9 +320,7 @@ struct square_state_type {
             {
                 TRACK_CYCLES //100
                 if (a.sgn()<0 || c.sgn()<0) {
-#if !defined(ARCH_ARM)
                     assert(!is_vdf_test);
-#endif
                     phase_start.corruption_flag=true;
                     return false;
                 }
@@ -427,21 +377,13 @@ struct square_state_type {
         int num_multiplications=0;
 
         int gcd_index=0;
-        // Reduce synchronization overhead: if the producer counter is already far
-        // ahead, avoid calling `fence()` (and its backoff logic) for every entry.
-        const uint64 base_abs = c_thread_state.counter_start + uint64(counter_start_phase_0);
         while (true) {
             const gcd_uv_entry* c_entry=nullptr;
-            const uint64 other_abs = c_thread_state.other_counter().counter_value.load(std::memory_order_acquire);
-            if (other_abs >= base_abs + uint64(gcd_index) + 1u) {
-                c_entry = &gcd_1_0.uv_entries[gcd_index];
-            } else {
-                {
-                    TRACK_CYCLES //357
-                    if (!gcd_1_0.get_entry(counter_start_phase_0, gcd_index, &c_entry)) {
-                        TRACK_CYCLES_ABORT
-                        return false;
-                    }
+            {
+                TRACK_CYCLES //357
+                if (!gcd_1_0.get_entry(counter_start_phase_0, gcd_index, &c_entry)) {
+                    TRACK_CYCLES_ABORT
+                    return false;
                 }
             }
 
@@ -852,17 +794,13 @@ struct square_state_type {
             auto& gcd_1_0=phase_0_master_d.gcd_1_0;
 
             if (gcd_1_0.get_a_end()!=uint64(1ull)) {
-#if !defined(ARCH_ARM)
                 assert(!is_vdf_test);
-#endif
                 phase_start.corruption_flag=true;
                 return false;
             }
 
             if (gcd_1_0.get_b_end().sgn()!=0) {
-#if !defined(ARCH_ARM)
                 assert(!is_vdf_test);
-#endif
                 phase_start.corruption_flag=true;
                 return false;
             }
@@ -926,8 +864,6 @@ struct square_state_type {
         int2x zero;
         zero=uint64(0ull);
 
-        last_fail = fast_fail_info_type{};
-
         phase_constant.D=t_D.impl;
         phase_constant.L=t_L.impl;
         phase_constant.gcd_zero=zero.to_array<gcd_size>();
@@ -984,9 +920,7 @@ struct square_state_type {
         num_iterations=phase_start.num_valid_iterations;
 
         if (phase_start.corruption_flag) {
-#if !defined(ARCH_ARM)
             assert(!is_vdf_test);
-#endif
             num_iterations=~uint64(0);
             return false;
         }
@@ -1008,9 +942,7 @@ struct square_state_type {
 
         c.set_divide_floor(b_b_D, a_4, c_remainder);
         if (c_remainder.sgn()!=0 || a.sgn()<0 || c.sgn()<0) {
-#if !defined(ARCH_ARM)
             assert(!is_vdf_test);
-#endif
             num_iterations=~uint64(0);
             return false;
         }
@@ -1033,9 +965,7 @@ struct square_state_type {
         num_iterations=phase_start.num_valid_iterations;
 
         if (phase_start.corruption_flag) {
-#if !defined(ARCH_ARM)
             assert(!is_vdf_test);
-#endif
             num_iterations=~uint64(0);
             return false;
         }
@@ -1051,9 +981,7 @@ struct square_state_type {
 
         c.set_divide_floor(b_b_D, a_4, c_remainder);
         if (c_remainder.sgn()!=0 || a.sgn()<0 || c.sgn()<0) {
-#if !defined(ARCH_ARM)
             assert(!is_vdf_test);
-#endif
             num_iterations=~uint64(0);
             return false;
         }
@@ -1066,17 +994,7 @@ struct square_state_type {
     }*/
 };
 
-#define NL_SQUARESTATE 1
-// NL_FORM: legacy "slow path" event payload is `vdf_original::form*`.
-#define NL_FORM 2
-// NL_FORM_CPP: event payload is `form*` (the main C++ form type from `vdf_new.h` / `vdf_base.hpp`).
-// Used by `FastStorage` and by C++ slow-squaring helpers.
-#define NL_FORM_CPP 3
-
-class INUDUPLListener{
-public:
-    virtual void OnIteration(int type, void *data, uint64 iteration)=0;
-};
+#include "nudupl_listener.h"
 
 //this should never have an infinite loop
 //the gcd loops all have maximum counters after which they'll error out, and the thread_state loops also have a maximum spin counter
@@ -1138,81 +1056,11 @@ uint64 repeated_square_fast_multithread(square_state_type &square_state, form& f
 
     square_state.init(D, L, f.a, f.b);
 
-    // Thread creation/join is surprisingly expensive on macOS/ARM, and the fast
-    // squaring path may run many small batches when it terminates early.
-    // Reuse a persistent worker thread per caller thread.
-    struct slave_worker {
-        std::mutex m;
-        std::condition_variable cv;
-        bool stop = false;
-        bool job_ready = false;
-        bool job_done = false;
+    thread slave_thread(repeated_square_fast_work, std::ref(square_state), false, base, iterations, std::ref(nuduplListener));
 
-        square_state_type* state = nullptr;
-        bool is_slave = false;
-        uint64 base = 0;
-        uint64 iterations = 0;
-        INUDUPLListener* listener = nullptr;
+    repeated_square_fast_work(square_state, true, base, iterations, nuduplListener);
 
-        std::thread th;
-
-        slave_worker() {
-            th = std::thread([this]() { this->run(); });
-        }
-
-        ~slave_worker() {
-            {
-                std::lock_guard<std::mutex> lk(m);
-                stop = true;
-                cv.notify_all();
-            }
-            if (th.joinable()) th.join();
-        }
-
-        void run() {
-            std::unique_lock<std::mutex> lk(m);
-            for (;;) {
-                cv.wait(lk, [&]() { return stop || job_ready; });
-                if (stop) return;
-
-                square_state_type* st = state;
-                const bool slave = is_slave;
-                const uint64 b = base;
-                const uint64 iters = iterations;
-                INUDUPLListener* lis = listener;
-
-                job_ready = false;
-                lk.unlock();
-                repeated_square_fast_work(*st, slave, b, iters, lis);
-                lk.lock();
-
-                job_done = true;
-                cv.notify_all();
-            }
-        }
-
-        void start(square_state_type& st, bool slave, uint64 b, uint64 iters, INUDUPLListener* lis) {
-            std::lock_guard<std::mutex> lk(m);
-            state = &st;
-            is_slave = slave;
-            base = b;
-            iterations = iters;
-            listener = lis;
-            job_done = false;
-            job_ready = true;
-            cv.notify_all();
-        }
-
-        void wait_done() {
-            std::unique_lock<std::mutex> lk(m);
-            cv.wait(lk, [&]() { return job_done; });
-        }
-    };
-
-    static thread_local slave_worker worker;
-    worker.start(square_state, /*is_slave=*/false, base, iterations, nuduplListener);
-    repeated_square_fast_work(square_state, /*is_slave=*/true, base, iterations, nuduplListener);
-    worker.wait_done();
+    slave_thread.join(); //slave thread can't get stuck; is supposed to error out instead
 
     uint64 res;
     square_state.assign(f.a, f.b, f.c, res);

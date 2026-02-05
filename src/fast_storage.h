@@ -76,7 +76,7 @@ class FastStorage {
                 if ((iteration % power_2) % kl == 0) {
                     if (stopped) return;
                     form* mulf = weso->GetForm(iteration, i);
-                    weso->SetForm(NL_FORM_CPP, &y, mulf, /*reduced=*/false);
+                    weso->SetForm(NL_FORM, &y, mulf, /*reduced=*/false);
                 }
             }
             nudupl_form(y, y, D, L);

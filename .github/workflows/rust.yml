@@ -20,43 +20,21 @@ permissions:
 
 jobs:
   fuzz_targets:
-    name: Run fuzzers (${{ matrix.target }})
+    name: Run fuzzers
     runs-on: ubuntu-latest
     env:
       CARGO_PROFILE_RELEASE_LTO: false
-    strategy:
-      fail-fast: false
-      matrix:
-        target:
-          - create_discriminant
-          - prove
-          - verify
-          - verify_n_wesolowski
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@nightly
 
-      - name: Cache cargo registry + build artifacts
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-            rust_bindings/fuzz/corpus
-          key: ${{ runner.os }}-rust-fuzz-${{ hashFiles('Cargo.lock') }}
-
       - name: Install cargo-fuzz
-        run: |
-          if ! command -v cargo-fuzz >/dev/null 2>&1; then
-            cargo +nightly install cargo-fuzz --locked
-          fi
+        run: cargo +nightly install cargo-fuzz
 
-      - name: Cargo fuzz (${{ matrix.target }})
+      - name: Cargo fuzz
         run: |
           cd rust_bindings
-          cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=600
+          cargo fuzz list | xargs -I "%" sh -c "cargo +nightly fuzz run % -- -max_total_time=600 || exit 255"
 
   lint:
     name: Lint
@@ -124,13 +102,6 @@ jobs:
         if: matrix.os.name == 'macOS'
         run: echo "LIBRARY_PATH=$(brew --prefix)/lib:$LIBRARY_PATH" >> $GITHUB_ENV
 
-      - name: Install build deps on MacOS
-        if: matrix.os.name == 'macOS'
-        run: |
-          # Self-hosted macOS runners may not have these preinstalled.
-          command -v cmake >/dev/null 2>&1 || brew install --formula --quiet cmake
-          command -v gmp-config >/dev/null 2>&1 || brew install --formula --quiet gmp
-
       - name: Install MPIR on Windows
         if: matrix.os.name == 'Windows'
         run: |
@@ -139,10 +110,7 @@ jobs:
 
       - name: Install libclang-dev on Linux
         if: matrix.os.name == 'Ubuntu'
-        run: |
-          # Avoid transient 404s from stale apt indices / mirror lag.
-          sudo apt-get update -y -o Acquire::Retries=3
-          sudo apt-get install libclang-dev -y
+        run: sudo apt-get install libclang-dev -y
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable

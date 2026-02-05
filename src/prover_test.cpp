@@ -7,13 +7,6 @@ int segments = 7;
 int thread_count = 3;
 std::atomic<bool> stop_signal{false};
 
-static bool env_truthy(const char* name) {
-    const char* v = std::getenv(name);
-    if (!v) return false;
-    return std::strcmp(v, "1") == 0 || std::strcmp(v, "true") == 0 || std::strcmp(v, "yes") == 0 ||
-           std::strcmp(v, "on") == 0;
-}
-
 Proof CreateProof(integer D, ProverManager& pm, uint64_t iteration) {
     Proof proof = pm.Prove(iteration);
     if (!stop_signal) {
@@ -38,7 +31,11 @@ int gcd_128_max_iter=3;
 int main() {
     assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
     init_gmp();
-    init_gcd_params_for_cpu();
+    if(hasAVX2())
+    {
+      gcd_base_bits=63;
+      gcd_128_max_iter=2;
+    }
     std::vector<uint8_t> challenge_hash({0, 0, 1, 2, 3, 3, 4, 4});
     integer D = CreateDiscriminant(challenge_hash, 1024);
 
@@ -63,30 +60,10 @@ int main() {
     ProverManager pm(D, (FastAlgorithmCallback*)weso, fast_storage, segments, thread_count);
     pm.start();
     std::vector<std::thread> threads;
-
-    // This binary is used by CI as a correctness test. Historically it also served as a 5-minute
-    // soak/stress test; that dominates the wall-clock runtime of the "all tests" run.
-    //
-    // Default behavior: run the historical long/soak test.
-    // Fast/CI-friendly mode: set `CHIAVDF_PROVER_TEST_FAST=1` to run just a few proofs and exit.
-    const bool fast_mode = env_truthy("CHIAVDF_PROVER_TEST_FAST");
-    const bool is_ci = (std::getenv("CI") != nullptr) || (std::getenv("GITHUB_ACTIONS") != nullptr);
-
-    if (!fast_mode) {
-        for (int i = 0; i <= 30; i++) {
-            threads.emplace_back(CreateProof, D, std::ref(pm), (1ULL << 21) * uint64_t(i) + 60000);
-        }
-        std::this_thread::sleep_for(std::chrono::seconds(300));
-    } else {
-        // Keep iterations small enough to complete quickly on CI runners.
-        const int max_i = is_ci ? 3 : 6;
-        for (int i = 0; i < max_i; i++) {
-            threads.emplace_back(CreateProof, D, std::ref(pm), (1ULL << 18) * uint64_t(i) + 60000);
-        }
-        for (auto& t : threads) t.join();
-        threads.clear();
+    for (int i = 0; i <= 30; i++) {
+        threads.emplace_back(CreateProof, D, std::ref(pm), (1 << 21) * i + 60000);
     }
-
+    std::this_thread::sleep_for (std::chrono::seconds(300));
     stop_signal = true;
     std::cout << "Stopping everything.\n";
     pm.stop();
@@ -97,7 +74,3 @@ int main() {
         delete(fast_storage);
     delete(weso);
 }
-
-#if defined(ARCH_ARM)
-#include "asm_arm_fallback_impl.inc"
-#endif

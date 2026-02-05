@@ -34,21 +34,12 @@ bool bAVX2=false;
 
 bool enable_avx512_ifma=false;
 
-// GCC does not provide `__has_feature`, but we use it in preprocessor conditionals
-// to detect ThreadSanitizer under Clang. Provide a compatibility definition so
-// `#if __has_feature(...)`-style checks are valid on all compilers.
-#ifndef __has_feature
-#define __has_feature(x) 0
-#endif
-
 #if defined(__i386) || defined(_M_IX86)
     #define ARCH_X86
 #elif defined(__x86_64__) || defined(_M_X64)
     #define ARCH_X64
 #elif defined(__aarch64__) || (defined(__arm__) && defined(__ARM_ARCH) && __ARM_ARCH >= 5) || (defined(_M_ARM) && _M_ARM >= 5) || defined(__ARM_FEATURE_CLZ) /* ARM (aarch64 or Architecture Version 5+) */
-    #ifndef ARCH_ARM
     #define ARCH_ARM
-    #endif
 #endif
 
 #if defined(_WIN64) || defined(_LP64) || defined(__LP64__)
@@ -94,23 +85,6 @@ inline bool hasAVX2()
   }
 
   return bAVX2;
-}
-
-// Initialize the runtime GCD tuning knobs based on CPU features.
-//
-// These are globals declared as `extern` in this header and defined by each
-// binary / wrapper entry point.
-inline void init_gcd_params_for_cpu()
-{
-    // Conservative defaults that work well across architectures (including ARM).
-    gcd_base_bits = 50;
-    gcd_128_max_iter = 3;
-
-    // More aggressive settings for the AVX2+ADX fast path.
-    if (hasAVX2()) {
-        gcd_base_bits = 63;
-        gcd_128_max_iter = 2;
-    }
 }
 
 /*
@@ -220,22 +194,10 @@ const uint64 max_spin_counter=10000000;
 //this value makes square_original not be called in 100k iterations. with every iteration reduced, minimum value is 1
 const int num_extra_bits_ab=3;
 
-// phase_0_slave knob:
-// If enabled, folds the `*c` into the UV chain (avoids a final mul+mod).
-// This is currently off by default; we instead optimize the mul+mod directly.
 const bool calculate_k_repeated_mod=false;
-const int calculate_k_repeated_mod_interval=1;
+const bool calculate_k_repeated_mod_interval=1;
 
-// `c=(b^2-D)/(4a)` should be exact; validating the remainder via `mpz_fdiv_qr` is expensive.
-// Keep strict validation in correctness-heavy builds, but relax in benchmarks/production.
-#if defined(VDF_BENCH)
-// Benchmark build: disable expensive `c` remainder validation.
-const int validate_interval=-1;
-#else
-// Default: validate periodically (cheap sanity check without dominating IPS).
-// This avoids paying for `mpz_fdiv_qr` every single fast iteration.
-const int validate_interval=64;
-#endif
+const int validate_interval=1; //power of 2. will check the discriminant in the slave thread at this interval. -1 to disable. no effect on performance
 const int checkpoint_interval=10000; //at each checkpoint, the slave thread is restarted and the master thread calculates c
 //checkpoint_interval=100000: 39388
 //checkpoint_interval=10000:  39249 cycles per fast iteration
@@ -254,20 +216,7 @@ const int checkpoint_interval=10000; //at each checkpoint, the slave thread is r
     //#define GENERATE_ASM_TRACKING_DATA
     //#define ENABLE_TRACK_CYCLES
     const bool vdf_test_correctness=false;
-    // ThreadSanitizer does not understand our custom counter-based synchronization
-    // between the master/slave fast-squaring threads (it reports races on shared
-    // stack storage even when counters establish a happens-before). Disable the
-    // fast worker thread under TSAN so CI can run cleanly.
-    //
-    // We support multiple TSAN detection paths:
-    // - compiler-defined: `__SANITIZE_THREAD__` (GCC/Clang)
-    // - clang feature-test: `__has_feature(thread_sanitizer)`
-    // - build-system define: `CHIAVDF_TSAN` (set by Makefile when TSAN=1)
-#if defined(CHIAVDF_TSAN) || defined(__SANITIZE_THREAD__) || (defined(__has_feature) && __has_feature(thread_sanitizer))
-    const bool enable_threads=false;
-#else
     const bool enable_threads=true;
-#endif
 #endif
 
 // ==== production ====
@@ -278,11 +227,7 @@ const int checkpoint_interval=10000; //at each checkpoint, the slave thread is r
     const double random_error_injection_rate=0; //0 to 1
 
     const bool vdf_test_correctness=false;
-#if defined(CHIAVDF_TSAN) || defined(__SANITIZE_THREAD__) || (defined(__has_feature) && __has_feature(thread_sanitizer))
-    const bool enable_threads=false;
-#else
     const bool enable_threads=true;
-#endif
 
     //#define ENABLE_TRACK_CYCLES
 #endif

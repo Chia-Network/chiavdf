@@ -34,7 +34,11 @@ int main(int argc, char const* argv[]) try
     assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
     init_gmp();
     debug_mode = true;
-    init_gcd_params_for_cpu();
+    if(hasAVX2())
+    {
+      gcd_base_bits=63;
+      gcd_128_max_iter=2;
+    }
     std::vector<uint8_t> challenge_hash({0, 0, 1, 2, 3, 3, 4, 4});
     integer D = CreateDiscriminant(challenge_hash, 1024);
 
@@ -73,7 +77,3 @@ catch (std::exception const& e) {
     std::cerr << "Exception " << e.what() << '\n';
     return 1;
 }
-
-#if defined(ARCH_ARM)
-#include "asm_arm_fallback_impl.inc"
-#endif

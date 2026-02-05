@@ -1,8 +1,6 @@
 #ifndef GCD_BASE_CONTINUED_FRACTIONS_H
 #define GCD_BASE_CONTINUED_FRACTIONS_H
 
-#include <cmath>
-
 typedef array<double, 2> vector2;
 typedef array<vector2, 2> matrix2;
 
@@ -37,13 +35,8 @@ bool dot_product_exact(vector2 a, vector2 b, double& v, bool result_always_in_ra
         return false;
     }
 
-    // Use FMA when available to avoid double-rounding:
-    // `fma(a, b, c)` computes \(a\cdot b + c\) with a single rounding step.
-#if defined(ARCH_ARM)
-    v=std::fma(a[1], b[1], v);
-#else
     if (hasAVX2()) {
-        v=std::fma(a[1], b[1], v);
+        v=fma(a[1], b[1], v);
     } else {
         double v2=a[1]*b[1];
         if (!range_check(v2)) {
@@ -52,7 +45,6 @@ bool dot_product_exact(vector2 a, vector2 b, double& v, bool result_always_in_ra
 
         v+=v2;
     }
-#endif
 
     if (result_always_in_range) {
         //still need the first range_check since the intermediate value might not be in range
@@ -99,7 +91,7 @@ template<class type> bool multiply_exact(
 struct continued_fraction {
     vector<int> values;
 
-    matrix2 get_matrix() const {
+    matrix2 get_matrix() {
         matrix2 res=identity_matrix();
 
         for (int i : values) {
@@ -132,7 +124,7 @@ struct continued_fraction {
         return res;
     }
 
-    bool is_superset_of(const continued_fraction& targ) const {
+    bool is_superset_of(continued_fraction& targ) {
         if (values.size()>targ.values.size()) {
             return false;
         }
@@ -148,7 +140,7 @@ struct continued_fraction {
 
     //rounds to 0; need to add 1 ulp to the fraction to get the possible range
     //if is_exact is true then the result is inside the continued fraction
-    double get_bound(bool parity, bool& is_exact) const {
+    double get_bound(bool parity, bool& is_exact) {
         assert(!values.empty());
 
         bool first=true;
@@ -183,7 +175,7 @@ struct continued_fraction {
     //everything inside the bound starts with this continued fraction
     //something outside the bound might also start with this continued fraction
     //>= first, < second
-    pair<double, double> get_bound() const {
+    pair<double, double> get_bound() {
         bool a_exact=false;
         double a=get_bound(false, a_exact);
 
@@ -275,19 +267,17 @@ template<class type> struct double_table {
         return make_pair(*(double*)&res_low, *(double*)&res_high);
     }
 
-    // Return a pointer to the table entry for `v`, or nullptr if out of range.
-    //
-    // This avoids copying large `type` values (notably `continued_fraction`, which
-    // contains a `std::vector<int>` and would allocate on each lookup).
-    const type* lookup(double v) const {
+    bool lookup(double v, type& res) {
         assert(v>=1);
+
+        res=type();
 
         uint64 v_bits=*(uint64*)&v;
         uint64 v_bits_shifted=v_bits>>right_shift_amount;
 
         assert(v_bits_shifted>=range_start_shifted); //since v>=1
         if (v_bits_shifted<range_start_shifted || v_bits_shifted>=range_end_shifted) {
-            return nullptr;
+            return false;
         }
 
         //the table doesn't work if v is exactly between two slots
@@ -296,10 +286,11 @@ template<class type> struct double_table {
             (v_bits & (delta-1)) == 0 ||
             (v_bits & (delta-1)) == delta-1
         ) {
-            return nullptr;
+            return false;
         }
 
-        return &data.at(v_bits_shifted-range_start_shifted);
+        res=data.at(v_bits_shifted-range_start_shifted);
+        return true;
     }
 
     //will assign all entries >= range.first and < range.second
@@ -499,24 +490,19 @@ bool gcd_base_continued_fraction(vector2& ab, matrix2& uv, bool is_lehmer, doubl
 
         if (debug_output) print( "2:", q );
 
-        assert(ab[0]>=ab[1] && ab[1]>=0);
-
         vector2 new_ab;
         matrix2 new_uv;
 
         bool used_table=false;
 
-        if (enable_table) {
-            const continued_fraction* f = c_table.lookup(q);
-            if (f) {
-                assert(!f->values.empty()); //table should be set up not to have empty values
+        continued_fraction f;
+        if (enable_table && c_table.lookup(q, f)) {
+            assert(!f.values.empty()); //table should be set up not to have empty values
 
-                const matrix2 fm = f->get_matrix();
+            if (debug_output) print( "3:", f.get_matrix()[0][0], f.get_matrix()[1][0], f.get_matrix()[0][1], f.get_matrix()[1][1] );
 
-                if (debug_output) print( "3:", fm[0][0], fm[1][0], fm[0][1], fm[1][1] );
-
-                bool new_ab_valid=multiply_exact(fm, ab, new_ab, true); //a and b can only be reduced in magnitude
-                bool new_uv_valid=multiply_exact(fm, uv, new_uv);
+            bool new_ab_valid=multiply_exact(f.get_matrix(), ab, new_ab, true); //a and b can only be reduced in magnitude
+            bool new_uv_valid=multiply_exact(f.get_matrix(), uv, new_uv);
             bool new_a_valid=(new_ab[0]>ab_threshold);
 
             if (debug_output) print( "4:", new_ab_valid, new_uv_valid, new_a_valid );
@@ -533,7 +519,6 @@ bool gcd_base_continued_fraction(vector2& ab, matrix2& uv, bool is_lehmer, doubl
                     //if ab_threshold is not 0, need to keep going since the partial gcd is about to terminate
                     //break;
                 //}
-            }
             }
         }
 
@@ -649,15 +634,10 @@ bool gcd_base_continued_fraction(vector2& ab, matrix2& uv, bool is_lehmer, doubl
         //print( "foo" );
         {
             //this would overflow a double; it works with modular arithmetic
-            // Use int128 to avoid UB under UBSan (int64 products can overflow even when algorithm is correct).
-            int128 a_expected =
-                int128(int64(uv[0][0])) * int128(int64(ab_start[0])) +
-                int128(int64(uv[0][1])) * int128(int64(ab_start[1]));
-            int128 b_expected =
-                int128(int64(uv[1][0])) * int128(int64(ab_start[0])) +
-                int128(int64(uv[1][1])) * int128(int64(ab_start[1]));
-            assert(int128(int64(ab[0])) == a_expected);
-            assert(int128(int64(ab[1])) == b_expected);
+            int64 a_expected=int64(uv[0][0])*int64(ab_start[0]) + int64(uv[0][1])*int64(ab_start[1]);
+            int64 b_expected=int64(uv[1][0])*int64(ab_start[0]) + int64(uv[1][1])*int64(ab_start[1]);
+            assert(int64(ab[0])==a_expected);
+            assert(int64(ab[1])==b_expected);
         }
 
         if (iter>=gcd_base_max_iter) {
@@ -669,7 +649,7 @@ bool gcd_base_continued_fraction(vector2& ab, matrix2& uv, bool is_lehmer, doubl
 
     //print( "        gcd_base", iter_table+iter_slow, iter_table, iter_slow );
 
-    #if defined(TEST_ASM) && !defined(ARCH_ARM)
+    #ifdef TEST_ASM
     #ifndef GENERATE_ASM_TRACKING_DATA
     if (test_asm_run) {
         if (test_asm_print) {

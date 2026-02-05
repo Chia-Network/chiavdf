@@ -1,8 +1,6 @@
 #ifndef GCD_128_H
 #define GCD_128_H
 
-#include <cmath>
-
 bool gcd_128(
     array<uint128, 2>& ab, array<array<uint64, 2>, 2>& uv_uint64, int& uv_uint64_parity, bool is_lehmer, uint128 ab_threshold=0
 ) {
@@ -95,35 +93,16 @@ bool gcd_128(
 
         matrix2 uv_double;
         if (!gcd_base_continued_fraction(ab_double, uv_double, is_lehmer || (shift_amount!=0), ab_threshold_double)) {
-#if !defined(ARCH_ARM)
             print( "        gcd_128 break 1" ); //this is fine
-#endif
             break;
         }
 
         if (debug_output) print( "4:", uv_double[0][0], uv_double[1][0], uv_double[0][1], uv_double[1][1], ab_double[0], ab_double[1] );
 
-        // Tight contract at the boundary between the double-based partial GCD and the integer GCD:
-        // reject any result that violates expected invariants (ordered, nonnegative `ab`, exact-integer doubles).
-        if (!(ab_double[0] >= ab_double[1] && ab_double[1] >= 0)) {
-            break;
-        }
-
-        auto to_uint64_exact = [](double v, uint64& out) -> bool {
-            double a = std::abs(v);
-            if (!std::isfinite(a)) return false;
-            if (!range_check(a)) return false;     // doubles are only exact for integers up to 2^53-1
-            if (std::floor(a) != a) return false;  // must be an integer value
-            out = uint64(a);
-            return true;
-        };
-
         if (0) {
             matrix2 uv_double_2;
             if (!gcd_base_continued_fraction_2(ab_double_2, uv_double_2, is_lehmer || (shift_amount!=0), ab_threshold_double)) {
-#if !defined(ARCH_ARM)
                 print( "        gcd_128 break 2" );
-#endif
                 break;
             }
 
@@ -131,17 +110,9 @@ bool gcd_128(
             assert(ab_double==ab_double_2);
         }
 
-        uint64 u00, u01, u10, u11;
-        if (!to_uint64_exact(uv_double[0][0], u00) ||
-            !to_uint64_exact(uv_double[0][1], u01) ||
-            !to_uint64_exact(uv_double[1][0], u10) ||
-            !to_uint64_exact(uv_double[1][1], u11)) {
-            break;
-        }
-
         array<array<uint64,2>,2> uv_double_int={
-            array<uint64,2>{u00, u01},
-            array<uint64,2>{u10, u11}
+            array<uint64,2>{uint64(abs(uv_double[0][0])), uint64(abs(uv_double[0][1]))},
+            array<uint64,2>{uint64(abs(uv_double[1][0])), uint64(abs(uv_double[1][1]))}
         };
 
         int uv_double_parity=(uv_double[1][1]<0)? 1 : 0; //sign bit
@@ -151,9 +122,7 @@ bool gcd_128(
             uv_uint64_new=uv_double_int;
         } else {
             if (!multiply_exact(uv_double_int, uv_uint64, uv_uint64_new)) {
-#if !defined(ARCH_ARM)
                 print( "        gcd_128 slow 1" ); //calculated a bunch of quotients and threw all of them away, which is bad
-#endif
                 break;
             }
         }
@@ -184,12 +153,6 @@ bool gcd_128(
 
         uint128 a_new_s=a_new_1-a_new_2;
         uint128 b_new_s=b_new_1-b_new_2;
-
-        // The rest of the pipeline assumes unsigned inputs with `a >= b` always.
-        // If the partial-GCD produced cofactors that violate this, treat as no-progress and fall back.
-        if (a_new_s < b_new_s) {
-            break;
-        }
 
         //if this assert hit, one of the quotients is wrong. the base case is not supposed to return incorrect quotients
         //assert(a_new_s>=b_new_s && b_new_s>=0);
@@ -225,18 +188,14 @@ bool gcd_128(
 
             //CMOV
             if (!(even? passed_even : passed_odd)) {
-#if !defined(ARCH_ARM)
                 print( "        gcd_128 slow 5" ); //throwing away a bunch of quotients because the last one is bad
-#endif
                 break;
             }
         }
 
         if (a_new<=ab_threshold) {
             if (debug_output) print( "8:" );
-#if !defined(ARCH_ARM)
             print( "        gcd_128 slow 6" ); //still throwing away quotients
-#endif
             break;
         }
 
@@ -254,7 +213,7 @@ bool gcd_128(
         //todo break;
     }
 
-    #if defined(TEST_ASM) && !defined(ARCH_ARM)
+    #ifdef TEST_ASM
     #ifndef GENERATE_ASM_TRACKING_DATA
     if (test_asm_run) {
         if (test_asm_print) {

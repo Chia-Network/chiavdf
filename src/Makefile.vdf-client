@@ -6,27 +6,10 @@ NOPIE = -fno-PIE
 else
 NOPIE = -no-pie
 endif
-# CPU-specific tuning (only for local macOS ARM builds).
-# NOTE: this reduces portability of produced binaries; do NOT enable for non-macOS or non-arm64.
-ifeq ($(UNAME),Darwin)
-ifneq ($(filter $(ARCH),arm64),)
-ifneq ($(filter true 1 yes,$(CI) $(GITHUB_ACTIONS)),)
-CPU_TUNE_FLAGS =
-else
-CPU_TUNE_FLAGS = -mcpu=native
-endif
-endif
-endif
-# macOS arm64 ignores -no_pie and warns; omit to avoid deprecation warning
-ifeq ($(UNAME),Darwin)
-ifneq ($(filter $(ARCH),arm64),)
-NOPIE =
-endif
-endif
 
 LDFLAGS += -flto $(NOPIE) -g
 LDLIBS += -lgmpxx -lgmp -pthread
-CXXFLAGS += -flto -std=c++1z -D FAST_MACHINE=1 -pthread $(NOPIE) -fvisibility=hidden $(CPU_TUNE_FLAGS)
+CXXFLAGS += -flto -std=c++1z -D VDF_MODE=0 -D FAST_MACHINE=1 -pthread $(NOPIE) -fvisibility=hidden
 ifeq ($(UNAME),Darwin)
 CXXFLAGS += -D CHIAOSX=1
 # Homebrew (common on macOS) installs boost/gmp to /opt/homebrew or /usr/local
@@ -49,76 +32,31 @@ endif
 
 ifneq ($(TSAN),)
 LDFLAGS += -fsanitize=thread
-CXXFLAGS += -g -fsanitize=thread -DCHIAVDF_TSAN=1
+CXXFLAGS += -g -fsanitize=thread
 endif
 
-.PHONY: all clean tests
+.PHONY: all clean
 
-# Run from src/ as: make -f Makefile.vdf-client [clean|all|target]
-# (Using -f is required so make finds this file; plain "make clean" may use another Makefile.)
-
-# aarch64 (Linux), arm64 (macOS Apple Silicon). ARCH set at top for NOPIE.
+# aarch64 (Linux), arm64 (macOS Apple Silicon): no x86 asm objects
 ifneq ($(filter $(ARCH),aarch64 arm64),)
-# ARM: use C++ fallback for GCD (no x86 assembly); implementation is in each BIN via .inc
 ASM_OBJS =
-CXXFLAGS += -D ARCH_ARM
 else
-# x86: use hand-tuned assembly
 ASM_OBJS = asm_compiled.o avx2_asm_compiled.o avx512_asm_compiled.o
 endif
 
-# Default binaries built by `make -f Makefile.vdf-client`.
-#
-# NOTE: `setup.py` calls `make -C src -f Makefile.vdf-client` during wheel builds.
-# Keep this list limited to the binaries that are installed/used by the Python package.
 BINS = vdf_client prover_test 1weso_test 2weso_test vdf_bench
-
-# Optional/test-only binaries (build explicitly via `make ... tests` or `make ... fast_wrapper_test`).
-TEST_BINS = fast_wrapper_test
-
 all: $(BINS)
 
 clean:
-	rm -f *.o *.s hw/*.o c_bindings/*.o $(BINS) $(TEST_BINS) compile_asm emu_hw_test hw_test hw_vdf_client emu_hw_vdf_client libchiavdf_fastc.a
+	rm -f *.o hw/*.o $(BINS) compile_asm emu_hw_test hw_test hw_vdf_client emu_hw_vdf_client
 
 $(BINS) avx512_test: %: %.o lzcnt.o $(ASM_OBJS)
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-$(addsuffix .o,$(BINS) $(TEST_BINS)) avx512_test.o: CXXFLAGS += $(OPT_CFLAGS)
-
-# Production binary: VDF_MODE=0 (is_vdf_test=false).
-vdf_client.o: CXXFLAGS += -D VDF_MODE=0
-# Also compile out asserts for production performance.
-vdf_client.o: CXXFLAGS += -DNDEBUG
-# Test binaries: VDF_MODE=1 (is_vdf_test=true) so their asserts and test logic run correctly.
-1weso_test.o 2weso_test.o prover_test.o vdf_bench.o: CXXFLAGS += -D VDF_MODE=1
-
-# vdf_bench is used primarily for performance measurement; enable benchmark-specific knobs.
-vdf_bench.o: CXXFLAGS += -DVDF_BENCH
+$(addsuffix .o,$(BINS)) avx512_test.o: CXXFLAGS += $(OPT_CFLAGS)
 
 lzcnt.o: refcode/lzcnt.c
 	$(CC) -c refcode/lzcnt.c
-
-#
-# Static library: fast C wrapper (streaming proving)
-#
-FASTLIB = libchiavdf_fastc.a
-FASTLIB_OBJS = c_bindings/fast_wrapper.o lzcnt.o $(ASM_OBJS)
-
-.PHONY: fastlib
-fastlib: $(FASTLIB)
-
-$(FASTLIB): $(FASTLIB_OBJS)
-	$(AR) rcs $@ $^
-
-# Wrapper is intended for production use.
-c_bindings/fast_wrapper.o: CXXFLAGS += $(OPT_CFLAGS) -D VDF_MODE=0 -DNDEBUG
-
-# Wrapper test links against the wrapper library and does not include `vdf.h`.
-fast_wrapper_test: fast_wrapper_test.o $(FASTLIB)
-	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
-
-tests: $(TEST_BINS)
 
 asm_compiled.s: compile_asm
 	./compile_asm

@@ -564,23 +564,29 @@ template<class type, int size> struct fixed_integer {
 
     //"0" has 1 bit
     int num_bits() const {
-        constexpr int bits_per_limb = int(sizeof(type) * 8);
-        for (int x=size-1;x>=0;--x) {
-            type v = (*this)[x];
-            if (v == 0) continue;
+        type v=0;
+        int num_full=0;
 
-            int v_bits;
-            if constexpr (sizeof(type) == 8) {
-                v_bits = 64 - __builtin_clzll(v);
-            } else {
-                static_assert(sizeof(type) == 4, "unexpected limb size");
-                v_bits = 32 - __builtin_clz(v);
+        for (int x=size-1;x>=0;--x) {
+            if (v==0) {
+                v=(*this)[x];
+                num_full=x;
             }
-            return x * bits_per_limb + v_bits;
         }
 
-        // "0" has 1 bit by convention in this codebase.
-        return 1;
+        int v_bits;
+        if (v==0) {
+            v_bits=1;
+            assert(num_full==0);
+        } else
+        if (sizeof(v)==8) {
+            v_bits=64-__builtin_clzll(v);
+        } else{
+            assert(sizeof(v)==4);
+            v_bits=32-__builtin_clz(v);
+        }
+
+        return num_full*sizeof(type)*8 + v_bits;
     }
 
     type window(int start_bit) const {
@@ -597,10 +603,10 @@ template<class type, int size> struct fixed_integer {
 
         type start=get_limb(start_limb)>>(start_offset);
 
-        if (start_offset==0) return start;
-        // Shift by bits_per_limb (e.g. 64) is undefined for 64-bit type; skip when start_offset==0.
+        //the shift is undefined for start_offset==0
         type end=get_limb(start_limb+1)<<(bits_per_limb-start_offset);
-        return start | end;
+
+        return (start_offset==0)? start : (start | end);
     }
 };
 

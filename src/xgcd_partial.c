@@ -118,17 +118,24 @@ void mpz_xgcd_partial(mpz_t co2, mpz_t co1,
    // Hot-path note:
    // This function can run in the inner loop of NUDUPL; avoid per-call
    // `mpz_init/mpz_clear` by using thread-local temporaries.
-   static thread_local int _chiavdf_xgcd_partial_inited = 0;
-   static thread_local mpz_t q;
-   static thread_local mpz_t r;
+   //
+   // Important for ASAN/LSan: these temporaries must be freed at thread-exit, otherwise
+   // LeakSanitizer will report per-thread GMP allocations as leaked.
+   struct chiavdf_xgcd_partial_tls {
+      mpz_t q;
+      mpz_t r;
+
+      chiavdf_xgcd_partial_tls() { mpz_init(q); mpz_init(r); }
+      ~chiavdf_xgcd_partial_tls() { mpz_clear(q); mpz_clear(r); }
+
+      chiavdf_xgcd_partial_tls(const chiavdf_xgcd_partial_tls&) = delete;
+      chiavdf_xgcd_partial_tls& operator=(const chiavdf_xgcd_partial_tls&) = delete;
+   };
+   static thread_local chiavdf_xgcd_partial_tls tls;
+   mpz_ptr q = tls.q;
+   mpz_ptr r = tls.r;
    mp_limb_signed_t aa2, aa1, bb2, bb1, rr1, rr2, qq, bb, t1, t2, t3, i;
    mp_limb_signed_t bits, bits1, bits2;
-
-   if (!_chiavdf_xgcd_partial_inited) {
-      mpz_init(q);
-      mpz_init(r);
-      _chiavdf_xgcd_partial_inited = 1;
-   }
 
    mpz_set_ui(co2, 0);
    mpz_set_si(co1, -1);
@@ -214,7 +221,5 @@ void mpz_xgcd_partial(mpz_t co2, mpz_t co1,
       mpz_neg(co2, co2); mpz_neg(co1, co1);
       mpz_neg(r2, r2);
    }
-
-   // q/r are thread-local; no clears here.
 }
 #endif /* _XGCD_PARTIAL */

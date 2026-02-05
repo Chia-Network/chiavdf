@@ -38,9 +38,10 @@ limitations under the License.
 
 #include "xgcd_partial.c"
 
+#include "chiavdf_profile.h"
+
 #if defined(VDF_TEST)
 #include <chrono>
-#include "chiavdf_profile.h"
 #endif
 
 #include <cstdlib>

@@ -36,7 +36,8 @@ MacOS and Linux, chiavdf can be used to compile vdf_client and vdf_bench.
 vdf_client is the core VDF process that completes the Proof of Time submitted
 to it by the Timelord. The repo also includes a benchmarking tool to get a
 sense of the iterations per second of a given CPU called vdf_bench. Try
-`./vdf_bench square_asm 250000` for an ips estimate.
+`./vdf_bench square_asm 250000` for an ips estimate on x86/x64 (phased/asm
+pipeline). On non-x86 architectures, use `./vdf_bench square 250000` (NUDUPL).
 
 To build vdf_client set the environment variable BUILD_VDF_CLIENT to "Y".
 `export BUILD_VDF_CLIENT=Y`.
@@ -59,6 +60,9 @@ If you're running a timelord, the following tests are available, depending of wh
 `./prover_test`, in case you're running a timelord that extends the chain and you're running the fast algorithm.
 
 Those tests will simulate the vdf_client and verify for correctness the produced proofs.
+
+Note: `./prover_test` defaults to a long soak/stress run. Set
+`CHIAVDF_PROVER_TEST_FAST=1` to run a short, CI-friendly correctness check.
 
 ## Contributing and workflow
 

@@ -3,15 +3,16 @@
 
 #include "include.h"
 
+#if defined(ARCH_X86) || defined(ARCH_X64)
 #include <x86intrin.h>
+#endif
 
 #include "parameters.h"
 
 #include "bit_manipulation.h"
 #include "double_utility.h"
 #include "integer.h"
-
-#include "asm_main.h"
+#include "alloc.hpp"
 
 #include "vdf_original.h"
 
@@ -21,21 +22,30 @@
 #include "gpu_integer.h"
 #include "gpu_integer_divide.h"
 
+#include "nucomp.h"
+
+#include "nudupl_listener.h"
+
+#if defined(ARCH_X86) || defined(ARCH_X64)
+#include "asm_main.h"
+
 #include "gcd_base_continued_fractions.h"
 //#include "gcd_base_divide_table.h"
 #include "gcd_128.h"
 #include "gcd_unsigned.h"
 
-#include "gpu_integer_gcd.h"
-
 #include "asm_types.h"
 
 #include "threading.h"
 #include "avx512_integer.h"
-#include "nucomp.h"
 #include "vdf_fast.h"
+#endif
 
+#include "gpu_integer_gcd.h"
+
+#if defined(ARCH_X86) || defined(ARCH_X64)
 #include "vdf_test.h"
+#endif
 #include <map>
 #include <algorithm>
 
@@ -99,6 +109,51 @@ void repeated_square_original(vdf_original &vdfo, form& f, const integer& D, con
     mpz_set(f.c.impl, f_res->c);
 }
 
+// Slow squaring helper using the C++ NUDUPL implementation (`qfb_nudupl`) plus Pulmark reduction.
+//
+// This is substantially faster than `vdf_original::square()` on some platforms (notably ARM).
+// We intentionally keep the *corruption* correction path on the independent `vdf_original`
+// implementation.
+static inline void repeated_square_nudupl(
+    form& f,
+    integer& D,
+    integer& L,
+    uint64 base,
+    uint64 iterations,
+    WesolowskiCallback* weso,
+    INUDUPLListener* nuduplListener
+) {
+    vdf_original::form f_view;
+    // Defensive fallback: if `weso` is null, use a Pulmark reducer.
+    // Construct it once per call (it does heap work) rather than per reduction.
+    std::optional<PulmarkReducer> fallback_reducer;
+    if (weso == nullptr) {
+        fallback_reducer.emplace();
+    }
+    for (uint64_t i = 0; i < iterations; i++) {
+        nudupl_form(f, f, D, L);
+
+        // Reduce only when `a` grows beyond a small limb threshold. Reducing every iteration
+        // can be slower than letting NUDUPL run a bit "wide".
+        if (__GMP_ABS(f.a.impl->_mp_size) > 8) {
+            if (weso) {
+                weso->reduce(f);
+            } else {
+                fallback_reducer->reduce(f);
+            }
+        }
+
+        if (nuduplListener != nullptr) {
+            // Present the C++ `form` as a `vdf_original::form` view so existing callbacks can
+            // consume it without any new type tags.
+            f_view.a[0] = f.a.impl[0];
+            f_view.b[0] = f.b.impl[0];
+            f_view.c[0] = f.c.impl[0];
+            nuduplListener->OnIteration(NL_FORM, &f_view, base + i);
+        }
+    }
+}
+
 // thread safe; but it is only called from the main thread
 void repeated_square(uint64_t iterations, form f, const integer& D, const integer& L,
     WesolowskiCallback* weso, FastStorage* fast_storage, std::atomic<bool>& stopped)
@@ -123,8 +178,10 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
                 f_copy=f;
                 c_checkpoint_interval=1;
 
+                #if defined(ARCH_X86) || defined(ARCH_X64)
                 f_copy_3=f;
                 f_copy_3_valid=square_fast_impl(f_copy_3, D, L, num_iterations);
+                #endif
             }
         #endif
 
@@ -135,11 +192,19 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
             repeated_square_original(*weso->vdfo, f, D, L, 100); //randomize the a and b values
         #endif
 
+        uint64 actual_iterations = 0;
+#if defined(ARCH_ARM)
+        // ARM: use the C++ NUDUPL path (faster and lower maintenance than the phased pipeline).
+        integer& D_nc = const_cast<integer&>(D);
+        integer& L_nc = const_cast<integer&>(L);
+        repeated_square_nudupl(f, D_nc, L_nc, num_iterations, batch_size, weso, weso);
+        actual_iterations = batch_size;
+#else
         // This works single threaded
         square_state_type square_state;
         square_state.pairindex=0;
-
-        uint64 actual_iterations=repeated_square_fast(square_state, f, D, L, num_iterations, batch_size, weso);
+        actual_iterations = repeated_square_fast(square_state, f, D, L, num_iterations, batch_size, weso);
+#endif
 
         #ifdef VDF_TEST
             ++num_calls_fast;

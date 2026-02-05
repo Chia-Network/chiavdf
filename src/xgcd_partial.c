@@ -24,6 +24,38 @@
 #define _XGCD_PARTIAL
 
 #include <gmp.h>
+#include <stdint.h>
+
+#if defined(_MSC_VER)
+#include <intrin.h>
+
+// MSVC doesn't provide `__builtin_clz*`; use bit-scan intrinsics instead.
+static inline int chiavdf_clz_u32(unsigned long x)
+{
+   unsigned long idx = 0;
+   _BitScanReverse(&idx, x); // x != 0
+   return 31 - (int)idx;
+}
+
+static inline int chiavdf_clz_u64(unsigned __int64 x)
+{
+   unsigned long idx = 0;
+#if defined(_M_X64) || defined(_M_ARM64)
+   _BitScanReverse64(&idx, x); // x != 0
+   return 63 - (int)idx;
+#else
+   // 32-bit targets: synthesize using two 32-bit scans.
+   const unsigned long hi = (unsigned long)(x >> 32);
+   if (hi != 0) {
+      _BitScanReverse(&idx, hi);
+      return 31 - (int)idx;
+   }
+   const unsigned long lo = (unsigned long)(x & 0xffffffffu);
+   _BitScanReverse(&idx, lo);
+   return 63 - (int)idx;
+#endif
+}
+#endif
 
 // Fast helpers (avoid mpz temporaries in tight loops).
 static inline mp_limb_signed_t chiavdf_mpz_bitlen_nonneg(const mpz_t x)
@@ -37,9 +69,17 @@ static inline mp_limb_signed_t chiavdf_mpz_bitlen_nonneg(const mpz_t x)
    // top is non-zero when n != 0, but be defensive.
    if (top == 0) return 1;
 #if GMP_LIMB_BITS == 64
+#if defined(_MSC_VER)
+   const int lead = chiavdf_clz_u64((unsigned __int64)top);
+#else
    const int lead = __builtin_clzll((unsigned long long)top);
+#endif
 #elif GMP_LIMB_BITS == 32
+#if defined(_MSC_VER)
+   const int lead = chiavdf_clz_u32((unsigned long)top);
+#else
    const int lead = __builtin_clz((unsigned int)top);
+#endif
 #else
    // Fallback (unlikely): conservative loop.
    int lead = 0;

@@ -46,17 +46,19 @@ jobs:
           sudo apt-get install -y build-essential cmake libgmp-dev libboost-system-dev
 
       - name: Download USB drivers
-        run: |
-          mkdir libft4222
-          cd libft4222
-          wget https://download.chia.net/vdf/libft4222-linux-1.4.4.170.tgz
-          tar -xvzf libft4222-linux-1.4.4.170.tgz
-          ln -s ${{ github.workspace }}/libft4222 ${{ github.workspace }}/src/hw/libft4222
-          ln -s ${{ github.workspace }}/libft4222/build-x86_64/libft4222.so.1.4.4.170 ${{ github.workspace }}/libft4222/build-x86_64/libft4222.so
+        run: ./scripts/get-libft4222.sh install
 
       - name: Compile
         working-directory: "${{ github.workspace }}/src"
         run: make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+
+      - name: Smoke test
+        working-directory: "${{ github.workspace }}/src"
+        run: |
+          ./emu_hw_test
+          ./emu_hw_vdf_client --list
+          LD_LIBRARY_PATH=hw/libft4222/build-x86_64 ./hw_vdf_client --list
+          LD_LIBRARY_PATH=hw/libft4222/build-x86_64 ./hw_test
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v5
@@ -144,36 +146,19 @@ jobs:
           brew install boost gmp
 
       - name: Download USB drivers (FT4222H)
-        run: |
-          # NOTE: the older `LibFT4222-mac-v1.4.4.48.zip` is x86_64-only.
-          # This newer package includes universal dylibs (arm64/arm64e/x86_64).
-          mkdir libft4222
-          cd libft4222
-          curl -L -o LibFT4222-mac.zip https://ftdichip.com/wp-content/uploads/2024/03/LibFT4222-mac-v1.4.4.190.zip
-          unzip -q LibFT4222-mac.zip
-
-          MOUNT_DIR="$PWD/ft4222-mount"
-          hdiutil attach -nobrowse -readonly -mountpoint "$MOUNT_DIR" libft4222.1.4.4.190.dmg
-          cp "$MOUNT_DIR/ftd2xx.h" .
-          cp "$MOUNT_DIR/libft4222.h" .
-          cp "$MOUNT_DIR/WinTypes.h" .
-          cp "$MOUNT_DIR/build/libft4222.1.4.4.190.dylib" .
-          cp "$MOUNT_DIR/build/libftd2xx.dylib" .
-          hdiutil detach "$MOUNT_DIR"
-
-          # Create stable names expected by Makefile.
-          ln -sf libft4222.1.4.4.190.dylib libft4222.dylib
-
-          # Make dylibs relocatable and loadable from the build tree.
-          install_name_tool -id "@rpath/libftd2xx.dylib" libftd2xx.dylib
-          install_name_tool -id "@rpath/libft4222.dylib" libft4222.1.4.4.190.dylib
-          install_name_tool -change "libftd2xx.dylib" "@rpath/libftd2xx.dylib" libft4222.1.4.4.190.dylib
-
-          ln -s ${{ github.workspace }}/libft4222 ${{ github.workspace }}/src/hw/libft4222
+        run: ./scripts/get-libft4222.sh install
 
       - name: Compile
         working-directory: "${{ github.workspace }}/src"
         run: make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+
+      - name: Smoke test
+        working-directory: "${{ github.workspace }}/src"
+        run: |
+          ./emu_hw_test
+          ./emu_hw_vdf_client --list
+          ./hw_vdf_client --list
+          ./hw_test
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v5

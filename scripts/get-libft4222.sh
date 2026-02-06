@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SRC_DIR="${ROOT_DIR}/src"
+WORK_DIR="${SRC_DIR}/libft4222"
+HW_DIR="${SRC_DIR}/hw/libft4222"
+
+LINUX_URL="https://download.chia.net/vdf/libft4222-linux-1.4.4.170.tgz"
+LINUX_ARCHIVE="${WORK_DIR}/libft4222-linux-1.4.4.170.tgz"
+MAC_URL="https://ftdichip.com/wp-content/uploads/2024/03/LibFT4222-mac-v1.4.4.190.zip"
+MAC_ARCHIVE="${WORK_DIR}/LibFT4222-mac-v1.4.4.190.zip"
+MAC_DMG="libft4222.1.4.4.190.dmg"
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/get-libft4222.sh <install|clean>
+
+install  Download and place FT4222 driver headers/libs.
+clean    Remove downloaded artifacts and symlinks.
+EOF
+}
+
+need_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "Missing required command: $1" >&2
+    exit 1
+  fi
+}
+
+fetch() {
+  local url="$1"
+  local dest="$2"
+  if command -v curl >/dev/null 2>&1; then
+    curl -L -o "$dest" "$url"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -O "$dest" "$url"
+  else
+    echo "Missing curl or wget for downloads" >&2
+    exit 1
+  fi
+}
+
+install_linux() {
+  need_cmd tar
+
+  mkdir -p "$WORK_DIR"
+  fetch "$LINUX_URL" "$LINUX_ARCHIVE"
+  tar -xzf "$LINUX_ARCHIVE" -C "$WORK_DIR"
+
+  rm -rf "$HW_DIR"
+  ln -s "$WORK_DIR" "$HW_DIR"
+  ln -sf "$WORK_DIR/build-x86_64/libft4222.so.1.4.4.170" \
+    "$WORK_DIR/build-x86_64/libft4222.so"
+}
+
+install_macos() {
+  need_cmd unzip
+  need_cmd hdiutil
+  need_cmd install_name_tool
+
+  mkdir -p "$WORK_DIR"
+  fetch "$MAC_URL" "$MAC_ARCHIVE"
+  unzip -q "$MAC_ARCHIVE" -d "$WORK_DIR"
+
+  local mount_dir="${WORK_DIR}/ft4222-mount"
+  mkdir -p "$mount_dir"
+  hdiutil attach -nobrowse -readonly -mountpoint "$mount_dir" "${WORK_DIR}/${MAC_DMG}"
+
+  cp "$mount_dir/ftd2xx.h" "$WORK_DIR/"
+  cp "$mount_dir/libft4222.h" "$WORK_DIR/"
+  cp "$mount_dir/WinTypes.h" "$WORK_DIR/"
+  cp "$mount_dir/build/libft4222.1.4.4.190.dylib" "$WORK_DIR/"
+  cp "$mount_dir/build/libftd2xx.dylib" "$WORK_DIR/"
+  hdiutil detach "$mount_dir"
+
+  ln -sf "libft4222.1.4.4.190.dylib" "${WORK_DIR}/libft4222.dylib"
+
+  install_name_tool -id "@rpath/libftd2xx.dylib" "${WORK_DIR}/libftd2xx.dylib"
+  install_name_tool -id "@rpath/libft4222.dylib" "${WORK_DIR}/libft4222.1.4.4.190.dylib"
+  install_name_tool -change "libftd2xx.dylib" "@rpath/libftd2xx.dylib" \
+    "${WORK_DIR}/libft4222.1.4.4.190.dylib"
+
+  rm -rf "$HW_DIR"
+  ln -s "$WORK_DIR" "$HW_DIR"
+}
+
+clean_all() {
+  rm -rf "$WORK_DIR"
+  if [ -L "$HW_DIR" ] || [ -d "$HW_DIR" ]; then
+    rm -rf "$HW_DIR"
+  fi
+}
+
+case "${1:-}" in
+  install)
+    case "$(uname -s)" in
+      Linux) install_linux ;;
+      Darwin) install_macos ;;
+      *) echo "Unsupported OS: $(uname -s)" >&2; exit 1 ;;
+    esac
+    ;;
+  clean)
+    clean_all
+    ;;
+  *)
+    usage
+    exit 1
+    ;;
+esac

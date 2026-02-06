@@ -4,7 +4,12 @@
 
 ### Linux (x86_64)
 
-Download and unpack LibFT4222 library:
+Preferred: use the helper script to download and stage drivers:
+```bash
+./scripts/get-libft4222.sh install
+```
+
+Manual (if you need to do it by hand):
 ```bash
 # in chiavdf directory
 wget https://ftdichip.com/wp-content/uploads/2022/06/libft4222-linux-1.4.4.170.tgz
@@ -15,7 +20,12 @@ ln -s libft4222.so.1.4.4.170 src/hw/libft4222/build-x86_64/libft4222.so
 
 ### macOS (Apple Silicon / arm64)
 
-Download and unpack LibFT4222 library:
+Preferred: use the helper script to download and stage drivers:
+```bash
+./scripts/get-libft4222.sh install
+```
+
+Manual (if you need to do it by hand):
 
 ```bash
 # in chiavdf directory
@@ -37,6 +47,11 @@ ln -sf libft4222.1.4.4.190.dylib src/hw/libft4222/libft4222.dylib
 install_name_tool -id "@rpath/libftd2xx.dylib" src/hw/libft4222/libftd2xx.dylib
 install_name_tool -id "@rpath/libft4222.dylib" src/hw/libft4222/libft4222.1.4.4.190.dylib
 install_name_tool -change "libftd2xx.dylib" "@rpath/libftd2xx.dylib" src/hw/libft4222/libft4222.1.4.4.190.dylib
+```
+
+To clean downloaded artifacts:
+```bash
+./scripts/get-libft4222.sh clean
 ```
 
 Build binaries:

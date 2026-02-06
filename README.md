@@ -64,6 +64,13 @@ Those tests will simulate the vdf_client and verify for correctness the produced
 Note: `./prover_test` defaults to a long soak/stress run. Set
 `CHIAVDF_PROVER_TEST_FAST=1` to run a short, CI-friendly correctness check.
 
+## Fuzzing
+
+Fuzz targets live under `rust_bindings/fuzz`. The `prove` target includes an
+iteration cap to avoid out-of-memory conditions in CI. If you want deeper
+iteration coverage, raise the cap in `rust_bindings/fuzz/fuzz_targets/prove.rs`
+after validating memory usage and exec/s on your runner.
+
 ## Contributing and workflow
 
 Contributions are welcome and more details are available in chia-blockchain's

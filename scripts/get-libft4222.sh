@@ -9,11 +9,11 @@ HW_DIR="${SRC_DIR}/hw/libft4222"
 # Upstream FT4222 driver downloads can be found at https://ftdichip.com/products/ft4222h/
 # on the Downloads tab in the middle of the page as of 2026-02-05.
 # There is an updated Linux version available(v1.4.4.233) also as of 2026-02-05.
-# We currently fetch a known-good Linux version mirrored at download.chia.net.
+# We currently fetch known-good versions mirrored at download.chia.net.
 
 LINUX_URL="https://download.chia.net/vdf/libft4222-linux-1.4.4.170.tgz"
 LINUX_ARCHIVE="${WORK_DIR}/libft4222-linux-1.4.4.170.tgz"
-MAC_URL="https://ftdichip.com/wp-content/uploads/2024/03/LibFT4222-mac-v1.4.4.190.zip"
+MAC_URL="http://download.chia.net/vdf/LibFT4222-mac-v1.4.4.190.zip"
 MAC_ARCHIVE="${WORK_DIR}/LibFT4222-mac-v1.4.4.190.zip"
 MAC_DMG="libft4222.1.4.4.190.dmg"
 

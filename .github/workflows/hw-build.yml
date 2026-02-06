@@ -55,10 +55,11 @@ jobs:
       - name: Smoke test
         working-directory: "${{ github.workspace }}/src"
         run: |
+          # CI runners do not have FT4222 hardware attached; only validate binaries exist.
+          test -x ./hw_vdf_client
+          test -x ./hw_test
           ./emu_hw_test
           ./emu_hw_vdf_client --list
-          LD_LIBRARY_PATH=hw/libft4222/build-x86_64 ./hw_vdf_client --list
-          LD_LIBRARY_PATH=hw/libft4222/build-x86_64 ./hw_test
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v5
@@ -155,10 +156,11 @@ jobs:
       - name: Smoke test
         working-directory: "${{ github.workspace }}/src"
         run: |
+          # CI runners do not have FT4222 hardware attached; only validate binaries exist.
+          test -x ./hw_vdf_client
+          test -x ./hw_test
           ./emu_hw_test
           ./emu_hw_vdf_client --list
-          ./hw_vdf_client --list
-          ./hw_test
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v5

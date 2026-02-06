@@ -13,7 +13,7 @@ HW_DIR="${SRC_DIR}/hw/libft4222"
 
 LINUX_URL="https://download.chia.net/vdf/libft4222-linux-1.4.4.170.tgz"
 LINUX_ARCHIVE="${WORK_DIR}/libft4222-linux-1.4.4.170.tgz"
-MAC_URL="http://download.chia.net/vdf/LibFT4222-mac-v1.4.4.190.zip"
+MAC_URL="https://download.chia.net/vdf/LibFT4222-mac-v1.4.4.190.zip"
 MAC_ARCHIVE="${WORK_DIR}/LibFT4222-mac-v1.4.4.190.zip"
 MAC_DMG="libft4222.1.4.4.190.dmg"
 

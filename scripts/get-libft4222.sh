@@ -65,15 +65,28 @@ install_macos() {
   unzip -q "$MAC_ARCHIVE" -d "$WORK_DIR"
 
   local mount_dir="${WORK_DIR}/ft4222-mount"
+  local mounted=0
+  cleanup_mount() {
+    if [ "$mounted" -eq 1 ]; then
+      hdiutil detach "$mount_dir" >/dev/null 2>&1 || true
+      mounted=0
+    fi
+  }
+  trap cleanup_mount EXIT
+
+  # If a previous run failed, try to detach before re-attaching.
+  hdiutil detach "$mount_dir" >/dev/null 2>&1 || true
   mkdir -p "$mount_dir"
   hdiutil attach -nobrowse -readonly -mountpoint "$mount_dir" "${WORK_DIR}/${MAC_DMG}"
+  mounted=1
 
   cp "$mount_dir/ftd2xx.h" "$WORK_DIR/"
   cp "$mount_dir/libft4222.h" "$WORK_DIR/"
   cp "$mount_dir/WinTypes.h" "$WORK_DIR/"
   cp "$mount_dir/build/libft4222.1.4.4.190.dylib" "$WORK_DIR/"
   cp "$mount_dir/build/libftd2xx.dylib" "$WORK_DIR/"
-  hdiutil detach "$mount_dir"
+  cleanup_mount
+  trap - EXIT
 
   ln -sf "libft4222.1.4.4.190.dylib" "${WORK_DIR}/libft4222.dylib"
 
@@ -96,6 +109,8 @@ install_macos() {
 }
 
 clean_all() {
+  local mount_dir="${WORK_DIR}/ft4222-mount"
+  hdiutil detach "$mount_dir" >/dev/null 2>&1 || true
   rm -rf "$WORK_DIR"
   if [ -L "$HW_DIR" ] || [ -d "$HW_DIR" ]; then
     rm -rf "$HW_DIR"

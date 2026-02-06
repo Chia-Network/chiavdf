@@ -18,8 +18,6 @@ LDLIBS += -lgmpxx -lgmp -pthread
 CXXFLAGS += -flto -std=c++1z -D VDF_MODE=0 -D FAST_MACHINE=1 -pthread $(NOPIE) -fvisibility=hidden
 ifeq ($(UNAME),Darwin)
 CXXFLAGS += -D CHIAOSX=1
-# Ensure HW client binaries can locate USB driver dylibs bundled in-tree.
-LDFLAGS += -Wl,-rpath,@executable_path/hw/libft4222
 # Homebrew (common on macOS) installs boost/gmp to /opt/homebrew or /usr/local
 ifneq ($(wildcard /opt/homebrew/include/boost/asio.hpp),)
 CXXFLAGS += -I/opt/homebrew/include
@@ -87,6 +85,11 @@ HW_LIBS = $(HW_LIB) $(HW_FTD2XX_LIB)
 else
 HW_LIB = hw/libft4222/build-x86_64/libft4222.so
 HW_LIBS = $(HW_LIB)
+endif
+
+ifeq ($(UNAME),Darwin)
+# Ensure HW client binaries can locate USB driver dylibs bundled in-tree.
+hw_test hw_vdf_client: LDFLAGS += -Wl,-rpath,@executable_path/hw/libft4222
 endif
 
 hw_test: hw/hw_test.o $(HW_OBJS) $(HW_LIBS) hw/real_hw.o

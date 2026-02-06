@@ -47,6 +47,13 @@ ln -sf libft4222.1.4.4.190.dylib src/hw/libft4222/libft4222.dylib
 install_name_tool -id "@rpath/libftd2xx.dylib" src/hw/libft4222/libftd2xx.dylib
 install_name_tool -id "@rpath/libft4222.dylib" src/hw/libft4222/libft4222.1.4.4.190.dylib
 install_name_tool -change "libftd2xx.dylib" "@rpath/libftd2xx.dylib" src/hw/libft4222/libft4222.1.4.4.190.dylib
+
+# Clear provenance attributes and ad-hoc sign dylibs to avoid execution kills.
+xattr -dr com.apple.provenance src/hw/libft4222
+codesign --force --sign - \
+  src/hw/libft4222/libftd2xx.dylib \
+  src/hw/libft4222/libft4222.1.4.4.190.dylib \
+  src/hw/libft4222/libft4222.dylib
 ```
 
 To clean downloaded artifacts:

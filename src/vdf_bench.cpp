@@ -2,16 +2,19 @@
 #include "bit_manipulation.h"
 #include "double_utility.h"
 #include "parameters.h"
-#include "asm_main.h"
 #include "integer.h"
+#include "alloc.hpp"
 #include "vdf_new.h"
 #include "nucomp.h"
 #include "picosha2.h"
 #include "proof_common.h"
 
+#if defined(ARCH_X86) || defined(ARCH_X64)
+#include "asm_main.h"
 #include "threading.h"
 #include "avx512_integer.h"
 #include "vdf_fast.h"
+#endif
 #include "create_discriminant.h"
 
 #include <cstdlib>
@@ -46,6 +49,7 @@ int main(int argc, char **argv)
     auto t1 = std::chrono::high_resolution_clock::now();
     if (!strcmp(argv[1], "square_asm")) {
         is_asm = true;
+#if defined(ARCH_X86) || defined(ARCH_X64)
         for (i = 0; i < iters; ) {
             square_state_type sq_state;
             sq_state.pairindex = 0;
@@ -64,6 +68,17 @@ int main(int argc, char **argv)
                 i += done;
             }
         }
+#else
+        // On non-x86 architectures we don't build the phased/asm pipeline.
+        // Keep script compatibility by treating `square_asm` as a NUDUPL benchmark.
+        for (i = 0; i < iters; i++) {
+            nudupl_form(y, y, D, L);
+            if (__GMP_ABS(y.a.impl->_mp_size) > 8) {
+                reducer.reduce(y);
+            }
+        }
+        is_asm = false;
+#endif
     } else if (!strcmp(argv[1], "square")) {
         for (i = 0; i < iters; i++) {
             nudupl_form(y, y, D, L);

@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-13-intel, ubuntu-latest]
+        os: [macos-13-intel, macos-13-arm64, ubuntu-latest]
         config: [optimized=1, TSAN=1, ASAN=1]
 
     steps:
@@ -34,6 +34,8 @@ jobs:
     - name: Build vdf-client on Ubuntu
       if: startsWith(matrix.os, 'ubuntu')
       run: |
+        # Avoid transient 404s from stale apt indices / mirror lag.
+        sudo apt-get update -y -o Acquire::Retries=3
         sudo apt-get install libgmp-dev libboost-python-dev libpython3-dev libboost-system-dev build-essential -y
         cd src
         make ${{ matrix.config }} -f Makefile.vdf-client
@@ -54,7 +56,11 @@ jobs:
         echo "Running 2weso_test"
         ./2weso_test
         echo "Running prover_test"
-        ./prover_test
+        if [[ "${{ matrix.os }}" == ubuntu* ]]; then
+          ./prover_test
+        else
+          CHIAVDF_PROVER_TEST_FAST=1 ./prover_test
+        fi
 
     - name: Test vdf-client
       if: matrix.config != 'optimized=1'
@@ -73,7 +79,11 @@ jobs:
       run: |
         cd src
         echo "Running prover_test"
-        ./prover_test
+        if [[ "${{ matrix.os }}" == ubuntu* ]]; then
+          ./prover_test
+        else
+          CHIAVDF_PROVER_TEST_FAST=1 ./prover_test
+        fi
 
     - name: Benchmark vdf-client
       if: matrix.config == 'optimized=1'

@@ -32,7 +32,10 @@ before-build = "python -m pip install --upgrade pip"
 
 [tool.cibuildwheel.macos]
 build-verbosity = 0
-before-all = "brew install gmp boost cmake"
+before-all = """
+brew --prefix --installed gmp >/dev/null 2>&1 || brew install gmp
+brew install boost cmake
+"""
 before-build = "python -m pip install --upgrade pip"
 environment = {MACOSX_DEPLOYMENT_TARGET="13", SYSTEM_VERSION_COMPAT=0, BUILD_VDF_CLIENT="N"}
 

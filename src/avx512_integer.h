@@ -123,6 +123,7 @@ void mpz_impl_set_mul(
     const mpz<expected_size_a, padded_size_a>& a,
     const mpz<expected_size_b, padded_size_b>& b
 ) {
+#if defined(ARCH_X86) || defined(ARCH_X64)
     if (enable_avx512_ifma) {
         typename avx512_integer_for_size<expected_size_a>::i a_avx512;
         typename avx512_integer_for_size<expected_size_b>::i b_avx512;
@@ -132,7 +133,9 @@ void mpz_impl_set_mul(
         b_avx512=b;
         out_avx512.set_mul(a_avx512, b_avx512);
         out_avx512.assign(out);
-    } else {
+    } else
+#endif
+    {
         mpz_mul(out._(), a._(), b._());
     }
 }

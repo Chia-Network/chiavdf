@@ -994,13 +994,7 @@ struct square_state_type {
     }*/
 };
 
-#define NL_SQUARESTATE 1
-#define NL_FORM 2
-
-class INUDUPLListener{
-public:
-    virtual void OnIteration(int type, void *data, uint64 iteration)=0;
-};
+#include "nudupl_listener.h"
 
 //this should never have an infinite loop
 //the gcd loops all have maximum counters after which they'll error out, and the thread_state loops also have a maximum spin counter

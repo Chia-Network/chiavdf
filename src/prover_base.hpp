@@ -47,7 +47,7 @@ class Prover {
             id = form::identity(D);
         } catch(std::exception& e) {
             std::cout << "Warning: Could not create identity: " << e.what() << "\n";
-            std::cout << "Discriminant: " << D.impl << "\n";
+            std::cout << "Discriminant: " << D.to_string() << "\n";
             std::cout << "Segment start:" << segm.start << "\n";
             std::cout << "Segment length:" << segm.length << "\n";
             std::cout << std::flush;

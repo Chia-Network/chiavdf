@@ -26,7 +26,12 @@ typedef unsigned __int128 uint128;
 typedef __int128 int128;
 #define USED __attribute__((used))
 #else
+#if defined(__clang__) && defined(__SIZEOF_INT128__)
+typedef unsigned __int128 uint128;
+typedef __int128 int128;
+#else
 #include "uint128_t/uint128_t.h"
+#endif
 #define USED
 #endif
 #include <cassert>

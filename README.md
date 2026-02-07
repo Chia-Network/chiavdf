@@ -38,6 +38,7 @@ to it by the Timelord. The repo also includes a benchmarking tool to get a
 sense of the iterations per second of a given CPU called vdf_bench. Try
 `./vdf_bench square_asm 250000` for an ips estimate on x86/x64 (phased/asm
 pipeline). On non-x86 architectures, use `./vdf_bench square 250000` (NUDUPL).
+Set `CHIAVDF_LOG_AVX=1` to emit AVX feature detection logs during startup.
 
 To build vdf_client set the environment variable BUILD_VDF_CLIENT to "Y".
 `export BUILD_VDF_CLIENT=Y`.

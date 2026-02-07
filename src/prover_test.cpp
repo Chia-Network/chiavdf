@@ -70,7 +70,7 @@ int main() {
     bool multi_proc_machine = (std::thread::hardware_concurrency() >= 16) ? true : false;
 
     WesolowskiCallback* weso = new FastAlgorithmCallback(segments, D, f, multi_proc_machine);
-    std::cout << "Discriminant: " << D.impl << "\n";
+    std::cout << "Discriminant: " << D.to_string() << "\n";
     std::atomic<bool> stopped = false;
     fast_algorithm = true;
     FastStorage* fast_storage = NULL;

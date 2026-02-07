@@ -78,7 +78,9 @@ void gcd_base_continued_fraction(
     static bool outputted_table=false;
 
     if (!outputted_table) {
-#ifdef CHIAOSX
+#ifdef CHIA_WINDOWS
+        APPEND_M(str( ".section .rdata,\"dr\"" ));
+#elif defined(CHIAOSX)
         APPEND_M(str( ".text " ));
 #else
         APPEND_M(str( ".text 1" ));

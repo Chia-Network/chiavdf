@@ -124,7 +124,7 @@ void mpz_impl_set_mul(
     const mpz<expected_size_b, padded_size_b>& b
 ) {
 #if defined(ARCH_X86) || defined(ARCH_X64)
-    if (enable_avx512_ifma) {
+    if (enable_avx512_ifma.load(std::memory_order_relaxed)) {
         typename avx512_integer_for_size<expected_size_a>::i a_avx512;
         typename avx512_integer_for_size<expected_size_b>::i b_avx512;
         typename avx512_integer_for_size<expected_size_out>::i out_avx512;

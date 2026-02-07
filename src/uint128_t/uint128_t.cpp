@@ -435,7 +435,10 @@ std::string uint128_t::str(uint8_t base, const unsigned int & len) const{
         std::pair <uint128_t, uint128_t> qr(*this, uint128_0);
         do{
             qr = divmod(qr.first, base);
-            out = "0123456789abcdef"[(uint8_t) qr.second] + out;
+            uint8_t digit = static_cast<uint8_t>(qr.second);
+            char c = (digit < 10) ? static_cast<char>('0' + digit)
+                                  : static_cast<char>('a' + (digit - 10));
+            out = c + out;
         } while (qr.first);
     }
     if (out.size() < len){

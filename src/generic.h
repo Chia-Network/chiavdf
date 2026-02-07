@@ -71,7 +71,7 @@ template<class type> std::string to_string(std::ostringstream& s, const type& ta
     return s.str();
 }
 template<class type> std::string to_string(const type& targ) {
-    static std::ostringstream s;
+    thread_local std::ostringstream s;
     return to_string(s, targ);
 }
 
@@ -86,11 +86,11 @@ template<class type> type from_string(std::istringstream& s, const std::string& 
     return checked_from_string<type>(s, targ).first;
 }
 template<class type> type from_string(const std::string& targ) {
-    static std::istringstream s;
+    thread_local std::istringstream s;
     return from_string<type>(s, targ);
 }
 template<class type> pair<type, bool> checked_from_string(const std::string& targ) {
-    static std::istringstream s;
+    thread_local std::istringstream s;
     return checked_from_string<type>(s, targ);
 }
 

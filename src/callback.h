@@ -33,7 +33,7 @@ public:
         switch(type) {
             case NL_SQUARESTATE:
             {
-#if defined(ARCH_X86) || defined(ARCH_X64)
+#if (defined(ARCH_X86) || defined(ARCH_X64)) && !defined(CHIA_DISABLE_ASM)
                 //cout << "NL_SQUARESTATE" << endl;
                 uint64 res;
 

@@ -7,13 +7,6 @@ option(BUILD_VDF_TESTS "Build vdf test binaries (1weso/2weso/prover)" OFF)
 option(BUILD_HW_TOOLS "Build hardware timelord tools" OFF)
 option(ENABLE_GNU_ASM "Enable GNU-style asm pipeline on x86/x64" ON)
 option(HARDENING "Enable hardening" OFF)
-option(CHIAVDF_USE_LTO "Enable LTO for perf experiments" OFF)
-option(CHIAVDF_PGO_GENERATE "Enable PGO generate instrumentation" OFF)
-set(CHIAVDF_PGO_USE "" CACHE STRING "Path to PGO profdata for use")
-set(CHIAVDF_MARCH "" CACHE STRING "Override -march for perf experiments")
-option(CHIAVDF_DISABLE_PIE "Disable PIE for perf experiments" OFF)
-option(CHIAVDF_WINDOWS_DISABLE_SECURITY "Disable Windows security mitigations for perf experiments" OFF)
-option(CHIAVDF_WINDOWS_USE_LLD "Use lld-link on Windows for perf experiments" OFF)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -36,6 +29,7 @@ if(MSVC)
     # MSVC does not provide the GNU intrinsics headers used by compile_asm.
     set(ENABLE_GNU_ASM OFF CACHE BOOL "Enable GNU-style asm pipeline on x86/x64" FORCE)
   endif()
+  # clang-cl defaults to the MSVC linker (preferred for perf and compatibility).
 else()
   add_compile_options("$<$<CONFIG:Debug>:-Og>")
 endif()
@@ -232,50 +226,23 @@ endfunction()
 
 function(vdf_add_windows_clang_opts target_name)
   if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    target_compile_options(
-      ${target_name}
-      PRIVATE
-      "$<$<COMPILE_LANGUAGE:C,CXX>:-O3>"
-      "$<$<COMPILE_LANGUAGE:C,CXX>:-ffp-contract=fast>"
-      "$<$<COMPILE_LANGUAGE:C,CXX>:-fno-math-errno>"
-    )
-  endif()
-endfunction()
-
-function(vdf_add_perf_opts target_name)
-  if(CHIAVDF_USE_LTO)
-    set_property(TARGET ${target_name} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
-  endif()
-  if(CHIAVDF_DISABLE_PIE)
-    target_compile_options(${target_name} PRIVATE "$<$<COMPILE_LANGUAGE:C,CXX>:-fno-pie>")
-    target_link_options(${target_name} PRIVATE -no-pie)
-  endif()
-  if(CHIAVDF_MARCH)
     if(MSVC)
-      target_compile_options(${target_name} PRIVATE "$<$<COMPILE_LANGUAGE:C,CXX>:/clang:-march=${CHIAVDF_MARCH}>")
+      target_compile_options(
+        ${target_name}
+        PRIVATE
+        "$<$<COMPILE_LANGUAGE:C,CXX>:/O2>"
+        "$<$<COMPILE_LANGUAGE:C,CXX>:/fp:fast>"
+        "$<$<COMPILE_LANGUAGE:C,CXX>:/clang:-fno-math-errno>"
+      )
     else()
-      target_compile_options(${target_name} PRIVATE "$<$<COMPILE_LANGUAGE:C,CXX>:-march=${CHIAVDF_MARCH}>")
+      target_compile_options(
+        ${target_name}
+        PRIVATE
+        "$<$<COMPILE_LANGUAGE:C,CXX>:-O3>"
+        "$<$<COMPILE_LANGUAGE:C,CXX>:-ffp-contract=fast>"
+        "$<$<COMPILE_LANGUAGE:C,CXX>:-fno-math-errno>"
+      )
     endif()
-  endif()
-  if(CHIAVDF_PGO_GENERATE)
-    target_compile_options(${target_name} PRIVATE "$<$<COMPILE_LANGUAGE:C,CXX>:-fprofile-instr-generate>")
-    target_link_options(${target_name} PRIVATE -fprofile-instr-generate)
-  endif()
-  if(CHIAVDF_PGO_USE)
-    target_compile_options(${target_name} PRIVATE "$<$<COMPILE_LANGUAGE:C,CXX>:-fprofile-instr-use=${CHIAVDF_PGO_USE}>")
-    target_link_options(${target_name} PRIVATE "-fprofile-instr-use=${CHIAVDF_PGO_USE}")
-  endif()
-  if(WIN32 AND CHIAVDF_WINDOWS_DISABLE_SECURITY)
-    if(MSVC)
-      target_compile_options(${target_name} PRIVATE /GS-)
-      target_link_options(${target_name} PRIVATE "LINKER:/guard:cf-")
-    else()
-      target_compile_options(${target_name} PRIVATE "$<$<COMPILE_LANGUAGE:C,CXX>:-fno-stack-protector>")
-      target_link_options(${target_name} PRIVATE "-Wl,/guard:cf-")
-    endif()
-  endif()
-  if(WIN32 AND CHIAVDF_WINDOWS_USE_LLD AND NOT MSVC)
-    target_link_options(${target_name} PRIVATE -fuse-ld=lld)
   endif()
 endfunction()
 
@@ -292,7 +259,6 @@ if(BUILD_VDF_CLIENT)
   target_link_libraries(vdf_client PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
   vdf_add_windows_asm_linker_flags(vdf_client)
   vdf_add_windows_clang_opts(vdf_client)
-  vdf_add_perf_opts(vdf_client)
 endif()
 
 if(BUILD_VDF_BENCH)
@@ -304,7 +270,6 @@ if(BUILD_VDF_BENCH)
   target_link_libraries(vdf_bench PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
   vdf_add_windows_asm_linker_flags(vdf_bench)
   vdf_add_windows_clang_opts(vdf_bench)
-  vdf_add_perf_opts(vdf_bench)
 endif()
 
 if(BUILD_VDF_TESTS)

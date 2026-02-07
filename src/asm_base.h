@@ -53,7 +53,9 @@ string track_asm(string comment, string jump_to = "") {
     }
 
     string comment_label=m.alloc_label();
-#ifdef CHIAOSX
+#if defined(CHIA_WINDOWS)
+    APPEND_M(str( ".section .rdata,\"dr\"" ));
+#elif defined(CHIAOSX)
     APPEND_M(str( ".text " ));
 #else
     APPEND_M(str( ".text 1" ));
@@ -81,7 +83,7 @@ string track_asm(string comment, string jump_to = "") {
     APPEND_M(str( "MOV RAX, [asm_tracking_data+#]", to_hex(8*(id-1)) ));
     APPEND_M(str( "LEA RAX, [RAX+1]" ));
     APPEND_M(str( "MOV [asm_tracking_data+#], RAX", to_hex(8*(id-1)) ));
-#ifdef CHIAOSX
+#if defined(CHIAOSX) || defined(CHIA_WINDOWS)
     APPEND_M(str( "LEA RAX, [RIP+comment_label] " ));
 #else
     APPEND_M(str( "MOV RAX, OFFSET FLAT:#", comment_label ));
@@ -105,7 +107,9 @@ string constant_address_uint64(uint64 value_bits_0, uint64 value_bits_1, bool us
     if (name.empty()) {
         name=m.alloc_label();
 
-#ifdef CHIAOSX
+#if defined(CHIA_WINDOWS)
+        APPEND_M(str( ".section .rdata,\"dr\"" ));
+#elif defined(CHIAOSX)
         APPEND_M(str( ".text " ));
 #else
         APPEND_M(str( ".text 1" ));
@@ -116,7 +120,7 @@ string constant_address_uint64(uint64 value_bits_0, uint64 value_bits_1, bool us
         APPEND_M(str( ".quad #", to_hex(value_bits_1) )); //lane 1
         APPEND_M(str( ".text" ));
     }
-#ifdef CHIAOSX
+#if defined(CHIAOSX) || defined(CHIA_WINDOWS)
     return (use_brackets)? str( "[RIP+#]", name ) : name;
 #else
     return (use_brackets)? str( "[#]", name ) : name;
@@ -136,7 +140,7 @@ string constant_address_avx512_uint64(array<uint64, 8> value, bool use_brackets=
     if (name.empty()) {
         name=m.alloc_label();
 
-#ifdef CHIAOSX
+#if defined(CHIAOSX) || defined(CHIA_WINDOWS)
         APPEND_M(str( ".text " ));
 #else
         APPEND_M(str( ".text 1" ));
@@ -148,7 +152,7 @@ string constant_address_avx512_uint64(array<uint64, 8> value, bool use_brackets=
         }
         APPEND_M(str( ".text" ));
     }
-#ifdef CHIAOSX
+#if defined(CHIAOSX) || defined(CHIA_WINDOWS)
     return (use_brackets)? str( "ZMMWORD PTR [RIP+#]", name ) : name;
 #else
     return (use_brackets)? str( "ZMMWORD PTR [#]", name ) : name;

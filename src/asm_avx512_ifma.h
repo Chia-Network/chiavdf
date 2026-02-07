@@ -593,11 +593,13 @@ void add(reg_alloc regs, avx512_integer in_a, avx512_integer in_b, avx512_intege
 
         static bool outputted_table=false;
         if (!outputted_table) {
-            #ifdef CHIAOSX
+#ifdef CHIA_WINDOWS
+                APPEND_M(str( ".section .rdata,\"dr\"" ));
+#elif defined(CHIAOSX)
                 APPEND_M(str( ".text " ));
-            #else
+#else
                 APPEND_M(str( ".text 1" ));
-            #endif
+#endif
 
             string neg_1=to_hex(~uint64(0));
 

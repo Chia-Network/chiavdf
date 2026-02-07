@@ -29,10 +29,27 @@ extern int gcd_128_max_iter;
 extern std::string asmprefix;
 extern bool enable_all_instructions;
 
-bool bChecked=false;
-bool bAVX2=false;
+#include <atomic>
+#include <cstdlib>
+#include <mutex>
 
-bool enable_avx512_ifma=false;
+inline std::atomic<bool> bAVX2{false};
+inline std::atomic<bool> enable_avx512_ifma{false};
+inline std::once_flag avx_flags_once;
+
+inline bool env_flag(const char* name) {
+  const char* value = getenv(name);
+  if (!value) {
+    return false;
+  }
+  if (value[0] == '1' || value[0] == 'y' || value[0] == 'Y' || value[0] == 't' || value[0] == 'T') {
+    return true;
+  }
+  if (value[0] == '0' || value[0] == 'n' || value[0] == 'N' || value[0] == 'f' || value[0] == 'F') {
+    return false;
+  }
+  return true;
+}
 
 #if defined(__i386) || defined(_M_IX86)
     #define ARCH_X86
@@ -48,12 +65,14 @@ bool enable_avx512_ifma=false;
     #define ARCH_32BIT
 #endif
 
-inline bool hasAVX2()
+inline void init_avx_flags()
 {
-  if(!bChecked)
-  {
-    bChecked=true;
 #if defined(ARCH_X86) || defined(ARCH_X64)
+    const bool disable_avx2 = env_flag("CHIA_DISABLE_AVX2");
+    const bool force_avx2 = env_flag("CHIA_FORCE_AVX2");
+    const bool disable_avx512 = env_flag("CHIA_DISABLE_AVX512_IFMA");
+    const bool enable_avx512 = env_flag("CHIA_ENABLE_AVX512_IFMA");
+    const bool force_avx512 = env_flag("CHIA_FORCE_AVX512_IFMA");
     int info[4] = {0};
 #if defined(_MSC_VER)
     __cpuid(info, 0x7);
@@ -73,18 +92,44 @@ inline bool hasAVX2()
 #endif
     const int AVX2 = 1<<5;
     const int ADX = 1<<19;
+    const int AVX512F = 1<<16;
+    const int AVX512IFMA = 1<<21;
 
     bool avx2bit = ((info[1] & AVX2) == AVX2);
     bool adxbit = ((info[1] & ADX) == ADX);
-    bAVX2 = avx2bit && adxbit;
-#elif defined(ARCH_ARM)
-    bAVX2 = false;
-#else
-    bAVX2 = false;
-#endif
-  }
+    bool avx512fbit = ((info[1] & AVX512F) == AVX512F);
+    bool avx512ifmabit = ((info[1] & AVX512IFMA) == AVX512IFMA);
 
-  return bAVX2;
+    if (disable_avx2) {
+      bAVX2.store(false, std::memory_order_relaxed);
+    } else if (force_avx2) {
+      bAVX2.store(true, std::memory_order_relaxed);
+    } else {
+      bAVX2.store(avx2bit && adxbit, std::memory_order_relaxed);
+    }
+
+    if (disable_avx512) {
+      enable_avx512_ifma.store(false, std::memory_order_relaxed);
+    } else if (force_avx512) {
+      enable_avx512_ifma.store(true, std::memory_order_relaxed);
+    } else if (enable_avx512) {
+      enable_avx512_ifma.store(avx512fbit && avx512ifmabit, std::memory_order_relaxed);
+    } else {
+      enable_avx512_ifma.store(false, std::memory_order_relaxed);
+    }
+#elif defined(ARCH_ARM)
+    bAVX2.store(false, std::memory_order_relaxed);
+    enable_avx512_ifma.store(false, std::memory_order_relaxed);
+#else
+    bAVX2.store(false, std::memory_order_relaxed);
+    enable_avx512_ifma.store(false, std::memory_order_relaxed);
+#endif
+}
+
+inline bool hasAVX2()
+{
+  std::call_once(avx_flags_once, init_avx_flags);
+  return bAVX2.load(std::memory_order_relaxed);
 }
 
 /*

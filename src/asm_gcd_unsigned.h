@@ -442,7 +442,9 @@ void gcd_unsigned(
 
         string jump_table_label=m.alloc_label();
 
-#ifdef CHIAOSX
+#ifdef CHIA_WINDOWS
+        APPEND_M(str( ".section .rdata,\"dr\"" ));
+#elif defined(CHIAOSX)
         APPEND_M(str( ".text " ));
 #else
         APPEND_M(str( ".text 1" ));

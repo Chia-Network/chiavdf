@@ -80,7 +80,7 @@ int main(int argc, char **argv) {
     init_gmp();
     set_rounding_mode();
 
-    enable_avx512_ifma=false;
+    enable_avx512_ifma.store(false, std::memory_order_relaxed);
 
     if (argc==2 && string(argv[1]) == "avx512") {
         integer a_int=rand_integer(512);

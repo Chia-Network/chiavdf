@@ -77,7 +77,7 @@ jobs:
         cmake -S src -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_ASM_COMPILER=clang-cl -DBOOST_INCLUDE_DIR="$env:BOOST_INCLUDE_DIR" -DBUILD_PYTHON=OFF -DBUILD_CHIAVDFC=OFF -DBUILD_VDF_CLIENT=ON -DBUILD_VDF_BENCH=ON -DBUILD_VDF_TESTS=ON -DBUILD_HW_TOOLS=OFF
         cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test
 
-    - name: Test vdf-client
+    - name: Run vdf tests (short) (Windows)
       if: matrix.config == 'optimized=1' && !startsWith(matrix.os, 'windows')
       run: |
         cd src
@@ -92,7 +92,7 @@ jobs:
           CHIAVDF_PROVER_TEST_FAST=1 ./prover_test
         fi
 
-    - name: Test vdf-client
+    - name: Run vdf tests (short)
       if: matrix.config != 'optimized=1' && !startsWith(matrix.os, 'windows')
       run: |
         cd src
@@ -132,7 +132,7 @@ jobs:
         $env:CHIAVDF_PROVER_TEST_FAST = "1"
         .\prover_test.exe
 
-    - name: Benchmark vdf_bench square (Linux/Mac)
+    - name: Benchmark vdf_bench square (Ubuntu/Mac)
       if: "!startsWith(matrix.os, 'windows')"
       run: |
         cd src

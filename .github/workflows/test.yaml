@@ -14,16 +14,13 @@ jobs:
   test:
     name: Test ${{ matrix.config }} ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    env:
+      CHIAVDF_LOG_AVX: "1"
     strategy:
       fail-fast: false
       matrix:
         os: [macos-13-intel, macos-13-arm64, ubuntu-latest, windows-latest]
         config: [optimized=1, TSAN=1, ASAN=1]
-        exclude:
-          - os: windows-latest
-            config: TSAN=1
-          - os: windows-latest
-            config: ASAN=1
 
     steps:
     - name: Checkout code
@@ -48,7 +45,7 @@ jobs:
     - name: Build vdf-client on Mac
       if: startsWith(matrix.os, 'mac')
       run: |
-        brew install boost
+        brew --prefix --installed boost >/dev/null 2>&1 || brew install boost
         cd src
         make ${{ matrix.config }} -f Makefile.vdf-client
 
@@ -58,6 +55,7 @@ jobs:
       run: |
         choco install llvm ninja boost-msvc-14.3 -y
         "C:\Program Files\LLVM\bin" | Out-File -Append -FilePath $env:GITHUB_PATH
+        "CHIA_ENABLE_AVX512_IFMA=0" | Out-File -Append -FilePath $env:GITHUB_ENV
         $boostDir = Get-ChildItem "C:\local" -Directory -Filter "boost_*" | Select-Object -First 1
         if (-not $boostDir) {
           throw "Boost install not found under C:\local"
@@ -76,15 +74,8 @@ jobs:
       if: startsWith(matrix.os, 'windows')
       shell: pwsh
       run: |
-        cmake -S src -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_ASM_COMPILER=clang -DBOOST_INCLUDE_DIR="$env:BOOST_INCLUDE_DIR" -DBUILD_PYTHON=OFF -DBUILD_CHIAVDFC=OFF -DBUILD_VDF_CLIENT=ON -DBUILD_VDF_BENCH=ON -DBUILD_VDF_TESTS=ON -DBUILD_HW_TOOLS=OFF
+        cmake -S src -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_ASM_COMPILER=clang-cl -DBOOST_INCLUDE_DIR="$env:BOOST_INCLUDE_DIR" -DBUILD_PYTHON=OFF -DBUILD_CHIAVDFC=OFF -DBUILD_VDF_CLIENT=ON -DBUILD_VDF_BENCH=ON -DBUILD_VDF_TESTS=ON -DBUILD_HW_TOOLS=OFF
         cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test
-
-    - name: Benchmark vdf_bench square (Unix)
-      if: "!startsWith(matrix.os, 'windows')"
-      run: |
-        cd src
-        echo "Benchmarking vdf_bench with 2,500,000 iterations of square_asm"
-        ./vdf_bench square_asm 2500000
 
     - name: Test vdf-client
       if: matrix.config == 'optimized=1' && !startsWith(matrix.os, 'windows')
@@ -141,52 +132,12 @@ jobs:
         $env:CHIAVDF_PROVER_TEST_FAST = "1"
         .\prover_test.exe
 
-    - name: Benchmark vdf-client
-      if: matrix.config == 'optimized=1' && !startsWith(matrix.os, 'windows')
-      run: |
-        cd src
-        echo "Benchmarking vdf_client with 400,000 iterations of vdf_bench"
-        ./vdf_bench square_asm 400000
-
-    - name: Benchmark vdf-client (Windows)
-      if: matrix.config == 'optimized=1' && startsWith(matrix.os, 'windows')
-      shell: pwsh
-      run: |
-        cd build
-        $dllPaths = @()
-        if ($env:MPIR_ROOT -and (Test-Path "$env:MPIR_ROOT\bin")) { $dllPaths += "$env:MPIR_ROOT\bin" }
-        if (Test-Path "$env:GITHUB_WORKSPACE\mpir_gc_x64") { $dllPaths += "$env:GITHUB_WORKSPACE\mpir_gc_x64" }
-        if ($dllPaths.Count -gt 0) { $env:PATH = ($dllPaths -join ';') + ';' + $env:PATH }
-        Write-Host "Benchmarking vdf_client with 400,000 iterations of vdf_bench"
-        & .\vdf_bench.exe square_asm 400000
-        Write-Host "vdf_bench exit code: $LASTEXITCODE"
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-    - name: Profile vdf_bench square (Windows)
-      if: matrix.config == 'optimized=1' && startsWith(matrix.os, 'windows')
-      shell: pwsh
-      run: |
-        cd build
-        $dllPaths = @()
-        if ($env:MPIR_ROOT -and (Test-Path "$env:MPIR_ROOT\bin")) { $dllPaths += "$env:MPIR_ROOT\bin" }
-        if (Test-Path "$env:GITHUB_WORKSPACE\mpir_gc_x64") { $dllPaths += "$env:GITHUB_WORKSPACE\mpir_gc_x64" }
-        if ($dllPaths.Count -gt 0) { $env:PATH = ($dllPaths -join ';') + ';' + $env:PATH }
-        Write-Host "Profiling vdf_bench square with 200,000 iterations"
-        & .\vdf_bench.exe square 200000
-
-    - name: Benchmark vdf_bench square (Unix)
+    - name: Benchmark vdf_bench square (Linux/Mac)
       if: "!startsWith(matrix.os, 'windows')"
       run: |
         cd src
-        echo "Benchmarking vdf_bench with 1,000,000 iterations of square_asm"
-        ./vdf_bench square_asm 1000000
-
-    - name: Profile vdf_bench square (Unix)
-      if: matrix.config == 'optimized=1' && !startsWith(matrix.os, 'windows')
-      run: |
-        cd src
-        echo "Profiling vdf_bench square with 200,000 iterations"
-        ./vdf_bench square 200000
+        echo "Benchmarking vdf_bench with 2,000,000 iterations of square_asm"
+        ./vdf_bench square_asm 2000000
 
     - name: Benchmark vdf_bench square (Windows)
       if: startsWith(matrix.os, 'windows')
@@ -197,307 +148,8 @@ jobs:
         if ($env:MPIR_ROOT -and (Test-Path "$env:MPIR_ROOT\bin")) { $dllPaths += "$env:MPIR_ROOT\bin" }
         if (Test-Path "$env:GITHUB_WORKSPACE\mpir_gc_x64") { $dllPaths += "$env:GITHUB_WORKSPACE\mpir_gc_x64" }
         if ($dllPaths.Count -gt 0) { $env:PATH = ($dllPaths -join ';') + ';' + $env:PATH }
-        Write-Host "Benchmarking vdf_bench with 1,000,000 iterations of square_asm"
-        & .\vdf_bench.exe square_asm 1000000
+        Write-Host "Benchmarking vdf_bench with 2,000,000 iterations of square_asm"
+        & .\vdf_bench.exe square_asm 2000000
         Write-Host "vdf_bench exit code: $LASTEXITCODE"
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-  perf_experiments:
-    name: Perf experiments ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v6
-
-    - name: Install perf deps (Ubuntu)
-      if: startsWith(matrix.os, 'ubuntu')
-      run: |
-        sudo apt-get update -y -o Acquire::Retries=3
-        sudo apt-get install -y clang llvm lld ninja-build libgmp-dev gcc
-
-    - name: Install perf deps (Windows)
-      if: startsWith(matrix.os, 'windows')
-      shell: pwsh
-      run: |
-        choco install llvm ninja -y
-        "C:\Program Files\LLVM\bin" | Out-File -Append -FilePath $env:GITHUB_PATH
-
-    - name: Checkout mpir for Windows
-      if: startsWith(matrix.os, 'windows')
-      uses: actions/checkout@v6
-      with:
-        repository: Chia-Network/mpir_gc_x64
-        fetch-depth: 1
-        path: mpir_gc_x64
-
-    - name: Run perf experiments (Ubuntu)
-      if: startsWith(matrix.os, 'ubuntu')
-      run: |
-        set -euo pipefail
-        set -x
-        trap 'echo "perf_experiments ubuntu failed"; find . -maxdepth 3 -type f -name "vdf_bench" -print; find . -maxdepth 3 -type f -name "CMakeCache.txt" -print' ERR
-        mkdir -p pgo
-        variants=("baseline" "lto" "march" "lto-march" "pgo" "pgo-march")
-        baseline_speed=""
-
-        run_bench() {
-          local build_dir="$1"
-          local build_log="${build_dir}/build.log"
-          if ! cmake --build "$build_dir" --target vdf_bench 2>&1 | tee "$build_log" >&2; then
-            echo "vdf_bench build failed for ${build_dir}" >&2
-            cat "$build_log" >&2
-            return 1
-          fi
-          local out_file="${build_dir}/bench.out"
-          local bench_path
-          bench_path="$(find "${build_dir}" -name vdf_bench -type f -print -quit)"
-          if [[ -z "${bench_path}" ]]; then
-            echo "vdf_bench not found under ${build_dir}" >&2
-            find "${build_dir}" -maxdepth 3 -type f -print >&2
-            return 1
-          fi
-          "${bench_path}" square_asm 1000000 2>&1 | tee "$out_file" >&2
-          local speed
-          speed="$(python -c 'import re,sys,pathlib; text=pathlib.Path(sys.argv[1]).read_text(errors="replace"); m=re.search(r"speed:\s*([0-9]+(?:\.[0-9]+)?)K ips", text); sys.exit("speed not found") if not m else None; print(m.group(1))' "$out_file")"
-          printf '%s\n' "$speed"
-        }
-
-        for variant in "${variants[@]}"; do
-          echo "== perf variant: ${variant} =="
-          build_dir="build-perf-${variant}"
-          cmake_flags=(
-            -S src
-            -B "${build_dir}"
-            -G Ninja
-            -DCMAKE_BUILD_TYPE=Release
-            -DCMAKE_C_COMPILER=clang
-            -DCMAKE_CXX_COMPILER=clang++
-            -DCMAKE_ASM_COMPILER=gcc
-            -DCHIAVDF_DISABLE_PIE=ON
-            -DBUILD_PYTHON=OFF
-            -DBUILD_CHIAVDFC=OFF
-            -DBUILD_VDF_CLIENT=OFF
-            -DBUILD_VDF_BENCH=ON
-            -DBUILD_VDF_TESTS=OFF
-            -DBUILD_HW_TOOLS=OFF
-          )
-          cmake_flags+=(-DCMAKE_POSITION_INDEPENDENT_CODE=OFF)
-          cmake_flags+=(-DCMAKE_EXE_LINKER_FLAGS=-no-pie)
-          if [[ "$variant" == *"lto"* ]]; then
-            cmake_flags+=(-DCHIAVDF_USE_LTO=ON)
-          fi
-          if [[ "$variant" == *"march"* ]]; then
-            cmake_flags+=(-DCHIAVDF_MARCH=x86-64-v3)
-          fi
-
-          if [[ "$variant" == pgo* ]]; then
-            gen_dir="${build_dir}-gen"
-            use_dir="${build_dir}-use"
-            cmake "${cmake_flags[@]}" -B "${gen_dir}" -DCHIAVDF_PGO_GENERATE=ON
-            cmake --build "${gen_dir}" --target vdf_bench
-            gen_bench_path="$(find "${gen_dir}" -name vdf_bench -type f -print -quit)"
-            if [[ -z "${gen_bench_path}" ]]; then
-              echo "vdf_bench not found under ${gen_dir}"
-              find "${gen_dir}" -maxdepth 3 -type f -print
-              exit 1
-            fi
-            LLVM_PROFILE_FILE="$(pwd)/pgo/${variant}.profraw" "${gen_bench_path}" square_asm 200000 >/dev/null
-            llvm-profdata merge -output="pgo/${variant}.profdata" "pgo/${variant}.profraw"
-            cmake "${cmake_flags[@]}" -B "${use_dir}" -DCHIAVDF_PGO_USE="$(pwd)/pgo/${variant}.profdata"
-            if ! speed=$(run_bench "${use_dir}"); then
-              echo "run_bench failed for ${use_dir}"
-              exit 1
-            fi
-          else
-            cmake "${cmake_flags[@]}"
-            if ! speed=$(run_bench "${build_dir}"); then
-              echo "run_bench failed for ${build_dir}"
-              exit 1
-            fi
-          fi
-
-          if [[ -z "${baseline_speed}" ]]; then
-            baseline_speed="${speed}"
-            echo "PERF baseline speed=${speed}K ips"
-            if [[ "${variant}" == "baseline" ]]; then
-              hash_out="asm_hashes_ubuntu.txt"
-              find "${build_dir}" -name '*_asm_compiled.s' -type f -print | sort | while read -r asm_file; do
-                sha256sum "$asm_file"
-              done | tee "${hash_out}"
-            fi
-          else
-            delta=$(python -c 'import sys; base=float(sys.argv[1]); cur=float(sys.argv[2]); print(round((cur/base - 1.0) * 100.0, 1))' "${baseline_speed}" "${speed}")
-            echo "PERF variant=${variant} speed=${speed}K ips baseline=${baseline_speed}K ips delta=${delta}%"
-          fi
-        done
-
-    - name: Run perf experiments (Windows)
-      if: startsWith(matrix.os, 'windows')
-      shell: pwsh
-      run: |
-        $ErrorActionPreference = "Stop"
-        $dllPaths = @()
-        if ($env:MPIR_ROOT -and (Test-Path "$env:MPIR_ROOT\bin")) { $dllPaths += "$env:MPIR_ROOT\bin" }
-        if (Test-Path "$env:GITHUB_WORKSPACE\mpir_gc_x64") { $dllPaths += "$env:GITHUB_WORKSPACE\mpir_gc_x64" }
-        if ($dllPaths.Count -gt 0) { $env:PATH = ($dllPaths -join ';') + ';' + $env:PATH }
-        $variants = @(
-          "baseline",
-          "lto",
-          "march",
-          "lto-march",
-          "pgo",
-          "pgo-march",
-          "clangcl",
-          "clangcl-lto",
-          "clangcl-march",
-          "clangcl-lto-march",
-          "clangcl-nosec",
-          "clangcl-lto-nosec",
-          "lld-lto"
-        )
-        $baselineSpeed = $null
-        New-Item -ItemType Directory -Force -Path pgo | Out-Null
-
-        function Get-SpeedFromOutput($output) {
-          $match = $output | Select-String -Pattern "speed:\s*([0-9\.]+)K ips" | Select-Object -First 1
-          if (-not $match) { throw "speed not found" }
-          return [double]$match.Matches[0].Groups[1].Value
-        }
-
-        function Run-Bench($buildDir) {
-          cmake --build $buildDir --target vdf_bench | ForEach-Object { Write-Host $_ }
-          $outPath = "$buildDir\bench.out"
-          $benchPath = (Get-ChildItem -Path $buildDir -Recurse -Filter vdf_bench.exe | Select-Object -First 1).FullName
-          if (-not $benchPath) {
-            Write-Host "vdf_bench.exe not found under $buildDir"
-            Get-ChildItem -Path $buildDir -Recurse -File | ForEach-Object { $_.FullName }
-            throw "vdf_bench.exe not found under $buildDir"
-          }
-          $out = & $benchPath square_asm 1000000 2>&1
-          $outText = [string]::Join("`n", $out)
-          $outText | Set-Content -Path $outPath
-          $out | ForEach-Object { Write-Host $_ }
-          $script:LastBenchPath = $benchPath
-          try {
-            return (Get-SpeedFromOutput $outText)
-          } catch {
-            Write-Host "Failed to parse speed from $outPath"
-            $out | ForEach-Object { Write-Host $_ }
-            throw
-          }
-        }
-
-        function Try-Profile($benchPath) {
-          if (-not $benchPath) { return }
-          $wpr = Get-Command wpr.exe -ErrorAction SilentlyContinue
-          if (-not $wpr) {
-            Write-Host "wpr.exe not found; skipping profile capture"
-            return
-          }
-          $tracePath = Join-Path $env:GITHUB_WORKSPACE "wpr-baseline.etl"
-          try {
-            wpr -start CPU | Out-Null
-            & $benchPath square_asm 200000 | Out-Null
-            wpr -stop $tracePath | Out-Null
-          } catch {
-            Write-Host "wpr capture failed: $_"
-            try { wpr -cancel | Out-Null } catch { }
-          }
-        }
-
-        foreach ($variant in $variants) {
-          Write-Host "== perf variant: $variant =="
-          $buildDir = "build-perf-$variant"
-          $useClangCl = $variant -like "clangcl*"
-          $cmakeArgs = @(
-            "-S", "src",
-            "-B", $buildDir,
-            "-G", "Ninja",
-            "-DCMAKE_BUILD_TYPE=Release",
-            "-DCMAKE_ASM_COMPILER=clang",
-            "-DBUILD_PYTHON=OFF",
-            "-DBUILD_CHIAVDFC=OFF",
-            "-DBUILD_VDF_CLIENT=OFF",
-            "-DBUILD_VDF_BENCH=ON",
-            "-DBUILD_VDF_TESTS=OFF",
-            "-DBUILD_HW_TOOLS=OFF"
-          )
-          if ($useClangCl) {
-            $cmakeArgs += "-DCMAKE_C_COMPILER=clang-cl"
-            $cmakeArgs += "-DCMAKE_CXX_COMPILER=clang-cl"
-          } else {
-            $cmakeArgs += "-DCMAKE_C_COMPILER=clang"
-            $cmakeArgs += "-DCMAKE_CXX_COMPILER=clang++"
-          }
-          if ($variant -like "*lto*") {
-            $cmakeArgs += "-DCHIAVDF_USE_LTO=ON"
-          }
-          if ($variant -like "*march*") {
-            $cmakeArgs += "-DCHIAVDF_MARCH=x86-64-v3"
-          }
-          if ($variant -like "*nosec*") {
-            $cmakeArgs += "-DCHIAVDF_WINDOWS_DISABLE_SECURITY=ON"
-          }
-          if ($variant -like "*lld*") {
-            $cmakeArgs += "-DCHIAVDF_WINDOWS_USE_LLD=ON"
-          }
-
-          if ($variant -like "pgo*") {
-            $genDir = "$buildDir-gen"
-            $useDir = "$buildDir-use"
-            cmake @cmakeArgs -B $genDir -DCHIAVDF_PGO_GENERATE=ON
-            cmake --build $genDir --target vdf_bench
-            $env:LLVM_PROFILE_FILE = "$(Get-Location)\pgo\$variant.profraw"
-            $genBenchPath = (Get-ChildItem -Path $genDir -Recurse -Filter vdf_bench.exe | Select-Object -First 1).FullName
-            if (-not $genBenchPath) { throw "vdf_bench.exe not found under $genDir" }
-            & $genBenchPath square_asm 200000 | Out-Null
-            & llvm-profdata merge -output "pgo\$variant.profdata" "pgo\$variant.profraw"
-            cmake @cmakeArgs -B $useDir -DCHIAVDF_PGO_USE="$(Get-Location)\pgo\$variant.profdata"
-            $speed = [double](Run-Bench $useDir)
-          } else {
-            cmake @cmakeArgs
-            $speed = [double](Run-Bench $buildDir)
-          }
-
-          if (-not $baselineSpeed) {
-            $baselineSpeed = [double]$speed
-            Write-Host ("PERF baseline speed={0}K ips" -f $speed)
-            $hashOut = Join-Path $env:GITHUB_WORKSPACE "asm_hashes_windows.txt"
-            Get-ChildItem -Path $buildDir -Recurse -Filter "*_asm_compiled.s" | Sort-Object FullName | ForEach-Object {
-              $hash = Get-FileHash -Algorithm SHA256 $_.FullName
-              "{0} {1}" -f $hash.Hash, $hash.Path
-            } | Tee-Object -FilePath $hashOut | ForEach-Object { Write-Host $_ }
-            Try-Profile $script:LastBenchPath
-          } else {
-            $delta = [math]::Round((($speed / $baselineSpeed) - 1) * 100, 1)
-            Write-Host ("PERF variant={0} speed={1}K ips baseline={2}K ips delta={3}%" -f $variant, $speed, $baselineSpeed, $delta)
-          }
-        }
-
-    - name: Upload asm hashes (Ubuntu)
-      if: startsWith(matrix.os, 'ubuntu')
-      uses: actions/upload-artifact@v4
-      with:
-        name: asm-hashes-ubuntu
-        path: asm_hashes_ubuntu.txt
-        if-no-files-found: ignore
-
-    - name: Upload asm hashes (Windows)
-      if: startsWith(matrix.os, 'windows')
-      uses: actions/upload-artifact@v4
-      with:
-        name: asm-hashes-windows
-        path: asm_hashes_windows.txt
-        if-no-files-found: ignore
-
-    - name: Upload Windows perf trace
-      if: startsWith(matrix.os, 'windows')
-      uses: actions/upload-artifact@v4
-      with:
-        name: windows-perf-trace
-        path: wpr-baseline.etl
-        if-no-files-found: ignore

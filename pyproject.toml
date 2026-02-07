@@ -33,7 +33,7 @@ before-build = "python -m pip install --upgrade pip"
 [tool.cibuildwheel.macos]
 build-verbosity = 0
 before-all = """
-brew --prefix gmp >/dev/null 2>&1 || brew install gmp
+brew --prefix --installed gmp >/dev/null 2>&1 || brew install gmp
 brew install boost cmake
 """
 before-build = "python -m pip install --upgrade pip"

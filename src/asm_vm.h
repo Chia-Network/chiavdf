@@ -166,6 +166,7 @@ struct asm_function {
         //this takes 4 cycles including ret, if there is nothing else to do
         if (d_align_stack) {
 #ifdef CHIA_WINDOWS
+            // Windows ABI: restore YMM6–YMM15 from the stack area reserved during prologue.
             const int windows_saved_rsp_bytes = 8;
             const int windows_shadow_space_bytes = 0x20;
             const int windows_xmm_save_base = windows_saved_rsp_bytes + spill_bytes + windows_shadow_space_bytes;

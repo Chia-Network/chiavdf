@@ -40,8 +40,16 @@ struct asm_function {
     vector<reg_scalar> args;
 
     vector<reg_scalar> pop_regs;
+#ifdef CHIA_WINDOWS
+    const vector<reg_scalar> all_save_regs={reg_rbp, reg_rbx, reg_rsi, reg_rdi, reg_r12, reg_r13, reg_r14, reg_r15};
+#else
     const vector<reg_scalar> all_save_regs={reg_rbp, reg_rbx, reg_r12, reg_r13, reg_r14, reg_r15};
+#endif
+#ifdef CHIA_WINDOWS
+    const vector<reg_scalar> all_arg_regs={reg_rcx, reg_rdx, reg_r8, reg_r9, reg_r10, reg_r11};
+#else
     const vector<reg_scalar> all_arg_regs={reg_rdi, reg_rsi, reg_rdx, reg_rcx, reg_r8, reg_r9};
+#endif
     const reg_scalar return_reg=reg_rax;
 
     bool d_align_stack=true;
@@ -83,6 +91,15 @@ struct asm_function {
             regs.get_scalar(r);
             args.push_back(r);
         }
+#ifdef CHIA_WINDOWS
+        // Load 5th+ args from the stack (Windows x64 calling convention).
+        if (num_args > 4) {
+            APPEND_M(str( "MOV R10, [RSP+0x28]" ));
+        }
+        if (num_args > 5) {
+            APPEND_M(str( "MOV R11, [RSP+0x30]" ));
+        }
+#endif
 
         //takes 6 cycles max if nothing else to do
         int num_available_regs=15-all_save_regs.size();
@@ -98,6 +115,31 @@ struct asm_function {
         assert(num_available_regs==num_regs);
 
         if (align_stack) {
+#ifdef CHIA_WINDOWS
+            // Windows x64: reserve spill area + shadow space + xmm save area + align to 64.
+            const int windows_saved_rsp_bytes = 8;
+            const int windows_shadow_space_bytes = 0x20;
+            const int windows_xmm_save_bytes = 10 * 32; // YMM6-15
+            const int windows_frame_bytes =
+                windows_saved_rsp_bytes + spill_bytes + windows_shadow_space_bytes + windows_xmm_save_bytes;
+            APPEND_M(str( "MOV RAX, RSP" ));
+            APPEND_M(str( "SUB RSP, #", to_hex(windows_frame_bytes + 63) ));
+            APPEND_M(str( "AND RSP, -64" ));
+            // Keep spill base (RSP+8) 64-byte aligned.
+            APPEND_M(str( "SUB RSP, 8" ));
+            APPEND_M(str( "MOV [RSP], RAX" ));
+            const int windows_xmm_save_base = windows_saved_rsp_bytes + spill_bytes + windows_shadow_space_bytes;
+            APPEND_M(str( "VMOVDQU [RSP+#], YMM6", to_hex(windows_xmm_save_base + 0 * 32) ));
+            APPEND_M(str( "VMOVDQU [RSP+#], YMM7", to_hex(windows_xmm_save_base + 1 * 32) ));
+            APPEND_M(str( "VMOVDQU [RSP+#], YMM8", to_hex(windows_xmm_save_base + 2 * 32) ));
+            APPEND_M(str( "VMOVDQU [RSP+#], YMM9", to_hex(windows_xmm_save_base + 3 * 32) ));
+            APPEND_M(str( "VMOVDQU [RSP+#], YMM10", to_hex(windows_xmm_save_base + 4 * 32) ));
+            APPEND_M(str( "VMOVDQU [RSP+#], YMM11", to_hex(windows_xmm_save_base + 5 * 32) ));
+            APPEND_M(str( "VMOVDQU [RSP+#], YMM12", to_hex(windows_xmm_save_base + 6 * 32) ));
+            APPEND_M(str( "VMOVDQU [RSP+#], YMM13", to_hex(windows_xmm_save_base + 7 * 32) ));
+            APPEND_M(str( "VMOVDQU [RSP+#], YMM14", to_hex(windows_xmm_save_base + 8 * 32) ));
+            APPEND_M(str( "VMOVDQU [RSP+#], YMM15", to_hex(windows_xmm_save_base + 9 * 32) ));
+#else
             // RSP'=RSP&(~63) ; this makes it 64-aligned and can only reduce its value
             // RSP''=RSP'-64 ; still 64-aligned but now there is at least 64 bytes of unused stuff
             // [RSP'']=RSP ; store old value in unused area
@@ -105,6 +147,7 @@ struct asm_function {
             APPEND_M(str( "AND RSP, -64" )); //-64 equals ~63
             APPEND_M(str( "SUB RSP, 64" ));
             APPEND_M(str( "MOV [RSP], RAX" ));
+#endif
         }
     }
 
@@ -122,6 +165,21 @@ struct asm_function {
 
         //this takes 4 cycles including ret, if there is nothing else to do
         if (d_align_stack) {
+#ifdef CHIA_WINDOWS
+            const int windows_saved_rsp_bytes = 8;
+            const int windows_shadow_space_bytes = 0x20;
+            const int windows_xmm_save_base = windows_saved_rsp_bytes + spill_bytes + windows_shadow_space_bytes;
+            APPEND_M(str( "VMOVDQU YMM6, [RSP+#]", to_hex(windows_xmm_save_base + 0 * 32) ));
+            APPEND_M(str( "VMOVDQU YMM7, [RSP+#]", to_hex(windows_xmm_save_base + 1 * 32) ));
+            APPEND_M(str( "VMOVDQU YMM8, [RSP+#]", to_hex(windows_xmm_save_base + 2 * 32) ));
+            APPEND_M(str( "VMOVDQU YMM9, [RSP+#]", to_hex(windows_xmm_save_base + 3 * 32) ));
+            APPEND_M(str( "VMOVDQU YMM10, [RSP+#]", to_hex(windows_xmm_save_base + 4 * 32) ));
+            APPEND_M(str( "VMOVDQU YMM11, [RSP+#]", to_hex(windows_xmm_save_base + 5 * 32) ));
+            APPEND_M(str( "VMOVDQU YMM12, [RSP+#]", to_hex(windows_xmm_save_base + 6 * 32) ));
+            APPEND_M(str( "VMOVDQU YMM13, [RSP+#]", to_hex(windows_xmm_save_base + 7 * 32) ));
+            APPEND_M(str( "VMOVDQU YMM14, [RSP+#]", to_hex(windows_xmm_save_base + 8 * 32) ));
+            APPEND_M(str( "VMOVDQU YMM15, [RSP+#]", to_hex(windows_xmm_save_base + 9 * 32) ));
+#endif
             APPEND_M(str( "MOV RSP, [RSP]" ));
         }
         for (int x=pop_regs.size()-1;x>=0;--x) {

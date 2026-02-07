@@ -3,7 +3,7 @@
 
 #include "include.h"
 
-#if defined(ARCH_X86) || defined(ARCH_X64)
+#if (defined(ARCH_X86) || defined(ARCH_X64)) && !defined(CHIA_DISABLE_ASM)
 #include <x86intrin.h>
 #endif
 
@@ -26,7 +26,7 @@
 
 #include "nudupl_listener.h"
 
-#if defined(ARCH_X86) || defined(ARCH_X64)
+#if (defined(ARCH_X86) || defined(ARCH_X64)) && !defined(CHIA_DISABLE_ASM)
 #include "asm_main.h"
 
 #include "gcd_base_continued_fractions.h"
@@ -43,7 +43,7 @@
 
 #include "gpu_integer_gcd.h"
 
-#if defined(ARCH_X86) || defined(ARCH_X64)
+#if (defined(ARCH_X86) || defined(ARCH_X64)) && !defined(CHIA_DISABLE_ASM)
 #include "vdf_test.h"
 #endif
 #include <map>
@@ -178,7 +178,7 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
                 f_copy=f;
                 c_checkpoint_interval=1;
 
-                #if defined(ARCH_X86) || defined(ARCH_X64)
+                #if (defined(ARCH_X86) || defined(ARCH_X64)) && !defined(CHIA_DISABLE_ASM)
                 f_copy_3=f;
                 f_copy_3_valid=square_fast_impl(f_copy_3, D, L, num_iterations);
                 #endif
@@ -193,7 +193,7 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
         #endif
 
         uint64 actual_iterations = 0;
-#if defined(ARCH_X86) || defined(ARCH_X64)
+#if (defined(ARCH_X86) || defined(ARCH_X64)) && !defined(CHIA_DISABLE_ASM)
         // x86/x64: use the phased pipeline.
         square_state_type square_state;
         square_state.pairindex = 0;

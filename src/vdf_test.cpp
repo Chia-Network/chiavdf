@@ -280,8 +280,8 @@ int main(int argc, char* argv[]) {
 
     repeated_square c_square(d, d_initial, num_iterations);
 
-    cout << c_square.current.a.impl << "\n";
-    cout << c_square.current.b.impl;
+    cout << c_square.current.a.to_string() << "\n";
+    cout << c_square.current.b.to_string();
 
     //track_max.output(512);
 

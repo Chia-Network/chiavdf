@@ -31,6 +31,7 @@ extern bool enable_all_instructions;
 
 #include <atomic>
 #include <cstdlib>
+#include <cstdio>
 #include <mutex>
 
 inline std::atomic<bool> bAVX2{false};
@@ -49,6 +50,10 @@ inline bool env_flag(const char* name) {
     return false;
   }
   return true;
+}
+
+inline bool should_log_avx() {
+  return env_flag("CHIAVDF_LOG_AVX");
 }
 
 #if defined(__i386) || defined(_M_IX86)
@@ -107,6 +112,9 @@ inline void init_avx_flags()
     } else {
       bAVX2.store(avx2bit && adxbit, std::memory_order_relaxed);
     }
+    if (bAVX2.load(std::memory_order_relaxed) && should_log_avx()) {
+      std::fprintf(stderr, "AVX2 enabled (avx2=%d adx=%d)\n", avx2bit ? 1 : 0, adxbit ? 1 : 0);
+    }
 
     if (disable_avx512) {
       enable_avx512_ifma.store(false, std::memory_order_relaxed);
@@ -116,6 +124,9 @@ inline void init_avx_flags()
       enable_avx512_ifma.store(avx512fbit && avx512ifmabit, std::memory_order_relaxed);
     } else {
       enable_avx512_ifma.store(false, std::memory_order_relaxed);
+    }
+    if (enable_avx512_ifma.load(std::memory_order_relaxed) && should_log_avx()) {
+      std::fprintf(stderr, "AVX512 IFMA enabled (f=%d ifma=%d)\n", avx512fbit ? 1 : 0, avx512ifmabit ? 1 : 0);
     }
 #elif defined(ARCH_ARM)
     bAVX2.store(false, std::memory_order_relaxed);

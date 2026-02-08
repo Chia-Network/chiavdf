@@ -174,3 +174,68 @@ jobs:
             ${{ github.workspace }}/src/hw/libft4222/libft4222.dylib
             ${{ github.workspace }}/src/hw/libft4222/libft4222.1.4.4.190.dylib
             ${{ github.workspace }}/src/hw/libft4222/libftd2xx.dylib
+
+  build-hw-windows:
+    name: Build HW VDF Client (Windows)
+    runs-on: [windows-latest]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: Chia-Network/actions/setup-python@main
+        name: Install Python
+        with:
+          python-version: "3.10"
+
+      - name: Set Env
+        uses: Chia-Network/actions/setjobenv@main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install deps (MSYS2)
+        uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          install: >-
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-gmp
+            mingw-w64-x86_64-boost
+            mingw-w64-x86_64-make
+
+      - name: Download USB drivers (FT4222H)
+        run: powershell -ExecutionPolicy Bypass -File scripts/get-libft4222.ps1 install
+
+      - name: Compile
+        working-directory: "${{ github.workspace }}/src"
+        shell: msys2 {0}
+        run: make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+
+      - name: Smoke test
+        working-directory: "${{ github.workspace }}/src"
+        shell: msys2 {0}
+        run: |
+          # CI runners do not have FT4222 hardware attached; only validate binaries exist.
+          test -x ./hw_vdf_client.exe || test -x ./hw_vdf_client
+          test -x ./hw_test.exe || test -x ./hw_test
+          ./emu_hw_test.exe || ./emu_hw_test
+          PATH="$PWD/hw/libft4222:$PATH" ./emu_hw_vdf_client.exe --list || PATH="$PWD/hw/libft4222:$PATH" ./emu_hw_vdf_client --list
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: hw-vdf-windows
+          path: |
+            ${{ github.workspace }}/src/emu_hw_test.exe
+            ${{ github.workspace }}/src/hw_test.exe
+            ${{ github.workspace }}/src/hw_vdf_client.exe
+            ${{ github.workspace }}/src/emu_hw_vdf_client.exe
+            ${{ github.workspace }}/src/emu_hw_test
+            ${{ github.workspace }}/src/hw_test
+            ${{ github.workspace }}/src/hw_vdf_client
+            ${{ github.workspace }}/src/emu_hw_vdf_client
+            ${{ github.workspace }}/src/hw/libft4222/libft4222.dll
+            ${{ github.workspace }}/src/hw/libft4222/ftd2xx.dll
+            ${{ github.workspace }}/src/hw/libft4222/libft4222.lib
+            ${{ github.workspace }}/src/hw/libft4222/ftd2xx.lib

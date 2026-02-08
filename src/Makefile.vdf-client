@@ -6,6 +6,10 @@ NOPIE = -fno-PIE
 else
 NOPIE = -no-pie
 endif
+# Windows builds don't use PIE flags.
+ifeq ($(OS),Windows_NT)
+NOPIE =
+endif
 # macOS arm64 ignores -no_pie and warns; omit to avoid deprecation warnings
 ifeq ($(UNAME),Darwin)
 ifneq ($(filter $(ARCH),arm64),)
@@ -14,8 +18,13 @@ endif
 endif
 
 LDFLAGS += -flto $(NOPIE) -g
+ifeq ($(OS),Windows_NT)
+LDLIBS += -lgmpxx -lgmp
+CXXFLAGS += -flto -std=c++1z -D VDF_MODE=0 -D FAST_MACHINE=1 $(NOPIE) -fvisibility=hidden
+else
 LDLIBS += -lgmpxx -lgmp -pthread
 CXXFLAGS += -flto -std=c++1z -D VDF_MODE=0 -D FAST_MACHINE=1 -pthread $(NOPIE) -fvisibility=hidden
+endif
 ifeq ($(UNAME),Darwin)
 CXXFLAGS += -D CHIAOSX=1
 # Homebrew (common on macOS) installs boost/gmp to /opt/homebrew or /usr/local
@@ -78,7 +87,11 @@ compile_asm: compile_asm.o
 
 HW_OBJS = $(addprefix hw/,hw_util.o hw_proof.o hw_interface.o chia_driver.o ftdi_driver.o vdf_driver.o pll_freqs.o) vdf_base.o lzcnt.o
 EMU_OBJS = hw/emu_funcs.o hw/emu_runner.o
-ifeq ($(UNAME),Darwin)
+ifeq ($(OS),Windows_NT)
+HW_LIB = hw/libft4222/libft4222.lib
+HW_FTD2XX_LIB = hw/libft4222/ftd2xx.lib
+HW_LIBS = $(HW_LIB) $(HW_FTD2XX_LIB)
+else ifeq ($(UNAME),Darwin)
 HW_LIB = hw/libft4222/libft4222.dylib
 HW_FTD2XX_LIB = hw/libft4222/libftd2xx.dylib
 HW_LIBS = $(HW_LIB) $(HW_FTD2XX_LIB)

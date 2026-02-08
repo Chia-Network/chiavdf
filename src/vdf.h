@@ -196,7 +196,7 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
 #if defined(ARCH_X86) || defined(ARCH_X64)
         // x86/x64: use the phased pipeline.
         square_state_type square_state;
-        square_state.pairindex = 0;
+        square_state.pairindex=0;
         actual_iterations = repeated_square_fast(square_state, f, D, L, num_iterations, batch_size, weso);
 #else
         // Non-x86: use the C++ NUDUPL path (faster and lower maintenance than the phased pipeline).

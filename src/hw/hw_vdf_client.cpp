@@ -8,6 +8,7 @@
 
 #include <arpa/inet.h>
 #include <cstdio>
+#include <inttypes.h>
 #include <fcntl.h>
 #include <getopt.h>
 #include <signal.h>
@@ -72,7 +73,10 @@ void signal_handler(int sig)
 void init_conn(struct vdf_conn *conn, uint32_t ip, int port)
 {
     int ret;
-    struct sockaddr_in sa = { AF_INET, htons(port), { htonl(ip) } };
+    struct sockaddr_in sa = {};
+    sa.sin_family = AF_INET;
+    sa.sin_port = htons(static_cast<uint16_t>(port));
+    sa.sin_addr.s_addr = htonl(ip);
     conn->sock = socket(AF_INET, SOCK_STREAM, 0);
     LOG_INFO("Connecting to %s:%d", inet_ntoa(sa.sin_addr), port);
     ret = connect(conn->sock, (struct sockaddr *)&sa, sizeof(sa));
@@ -135,7 +139,7 @@ void stop_conn(struct vdf_client *client, struct vdf_conn *conn)
         stop_hw_vdf(client->drv, conn->vdf.idx);
     }
     conn->state = STOPPED;
-    LOG_INFO("VDF %d: Stopped at iters=%lu", conn->vdf.idx, conn->vdf.cur_iters);
+    LOG_INFO("VDF %d: Stopped at iters=%" PRIu64, conn->vdf.idx, conn->vdf.cur_iters);
 }
 
 void close_conn(struct vdf_conn *conn)
@@ -196,7 +200,7 @@ void handle_iters(struct vdf_client *client, struct vdf_conn *conn)
         iters = strtoul(iters_buf, NULL, 10);
 
         if (iters) {
-            LOG_DEBUG("VDF %d: Requested proof for iters=%lu", conn->vdf.idx, iters);
+            LOG_DEBUG("VDF %d: Requested proof for iters=%" PRIu64, conn->vdf.idx, iters);
             hw_request_proof(&conn->vdf, iters, false);
         } else {
             LOG_INFO("VDF %d: Stop requested", conn->vdf.idx);
@@ -217,7 +221,7 @@ void handle_iters(struct vdf_client *client, struct vdf_conn *conn)
         size_t pos = 0;
 
         for (size_t i = 0; i < n_proofs; i++) {
-            pos += snprintf(&iters_str[pos], sizeof(iters_str) - pos, "%s%lu",
+            pos += snprintf(&iters_str[pos], sizeof(iters_str) - pos, "%s%" PRIu64,
                     i ? ", " : "", conn->vdf.req_proofs[i].iters);
             if (pos >= sizeof(iters_str) - 1) {
                 break;
@@ -243,7 +247,7 @@ void handle_proofs(struct vdf_client *client, struct vdf_conn *conn)
         uint8_t data[8 + 8 + 1 + BQFC_FORM_SIZE * 2];
         char tl_data[sizeof(data) * 2 + 5] = {0};
 
-        LOG_INFO("VDF %d: Proof retrieved for iters=%lu", conn->vdf.idx, proof->iters);
+        LOG_INFO("VDF %d: Proof retrieved for iters=%" PRIu64, conn->vdf.idx, proof->iters);
 
         Int64ToBytes(&data[0], proof->iters);
         Int64ToBytes(&data[8], BQFC_FORM_SIZE);
@@ -386,7 +390,7 @@ void event_loop(struct vdf_client *client)
                         adjust_hw_freq(client->drv, running_mask & ~(1 << i), -1);
                     }
 
-                    LOG_INFO("VDF %d: Restarting VDF at %lu iters",
+                    LOG_INFO("VDF %d: Restarting VDF at %" PRIu64 " iters",
                             vdf->idx, vdf->iters_offset);
                     start_hw_vdf(client->drv, vdf->D.impl, f->a.impl, f->b.impl,
                             vdf->target_iters - vdf->iters_offset, vdf->idx);
@@ -529,7 +533,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
 int hw_vdf_client_main(int argc, char **argv)
 {
     struct vdf_client client;
-    struct sigaction sa = {0};
+    struct sigaction sa = {};
 
     if (parse_opts(argc, argv, &client.opts) < 0) {
         LOG_SIMPLE("\nUsage: %s [OPTIONS] PORT [N_VDFS]\n"

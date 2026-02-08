@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   build-hw:
-    name: Build HW VDF Client
+    name: Build HW VDF Client (Ubuntu)
     runs-on: [ubuntu-22.04]
     steps:
       - name: Checkout code
@@ -46,17 +46,20 @@ jobs:
           sudo apt-get install -y build-essential cmake libgmp-dev libboost-system-dev
 
       - name: Download USB drivers
-        run: |
-          mkdir libft4222
-          cd libft4222
-          wget https://download.chia.net/vdf/libft4222-linux-1.4.4.170.tgz
-          tar -xvzf libft4222-linux-1.4.4.170.tgz
-          ln -s ${{ github.workspace }}/libft4222 ${{ github.workspace }}/src/hw/libft4222
-          ln -s ${{ github.workspace }}/libft4222/build-x86_64/libft4222.so.1.4.4.170 ${{ github.workspace }}/libft4222/build-x86_64/libft4222.so
+        run: ./scripts/get-libft4222.sh install
 
       - name: Compile
         working-directory: "${{ github.workspace }}/src"
         run: make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+
+      - name: Smoke test
+        working-directory: "${{ github.workspace }}/src"
+        run: |
+          # CI runners do not have FT4222 hardware attached; only validate binaries exist.
+          test -x ./hw_vdf_client
+          test -x ./hw_test
+          ./emu_hw_test
+          ./emu_hw_vdf_client --list
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v5
@@ -119,3 +122,136 @@ jobs:
           glue_url: ${{ secrets.GLUE_API_URL }}
           glue_project: "chiavdf-hw"
           glue_path: "trigger"
+
+  build-hw-macos-arm64:
+    name: Build HW VDF Client (macOS arm64)
+    runs-on: [macos-13-arm64]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: Chia-Network/actions/setup-python@main
+        name: Install Python
+        with:
+          python-version: "3.10"
+
+      - name: Set Env
+        uses: Chia-Network/actions/setjobenv@main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install deps
+        run: |
+          brew install boost gmp
+
+      - name: Download USB drivers (FT4222H)
+        run: ./scripts/get-libft4222.sh install
+
+      - name: Compile
+        working-directory: "${{ github.workspace }}/src"
+        run: make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+
+      - name: Smoke test
+        working-directory: "${{ github.workspace }}/src"
+        run: |
+          # CI runners do not have FT4222 hardware attached; only validate binaries exist.
+          test -x ./hw_vdf_client
+          test -x ./hw_test
+          ./emu_hw_test
+          ./emu_hw_vdf_client --list
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: hw-vdf-macos-arm64
+          path: |
+            ${{ github.workspace }}/src/emu_hw_test
+            ${{ github.workspace }}/src/hw_test
+            ${{ github.workspace }}/src/hw_vdf_client
+            ${{ github.workspace }}/src/emu_hw_vdf_client
+            ${{ github.workspace }}/src/hw/libft4222/libft4222.dylib
+            ${{ github.workspace }}/src/hw/libft4222/libft4222.1.4.4.190.dylib
+            ${{ github.workspace }}/src/hw/libft4222/libftd2xx.dylib
+
+  build-hw-windows:
+    name: Build HW VDF Client (Windows)
+    runs-on: [windows-latest]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: Chia-Network/actions/setup-python@main
+        name: Install Python
+        with:
+          python-version: "3.10"
+
+      - name: Set Env
+        uses: Chia-Network/actions/setjobenv@main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+# NOTE: The third-party MSYS2 action is blocked by repo policy right now.
+# If/when allowed, you can replace the choco-based install below with:
+#   - name: Install deps (MSYS2)
+#     uses: msys2/setup-msys2@v2
+#     with:
+#       update: true
+#       install: >-
+#         mingw-w64-x86_64-toolchain
+#         mingw-w64-x86_64-gmp
+#         mingw-w64-x86_64-boost
+#         mingw-w64-x86_64-make
+
+      - name: Install MSYS2 and deps
+        env:
+          CHERE_INVOKING: "1"
+        shell: pwsh
+        run: |
+          choco install msys2 -y
+          C:\msys64\usr\bin\bash.exe -lc "pacman -Syu --noconfirm"
+          C:\msys64\usr\bin\bash.exe -lc "pacman -S --noconfirm --needed mingw-w64-x86_64-toolchain mingw-w64-x86_64-gmp mingw-w64-x86_64-boost mingw-w64-x86_64-make"
+
+      - name: Download USB drivers (FT4222H)
+        run: powershell -ExecutionPolicy Bypass -File scripts/get-libft4222.ps1 install
+
+      - name: Compile
+        working-directory: "${{ github.workspace }}/src"
+        env:
+          CHERE_INVOKING: "1"
+          MSYSTEM: MINGW64
+        shell: pwsh
+        run: C:\msys64\usr\bin\bash.exe -lc 'PATH=/mingw64/bin:$PATH make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client'
+
+      - name: Smoke test
+        working-directory: "${{ github.workspace }}/src"
+        env:
+          CHERE_INVOKING: "1"
+          MSYSTEM: MINGW64
+        shell: pwsh
+        run: |
+          C:\msys64\usr\bin\bash.exe -lc "test -x ./hw_vdf_client.exe || test -x ./hw_vdf_client"
+          C:\msys64\usr\bin\bash.exe -lc "test -x ./hw_test.exe || test -x ./hw_test"
+          C:\msys64\usr\bin\bash.exe -lc "./emu_hw_test.exe || ./emu_hw_test"
+          C:\msys64\usr\bin\bash.exe -lc "PATH=\"$PWD/hw/libft4222:$PATH\" ./emu_hw_vdf_client.exe --list || PATH=\"$PWD/hw/libft4222:$PATH\" ./emu_hw_vdf_client --list"
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: hw-vdf-windows
+          path: |
+            ${{ github.workspace }}/src/emu_hw_test.exe
+            ${{ github.workspace }}/src/hw_test.exe
+            ${{ github.workspace }}/src/hw_vdf_client.exe
+            ${{ github.workspace }}/src/emu_hw_vdf_client.exe
+            ${{ github.workspace }}/src/emu_hw_test
+            ${{ github.workspace }}/src/hw_test
+            ${{ github.workspace }}/src/hw_vdf_client
+            ${{ github.workspace }}/src/emu_hw_vdf_client
+            ${{ github.workspace }}/src/hw/libft4222/libft4222.dll
+            ${{ github.workspace }}/src/hw/libft4222/ftd2xx.dll
+            ${{ github.workspace }}/src/hw/libft4222/libft4222.lib
+            ${{ github.workspace }}/src/hw/libft4222/ftd2xx.lib

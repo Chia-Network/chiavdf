@@ -67,7 +67,7 @@ Note: `./prover_test` defaults to a long soak/stress run. Set
 ## Fuzzing
 
 Fuzz targets live under `rust_bindings/fuzz`. The `prove` target includes an
-iteration cap to avoid out-of-memory conditions in CI. If you want deeper
+iterations cap for safety. For deeper or longer-running fuzzing with higher
 iteration coverage, raise the cap in `rust_bindings/fuzz/fuzz_targets/prove.rs`
 after validating memory usage and exec/s on your runner.
 

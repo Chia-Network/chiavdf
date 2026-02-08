@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   build-hw:
-    name: Build HW VDF Client
+    name: Build HW VDF Client (Ubuntu)
     runs-on: [ubuntu-22.04]
     steps:
       - name: Checkout code
@@ -224,7 +224,7 @@ jobs:
           CHERE_INVOKING: "1"
           MSYSTEM: MINGW64
         shell: pwsh
-        run: C:\msys64\usr\bin\bash.exe -lc "make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client"
+        run: C:\msys64\usr\bin\bash.exe -lc 'PATH=/mingw64/bin:$PATH make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client'
 
       - name: Smoke test
         working-directory: "${{ github.workspace }}/src"

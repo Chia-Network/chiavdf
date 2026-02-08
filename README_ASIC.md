@@ -61,6 +61,16 @@ To clean downloaded artifacts:
 ./scripts/get-libft4222.sh clean
 ```
 
+### Windows
+
+Use the helper script to download and stage drivers:
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/get-libft4222.ps1 install
+```
+
+Note: some FT4222 driver zips do not include `WinTypes.h`. The script will
+generate a small compatibility header that includes `windows.h` if needed.
+
 Build binaries:
 ```bash
 cd src

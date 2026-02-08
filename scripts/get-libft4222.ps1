@@ -34,6 +34,23 @@ function Choose-Best {
     return $Items[0]
 }
 
+function Find-Header {
+    param(
+        [string]$BaseName,
+        [string[]]$Alternates = @()
+    )
+    $names = @($BaseName) + $Alternates
+    foreach ($name in $names) {
+        $match = Get-ChildItem -Path $ExtractDir -Recurse -File |
+            Where-Object { $_.Name -ieq $name } |
+            Select-Object -First 1
+        if ($match) {
+            return $match
+        }
+    }
+    return $null
+}
+
 function Install-LibFT4222 {
     Ensure-Dir $WorkDir
     if (Test-Path $ExtractDir) {
@@ -43,13 +60,27 @@ function Install-LibFT4222 {
     Invoke-WebRequest -Uri $ZipUrl -OutFile $ZipPath
     Expand-Archive -Path $ZipPath -DestinationPath $ExtractDir -Force
 
-    $headers = @("libft4222.h", "ftd2xx.h", "WinTypes.h")
+    $headers = @(
+        @{ Name = "libft4222.h"; Alternates = @() },
+        @{ Name = "ftd2xx.h"; Alternates = @() },
+        @{ Name = "WinTypes.h"; Alternates = @("wintypes.h") }
+    )
     foreach ($header in $headers) {
-        $match = Get-ChildItem -Path $ExtractDir -Recurse -Filter $header | Select-Object -First 1
+        $match = Find-Header -BaseName $header.Name -Alternates $header.Alternates
         if (-not $match) {
-            throw "Missing required header: $header"
+            if ($header.Name -eq "WinTypes.h") {
+                $stubPath = Join-Path $WorkDir $header.Name
+                @"
+#pragma once
+#ifdef _WIN32
+#include <windows.h>
+#endif
+"@ | Set-Content -Path $stubPath -Encoding ASCII
+                continue
+            }
+            throw "Missing required header: $($header.Name)"
         }
-        Copy-Item $match.FullName -Destination (Join-Path $WorkDir $header) -Force
+        Copy-Item $match.FullName -Destination (Join-Path $WorkDir $header.Name) -Force
     }
 
     $libftLib = Choose-Best (Get-ChildItem -Path $ExtractDir -Recurse -Filter "libft4222*.lib")

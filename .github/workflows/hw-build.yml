@@ -207,6 +207,8 @@ jobs:
 #         mingw-w64-x86_64-make
 
       - name: Install MSYS2 and deps
+        env:
+          CHERE_INVOKING: "1"
         shell: pwsh
         run: |
           choco install msys2 -y
@@ -218,11 +220,17 @@ jobs:
 
       - name: Compile
         working-directory: "${{ github.workspace }}/src"
+        env:
+          CHERE_INVOKING: "1"
+          MSYSTEM: MINGW64
         shell: pwsh
         run: C:\msys64\usr\bin\bash.exe -lc "make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client"
 
       - name: Smoke test
         working-directory: "${{ github.workspace }}/src"
+        env:
+          CHERE_INVOKING: "1"
+          MSYSTEM: MINGW64
         shell: pwsh
         run: |
           C:\msys64\usr\bin\bash.exe -lc "test -x ./hw_vdf_client.exe || test -x ./hw_vdf_client"

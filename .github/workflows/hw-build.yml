@@ -194,33 +194,41 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install deps (MSYS2)
-        uses: msys2/setup-msys2@v2
-        with:
-          update: true
-          install: >-
-            mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-gmp
-            mingw-w64-x86_64-boost
-            mingw-w64-x86_64-make
+# NOTE: The third-party MSYS2 action is blocked by repo policy right now.
+# If/when allowed, you can replace the choco-based install below with:
+#   - name: Install deps (MSYS2)
+#     uses: msys2/setup-msys2@v2
+#     with:
+#       update: true
+#       install: >-
+#         mingw-w64-x86_64-toolchain
+#         mingw-w64-x86_64-gmp
+#         mingw-w64-x86_64-boost
+#         mingw-w64-x86_64-make
+
+      - name: Install MSYS2 and deps
+        shell: pwsh
+        run: |
+          choco install msys2 -y
+          C:\msys64\usr\bin\bash.exe -lc "pacman -Syu --noconfirm"
+          C:\msys64\usr\bin\bash.exe -lc "pacman -S --noconfirm --needed mingw-w64-x86_64-toolchain mingw-w64-x86_64-gmp mingw-w64-x86_64-boost mingw-w64-x86_64-make"
 
       - name: Download USB drivers (FT4222H)
         run: powershell -ExecutionPolicy Bypass -File scripts/get-libft4222.ps1 install
 
       - name: Compile
         working-directory: "${{ github.workspace }}/src"
-        shell: msys2 {0}
-        run: make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+        shell: pwsh
+        run: C:\msys64\usr\bin\bash.exe -lc "make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client"
 
       - name: Smoke test
         working-directory: "${{ github.workspace }}/src"
-        shell: msys2 {0}
+        shell: pwsh
         run: |
-          # CI runners do not have FT4222 hardware attached; only validate binaries exist.
-          test -x ./hw_vdf_client.exe || test -x ./hw_vdf_client
-          test -x ./hw_test.exe || test -x ./hw_test
-          ./emu_hw_test.exe || ./emu_hw_test
-          PATH="$PWD/hw/libft4222:$PATH" ./emu_hw_vdf_client.exe --list || PATH="$PWD/hw/libft4222:$PATH" ./emu_hw_vdf_client --list
+          C:\msys64\usr\bin\bash.exe -lc "test -x ./hw_vdf_client.exe || test -x ./hw_vdf_client"
+          C:\msys64\usr\bin\bash.exe -lc "test -x ./hw_test.exe || test -x ./hw_test"
+          C:\msys64\usr\bin\bash.exe -lc "./emu_hw_test.exe || ./emu_hw_test"
+          C:\msys64\usr\bin\bash.exe -lc "PATH=\"$PWD/hw/libft4222:$PATH\" ./emu_hw_vdf_client.exe --list || PATH=\"$PWD/hw/libft4222:$PATH\" ./emu_hw_vdf_client --list"
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v5

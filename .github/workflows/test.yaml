@@ -172,23 +172,28 @@ jobs:
         if ($env:MPIR_ROOT -and (Test-Path "$env:MPIR_ROOT\bin")) { $dllPaths += "$env:MPIR_ROOT\bin" }
         if (Test-Path "$env:GITHUB_WORKSPACE\mpir_gc_x64") { $dllPaths += "$env:GITHUB_WORKSPACE\mpir_gc_x64" }
         if ($dllPaths.Count -gt 0) { $env:PATH = ($dllPaths -join ';') + ';' + $env:PATH }
-        Write-Host "Running 1weso_test"
-        .\1weso_test.exe
-        Write-Host "Running 2weso_test"
-        .\2weso_test.exe
-        Write-Host "Running prover_test"
+        function Invoke-TestExe([string]$name, [string[]]$args = @()) {
+          Write-Host "Running $name"
+          & ".\$name.exe" @args
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "$name exit code: $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
+        }
+        Invoke-TestExe "1weso_test"
+        Invoke-TestExe "2weso_test"
         $env:CHIAVDF_PROVER_TEST_FAST = "1"
-        .\prover_test.exe
+        Invoke-TestExe "prover_test"
 
     - name: Benchmark vdf_bench square (Ubuntu/Mac)
-      if: "!startsWith(matrix.os, 'windows')"
+      if: matrix.config == 'optimized=1' && !startsWith(matrix.os, 'windows')
       run: |
         cd src
         echo "Benchmarking vdf_bench with 2,000,000 iterations of square_asm"
         ./vdf_bench square_asm 2000000
 
     - name: Benchmark vdf_bench square (Windows)
-      if: startsWith(matrix.os, 'windows')
+      if: matrix.config == 'optimized=1' && startsWith(matrix.os, 'windows')
       shell: pwsh
       run: |
         cd build

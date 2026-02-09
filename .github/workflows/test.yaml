@@ -21,6 +21,11 @@ jobs:
       matrix:
         os: [macos-13-intel, macos-13-arm64, ubuntu-latest, windows-latest]
         config: [optimized=1, TSAN=1, ASAN=1]
+        exclude:
+          # clang-cl TSAN is unsupported for x86_64-pc-windows-msvc, so
+          # Windows TSAN fails during CMake compiler checks.
+          - os: windows-latest
+            config: TSAN=1
 
     steps:
     - name: Checkout code
@@ -100,18 +105,35 @@ jobs:
         $cmakeModuleLinkerFlags = ""
         if ("${{ matrix.config }}" -eq "ASAN=1") {
           $cmakeBuildType = "RelWithDebInfo"
-          $cmakeCFlags = "-fsanitize=address"
-          $cmakeCxxFlags = "-fsanitize=address"
-          $cmakeExeLinkerFlags = "-fsanitize=address"
-          $cmakeSharedLinkerFlags = "-fsanitize=address"
-          $cmakeModuleLinkerFlags = "-fsanitize=address"
+          # clang-cl on Windows expects /fsanitize=address, and lld-link does
+          # not understand -fsanitize=address linker flags.
+          $cmakeCFlags = "/fsanitize=address"
+          $cmakeCxxFlags = "/fsanitize=address"
+          $clangResourceDir = (& clang-cl --print-resource-dir).Trim()
+          $asanLibDir = Join-Path $clangResourceDir "lib\windows"
+          if (-not (Test-Path $asanLibDir)) {
+            throw "ASAN runtime library directory not found: $asanLibDir"
+          }
+          if ($env:LIB) {
+            $env:LIB = "$asanLibDir;$env:LIB"
+          } else {
+            $env:LIB = "$asanLibDir"
+          }
         } elseif ("${{ matrix.config }}" -eq "TSAN=1") {
           $cmakeBuildType = "RelWithDebInfo"
-          $cmakeCFlags = "-fsanitize=thread"
-          $cmakeCxxFlags = "-fsanitize=thread"
-          $cmakeExeLinkerFlags = "-fsanitize=thread"
-          $cmakeSharedLinkerFlags = "-fsanitize=thread"
-          $cmakeModuleLinkerFlags = "-fsanitize=thread"
+          # Keep sanitizer flag on compile side for clang-cl.
+          $cmakeCFlags = "/fsanitize=thread"
+          $cmakeCxxFlags = "/fsanitize=thread"
+          $clangResourceDir = (& clang-cl --print-resource-dir).Trim()
+          $tsanLibDir = Join-Path $clangResourceDir "lib\windows"
+          if (-not (Test-Path $tsanLibDir)) {
+            throw "TSAN runtime library directory not found: $tsanLibDir"
+          }
+          if ($env:LIB) {
+            $env:LIB = "$tsanLibDir;$env:LIB"
+          } else {
+            $env:LIB = "$tsanLibDir"
+          }
         }
         # Force compiler probes (try_compile) to use release CRT when
         # sanitizers are enabled; clang-cl rejects /MDd + -fsanitize=address.

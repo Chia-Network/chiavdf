@@ -80,9 +80,6 @@ jobs:
         $cmakeExeLinkerFlags = ""
         $cmakeSharedLinkerFlags = ""
         $cmakeModuleLinkerFlags = ""
-        # Force compiler probes (try_compile) to use release CRT when
-        # sanitizers are enabled; clang-cl rejects /MDd + -fsanitize=address.
-        $cmakeTryCompileConfig = "Release"
         if ("${{ matrix.config }}" -eq "ASAN=1") {
           $cmakeBuildType = "RelWithDebInfo"
           $cmakeCFlags = "-fsanitize=address"
@@ -98,25 +95,32 @@ jobs:
           $cmakeSharedLinkerFlags = "-fsanitize=thread"
           $cmakeModuleLinkerFlags = "-fsanitize=thread"
         }
-        cmake -S src -B build -G Ninja `
-          -DCMAKE_BUILD_TYPE=$cmakeBuildType `
-          -DCMAKE_TRY_COMPILE_CONFIGURATION=$cmakeTryCompileConfig `
-          -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL `
-          -DCMAKE_C_COMPILER=clang-cl `
-          -DCMAKE_CXX_COMPILER=clang-cl `
-          -DCMAKE_ASM_COMPILER=clang-cl `
-          -DCMAKE_C_FLAGS="$cmakeCFlags" `
-          -DCMAKE_CXX_FLAGS="$cmakeCxxFlags" `
-          -DCMAKE_EXE_LINKER_FLAGS="$cmakeExeLinkerFlags" `
-          -DCMAKE_SHARED_LINKER_FLAGS="$cmakeSharedLinkerFlags" `
-          -DCMAKE_MODULE_LINKER_FLAGS="$cmakeModuleLinkerFlags" `
-          -DBOOST_INCLUDE_DIR="$env:BOOST_INCLUDE_DIR" `
-          -DBUILD_PYTHON=OFF `
-          -DBUILD_CHIAVDFC=OFF `
-          -DBUILD_VDF_CLIENT=ON `
-          -DBUILD_VDF_BENCH=ON `
-          -DBUILD_VDF_TESTS=ON `
-          -DBUILD_HW_TOOLS=OFF
+        # Force compiler probes (try_compile) to use release CRT when
+        # sanitizers are enabled; clang-cl rejects /MDd + -fsanitize=address.
+        $cmakeArgs = @(
+          "-S", "src",
+          "-B", "build",
+          "-G", "Ninja",
+          "-DCMAKE_BUILD_TYPE=$cmakeBuildType",
+          "-DCMAKE_TRY_COMPILE_CONFIGURATION=Release",
+          "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL",
+          "-DCMAKE_C_COMPILER=clang-cl",
+          "-DCMAKE_CXX_COMPILER=clang-cl",
+          "-DCMAKE_ASM_COMPILER=clang-cl",
+          "-DCMAKE_C_FLAGS=$cmakeCFlags",
+          "-DCMAKE_CXX_FLAGS=$cmakeCxxFlags",
+          "-DCMAKE_EXE_LINKER_FLAGS=$cmakeExeLinkerFlags",
+          "-DCMAKE_SHARED_LINKER_FLAGS=$cmakeSharedLinkerFlags",
+          "-DCMAKE_MODULE_LINKER_FLAGS=$cmakeModuleLinkerFlags",
+          "-DBOOST_INCLUDE_DIR=$env:BOOST_INCLUDE_DIR",
+          "-DBUILD_PYTHON=OFF",
+          "-DBUILD_CHIAVDFC=OFF",
+          "-DBUILD_VDF_CLIENT=ON",
+          "-DBUILD_VDF_BENCH=ON",
+          "-DBUILD_VDF_TESTS=ON",
+          "-DBUILD_HW_TOOLS=OFF"
+        )
+        & cmake @cmakeArgs
         cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test
 
     - name: Run vdf tests (optimized)

@@ -93,6 +93,12 @@ jobs:
         fetch-depth: 1
         path: mpir_gc_x64
 
+    - name: Set up MSVC environment (Windows SDK + CRT libs)
+      if: startsWith(matrix.os, 'windows')
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
+
     - name: Build vdf-client on Windows
       if: startsWith(matrix.os, 'windows')
       shell: pwsh

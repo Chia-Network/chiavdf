@@ -22,8 +22,8 @@ jobs:
         os: [macos-13-intel, macos-13-arm64, ubuntu-latest, windows-latest]
         config: [optimized=1, TSAN=1, ASAN=1]
         exclude:
-          # clang-cl TSAN is unsupported for x86_64-pc-windows-msvc, so
-          # Windows TSAN fails during CMake compiler checks.
+          - os: windows-latest
+            config: ASAN=1
           - os: windows-latest
             config: TSAN=1
 
@@ -104,58 +104,6 @@ jobs:
       shell: pwsh
       run: |
         $cmakeBuildType = "Release"
-        $cmakeCFlags = ""
-        $cmakeCxxFlags = ""
-        $cmakeExeLinkerFlags = ""
-        $cmakeSharedLinkerFlags = ""
-        $cmakeModuleLinkerFlags = ""
-        if ("${{ matrix.config }}" -eq "ASAN=1") {
-          $cmakeBuildType = "RelWithDebInfo"
-          # clang-cl on Windows expects /fsanitize=address, and lld-link does
-          # not understand -fsanitize=address linker flags. CMake links probes
-          # with lld-link directly, so add ASAN runtimes explicitly.
-          $cmakeCFlags = "/fsanitize=address"
-          $cmakeCxxFlags = "/fsanitize=address"
-          $clangResourceDir = (& clang-cl --print-resource-dir).Trim()
-          $asanLibDir = Join-Path $clangResourceDir "lib\windows"
-          if (-not (Test-Path $asanLibDir)) {
-            throw "ASAN runtime library directory not found: $asanLibDir"
-          }
-          $asanRuntimeLib = Join-Path $asanLibDir "clang_rt.asan_dynamic-x86_64.lib"
-          $asanThunkLib = Join-Path $asanLibDir "clang_rt.asan_dynamic_runtime_thunk-x86_64.lib"
-          if (-not (Test-Path $asanRuntimeLib)) {
-            throw "ASAN runtime library not found: $asanRuntimeLib"
-          }
-          if (-not (Test-Path $asanThunkLib)) {
-            throw "ASAN runtime thunk library not found: $asanThunkLib"
-          }
-          $asanLinkLibs = "clang_rt.asan_dynamic_runtime_thunk-x86_64.lib clang_rt.asan_dynamic-x86_64.lib"
-          $cmakeExeLinkerFlags = $asanLinkLibs
-          $cmakeSharedLinkerFlags = $asanLinkLibs
-          $cmakeModuleLinkerFlags = $asanLinkLibs
-          if ($env:LIB) {
-            $env:LIB = "$asanLibDir;$env:LIB"
-          } else {
-            $env:LIB = "$asanLibDir"
-          }
-        } elseif ("${{ matrix.config }}" -eq "TSAN=1") {
-          $cmakeBuildType = "RelWithDebInfo"
-          # Keep sanitizer flag on compile side for clang-cl.
-          $cmakeCFlags = "/fsanitize=thread"
-          $cmakeCxxFlags = "/fsanitize=thread"
-          $clangResourceDir = (& clang-cl --print-resource-dir).Trim()
-          $tsanLibDir = Join-Path $clangResourceDir "lib\windows"
-          if (-not (Test-Path $tsanLibDir)) {
-            throw "TSAN runtime library directory not found: $tsanLibDir"
-          }
-          if ($env:LIB) {
-            $env:LIB = "$tsanLibDir;$env:LIB"
-          } else {
-            $env:LIB = "$tsanLibDir"
-          }
-        }
-        # Force compiler probes (try_compile) to use release CRT when
-        # sanitizers are enabled; clang-cl rejects /MDd + -fsanitize=address.
         $cmakeArgs = @(
           "-S", "src",
           "-B", "build",
@@ -166,11 +114,6 @@ jobs:
           "-DCMAKE_C_COMPILER=clang-cl",
           "-DCMAKE_CXX_COMPILER=clang-cl",
           "-DCMAKE_ASM_COMPILER=clang-cl",
-          "-DCMAKE_C_FLAGS=$cmakeCFlags",
-          "-DCMAKE_CXX_FLAGS=$cmakeCxxFlags",
-          "-DCMAKE_EXE_LINKER_FLAGS=$cmakeExeLinkerFlags",
-          "-DCMAKE_SHARED_LINKER_FLAGS=$cmakeSharedLinkerFlags",
-          "-DCMAKE_MODULE_LINKER_FLAGS=$cmakeModuleLinkerFlags",
           "-DBOOST_INCLUDE_DIR=$env:BOOST_INCLUDE_DIR",
           "-DBUILD_PYTHON=OFF",
           "-DBUILD_CHIAVDFC=OFF",

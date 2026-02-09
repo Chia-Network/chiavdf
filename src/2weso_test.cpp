@@ -56,21 +56,31 @@ int main(int argc, char const* argv[]) try
     TwoWesolowskiCallback weso(D, f);
     FastStorage* fast_storage = NULL;
     std::thread vdf_worker(repeated_square, 0, f, D, L, &weso, fast_storage, std::ref(stopped));
-    // Test 1 - 1 million iters.
-    uint64_t iteration = 1 * iter_multiplier;
-    Proof proof = ProveTwoWeso(D, f, iteration, 0, &weso, 0, stopped);
-    CheckProof(D, proof, iteration);
-    // Test 2 - 15 million iters.
-    iteration = 15 * iter_multiplier;
-    proof = ProveTwoWeso(D, f, iteration, 0, &weso, 0, stopped);
-    CheckProof(D, proof, iteration);
-    // Test 3 - 100 million iters.
-    iteration = 100 * iter_multiplier;
-    proof = ProveTwoWeso(D, f, iteration, 0, &weso, 0, stopped);
-    CheckProof(D, proof, iteration);
-    // Test stopping gracefully.
-    stopped = true;
-    vdf_worker.join();
+    auto stop_worker = [&]() {
+        stopped = true;
+        if (vdf_worker.joinable()) {
+            vdf_worker.join();
+        }
+    };
+    try {
+        // Test 1 - 1 million iters.
+        uint64_t iteration = 1 * iter_multiplier;
+        Proof proof = ProveTwoWeso(D, f, iteration, 0, &weso, 0, stopped);
+        CheckProof(D, proof, iteration);
+        // Test 2 - 15 million iters.
+        iteration = 15 * iter_multiplier;
+        proof = ProveTwoWeso(D, f, iteration, 0, &weso, 0, stopped);
+        CheckProof(D, proof, iteration);
+        // Test 3 - 100 million iters.
+        iteration = 100 * iter_multiplier;
+        proof = ProveTwoWeso(D, f, iteration, 0, &weso, 0, stopped);
+        CheckProof(D, proof, iteration);
+        // Test stopping gracefully.
+        stop_worker();
+    } catch (...) {
+        stop_worker();
+        throw;
+    }
     return 0;
 }
 catch (std::exception const& e) {

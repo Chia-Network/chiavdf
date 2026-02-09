@@ -124,6 +124,12 @@ jobs:
         if: matrix.os.name == 'macOS'
         run: echo "LIBRARY_PATH=$(brew --prefix)/lib:$LIBRARY_PATH" >> $GITHUB_ENV
 
+      - name: Install CMake on MacOS
+        if: matrix.os.name == 'macOS'
+        run: |
+          brew ls --versions cmake >/dev/null 2>&1 || brew install cmake
+          cmake --version
+
       - name: Install MPIR on Windows
         if: matrix.os.name == 'Windows'
         run: |

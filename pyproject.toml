@@ -33,8 +33,31 @@ before-build = "python -m pip install --upgrade pip"
 [tool.cibuildwheel.macos]
 build-verbosity = 0
 before-all = """
-brew --prefix --installed gmp >/dev/null 2>&1 || brew install gmp
-brew install boost cmake
+set -euo pipefail
+export HOMEBREW_NO_AUTO_UPDATE=1
+
+brew_install_if_missing() {
+  pkg="$1"
+  if brew list --versions "$pkg" >/dev/null 2>&1; then
+    echo "$pkg already installed"
+    return 0
+  fi
+
+  for attempt in 1 2 3; do
+    if brew install "$pkg"; then
+      return 0
+    fi
+    echo "brew install $pkg failed (attempt $attempt), retrying..."
+    sleep $((attempt * 5))
+  done
+
+  echo "Failed to install $pkg after retries"
+  return 1
+}
+
+brew_install_if_missing gmp
+brew_install_if_missing boost
+brew_install_if_missing cmake
 """
 before-build = "python -m pip install --upgrade pip"
 environment = {MACOSX_DEPLOYMENT_TARGET="13", SYSTEM_VERSION_COMPAT=0, BUILD_VDF_CLIENT="N"}

@@ -327,7 +327,8 @@ bool form::operator<(const form& f) const {
 }
 
 int form::hash() const {
-    uint64 res = c.to_vector()[0];
+    const auto c_vector = c.to_vector();
+    uint64 res = c_vector.empty() ? 0 : c_vector[0];
     return int((res >> 4) & ((1ull << 31) - 1));
 }
 

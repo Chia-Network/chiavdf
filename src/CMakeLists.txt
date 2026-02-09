@@ -283,6 +283,8 @@ if(BUILD_VDF_TESTS)
   endif()
   vdf_add_boost_includes(1weso_test)
   target_link_libraries(1weso_test PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
+  vdf_add_windows_asm_linker_flags(1weso_test)
+  vdf_add_windows_clang_opts(1weso_test)
 
   add_executable(2weso_test
     ${CMAKE_CURRENT_SOURCE_DIR}/2weso_test.cpp
@@ -294,6 +296,8 @@ if(BUILD_VDF_TESTS)
   endif()
   vdf_add_boost_includes(2weso_test)
   target_link_libraries(2weso_test PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
+  vdf_add_windows_asm_linker_flags(2weso_test)
+  vdf_add_windows_clang_opts(2weso_test)
 
   add_executable(prover_test
     ${CMAKE_CURRENT_SOURCE_DIR}/prover_test.cpp
@@ -305,6 +309,8 @@ if(BUILD_VDF_TESTS)
   endif()
   vdf_add_boost_includes(prover_test)
   target_link_libraries(prover_test PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
+  vdf_add_windows_asm_linker_flags(prover_test)
+  vdf_add_windows_clang_opts(prover_test)
 endif()
 
 if(BUILD_HW_TOOLS)

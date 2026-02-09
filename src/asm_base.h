@@ -140,7 +140,9 @@ string constant_address_avx512_uint64(array<uint64, 8> value, bool use_brackets=
     if (name.empty()) {
         name=m.alloc_label();
 
-#if defined(CHIAOSX) || defined(CHIA_WINDOWS)
+#if defined(CHIA_WINDOWS)
+        APPEND_M(str( ".section .rdata,\"dr\"" ));
+#elif defined(CHIAOSX)
         APPEND_M(str( ".text " ));
 #else
         APPEND_M(str( ".text 1" ));

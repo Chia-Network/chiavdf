@@ -214,3 +214,6 @@ In order to finish segments, some intermediate values need to be stored for each
 Generally, the main VDF loop performs all the storing, after computing a form we're interested in. However, since storing is very frequent and expensive (GMP operations), this will slow down the main VDF loop.
 
 For the machines having at least 16 concurrent threads, an optimization is provided: the main VDF loop does only repeated squaring, without storing any form. After each 2^15 steps are performed, a new thread starts redoing the work for 2^15 more steps, this time storing the intermediate values as well. All the intermediate threads and the main VDF loop will work in parallel. The only purpose of the main VDF loop becomes now to produce the starting values for the intermediate threads, as fast as possible. The squarings used in the intermediates threads will be 2 times slower than the ones used in the main VDF loop. It's expected the intermediates will only lag behind the main VDF loop by 2^15 iterations, at any point: after 2^16 iterations are done by the main VDF loop, the first thread doing the first 2^15 intermediate values is already finished. Also, at that point, half of the work of the second thread doing the last 2^15 intermediates values should be already done.
+
+This is just some add on to see if runners have changed. Will delete.
+

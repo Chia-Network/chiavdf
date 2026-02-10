@@ -103,9 +103,6 @@ jobs:
       if: startsWith(matrix.os, 'windows')
       shell: pwsh
       run: |
-<<<<<<< HEAD
-        cmake -S src -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_ASM_COMPILER=clang-cl -DBOOST_INCLUDE_DIR="$env:BOOST_INCLUDE_DIR" -DBUILD_PYTHON=OFF -DBUILD_CHIAVDFC=OFF -DBUILD_VDF_CLIENT=ON -DBUILD_VDF_BENCH=ON -DBUILD_VDF_TESTS=ON -DBUILD_HW_TOOLS=OFF
-=======
         $cmakeBuildType = "Release"
         $cmakeArgs = @(
           "-S", "src",
@@ -126,7 +123,6 @@ jobs:
           "-DBUILD_HW_TOOLS=OFF"
         )
         & cmake @cmakeArgs
->>>>>>> 880d11f (more cmake instruction issues)
         cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test
 
     - name: Run vdf tests (optimized)

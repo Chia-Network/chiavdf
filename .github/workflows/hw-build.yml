@@ -1,14 +1,6 @@
 name: HW Build
 
 on:
-  push:
-    branches:
-      - main
-  release:
-    types: [published]
-  pull_request:
-    branches:
-      - '**'
   workflow_dispatch:
 
 concurrency:

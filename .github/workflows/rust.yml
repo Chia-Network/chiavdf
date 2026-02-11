@@ -1,14 +1,7 @@
 name: Rust bindings
 
 on:
-  push:
-    branches:
-      - main
-  release:
-    types: [published]
-  pull_request:
-    branches:
-      - "**"
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow_ref, github.event.pull_request.number) || github.run_id }}

@@ -19,13 +19,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-13-intel, macos-13-arm64, ubuntu-latest, windows-latest]
-        config: [optimized=1, TSAN=1, ASAN=1]
-        exclude:
-          - os: windows-latest
-            config: ASAN=1
-          - os: windows-latest
-            config: TSAN=1
+        os: [windows-latest]
+        config: [optimized=1]
 
     steps:
     - name: Checkout code

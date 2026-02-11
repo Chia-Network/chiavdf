@@ -63,6 +63,22 @@ static LONG CALLBACK agent_vectored_exception_logger(EXCEPTION_POINTERS* info) {
               << " d_cel_gcd_128=0x" << (crash_ip - cel_gcd_128_ip)
               << std::dec
               << "\n";
+#ifdef GENERATE_ASM_TRACKING_DATA
+    int agent_dumped = 0;
+    for (int i = 0; i < num_asm_tracking_data; ++i) {
+        if (!asm_tracking_data_comments[i] || asm_tracking_data[i] == 0) {
+            continue;
+        }
+        std::cerr << "AGENTDBG H25 asm_track_at_crash idx=" << i
+                  << " count=" << asm_tracking_data[i]
+                  << " label=" << asm_tracking_data_comments[i]
+                  << "\n";
+        ++agent_dumped;
+        if (agent_dumped >= 80) {
+            break;
+        }
+    }
+#endif
     return EXCEPTION_CONTINUE_SEARCH;
 }
 #endif

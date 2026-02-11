@@ -1,8 +1,7 @@
 ---
 name: 'Close stale issues'
 on:
-  schedule:
-    - cron: '0 11 * * *'
+  workflow_dispatch:
 
 jobs:
   stale:

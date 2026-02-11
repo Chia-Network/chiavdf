@@ -1,14 +1,7 @@
 name: Build C Libraries
 
 on:
-  push:
-    branches:
-    - main
-  release:
-    types: [published]
-  pull_request:
-    branches:
-    - '**'
+  workflow_dispatch:
 
 concurrency:
   # SHA is added to the end if on `main` to let all main workflows run

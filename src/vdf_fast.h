@@ -185,11 +185,6 @@ struct square_state_type {
     //
 
     bool phase_0_master() {
-        if (phase_start.num_valid_iterations == 0) {
-                      << " b_bits=" << phase_start.b().num_bits()
-                      << " a_sgn=" << phase_start.a().sgn()
-                      << " b_higher=" << (phase_start.b_higher_magnitude_than_a ? 1 : 0) << "\n";
-        }
         {
             TRACK_CYCLES //100
             if (!c_thread_state.fence(counter_start_phase_0)) {
@@ -227,11 +222,6 @@ struct square_state_type {
             ab_valid=(a.num_bits()<=max_bits_ab && b.num_bits()<=max_bits_ab && a.sgn()>=0);
         }
         if (!ab_valid) {
-            if (phase_start.num_valid_iterations == 0) {
-                          << " b_bits=" << b.num_bits()
-                          << " max_bits_ab=" << max_bits_ab
-                          << " a_sgn=" << a.sgn() << "\n";
-            }
             return false;
         }
 
@@ -243,9 +233,6 @@ struct square_state_type {
             a_high_enough=(a.num_limbs()>L.num_limbs());
         }
         if (!a_high_enough) {
-            if (phase_start.num_valid_iterations == 0) {
-                          << " L_limbs=" << L.num_limbs() << "\n";
-            }
             return false;
         }
 
@@ -259,15 +246,9 @@ struct square_state_type {
 
         {
             TRACK_CYCLES //16070 (critical path 1)
-            if (phase_start.num_valid_iterations == 0) {
-            }
             if (!gcd_unsigned(counter_start_phase_0, gcd_1_0, gcd_zero)) {
                 TRACK_CYCLES_ABORT
-                if (phase_start.num_valid_iterations == 0) {
-                }
                 return false;
-            }
-            if (phase_start.num_valid_iterations == 0) {
             }
         }
 
@@ -275,11 +256,6 @@ struct square_state_type {
     }
 
     bool phase_0_slave() {
-        if (phase_start.num_valid_iterations == 0) {
-                      << " b_bits=" << phase_start.b().num_bits()
-                      << " a_sgn=" << phase_start.a().sgn()
-                      << " b_higher=" << (phase_start.b_higher_magnitude_than_a ? 1 : 0) << "\n";
-        }
         {
             TRACK_CYCLES //1698 (doesn't matter)
             if (!c_thread_state.fence(counter_start_phase_0)) {
@@ -1030,60 +1006,22 @@ void repeated_square_fast_work(square_state_type &square_state, bool is_slave, u
     c_thread_state.reset();
     c_thread_state.is_slave=is_slave;
     c_thread_state.pairindex=square_state.pairindex;
-    if (base < 32) {
-                  << " is_slave=" << (is_slave ? 1 : 0)
-                  << " iterations=" << iterations << "\n";
-    }
 
     bool has_error=false;
-    int agent_phase=-1;
-    uint64 agent_iter=0;
-
-#ifdef CHIA_WINDOWS
-    unsigned long agent_work_seh_code = 0;
-    __try {
-#endif
     for (uint64 iter=0;iter<iterations;++iter) {
-        agent_iter=iter;
         TRACK_CYCLES //master: 35895; slave: 35905
 
         for (int phase=0;phase<square_state_type::num_phases;++phase) {
-            agent_phase=phase;
-            if (base < 32 && iter < 2 && phase < 6) {
-                          << " iter=" << iter
-                          << " phase=" << phase
-                          << " is_slave=" << (is_slave ? 1 : 0) << "\n";
-            }
             if (!c_thread_state.advance(square_state.get_counter_start(phase))) {
-                if (base < 32) {
-                              << " iter=" << iter
-                              << " phase=" << phase
-                              << " is_slave=" << (is_slave ? 1 : 0) << "\n";
-                }
                 c_thread_state.raise_error();
                 has_error=true;
                 break;
             }
 
-            if (base < 32 && iter < 2 && phase < 6) {
-                          << " iter=" << iter
-                          << " phase=" << phase
-                          << " is_slave=" << (is_slave ? 1 : 0) << "\n";
-            }
             if (!square_state.call_phase(phase, is_slave)) {
-                if (base < 32) {
-                              << " iter=" << iter
-                              << " phase=" << phase
-                              << " is_slave=" << (is_slave ? 1 : 0) << "\n";
-                }
                 c_thread_state.raise_error();
                 has_error=true;
                 break;
-            }
-            if (base < 32 && iter < 2 && phase < 6) {
-                          << " iter=" << iter
-                          << " phase=" << phase
-                          << " is_slave=" << (is_slave ? 1 : 0) << "\n";
             }
         }
 
@@ -1113,47 +1051,22 @@ void repeated_square_fast_work(square_state_type &square_state, bool is_slave, u
             print( "" );
         }
     #endif
-#ifdef CHIA_WINDOWS
-    } __except ((agent_work_seh_code = GetExceptionCode()), EXCEPTION_EXECUTE_HANDLER) {
-                  << " is_slave=" << (is_slave ? 1 : 0)
-                  << " base=" << base
-                  << " iter=" << agent_iter
-                  << " phase=" << agent_phase
-                  << " code=0x" << std::hex << agent_work_seh_code << std::dec
-                  << "\n";
-        c_thread_state.raise_error();
-    }
-#endif
 }
 
 uint64 repeated_square_fast_multithread(square_state_type &square_state, form& f, const integer& D, const integer& L, uint64 base, uint64 iterations, INUDUPLListener *nuduplListener) {
-    if (base < 32) {
-                  << " iterations=" << iterations << "\n";
-    }
     master_counter[square_state.pairindex].reset();
     slave_counter[square_state.pairindex].reset();
 
     square_state.init(D, L, f.a, f.b);
-    if (base < 32) {
-    }
 
     thread slave_thread(repeated_square_fast_work, std::ref(square_state), false, base, iterations, std::ref(nuduplListener));
-    if (base < 32) {
-    }
 
     repeated_square_fast_work(square_state, true, base, iterations, nuduplListener);
-    if (base < 32) {
-    }
 
     slave_thread.join(); //slave thread can't get stuck; is supposed to error out instead
-    if (base < 32) {
-    }
 
     uint64 res;
     square_state.assign(f.a, f.b, f.c, res);
-    if (base < 32) {
-                  << " res=" << res << "\n";
-    }
 
     return res;
 }
@@ -1182,18 +1095,12 @@ uint64 repeated_square_fast_single_thread(square_state_type &square_state, form&
 
         for (int phase=0;phase<square_state_type::num_phases;++phase) {
             if (!thread_state_master.advance(square_state.get_counter_start(phase))) {
-                if (base < 32) {
-                              << " iter=" << iter << " phase=" << phase << "\n";
-                }
                 thread_state_master.raise_error();
                 has_error=true;
                 break;
             }
 
             if (!thread_state_slave.advance(square_state.get_counter_start(phase))) {
-                if (base < 32) {
-                              << " iter=" << iter << " phase=" << phase << "\n";
-                }
                 thread_state_slave.raise_error();
                 has_error=true;
                 break;
@@ -1205,10 +1112,6 @@ uint64 repeated_square_fast_single_thread(square_state_type &square_state, form&
                 c_thread_state=(is_slave)? thread_state_slave : thread_state_master;
 
                 if (!square_state.call_phase(phase, is_slave)) {
-                    if (base < 32) {
-                                  << " iter=" << iter << " phase=" << phase
-                                  << " is_slave=" << (is_slave ? 1 : 0) << "\n";
-                    }
                     c_thread_state.raise_error();
                     has_error=true;
                     break;
@@ -1233,10 +1136,6 @@ uint64 repeated_square_fast_single_thread(square_state_type &square_state, form&
 
     uint64 res;
     square_state.assign(f.a, f.b, f.c, res); //sets res to ~uint64(0) and leaves f unchanged if there is corruption
-    if (base < 32) {
-                  << " has_error=" << (has_error ? 1 : 0)
-                  << " res=" << res << "\n";
-    }
 
     #ifdef ENABLE_TRACK_CYCLES
         print( "stats both threads:" );

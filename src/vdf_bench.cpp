@@ -20,7 +20,9 @@
 
 #include <cstdlib>
 #ifdef _WIN32
-#include <windows.h>
+#include <excpt.h>
+#include <errhandlingapi.h>
+#include <processthreadsapi.h>
 #endif
 
 #define CH_SIZE 32

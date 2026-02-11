@@ -3,6 +3,9 @@
 
 #include "alloc.hpp"
 #include <atomic>
+#ifdef _WIN32
+#include <excpt.h>
+#endif
 
 //mp_limb_t is an unsigned integer
 static_assert(sizeof(mp_limb_t)==8, "");
@@ -791,9 +794,85 @@ template<class mpz_type> bool gcd_unsigned(
         assert((uint64(data.out_uv_addr)&63)==0); //should be cache line aligned
     }
 
-    int error_code=hasAVX2()?
-        asm_code::asm_avx2_func_gcd_unsigned(&data):
+    // #region agent log
+    if (a_limbs >= 3) {
+        std::cerr << "AGENTDBG H14 gcd_enter"
+                  << " is_slave=" << (c_thread_state.is_slave ? 1 : 0)
+                  << " counter_start=" << c_thread_state.counter_start
+                  << " counter_start_delta=" << counter_start_delta
+                  << " a_limbs=" << a_limbs
+                  << " b_limbs=" << b_limbs
+                  << " a_end_index=" << data.a_end_index
+                  << " a_ptr_mod64=" << (uint64(data.a) & 63)
+                  << " b_ptr_mod64=" << (uint64(data.b) & 63)
+                  << " a2_ptr_mod64=" << (uint64(data.a_2) & 63)
+                  << " b2_ptr_mod64=" << (uint64(data.b_2) & 63)
+                  << " th_ptr_mod64=" << (uint64(data.threshold) & 63)
+                  << " th_ptr_mod32=" << (uint64(data.threshold) & 31)
+                  << " out_uv_counter_ptr_mod64=" << (uint64(data.out_uv_counter_addr) & 63)
+                  << " out_uv_ptr_mod64=" << (uint64(data.out_uv_addr) & 63)
+                  << " a_eq_a2=" << (data.a == data.a_2 ? 1 : 0)
+                  << " b_eq_b2=" << (data.b == data.b_2 ? 1 : 0)
+                  << " has_avx2=" << (hasAVX2() ? 1 : 0)
+                  << "\n";
+    }
+    // #endregion
+
+    bool force_cel_gcd=false;
+#ifdef CHIA_WINDOWS
+    {
+        const char* force_cel_gcd_env = getenv("CHIA_DEBUG_FORCE_CEL_GCD");
+        force_cel_gcd = (force_cel_gcd_env && force_cel_gcd_env[0] != 0 && force_cel_gcd_env[0] != '0');
+    }
+#endif
+    const bool use_avx2_gcd = hasAVX2() && !force_cel_gcd;
+    // #region agent log
+    if (a_limbs >= 3) {
+        std::cerr << "AGENTDBG H15 gcd_impl_select"
+                  << " is_slave=" << (c_thread_state.is_slave ? 1 : 0)
+                  << " use_avx2=" << (use_avx2_gcd ? 1 : 0)
+                  << " force_cel=" << (force_cel_gcd ? 1 : 0)
+                  << " a0=" << data.a[0]
+                  << " b0=" << data.b[0]
+                  << " th0=" << data.threshold[0]
+                  << "\n";
+    }
+    // #endregion
+    int error_code = 0;
+#ifdef CHIA_WINDOWS
+    unsigned long agent_seh_code = 0;
+    __try {
+        error_code = use_avx2_gcd ?
+            asm_code::asm_avx2_func_gcd_unsigned(&data) :
+            asm_code::asm_cel_func_gcd_unsigned(&data);
+    } __except ((agent_seh_code = GetExceptionCode()), EXCEPTION_EXECUTE_HANDLER) {
+        // #region agent log
+        std::cerr << "AGENTDBG H22 seh_in_gcd_asm"
+                  << " is_slave=" << (c_thread_state.is_slave ? 1 : 0)
+                  << " use_avx2=" << (use_avx2_gcd ? 1 : 0)
+                  << " code=0x" << std::hex << agent_seh_code << std::dec
+                  << " a0=" << data.a[0]
+                  << " b0=" << data.b[0]
+                  << " a_end_index=" << data.a_end_index
+                  << "\n";
+        // #endregion
+        error_code = -1;
+    }
+#else
+    error_code = use_avx2_gcd ?
+        asm_code::asm_avx2_func_gcd_unsigned(&data) :
         asm_code::asm_cel_func_gcd_unsigned(&data);
+#endif
+
+    // #region agent log
+    if (a_limbs >= 3) {
+        std::cerr << "AGENTDBG H14 gcd_after_asm"
+                  << " is_slave=" << (c_thread_state.is_slave ? 1 : 0)
+                  << " error_code=" << error_code
+                  << " iter=" << data.iter
+                  << "\n";
+    }
+    // #endregion
 
     if (error_code!=0) {
         c_thread_state.raise_error();

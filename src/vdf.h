@@ -224,6 +224,16 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
         // x86/x64: use the phased pipeline.
         square_state_type square_state;
         square_state.pairindex = 0;
+        static std::atomic<int> agent_active_fast_calls{0};
+        const int agent_active_fast_now = agent_active_fast_calls.fetch_add(1, std::memory_order_relaxed) + 1;
+        // #region agent log
+        if (num_iterations < 32 || agent_active_fast_now > 1) {
+            std::cerr << "AGENTDBG H21 fast_call_enter pairindex=" << square_state.pairindex
+                      << " num_iterations=" << num_iterations
+                      << " batch_size=" << batch_size
+                      << " active_fast_calls=" << agent_active_fast_now << "\n";
+        }
+        // #endregion
         if (num_iterations < 32) {
             // #region agent log
             std::cerr << "AGENTDBG H9 fast_before_iter num_iterations=" << num_iterations
@@ -244,6 +254,15 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
             // #endregion
         }
         actual_iterations = repeated_square_fast(square_state, f, D, L, num_iterations, batch_size, weso);
+        const int agent_active_fast_left = agent_active_fast_calls.fetch_sub(1, std::memory_order_relaxed) - 1;
+        // #region agent log
+        if (num_iterations < 32 || agent_active_fast_now > 1 || agent_active_fast_left > 0) {
+            std::cerr << "AGENTDBG H21 fast_call_exit pairindex=" << square_state.pairindex
+                      << " num_iterations=" << num_iterations
+                      << " actual_iterations=" << actual_iterations
+                      << " active_fast_calls_left=" << agent_active_fast_left << "\n";
+        }
+        // #endregion
         if (num_iterations < 32) {
             // #region agent log
             std::cerr << "AGENTDBG H9 fast_after_iter num_iterations=" << num_iterations

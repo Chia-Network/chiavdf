@@ -1,3 +1,5 @@
+#include <chrono>
+
 #ifdef GENERATE_ASM_TRACKING_DATA
     const bool generate_asm_tracking_data=true;
 #else
@@ -5,6 +7,27 @@
 #endif
 
 namespace asm_code {
+
+inline void agent_debug_log_ndjson_file(const char* hypothesis_id, const char* location, const char* message, const string& data_json) {
+    // #region agent log
+    std::ofstream agent_debug_log("/Users/hoffmang/src/chiavdf/.cursor/debug.log", std::ios::app);
+    if (!agent_debug_log.is_open()) {
+        return;
+    }
+    const auto timestamp_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()
+    ).count();
+    agent_debug_log
+        << "{\"id\":\"log_" << timestamp_ms << "_" << hypothesis_id
+        << "\",\"timestamp\":" << timestamp_ms
+        << ",\"runId\":\"windows-link-debug\""
+        << ",\"hypothesisId\":\"" << hypothesis_id << "\""
+        << ",\"location\":\"" << location << "\""
+        << ",\"message\":\"" << message << "\""
+        << ",\"data\":" << data_json
+        << "}\n";
+    // #endregion
+}
 
 
 string track_asm(string comment, string jump_to = "") {
@@ -53,7 +76,26 @@ string track_asm(string comment, string jump_to = "") {
     }
 
     string comment_label=m.alloc_label();
+    // #region agent log
+    agent_debug_log_ndjson_file(
+        "H2",
+        "src/asm_base.h:track_asm:alloc_label",
+        "allocated_comment_label_for_tracking",
+        std::string("{\"comment_label\":\"") + comment_label +
+            "\",\"asmprefix\":\"" + asmprefix +
+            "\",\"starts_with_prefix\":" +
+            ((comment_label.rfind("_" + asmprefix, 0) == 0) ? "1" : "0") + "}"
+    );
+    // #endregion
 #if defined(CHIA_WINDOWS)
+    // #region agent log
+    agent_debug_log_ndjson_file(
+        "H3",
+        "src/asm_base.h:track_asm:section_select",
+        "emitting_comment_string_in_windows_rdata",
+        "{\"selected_section\":\".section .rdata,\\\"dr\\\"\"}"
+    );
+    // #endregion
     APPEND_M(str( ".section .rdata,\"dr\"" ));
 #elif defined(CHIAOSX)
     APPEND_M(str( ".text " ));
@@ -84,7 +126,22 @@ string track_asm(string comment, string jump_to = "") {
     APPEND_M(str( "LEA RAX, [RAX+1]" ));
     APPEND_M(str( "MOV [asm_tracking_data+#], RAX", to_hex(8*(id-1)) ));
 #if defined(CHIAOSX) || defined(CHIA_WINDOWS)
-    APPEND_M(str( "LEA RAX, [RIP+comment_label] " ));
+    // #region agent log
+    agent_debug_log_ndjson_file(
+        "H4",
+        "src/asm_base.h:track_asm:comment_pointer_emit",
+        "about_to_emit_comment_label_pointer",
+        std::string("{\"comment_label\":\"") + comment_label +
+            "\",\"is_windows\":" +
+#ifdef CHIA_WINDOWS
+            "1"
+#else
+            "0"
+#endif
+            + ",\"operand_literal\":\"RIP+comment_label\"}"
+    );
+    // #endregion
+    APPEND_M(str( "LEA RAX, [RIP+#] ", comment_label ));
 #else
     APPEND_M(str( "MOV RAX, OFFSET FLAT:#", comment_label ));
 #endif

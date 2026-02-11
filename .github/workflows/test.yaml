@@ -75,7 +75,7 @@ jobs:
     - name: Cache Boost on Windows
       if: startsWith(matrix.os, 'windows')
       id: cache-boost
-      uses: actions/cache@v4
+      uses: actions/cache/restore@v4
       with:
         path: C:\local\boost_*
         key: windows-boost-msvc-14.3-v1
@@ -86,19 +86,42 @@ jobs:
       env:
         BOOST_CACHE_HIT: ${{ steps.cache-boost.outputs.cache-hit }}
       run: |
-        choco install llvm ninja -y
-        if ("$env:BOOST_CACHE_HIT" -ne "true") {
-          choco install boost-msvc-14.3 -y
+        $llvmBin = "C:\Program Files\LLVM\bin\clang-cl.exe"
+        $ninjaBin = "C:\ProgramData\chocolatey\bin\ninja.exe"
+        if (-not (Test-Path $llvmBin) -or -not (Test-Path $ninjaBin)) {
+          Write-Host "LLVM/Ninja not found, installing via choco"
+          choco install llvm ninja -y
         } else {
-          Write-Host "Boost cache hit, skipping boost-msvc-14.3 install"
+          Write-Host "LLVM and Ninja already present, skipping choco install"
         }
+
+        $boostDir = Get-ChildItem "C:\local" -Directory -Filter "boost_*" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $boostDir) {
+          if ("$env:BOOST_CACHE_HIT" -ne "true") {
+            Write-Host "Boost cache miss and boost not found, installing boost-msvc-14.3"
+            choco install boost-msvc-14.3 -y
+          } else {
+            Write-Host "Boost cache reported hit but boost directory missing; reinstalling boost-msvc-14.3"
+            choco install boost-msvc-14.3 -y
+          }
+          $boostDir = Get-ChildItem "C:\local" -Directory -Filter "boost_*" -ErrorAction SilentlyContinue | Select-Object -First 1
+        } else {
+          Write-Host "Boost already present at $($boostDir.FullName), skipping choco install"
+        }
+
         "C:\Program Files\LLVM\bin" | Out-File -Append -FilePath $env:GITHUB_PATH
         "CHIA_ENABLE_AVX512_IFMA=0" | Out-File -Append -FilePath $env:GITHUB_ENV
-        $boostDir = Get-ChildItem "C:\local" -Directory -Filter "boost_*" | Select-Object -First 1
         if (-not $boostDir) {
           throw "Boost install not found under C:\local"
         }
         "BOOST_INCLUDE_DIR=$($boostDir.FullName)" | Out-File -Append -FilePath $env:GITHUB_ENV
+
+    - name: Save Boost cache on Windows
+      if: startsWith(matrix.os, 'windows') && steps.cache-boost.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: C:\local\boost_*
+        key: ${{ steps.cache-boost.outputs.cache-primary-key }}
 
     - name: Cache mpir checkout on Windows
       if: startsWith(matrix.os, 'windows')

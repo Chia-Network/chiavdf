@@ -1002,6 +1002,13 @@ void repeated_square_fast_work(square_state_type &square_state, bool is_slave, u
     c_thread_state.reset();
     c_thread_state.is_slave=is_slave;
     c_thread_state.pairindex=square_state.pairindex;
+    // #region agent log
+    if (base < 32) {
+        std::cerr << "AGENTDBG H12 work_enter base=" << base
+                  << " is_slave=" << (is_slave ? 1 : 0)
+                  << " iterations=" << iterations << "\n";
+    }
+    // #endregion
 
     bool has_error=false;
 
@@ -1009,17 +1016,57 @@ void repeated_square_fast_work(square_state_type &square_state, bool is_slave, u
         TRACK_CYCLES //master: 35895; slave: 35905
 
         for (int phase=0;phase<square_state_type::num_phases;++phase) {
+            // #region agent log
+            if (base < 32 && iter < 2 && phase < 6) {
+                std::cerr << "AGENTDBG H12 phase_before_advance base=" << base
+                          << " iter=" << iter
+                          << " phase=" << phase
+                          << " is_slave=" << (is_slave ? 1 : 0) << "\n";
+            }
+            // #endregion
             if (!c_thread_state.advance(square_state.get_counter_start(phase))) {
+                // #region agent log
+                if (base < 32) {
+                    std::cerr << "AGENTDBG H12 err_advance base=" << base
+                              << " iter=" << iter
+                              << " phase=" << phase
+                              << " is_slave=" << (is_slave ? 1 : 0) << "\n";
+                }
+                // #endregion
                 c_thread_state.raise_error();
                 has_error=true;
                 break;
             }
 
+            // #region agent log
+            if (base < 32 && iter < 2 && phase < 6) {
+                std::cerr << "AGENTDBG H12 phase_before_call base=" << base
+                          << " iter=" << iter
+                          << " phase=" << phase
+                          << " is_slave=" << (is_slave ? 1 : 0) << "\n";
+            }
+            // #endregion
             if (!square_state.call_phase(phase, is_slave)) {
+                // #region agent log
+                if (base < 32) {
+                    std::cerr << "AGENTDBG H12 err_call_phase base=" << base
+                              << " iter=" << iter
+                              << " phase=" << phase
+                              << " is_slave=" << (is_slave ? 1 : 0) << "\n";
+                }
+                // #endregion
                 c_thread_state.raise_error();
                 has_error=true;
                 break;
             }
+            // #region agent log
+            if (base < 32 && iter < 2 && phase < 6) {
+                std::cerr << "AGENTDBG H12 phase_after_call base=" << base
+                          << " iter=" << iter
+                          << " phase=" << phase
+                          << " is_slave=" << (is_slave ? 1 : 0) << "\n";
+            }
+            // #endregion
         }
 
         if (has_error) {
@@ -1051,19 +1098,51 @@ void repeated_square_fast_work(square_state_type &square_state, bool is_slave, u
 }
 
 uint64 repeated_square_fast_multithread(square_state_type &square_state, form& f, const integer& D, const integer& L, uint64 base, uint64 iterations, INUDUPLListener *nuduplListener) {
+    // #region agent log
+    if (base < 32) {
+        std::cerr << "AGENTDBG H12 mt_enter base=" << base
+                  << " iterations=" << iterations << "\n";
+    }
+    // #endregion
     master_counter[square_state.pairindex].reset();
     slave_counter[square_state.pairindex].reset();
 
     square_state.init(D, L, f.a, f.b);
+    // #region agent log
+    if (base < 32) {
+        std::cerr << "AGENTDBG H12 mt_after_init base=" << base << "\n";
+    }
+    // #endregion
 
     thread slave_thread(repeated_square_fast_work, std::ref(square_state), false, base, iterations, std::ref(nuduplListener));
+    // #region agent log
+    if (base < 32) {
+        std::cerr << "AGENTDBG H12 mt_slave_started base=" << base << "\n";
+    }
+    // #endregion
 
     repeated_square_fast_work(square_state, true, base, iterations, nuduplListener);
+    // #region agent log
+    if (base < 32) {
+        std::cerr << "AGENTDBG H12 mt_master_finished base=" << base << "\n";
+    }
+    // #endregion
 
     slave_thread.join(); //slave thread can't get stuck; is supposed to error out instead
+    // #region agent log
+    if (base < 32) {
+        std::cerr << "AGENTDBG H12 mt_slave_joined base=" << base << "\n";
+    }
+    // #endregion
 
     uint64 res;
     square_state.assign(f.a, f.b, f.c, res);
+    // #region agent log
+    if (base < 32) {
+        std::cerr << "AGENTDBG H12 mt_assign_result base=" << base
+                  << " res=" << res << "\n";
+    }
+    // #endregion
 
     return res;
 }

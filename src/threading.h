@@ -808,7 +808,24 @@ template<class mpz_type> bool gcd_unsigned(
     }
     // #endregion
 
-    int error_code=hasAVX2()?
+    bool force_cel_gcd=false;
+#ifdef CHIA_WINDOWS
+    {
+        const char* force_cel_gcd_env = getenv("CHIA_DEBUG_FORCE_CEL_GCD");
+        force_cel_gcd = (force_cel_gcd_env && force_cel_gcd_env[0] != 0 && force_cel_gcd_env[0] != '0');
+    }
+#endif
+    const bool use_avx2_gcd = hasAVX2() && !force_cel_gcd;
+    // #region agent log
+    if (a_limbs >= 3) {
+        std::cerr << "AGENTDBG H15 gcd_impl_select"
+                  << " is_slave=" << (c_thread_state.is_slave ? 1 : 0)
+                  << " use_avx2=" << (use_avx2_gcd ? 1 : 0)
+                  << " force_cel=" << (force_cel_gcd ? 1 : 0)
+                  << "\n";
+    }
+    // #endregion
+    int error_code=use_avx2_gcd ?
         asm_code::asm_avx2_func_gcd_unsigned(&data):
         asm_code::asm_cel_func_gcd_unsigned(&data);
 

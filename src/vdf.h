@@ -49,31 +49,6 @@
 #include <map>
 #include <algorithm>
 #include <chrono>
-#include <fstream>
-
-static inline void agent_debug_log_ndjson(
-    const char* hypothesis_id,
-    const char* location,
-    const char* message,
-    const std::string& data_json,
-    const char* run_id = "pre-fix"
-) {
-    const long long ts_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()
-    ).count();
-    std::ofstream out("/Users/hoffmang/src/chiavdf/.cursor/debug.log", std::ios::app);
-    if (!out.good()) {
-        return;
-    }
-    out << "{\"id\":\"log_" << ts_ms << "_" << hypothesis_id
-        << "\",\"timestamp\":" << ts_ms
-        << ",\"runId\":\"" << run_id
-        << "\",\"hypothesisId\":\"" << hypothesis_id
-        << "\",\"location\":\"" << location
-        << "\",\"message\":\"" << message
-        << "\",\"data\":" << data_json
-        << "}\n";
-}
 
 #include <thread>
 #include <future>
@@ -192,7 +167,6 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
 
     uint64_t num_iterations = 0;
     uint64_t last_checkpoint = 0;
-    bool agent_logged_fast_path = false;
 
     while (!stopped) {
         uint64 c_checkpoint_interval=checkpoint_interval;
@@ -224,64 +198,7 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
         // x86/x64: use the phased pipeline.
         square_state_type square_state;
         square_state.pairindex = 0;
-        static std::atomic<int> agent_active_fast_calls{0};
-        const int agent_active_fast_now = agent_active_fast_calls.fetch_add(1, std::memory_order_relaxed) + 1;
-        // #region agent log
-        if (num_iterations < 32 || agent_active_fast_now > 1) {
-            std::cerr << "AGENTDBG H21 fast_call_enter pairindex=" << square_state.pairindex
-                      << " num_iterations=" << num_iterations
-                      << " batch_size=" << batch_size
-                      << " active_fast_calls=" << agent_active_fast_now << "\n";
-        }
-        // #endregion
-        if (num_iterations < 32) {
-            // #region agent log
-            std::cerr << "AGENTDBG H9 fast_before_iter num_iterations=" << num_iterations
-                      << " batch_size=" << batch_size
-                      << " iterations_arg=" << iterations << "\n";
-            // #endregion
-        }
-        if (!agent_logged_fast_path) {
-            // #region agent log
-            agent_debug_log_ndjson(
-                "H2",
-                "src/vdf.h:repeated_square:fast_before",
-                "about_to_call_repeated_square_fast",
-                std::string("{\"num_iterations\":") + std::to_string(num_iterations) +
-                    ",\"batch_size\":" + std::to_string(batch_size) +
-                    ",\"iterations_arg\":" + std::to_string(iterations) + "}"
-            );
-            // #endregion
-        }
         actual_iterations = repeated_square_fast(square_state, f, D, L, num_iterations, batch_size, weso);
-        const int agent_active_fast_left = agent_active_fast_calls.fetch_sub(1, std::memory_order_relaxed) - 1;
-        // #region agent log
-        if (num_iterations < 32 || agent_active_fast_now > 1 || agent_active_fast_left > 0) {
-            std::cerr << "AGENTDBG H21 fast_call_exit pairindex=" << square_state.pairindex
-                      << " num_iterations=" << num_iterations
-                      << " actual_iterations=" << actual_iterations
-                      << " active_fast_calls_left=" << agent_active_fast_left << "\n";
-        }
-        // #endregion
-        if (num_iterations < 32) {
-            // #region agent log
-            std::cerr << "AGENTDBG H9 fast_after_iter num_iterations=" << num_iterations
-                      << " actual_iterations=" << actual_iterations
-                      << " batch_size=" << batch_size << "\n";
-            // #endregion
-        }
-        if (!agent_logged_fast_path) {
-            // #region agent log
-            agent_debug_log_ndjson(
-                "H2",
-                "src/vdf.h:repeated_square:fast_after",
-                "returned_from_repeated_square_fast",
-                std::string("{\"actual_iterations\":") + std::to_string(actual_iterations) +
-                    ",\"batch_size\":" + std::to_string(batch_size) + "}"
-            );
-            // #endregion
-            agent_logged_fast_path = true;
-        }
 #else
         // Non-x86: use the C++ NUDUPL path (faster and lower maintenance than the phased pipeline).
         integer& D_nc = const_cast<integer&>(D);
@@ -318,17 +235,7 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
             //the fast algorithm terminated prematurely for whatever reason. f is still valid
             //it might terminate prematurely again (e.g. gcd quotient too large), so will do one iteration of the slow algorithm
             //this will also reduce f if the fast algorithm terminated because it was too big
-            // #region agent log
-            std::cerr << "AGENTDBG H6 fallback_before_slow num_iterations=" << num_iterations
-                      << " actual_iterations=" << actual_iterations
-                      << " batch_size=" << batch_size << "\n";
-            // #endregion
             repeated_square_original(*weso->vdfo, f, D, L, num_iterations+actual_iterations, 1, weso);
-            // #region agent log
-            std::cerr << "AGENTDBG H6 fallback_after_slow num_iterations=" << num_iterations
-                      << " actual_iterations=" << actual_iterations
-                      << " batch_size=" << batch_size << "\n";
-            // #endregion
 
             #ifdef VDF_TEST
                 ++num_iterations_slow;
@@ -342,12 +249,6 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
         }
 
         num_iterations+=actual_iterations;
-        // #region agent log
-        if (num_iterations == actual_iterations) {
-            std::cerr << "AGENTDBG H7 first_loop_after_accumulate num_iterations=" << num_iterations
-                      << " last_checkpoint=" << last_checkpoint << "\n";
-        }
-        // #endregion
         if (num_iterations >= last_checkpoint) {
             weso->iterations = num_iterations;
 

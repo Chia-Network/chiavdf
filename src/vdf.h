@@ -131,25 +131,127 @@ static inline void repeated_square_nudupl(
         fallback_reducer.emplace();
     }
     for (uint64_t i = 0; i < iterations; i++) {
+        const uint64_t current_iter = base + i + 1;
+        if (two_weso && current_iter >= 13860000 && current_iter <= 13920000 && (current_iter % 500 == 0)) {
+            // #region agent log
+            CallbackAgentDebugLog(
+                "post-fix",
+                "H33",
+                "vdf.h:repeated_square_nudupl:before_nudupl",
+                "NUDUPL worker micro window before nudupl_form",
+                std::string("{\"current_iter\":") + std::to_string(current_iter) + "}");
+            // #endregion
+        }
+        if (two_weso && current_iter >= 13891000 && current_iter <= 13893000 && (current_iter % 100 == 0)) {
+            // #region agent log
+            CallbackAgentDebugLog(
+                "post-fix",
+                "H35",
+                "vdf.h:repeated_square_nudupl:post700_before_nudupl",
+                "Post-13891000 focused worker window before nudupl_form",
+                std::string("{\"current_iter\":") + std::to_string(current_iter) + "}");
+            // #endregion
+        }
+        if (two_weso && current_iter >= 13885500 && current_iter <= 13887500 && (current_iter % 100 == 0)) {
+            // #region agent log
+            CallbackAgentDebugLog(
+                "post-fix",
+                "H36",
+                "vdf.h:repeated_square_nudupl:270k_before_nudupl",
+                "270k-correlated worker window before nudupl_form",
+                std::string("{\"current_iter\":") + std::to_string(current_iter) + "}");
+            // #endregion
+        }
         nudupl_form(f, f, D, L);
+        if (two_weso && current_iter >= 13860000 && current_iter <= 13920000 && (current_iter % 500 == 0)) {
+            // #region agent log
+            CallbackAgentDebugLog(
+                "post-fix",
+                "H33",
+                "vdf.h:repeated_square_nudupl:after_nudupl",
+                "NUDUPL worker micro window after nudupl_form",
+                std::string("{\"current_iter\":") + std::to_string(current_iter) + "}");
+            // #endregion
+        }
+        if (two_weso && current_iter >= 13891000 && current_iter <= 13893000 && (current_iter % 100 == 0)) {
+            // #region agent log
+            CallbackAgentDebugLog(
+                "post-fix",
+                "H35",
+                "vdf.h:repeated_square_nudupl:post700_after_nudupl",
+                "Post-13891000 focused worker window after nudupl_form",
+                std::string("{\"current_iter\":") + std::to_string(current_iter) + "}");
+            // #endregion
+        }
+        if (two_weso && current_iter >= 13885500 && current_iter <= 13887500 && (current_iter % 100 == 0)) {
+            // #region agent log
+            CallbackAgentDebugLog(
+                "post-fix",
+                "H36",
+                "vdf.h:repeated_square_nudupl:270k_after_nudupl",
+                "270k-correlated worker window after nudupl_form",
+                std::string("{\"current_iter\":") + std::to_string(current_iter) + "}");
+            // #endregion
+        }
 
         // Reduce only when `a` grows beyond a small limb threshold. Reducing every iteration
         // can be slower than letting NUDUPL run a bit "wide".
         if (__GMP_ABS(f.a.impl->_mp_size) > 8) {
+            if (two_weso && current_iter >= 13885500 && current_iter <= 13887500 && (current_iter % 100 == 0)) {
+                // #region agent log
+                CallbackAgentDebugLog(
+                    "post-fix",
+                    "H36",
+                    "vdf.h:repeated_square_nudupl:270k_before_reduce",
+                    "270k-correlated worker window before reduce",
+                    std::string("{\"current_iter\":") + std::to_string(current_iter) +
+                        ",\"a_limb_size\":" + std::to_string(__GMP_ABS(f.a.impl->_mp_size)) + "}");
+                // #endregion
+            }
             if (weso) {
                 weso->reduce(f);
             } else {
                 fallback_reducer->reduce(f);
             }
+            if (two_weso && current_iter >= 13885500 && current_iter <= 13887500 && (current_iter % 100 == 0)) {
+                // #region agent log
+                CallbackAgentDebugLog(
+                    "post-fix",
+                    "H36",
+                    "vdf.h:repeated_square_nudupl:270k_after_reduce",
+                    "270k-correlated worker window after reduce",
+                    std::string("{\"current_iter\":") + std::to_string(current_iter) + "}");
+                // #endregion
+            }
         }
 
         if (nuduplListener != nullptr) {
+            if (two_weso && current_iter >= 13885500 && current_iter <= 13887500 && (current_iter % 100 == 0)) {
+                // #region agent log
+                CallbackAgentDebugLog(
+                    "post-fix",
+                    "H36",
+                    "vdf.h:repeated_square_nudupl:270k_before_oniteration",
+                    "270k-correlated worker window before OnIteration callback",
+                    std::string("{\"current_iter\":") + std::to_string(current_iter) + "}");
+                // #endregion
+            }
             // Present the C++ `form` as a `vdf_original::form` view so existing callbacks can
             // consume it without any new type tags.
             f_view.a[0] = f.a.impl[0];
             f_view.b[0] = f.b.impl[0];
             f_view.c[0] = f.c.impl[0];
             nuduplListener->OnIteration(NL_FORM, &f_view, base + i);
+            if (two_weso && current_iter >= 13885500 && current_iter <= 13887500 && (current_iter % 100 == 0)) {
+                // #region agent log
+                CallbackAgentDebugLog(
+                    "post-fix",
+                    "H36",
+                    "vdf.h:repeated_square_nudupl:270k_after_oniteration",
+                    "270k-correlated worker window after OnIteration callback",
+                    std::string("{\"current_iter\":") + std::to_string(current_iter) + "}");
+                // #endregion
+            }
         }
     }
 }
@@ -166,6 +268,8 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
 
     uint64_t num_iterations = 0;
     uint64_t last_checkpoint = 0;
+    uint64_t debug_progress_mark = 12000000;
+    uint64_t debug_fast_call_mark = 13500000;
 
     while (!stopped) {
         uint64 c_checkpoint_interval=checkpoint_interval;
@@ -197,7 +301,30 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
         // x86/x64: use the phased pipeline.
         square_state_type square_state;
         square_state.pairindex = 0;
+        if (two_weso && num_iterations >= debug_fast_call_mark) {
+            // #region agent log
+            CallbackAgentDebugLog(
+                "post-fix",
+                "H21",
+                "vdf.h:repeated_square:before_fast_call",
+                "About to call repeated_square_fast",
+                std::string("{\"num_iterations\":") + std::to_string(num_iterations) +
+                    ",\"batch_size\":" + std::to_string(batch_size) + "}");
+            // #endregion
+        }
         actual_iterations = repeated_square_fast(square_state, f, D, L, num_iterations, batch_size, weso);
+        if (two_weso && num_iterations >= debug_fast_call_mark) {
+            // #region agent log
+            CallbackAgentDebugLog(
+                "post-fix",
+                "H21",
+                "vdf.h:repeated_square:after_fast_call",
+                "repeated_square_fast returned",
+                std::string("{\"num_iterations\":") + std::to_string(num_iterations) +
+                    ",\"actual_iterations\":" + std::to_string(actual_iterations) + "}");
+            // #endregion
+            debug_fast_call_mark += 100000;
+        }
 #else
         // Non-x86: use the C++ NUDUPL path (faster and lower maintenance than the phased pipeline).
         integer& D_nc = const_cast<integer&>(D);
@@ -248,6 +375,19 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
         }
 
         num_iterations+=actual_iterations;
+        if (two_weso && num_iterations >= debug_progress_mark) {
+            // #region agent log
+            CallbackAgentDebugLog(
+                "post-fix",
+                "H20",
+                "vdf.h:repeated_square:progress",
+                "repeated_square progress marker",
+                std::string("{\"num_iterations\":") + std::to_string(num_iterations) +
+                    ",\"actual_iterations\":" + std::to_string(actual_iterations) +
+                    ",\"batch_size\":" + std::to_string(batch_size) + "}");
+            // #endregion
+            debug_progress_mark += 500000;
+        }
         if (num_iterations >= last_checkpoint) {
             weso->iterations = num_iterations;
 
@@ -351,17 +491,59 @@ Proof ProveOneWesolowski(uint64_t iters, integer& D, form f, OneWesolowskiCallba
 Proof ProveTwoWeso(integer& D, form x, uint64_t iters, uint64_t done_iterations,
     TwoWesolowskiCallback* weso, int depth, std::atomic<bool>& stop_signal)
 {
+    // #region agent log
+    CallbackAgentDebugLog(
+        "post-fix",
+        "H17",
+        "vdf.h:ProveTwoWeso:enter",
+        "Enter ProveTwoWeso",
+        std::string("{\"depth\":") + std::to_string(depth) +
+            ",\"iters\":" + std::to_string(iters) +
+            ",\"done_iterations\":" + std::to_string(done_iterations) + "}");
+    // #endregion
     integer L=root(-D, 4);
     if (depth == 2) {
+        // #region agent log
+        CallbackAgentDebugLog(
+            "post-fix",
+            "H17",
+            "vdf.h:ProveTwoWeso:depth2_before_wait",
+            "Depth-2 waiting for required iterations",
+            std::string("{\"target\":") + std::to_string(done_iterations + iters) + "}");
+        // #endregion
         while (!stop_signal && weso->iterations < done_iterations + iters) {
             std::this_thread::sleep_for (std::chrono::milliseconds(200));
         }
+        // #region agent log
+        CallbackAgentDebugLog(
+            "post-fix",
+            "H17",
+            "vdf.h:ProveTwoWeso:depth2_after_wait",
+            "Depth-2 wait completed",
+            std::string("{\"iterations_now\":") + std::to_string(weso->iterations.load()) + "}");
+        // #endregion
         if (stop_signal)
             return Proof();
 
         vdf_original vdfo_proof;
         uint64 checkpoint = (done_iterations + iters) - (done_iterations + iters) % 100;
-        form y = *(weso->GetForm(checkpoint));
+        // #region agent log
+        CallbackAgentDebugLog(
+            "post-fix",
+            "H17",
+            "vdf.h:ProveTwoWeso:depth2_before_checkpoint_get",
+            "Depth-2 loading checkpoint form",
+            std::string("{\"checkpoint\":") + std::to_string(checkpoint) + "}");
+        // #endregion
+        form y = weso->GetFormCopy(checkpoint);
+        // #region agent log
+        CallbackAgentDebugLog(
+            "post-fix",
+            "H17",
+            "vdf.h:ProveTwoWeso:depth2_after_checkpoint_get",
+            "Depth-2 loaded checkpoint form",
+            "{}");
+        // #endregion
         repeated_square_original(vdfo_proof, y, D, L, 0, (done_iterations + iters) % 100, NULL);
 
         Segment sg(
@@ -371,7 +553,23 @@ Proof ProveTwoWeso(integer& D, form x, uint64_t iters, uint64_t done_iterations,
             /*y=*/y
         );
         TwoWesolowskiProver prover(sg, D, weso, stop_signal);
+        // #region agent log
+        CallbackAgentDebugLog(
+            "post-fix",
+            "H17",
+            "vdf.h:ProveTwoWeso:depth2_before_generate",
+            "Depth-2 prover GenerateProof start",
+            "{}");
+        // #endregion
         prover.GenerateProof();
+        // #region agent log
+        CallbackAgentDebugLog(
+            "post-fix",
+            "H17",
+            "vdf.h:ProveTwoWeso:depth2_after_generate",
+            "Depth-2 prover GenerateProof finished",
+            "{}");
+        // #endregion
 
         if (stop_signal)
             return Proof();
@@ -394,7 +592,7 @@ Proof ProveTwoWeso(integer& D, form x, uint64_t iters, uint64_t done_iterations,
     if (stop_signal)
         return Proof();
 
-    form y1 = *(weso->GetForm(done_iterations + iterations1));
+    form y1 = weso->GetFormCopy(done_iterations + iterations1);
     Segment sg(
         /*start=*/done_iterations,
         /*lenght=*/iterations1,
@@ -403,10 +601,42 @@ Proof ProveTwoWeso(integer& D, form x, uint64_t iters, uint64_t done_iterations,
     );
     TwoWesolowskiProver prover(sg, D, weso, stop_signal);
     prover.start();
+    // #region agent log
+    CallbackAgentDebugLog(
+        "post-fix",
+        "H17",
+        "vdf.h:ProveTwoWeso:before_recursive_call",
+        "Calling recursive ProveTwoWeso",
+        std::string("{\"next_depth\":") + std::to_string(depth + 1) +
+            ",\"iterations2\":" + std::to_string(iterations2) + "}");
+    // #endregion
     Proof proof2 = ProveTwoWeso(D, y1, iterations2, done_iterations + iterations1, weso, depth + 1, stop_signal);
+    // #region agent log
+    CallbackAgentDebugLog(
+        "post-fix",
+        "H17",
+        "vdf.h:ProveTwoWeso:after_recursive_call",
+        "Returned from recursive ProveTwoWeso",
+        "{}");
+    // #endregion
 
+    int wait_polls = 0;
     while (!stop_signal && !prover.IsFinished()) {
+        if ((wait_polls % 50) == 0) {
+            // #region agent log
+            CallbackAgentDebugLog(
+                "post-fix",
+                "H52",
+                "vdf.h:ProveTwoWeso:wait_for_top_prover",
+                "Waiting for top-level prover completion",
+                std::string("{\"depth\":") + std::to_string(depth) +
+                    ",\"done_iterations\":" + std::to_string(done_iterations) +
+                    ",\"iterations_now\":" + std::to_string(weso->iterations.load()) +
+                    ",\"wait_polls\":" + std::to_string(wait_polls) + "}");
+            // #endregion
+        }
         std::this_thread::sleep_for (std::chrono::milliseconds(100));
+        wait_polls++;
     }
     if (stop_signal)
         return Proof();

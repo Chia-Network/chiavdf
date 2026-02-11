@@ -167,6 +167,10 @@ jobs:
       if: matrix.config == 'optimized=1' && startsWith(matrix.os, 'windows')
       shell: pwsh
       run: |
+        Write-Host "CI commit (HEAD): $env:GITHUB_SHA"
+        git rev-parse --short HEAD
+        Write-Host "Instrumentation marker source line:"
+        Select-String -Path "$env:GITHUB_WORKSPACE\src\2weso_test.cpp" -Pattern 'instrumentation_version' | ForEach-Object { $_.Line }
         cd build
         $dllPaths = @()
         if ($env:MPIR_ROOT -and (Test-Path "$env:MPIR_ROOT\bin")) { $dllPaths += "$env:MPIR_ROOT\bin" }
@@ -177,13 +181,30 @@ jobs:
           & ".\$name.exe" @args
           if ($LASTEXITCODE -ne 0) {
             Write-Host "$name exit code: $LASTEXITCODE"
+            if ($name -eq "2weso_test" -and (Test-Path $env:CHIAVDF_AGENT_DEBUG_LOG)) {
+              Write-Host "=== 2weso debug log start ==="
+              Get-Content $env:CHIAVDF_AGENT_DEBUG_LOG
+              Write-Host "=== 2weso debug log end ==="
+            }
             exit $LASTEXITCODE
           }
         }
+        $env:CHIAVDF_AGENT_DEBUG_LOG = "$env:GITHUB_WORKSPACE\2weso-debug.ndjson"
+        if (Test-Path $env:CHIAVDF_AGENT_DEBUG_LOG) { Remove-Item $env:CHIAVDF_AGENT_DEBUG_LOG -Force }
         Invoke-TestExe "1weso_test"
+        Write-Host "Running 2weso_test quick precheck (100)"
+        Invoke-TestExe "2weso_test" @("100")
         Invoke-TestExe "2weso_test"
         $env:CHIAVDF_PROVER_TEST_FAST = "1"
         Invoke-TestExe "prover_test"
+
+    - name: Upload 2weso debug artifact (Windows)
+      if: matrix.config == 'optimized=1' && startsWith(matrix.os, 'windows') && always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: 2weso-debug-windows
+        path: ${{ github.workspace }}/2weso-debug.ndjson
+        if-no-files-found: ignore
 
     - name: Benchmark vdf_bench square (Ubuntu/Mac)
       if: matrix.config == 'optimized=1' && !startsWith(matrix.os, 'windows')

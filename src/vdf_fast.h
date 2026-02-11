@@ -185,6 +185,14 @@ struct square_state_type {
     //
 
     bool phase_0_master() {
+        // #region agent log
+        if (phase_start.num_valid_iterations == 0) {
+            std::cerr << "AGENTDBG H13 p0_master_enter a_bits=" << phase_start.a().num_bits()
+                      << " b_bits=" << phase_start.b().num_bits()
+                      << " a_sgn=" << phase_start.a().sgn()
+                      << " b_higher=" << (phase_start.b_higher_magnitude_than_a ? 1 : 0) << "\n";
+        }
+        // #endregion
         {
             TRACK_CYCLES //100
             if (!c_thread_state.fence(counter_start_phase_0)) {
@@ -222,6 +230,14 @@ struct square_state_type {
             ab_valid=(a.num_bits()<=max_bits_ab && b.num_bits()<=max_bits_ab && a.sgn()>=0);
         }
         if (!ab_valid) {
+            // #region agent log
+            if (phase_start.num_valid_iterations == 0) {
+                std::cerr << "AGENTDBG H13 p0_master_ab_invalid a_bits=" << a.num_bits()
+                          << " b_bits=" << b.num_bits()
+                          << " max_bits_ab=" << max_bits_ab
+                          << " a_sgn=" << a.sgn() << "\n";
+            }
+            // #endregion
             return false;
         }
 
@@ -233,6 +249,12 @@ struct square_state_type {
             a_high_enough=(a.num_limbs()>L.num_limbs());
         }
         if (!a_high_enough) {
+            // #region agent log
+            if (phase_start.num_valid_iterations == 0) {
+                std::cerr << "AGENTDBG H13 p0_master_a_low a_limbs=" << a.num_limbs()
+                          << " L_limbs=" << L.num_limbs() << "\n";
+            }
+            // #endregion
             return false;
         }
 
@@ -246,16 +268,39 @@ struct square_state_type {
 
         {
             TRACK_CYCLES //16070 (critical path 1)
+            // #region agent log
+            if (phase_start.num_valid_iterations == 0) {
+                std::cerr << "AGENTDBG H13 p0_master_before_gcd\n";
+            }
+            // #endregion
             if (!gcd_unsigned(counter_start_phase_0, gcd_1_0, gcd_zero)) {
                 TRACK_CYCLES_ABORT
+                // #region agent log
+                if (phase_start.num_valid_iterations == 0) {
+                    std::cerr << "AGENTDBG H13 p0_master_gcd_false\n";
+                }
+                // #endregion
                 return false;
             }
+            // #region agent log
+            if (phase_start.num_valid_iterations == 0) {
+                std::cerr << "AGENTDBG H13 p0_master_after_gcd\n";
+            }
+            // #endregion
         }
 
         return true;
     }
 
     bool phase_0_slave() {
+        // #region agent log
+        if (phase_start.num_valid_iterations == 0) {
+            std::cerr << "AGENTDBG H13 p0_slave_enter a_bits=" << phase_start.a().num_bits()
+                      << " b_bits=" << phase_start.b().num_bits()
+                      << " a_sgn=" << phase_start.a().sgn()
+                      << " b_higher=" << (phase_start.b_higher_magnitude_than_a ? 1 : 0) << "\n";
+        }
+        // #endregion
         {
             TRACK_CYCLES //1698 (doesn't matter)
             if (!c_thread_state.fence(counter_start_phase_0)) {
@@ -306,7 +351,17 @@ struct square_state_type {
 
             if (!validate_c) {
                 TRACK_CYCLES //747
+                // #region agent log
+                if (phase_start.num_valid_iterations == 0) {
+                    std::cerr << "AGENTDBG H13 p0_slave_before_divide_exact\n";
+                }
+                // #endregion
                 c.set_divide_exact(b_b_D, a_4);
+                // #region agent log
+                if (phase_start.num_valid_iterations == 0) {
+                    std::cerr << "AGENTDBG H13 p0_slave_after_divide_exact\n";
+                }
+                // #endregion
             } else {
                 TRACK_CYCLES //1309; latency is hidden by gcd being slow
                 c.set_divide_floor(b_b_D, a_4, c_remainder);

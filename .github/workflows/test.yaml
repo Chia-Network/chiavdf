@@ -80,21 +80,50 @@ jobs:
         path: C:\local\boost_*
         key: windows-boost-msvc-14.3-v1
 
+    - name: Cache LLVM and Ninja on Windows
+      if: startsWith(matrix.os, 'windows')
+      id: cache-llvm-ninja
+      uses: actions/cache@v4
+      with:
+        path: |
+          C:\Program Files\LLVM
+          C:\ProgramData\chocolatey\lib\llvm
+          C:\ProgramData\chocolatey\lib\ninja
+          C:\ProgramData\chocolatey\bin\ninja.exe
+        key: windows-llvm-ninja-v1
+
     - name: Install LLVM and Ninja on Windows
       if: startsWith(matrix.os, 'windows')
       shell: pwsh
       env:
         BOOST_CACHE_HIT: ${{ steps.cache-boost.outputs.cache-hit }}
+        LLVM_NINJA_CACHE_HIT: ${{ steps.cache-llvm-ninja.outputs.cache-hit }}
       run: |
-        choco install llvm ninja -y
-        if ("$env:BOOST_CACHE_HIT" -ne "true") {
-          choco install boost-msvc-14.3 -y
+        $llvmBin = "C:\Program Files\LLVM\bin\clang-cl.exe"
+        $ninjaBin = "C:\ProgramData\chocolatey\bin\ninja.exe"
+        if (-not (Test-Path $llvmBin) -or -not (Test-Path $ninjaBin)) {
+          Write-Host "LLVM/Ninja missing after cache restore (cache-hit=$env:LLVM_NINJA_CACHE_HIT); installing via choco"
+          choco install llvm ninja -y
         } else {
-          Write-Host "Boost cache hit, skipping boost-msvc-14.3 install"
+          Write-Host "LLVM and Ninja already present, skipping choco install"
         }
+
+        $boostDir = Get-ChildItem "C:\local" -Directory -Filter "boost_*" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $boostDir) {
+          if ("$env:BOOST_CACHE_HIT" -ne "true") {
+            Write-Host "Boost cache miss and boost not found, installing boost-msvc-14.3"
+            choco install boost-msvc-14.3 -y
+          } else {
+            Write-Host "Boost cache reported hit but boost directory missing; reinstalling boost-msvc-14.3"
+            choco install boost-msvc-14.3 -y
+          }
+          $boostDir = Get-ChildItem "C:\local" -Directory -Filter "boost_*" -ErrorAction SilentlyContinue | Select-Object -First 1
+        } else {
+          Write-Host "Boost already present at $($boostDir.FullName), skipping choco install"
+        }
+
         "C:\Program Files\LLVM\bin" | Out-File -Append -FilePath $env:GITHUB_PATH
         "CHIA_ENABLE_AVX512_IFMA=0" | Out-File -Append -FilePath $env:GITHUB_ENV
-        $boostDir = Get-ChildItem "C:\local" -Directory -Filter "boost_*" | Select-Object -First 1
         if (-not $boostDir) {
           throw "Boost install not found under C:\local"
         }

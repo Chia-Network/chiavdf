@@ -174,11 +174,15 @@ jobs:
         cd build
         Write-Host "2weso_test.exe PE file-header characteristics:"
         & llvm-readobj --file-headers ".\\2weso_test.exe"
+        if (Test-Path ".\\2weso_test_laa_no.exe") {
+          Write-Host "2weso_test_laa_no.exe PE file-header characteristics:"
+          & llvm-readobj --file-headers ".\\2weso_test_laa_no.exe"
+        }
         $dllPaths = @()
         if ($env:MPIR_ROOT -and (Test-Path "$env:MPIR_ROOT\bin")) { $dllPaths += "$env:MPIR_ROOT\bin" }
         if (Test-Path "$env:GITHUB_WORKSPACE\mpir_gc_x64") { $dllPaths += "$env:GITHUB_WORKSPACE\mpir_gc_x64" }
         if ($dllPaths.Count -gt 0) { $env:PATH = ($dllPaths -join ';') + ';' + $env:PATH }
-        function Invoke-TestExe([string]$name, [string[]]$args = @(), [string]$debugLog = "") {
+        function Invoke-TestExe([string]$name, [string[]]$args = @(), [string]$debugLog = "", [bool]$allowFailure = $false) {
           if ($debugLog -ne "") {
             $env:CHIAVDF_AGENT_DEBUG_LOG = "$env:GITHUB_WORKSPACE\\$debugLog"
             if (Test-Path $env:CHIAVDF_AGENT_DEBUG_LOG) { Remove-Item $env:CHIAVDF_AGENT_DEBUG_LOG -Force }
@@ -194,19 +198,27 @@ jobs:
           }
           if ($exitCode -ne 0) {
             Write-Host "$name exit code: $exitCode"
-            exit $exitCode
+            if (-not $allowFailure) {
+              exit $exitCode
+            }
           }
+          return $exitCode
         }
         Invoke-TestExe "1weso_test" @() "1weso-debug.ndjson"
         Write-Host "Running 2weso_test quick precheck (100)"
         Invoke-TestExe "2weso_test" @("100") "2weso-no-laa-quick.ndjson"
+        Invoke-TestExe "2weso_test" @() "2weso-no-laa-full.ndjson"
+        $laaNoQuickExit = 0
         if (Test-Path ".\\2weso_test_laa_no.exe") {
           Write-Host "Running 2weso_test_laa_no quick precheck (100)"
-          Invoke-TestExe "2weso_test_laa_no" @("100") "2weso-laa-no-quick.ndjson"
+          $laaNoQuickExit = Invoke-TestExe "2weso_test_laa_no" @("100") "2weso-laa-no-quick.ndjson" $true
         }
-        Invoke-TestExe "2weso_test" @() "2weso-no-laa-full.ndjson"
         $env:CHIAVDF_PROVER_TEST_FAST = "1"
         Invoke-TestExe "prover_test"
+        if ($laaNoQuickExit -ne 0) {
+          Write-Host "2weso_test_laa_no quick precheck failed with exit code: $laaNoQuickExit"
+          exit $laaNoQuickExit
+        }
 
     - name: Upload 2weso debug artifact (Windows)
       if: matrix.config == 'optimized=1' && startsWith(matrix.os, 'windows') && always()

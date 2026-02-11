@@ -80,29 +80,16 @@ jobs:
         path: C:\local\boost_*
         key: windows-boost-msvc-14.3-v1
 
-    - name: Cache LLVM and Ninja on Windows
-      if: startsWith(matrix.os, 'windows')
-      id: cache-llvm-ninja
-      uses: actions/cache/restore@v4
-      with:
-        path: |
-          C:\Program Files\LLVM
-          C:\ProgramData\chocolatey\lib\llvm
-          C:\ProgramData\chocolatey\lib\ninja
-          C:\ProgramData\chocolatey\bin\ninja.exe
-        key: windows-llvm-ninja-v1
-
     - name: Install LLVM and Ninja on Windows
       if: startsWith(matrix.os, 'windows')
       shell: pwsh
       env:
         BOOST_CACHE_HIT: ${{ steps.cache-boost.outputs.cache-hit }}
-        LLVM_NINJA_CACHE_HIT: ${{ steps.cache-llvm-ninja.outputs.cache-hit }}
       run: |
         $llvmBin = "C:\Program Files\LLVM\bin\clang-cl.exe"
         $ninjaBin = "C:\ProgramData\chocolatey\bin\ninja.exe"
         if (-not (Test-Path $llvmBin) -or -not (Test-Path $ninjaBin)) {
-          Write-Host "LLVM/Ninja missing after cache restore (cache-hit=$env:LLVM_NINJA_CACHE_HIT); installing via choco"
+          Write-Host "LLVM/Ninja not found, installing via choco"
           choco install llvm ninja -y
         } else {
           Write-Host "LLVM and Ninja already present, skipping choco install"
@@ -135,17 +122,6 @@ jobs:
       with:
         path: C:\local\boost_*
         key: ${{ steps.cache-boost.outputs.cache-primary-key }}
-
-    - name: Save LLVM and Ninja cache on Windows
-      if: startsWith(matrix.os, 'windows') && steps.cache-llvm-ninja.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v4
-      with:
-        path: |
-          C:\Program Files\LLVM
-          C:\ProgramData\chocolatey\lib\llvm
-          C:\ProgramData\chocolatey\lib\ninja
-          C:\ProgramData\chocolatey\bin\ninja.exe
-        key: ${{ steps.cache-llvm-ninja.outputs.cache-primary-key }}
 
     - name: Cache mpir checkout on Windows
       if: startsWith(matrix.os, 'windows')

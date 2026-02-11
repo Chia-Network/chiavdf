@@ -18,7 +18,7 @@ Proof CreateProof(ProverManager& pm, uint64_t iteration) {
 int gcd_base_bits=50;
 int gcd_128_max_iter=3;
 
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(CHIA_DISABLE_ASM)
 #ifdef GENERATE_ASM_TRACKING_DATA
 static LONG WINAPI dump_asm_tracking_on_crash(EXCEPTION_POINTERS*) {
     std::cerr << "AGENTDBG H16 seh_unhandled_exception\n";
@@ -77,7 +77,7 @@ int main(int argc, char const* argv[]) try
 
     assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
     init_gmp();
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(CHIA_DISABLE_ASM)
     void* agent_veh_handle = AddVectoredExceptionHandler(1, agent_vectored_exception_logger);
     (void)agent_veh_handle;
 #ifdef GENERATE_ASM_TRACKING_DATA

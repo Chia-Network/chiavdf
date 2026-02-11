@@ -230,9 +230,9 @@ jobs:
         Write-Host "Disasm head (asm_cel_func_gcd_unsigned)"
         & llvm-objdump --no-show-raw-insn --disassemble-symbols=asm_cel_func_gcd_unsigned .\1weso_test.exe
         Write-Host "Disasm around AVX2 crash RVA window"
-        & llvm-objdump --no-show-raw-insn --disassemble --start-address=0x140025320 --stop-address=0x1400254b0 .\1weso_test.exe
+        & llvm-objdump --no-show-raw-insn --disassemble --start-address=0x140025280 --stop-address=0x140025340 .\1weso_test.exe
         Write-Host "Disasm around CEL crash RVA window"
-        & llvm-objdump --no-show-raw-insn --disassemble --start-address=0x14001f900 --stop-address=0x14001fa90 .\1weso_test.exe
+        & llvm-objdump --no-show-raw-insn --disassemble --start-address=0x14001faa0 --stop-address=0x14001fb60 .\1weso_test.exe
         function Invoke-BenchSmoke([string]$mode, [string]$forceCel = "") {
           if ($forceCel -ne "") {
             $env:CHIA_DEBUG_FORCE_CEL_GCD = $forceCel

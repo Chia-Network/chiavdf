@@ -483,7 +483,13 @@ void gcd_unsigned(
         APPEND_M(str( ".text" ));
 
         APPEND_M(str( "MOV `tmp, `spill_a_end_index" ));
+#ifdef CHIA_WINDOWS
+        reg_scalar table_addr=regs.bind_scalar(m, "table_addr");
+        APPEND_M(str( "LEA `table_addr, [RIP+#]", jump_table_label ));
+        APPEND_M(str( "JMP QWORD PTR [`table_addr+`tmp*8]" ));
+#else
         APPEND_M(str( "JMP QWORD PTR [#+`tmp*8]", jump_table_label ));
+#endif
 #endif
     }
     for (int size=4;size<=int_size;size+=4) {

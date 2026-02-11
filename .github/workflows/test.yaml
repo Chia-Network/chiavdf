@@ -239,7 +239,21 @@ jobs:
         }
         $smokeDefault = Invoke-BenchSmoke "default"
         $smokeCel = Invoke-BenchSmoke "force_cel" "1"
-        if ($smokeDefault -ne 0 -or $smokeCel -ne 0) {
+        function Invoke-TestProbe([string]$name, [string[]]$testArgs = @(), [string]$forceCel = "") {
+          if ($forceCel -ne "") {
+            $env:CHIA_DEBUG_FORCE_CEL_GCD = $forceCel
+          } else {
+            Remove-Item Env:CHIA_DEBUG_FORCE_CEL_GCD -ErrorAction SilentlyContinue
+          }
+          Write-Host "Running probe $name force_cel=${forceCel}"
+          & ".\$name.exe" @testArgs
+          $exitCode = $LASTEXITCODE
+          Write-Host "probe $name force_cel=${forceCel} exit code: $exitCode"
+          return $exitCode
+        }
+        $probe1wesoDefault = Invoke-TestProbe "1weso_test" @("100") ""
+        $probe1wesoCel = Invoke-TestProbe "1weso_test" @("100") "1"
+        if ($smokeDefault -ne 0 -or $smokeCel -ne 0 -or $probe1wesoDefault -ne 0 -or $probe1wesoCel -ne 0) {
           exit 1
         }
         function Invoke-TestExe([string]$name, [string[]]$testArgs = @()) {

@@ -1066,11 +1066,19 @@ void repeated_square_fast_work(square_state_type &square_state, bool is_slave, u
     // #endregion
 
     bool has_error=false;
+    int agent_phase=-1;
+    uint64 agent_iter=0;
 
+#ifdef CHIA_WINDOWS
+    unsigned long agent_work_seh_code = 0;
+    __try {
+#endif
     for (uint64 iter=0;iter<iterations;++iter) {
+        agent_iter=iter;
         TRACK_CYCLES //master: 35895; slave: 35905
 
         for (int phase=0;phase<square_state_type::num_phases;++phase) {
+            agent_phase=phase;
             // #region agent log
             if (base < 32 && iter < 2 && phase < 6) {
                 std::cerr << "AGENTDBG H12 phase_before_advance base=" << base
@@ -1150,6 +1158,20 @@ void repeated_square_fast_work(square_state_type &square_state, bool is_slave, u
             print( "" );
         }
     #endif
+#ifdef CHIA_WINDOWS
+    } __except ((agent_work_seh_code = GetExceptionCode()), EXCEPTION_EXECUTE_HANDLER) {
+        // #region agent log
+        std::cerr << "AGENTDBG H23 seh_in_fast_work"
+                  << " is_slave=" << (is_slave ? 1 : 0)
+                  << " base=" << base
+                  << " iter=" << agent_iter
+                  << " phase=" << agent_phase
+                  << " code=0x" << std::hex << agent_work_seh_code << std::dec
+                  << "\n";
+        // #endregion
+        c_thread_state.raise_error();
+    }
+#endif
 }
 
 uint64 repeated_square_fast_multithread(square_state_type &square_state, form& f, const integer& D, const integer& L, uint64 base, uint64 iterations, INUDUPLListener *nuduplListener) {

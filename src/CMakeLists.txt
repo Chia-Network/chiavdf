@@ -38,6 +38,9 @@ find_package(Threads REQUIRED)
 
 if(WIN32)
   add_compile_definitions(CHIA_WINDOWS)
+  if(NOT ENABLE_GNU_ASM)
+    add_compile_definitions(CHIA_DISABLE_ASM)
+  endif()
   set(MPIR_LIBRARY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../mpir_gc_x64")
   set(MPIR_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../mpir_gc_x64")
   include_directories(

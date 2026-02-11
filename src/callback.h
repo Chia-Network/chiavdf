@@ -4,11 +4,6 @@
 #include "util.h"
 #include "nudupl_listener.h"
 #include <algorithm>
-#include <atomic>
-#include <chrono>
-#include <cstring>
-#include <cstdlib>
-#include <fstream>
 #include <limits>
 #include <mutex>
 #include <stdexcept>
@@ -20,80 +15,7 @@ const int kWindowSize = 20;
 const int kMaxItersAllowed = 8e8;
 const int kSwitchIters = 91000000;
 
-inline const char* CallbackAgentDebugLogPath() {
-    const char* env_path = std::getenv("CHIAVDF_AGENT_DEBUG_LOG");
-    if (env_path != nullptr && env_path[0] != '\0') {
-        return env_path;
-    }
-    return "/Users/hoffmang/src/chiavdf/.cursor/debug.log";
-}
-
-inline bool CallbackAgentDebugShouldMirror(const char* hypothesis_id) {
-    const char* mirror_all = std::getenv("CHIAVDF_AGENT_DEBUG_MIRROR_ALL");
-    if (mirror_all != nullptr && mirror_all[0] == '1') {
-        return true;
-    }
-    return std::strcmp(hypothesis_id, "H14") == 0 ||
-           std::strcmp(hypothesis_id, "H16") == 0 ||
-           std::strcmp(hypothesis_id, "H18") == 0 ||
-           std::strcmp(hypothesis_id, "H19") == 0 ||
-           std::strcmp(hypothesis_id, "H22") == 0 ||
-           std::strcmp(hypothesis_id, "H28") == 0 ||
-           std::strcmp(hypothesis_id, "H29") == 0 ||
-           std::strcmp(hypothesis_id, "H32") == 0 ||
-           std::strcmp(hypothesis_id, "H33") == 0 ||
-           std::strcmp(hypothesis_id, "H34") == 0 ||
-           std::strcmp(hypothesis_id, "H35") == 0 ||
-           std::strcmp(hypothesis_id, "H36") == 0 ||
-           std::strcmp(hypothesis_id, "H38") == 0 ||
-           std::strcmp(hypothesis_id, "H39") == 0 ||
-           std::strcmp(hypothesis_id, "H40") == 0 ||
-           std::strcmp(hypothesis_id, "H41") == 0 ||
-           std::strcmp(hypothesis_id, "H42") == 0 ||
-           std::strcmp(hypothesis_id, "H43") == 0 ||
-           std::strcmp(hypothesis_id, "H44") == 0 ||
-           std::strcmp(hypothesis_id, "H45") == 0 ||
-           std::strcmp(hypothesis_id, "H46") == 0 ||
-           std::strcmp(hypothesis_id, "H47") == 0 ||
-           std::strcmp(hypothesis_id, "H48") == 0 ||
-           std::strcmp(hypothesis_id, "H49") == 0 ||
-           std::strcmp(hypothesis_id, "H50") == 0 ||
-           std::strcmp(hypothesis_id, "H51") == 0 ||
-           std::strcmp(hypothesis_id, "H53") == 0 ||
-           std::strcmp(hypothesis_id, "H54") == 0 ||
-           std::strcmp(hypothesis_id, "H55") == 0;
-}
-
-inline void CallbackAgentDebugLog(const char* run_id, const char* hypothesis_id, const char* location, const char* message, const std::string& data_json) {
-    static std::atomic<uint64_t> seq{0};
-    std::ofstream out(CallbackAgentDebugLogPath(), std::ios::app);
-    if (!out.is_open()) {
-        return;
-    }
-    const auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        std::chrono::system_clock::now().time_since_epoch())
-                        .count();
-    const uint64_t id = ++seq;
-    out << "{\"id\":\"log_" << ts << "_" << id
-        << "\",\"timestamp\":" << ts
-        << ",\"runId\":\"" << run_id
-        << "\",\"hypothesisId\":\"" << hypothesis_id
-        << "\",\"location\":\"" << location
-        << "\",\"message\":\"" << message
-        << "\",\"data\":" << data_json
-        << "}\n";
-    if (CallbackAgentDebugShouldMirror(hypothesis_id)) {
-        std::cerr << "AGENTLOG "
-                  << "{\"id\":\"log_" << ts << "_" << id
-                  << "\",\"timestamp\":" << ts
-                  << ",\"runId\":\"" << run_id
-                  << "\",\"hypothesisId\":\"" << hypothesis_id
-                  << "\",\"location\":\"" << location
-                  << "\",\"message\":\"" << message
-                  << "\",\"data\":" << data_json
-                  << "}\n";
-    }
-}
+#define CallbackAgentDebugLog(...) do {} while (0)
 
 class WesolowskiCallback :public INUDUPLListener {
 public:
@@ -239,83 +161,7 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
         // #region agent log
         CallbackAgentDebugLog("pre-fix", "H13", "callback.h:TwoWesolowskiCallback:before_seed_form_assign", "Assigning initial form to forms[0]", "{}");
         // #endregion
-        // #region agent log
-        CallbackAgentDebugLog(
-            "post-fix",
-            "H54",
-            "callback.h:TwoWesolowskiCallback:seed_h54_stage0_pre_source_reads",
-            "H54 before reading source num_bits",
-            "{}");
-        // #endregion
-        const int source_a_size = f.a.impl[0]._mp_size;
-        const int source_a_alloc = f.a.impl[0]._mp_alloc;
-        const uint64_t source_a_ptr = static_cast<uint64_t>(
-            reinterpret_cast<uintptr_t>(f.a.impl[0]._mp_d));
-        // #region agent log
-        CallbackAgentDebugLog(
-            "post-fix",
-            "H55",
-            "callback.h:TwoWesolowskiCallback:seed_h55_stage0_a_raw",
-            "H55 raw a metadata before num_bits",
-            std::string("{\"a_size\":") + std::to_string(source_a_size) +
-                ",\"a_alloc\":" + std::to_string(source_a_alloc) +
-                ",\"a_ptr\":" + std::to_string(source_a_ptr) + "}");
-        // #endregion
-        const uint64_t source_a_bits = static_cast<uint64_t>(f.a.num_bits());
-        // #region agent log
-        CallbackAgentDebugLog(
-            "post-fix",
-            "H54",
-            "callback.h:TwoWesolowskiCallback:seed_h54_stage1_after_a_bits",
-            "H54 after reading source a bits",
-            std::string("{\"source_a_bits\":") + std::to_string(source_a_bits) + "}");
-        // #endregion
-        const uint64_t source_b_bits = static_cast<uint64_t>(f.b.num_bits());
-        // #region agent log
-        CallbackAgentDebugLog(
-            "post-fix",
-            "H54",
-            "callback.h:TwoWesolowskiCallback:seed_h54_stage2_after_b_bits",
-            "H54 after reading source b bits",
-            std::string("{\"source_b_bits\":") + std::to_string(source_b_bits) + "}");
-        // #endregion
-        const uint64_t source_c_bits = static_cast<uint64_t>(f.c.num_bits());
-        // #region agent log
-        CallbackAgentDebugLog(
-            "post-fix",
-            "H54",
-            "callback.h:TwoWesolowskiCallback:seed_h54_stage3_after_c_bits",
-            "H54 after reading source c bits",
-            std::string("{\"source_c_bits\":") + std::to_string(source_c_bits) + "}");
-        // #endregion
-        // #region agent log
-        CallbackAgentDebugLog(
-            "post-fix",
-            "H53",
-            "callback.h:TwoWesolowskiCallback:seed_stage0_source_state",
-            "H53 source form state before seed assignment",
-            std::string("{\"source_a_bits\":") + std::to_string(source_a_bits) +
-                ",\"source_b_bits\":" + std::to_string(source_b_bits) +
-                ",\"source_c_bits\":" + std::to_string(source_c_bits) + "}");
-        // #endregion
-        // #region agent log
-        CallbackAgentDebugLog(
-            "post-fix",
-            "H53",
-            "callback.h:TwoWesolowskiCallback:seed_stage1_dest_slot",
-            "H53 destination slot prepared for seed assignment",
-            std::string("{\"forms_capacity\":") + std::to_string(forms_capacity) + "}");
-        // #endregion
         forms[0] = f;
-        // #region agent log
-        CallbackAgentDebugLog(
-            "post-fix",
-            "H53",
-            "callback.h:TwoWesolowskiCallback:seed_stage2_after_assign",
-            "H53 seed assignment completed",
-            std::string("{\"stored_valid\":") + (forms[0].check_valid(D) ? "true" : "false") +
-                ",\"stored_a_bits\":" + std::to_string(forms[0].a.num_bits()) + "}");
-        // #endregion
         // #region agent log
         CallbackAgentDebugLog("pre-fix", "H13", "callback.h:TwoWesolowskiCallback:after_seed_form_assign", "Assigned initial form to forms[0]", "{}");
         // #endregion

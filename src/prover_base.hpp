@@ -1,82 +1,12 @@
 #ifndef PROVER_BASE_H
 #define PROVER_BASE_H
 
-#include <atomic>
-#include <chrono>
-#include <cstring>
-#include <cstdlib>
-#include <fstream>
 #include <stdexcept>
 
 #include "proof_common.h"
 #include "util.h"
 
-inline const char* ProverAgentDebugLogPath() {
-    const char* env_path = std::getenv("CHIAVDF_AGENT_DEBUG_LOG");
-    if (env_path != nullptr && env_path[0] != '\0') {
-        return env_path;
-    }
-    return "/Users/hoffmang/src/chiavdf/.cursor/debug.log";
-}
-
-inline bool ProverAgentDebugShouldMirror(const char* hypothesis_id) {
-    const char* mirror_all = std::getenv("CHIAVDF_AGENT_DEBUG_MIRROR_ALL");
-    if (mirror_all != nullptr && mirror_all[0] == '1') {
-        return true;
-    }
-    return std::strcmp(hypothesis_id, "H14") == 0 ||
-           std::strcmp(hypothesis_id, "H16") == 0 ||
-           std::strcmp(hypothesis_id, "H18") == 0 ||
-           std::strcmp(hypothesis_id, "H19") == 0 ||
-           std::strcmp(hypothesis_id, "H22") == 0 ||
-           std::strcmp(hypothesis_id, "H28") == 0 ||
-           std::strcmp(hypothesis_id, "H29") == 0 ||
-           std::strcmp(hypothesis_id, "H32") == 0 ||
-           std::strcmp(hypothesis_id, "H33") == 0 ||
-           std::strcmp(hypothesis_id, "H34") == 0 ||
-           std::strcmp(hypothesis_id, "H35") == 0 ||
-           std::strcmp(hypothesis_id, "H36") == 0 ||
-           std::strcmp(hypothesis_id, "H38") == 0 ||
-           std::strcmp(hypothesis_id, "H40") == 0 ||
-           std::strcmp(hypothesis_id, "H41") == 0 ||
-           std::strcmp(hypothesis_id, "H42") == 0 ||
-           std::strcmp(hypothesis_id, "H43") == 0 ||
-           std::strcmp(hypothesis_id, "H44") == 0 ||
-           std::strcmp(hypothesis_id, "H45") == 0 ||
-           std::strcmp(hypothesis_id, "H46") == 0 ||
-           std::strcmp(hypothesis_id, "H52") == 0;
-}
-
-inline void ProverAgentDebugLog(const char* run_id, const char* hypothesis_id, const char* location, const char* message, const std::string& data_json) {
-    static std::atomic<uint64_t> seq{0};
-    std::ofstream out(ProverAgentDebugLogPath(), std::ios::app);
-    if (!out.is_open()) {
-        return;
-    }
-    const auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        std::chrono::system_clock::now().time_since_epoch())
-                        .count();
-    const uint64_t id = ++seq;
-    out << "{\"id\":\"log_" << ts << "_" << id
-        << "\",\"timestamp\":" << ts
-        << ",\"runId\":\"" << run_id
-        << "\",\"hypothesisId\":\"" << hypothesis_id
-        << "\",\"location\":\"" << location
-        << "\",\"message\":\"" << message
-        << "\",\"data\":" << data_json
-        << "}\n";
-    if (ProverAgentDebugShouldMirror(hypothesis_id)) {
-        std::cerr << "AGENTLOG "
-                  << "{\"id\":\"log_" << ts << "_" << id
-                  << "\",\"timestamp\":" << ts
-                  << ",\"runId\":\"" << run_id
-                  << "\",\"hypothesisId\":\"" << hypothesis_id
-                  << "\",\"location\":\"" << location
-                  << "\",\"message\":\"" << message
-                  << "\",\"data\":" << data_json
-                  << "}\n";
-    }
-}
+#define ProverAgentDebugLog(...) do {} while (0)
 
 class Prover {
   public:

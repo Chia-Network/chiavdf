@@ -123,7 +123,7 @@ jobs:
           "-DBUILD_HW_TOOLS=OFF"
         )
         & cmake @cmakeArgs
-        cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test 2weso_test_laa_no prover_test
+        cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test
 
     - name: Run vdf tests (optimized)
       if: matrix.config == 'optimized=1' && !startsWith(matrix.os, 'windows')
@@ -169,68 +169,29 @@ jobs:
       run: |
         Write-Host "CI commit (HEAD): $env:GITHUB_SHA"
         git rev-parse --short HEAD
-        Write-Host "Instrumentation marker source line:"
-        Select-String -Path "$env:GITHUB_WORKSPACE\src\2weso_test.cpp" -Pattern 'instrumentation_version' | ForEach-Object { $_.Line }
         cd build
         Write-Host "2weso_test.exe PE file-header characteristics:"
         & llvm-readobj --file-headers ".\\2weso_test.exe"
-        if (Test-Path ".\\2weso_test_laa_no.exe") {
-          Write-Host "2weso_test_laa_no.exe PE file-header characteristics:"
-          & llvm-readobj --file-headers ".\\2weso_test_laa_no.exe"
-        }
         $dllPaths = @()
         if ($env:MPIR_ROOT -and (Test-Path "$env:MPIR_ROOT\bin")) { $dllPaths += "$env:MPIR_ROOT\bin" }
         if (Test-Path "$env:GITHUB_WORKSPACE\mpir_gc_x64") { $dllPaths += "$env:GITHUB_WORKSPACE\mpir_gc_x64" }
         if ($dllPaths.Count -gt 0) { $env:PATH = ($dllPaths -join ';') + ';' + $env:PATH }
-        function Invoke-TestExe([string]$name, [string[]]$args = @(), [string]$debugLog = "", [bool]$allowFailure = $false) {
-          if ($debugLog -ne "") {
-            $env:CHIAVDF_AGENT_DEBUG_LOG = "$env:GITHUB_WORKSPACE\\$debugLog"
-            if (Test-Path $env:CHIAVDF_AGENT_DEBUG_LOG) { Remove-Item $env:CHIAVDF_AGENT_DEBUG_LOG -Force }
-            Write-Host "CHIAVDF_AGENT_DEBUG_LOG=$env:CHIAVDF_AGENT_DEBUG_LOG"
-          }
+        function Invoke-TestExe([string]$name, [string[]]$args = @()) {
           Write-Host "Running $name"
           & ".\$name.exe" @args
           $exitCode = $LASTEXITCODE
-          if ($debugLog -ne "" -and (Test-Path $env:CHIAVDF_AGENT_DEBUG_LOG)) {
-            Write-Host "=== $name debug log start ($debugLog) ==="
-            Get-Content $env:CHIAVDF_AGENT_DEBUG_LOG
-            Write-Host "=== $name debug log end ($debugLog) ==="
-          }
           if ($exitCode -ne 0) {
             Write-Host "$name exit code: $exitCode"
-            if (-not $allowFailure) {
-              exit $exitCode
-            }
+            exit $exitCode
           }
           return $exitCode
         }
-        Invoke-TestExe "1weso_test" @() "1weso-debug.ndjson"
+        Invoke-TestExe "1weso_test"
         Write-Host "Running 2weso_test quick precheck (100)"
-        Invoke-TestExe "2weso_test" @("100") "2weso-no-laa-quick.ndjson"
-        Invoke-TestExe "2weso_test" @() "2weso-no-laa-full.ndjson"
-        $laaNoQuickExit = 0
-        if (Test-Path ".\\2weso_test_laa_no.exe") {
-          Write-Host "Running 2weso_test_laa_no quick precheck (100)"
-          $laaNoQuickExit = Invoke-TestExe "2weso_test_laa_no" @("100") "2weso-laa-no-quick.ndjson" $true
-        }
+        Invoke-TestExe "2weso_test" @("100")
+        Invoke-TestExe "2weso_test"
         $env:CHIAVDF_PROVER_TEST_FAST = "1"
         Invoke-TestExe "prover_test"
-        if ($laaNoQuickExit -ne 0) {
-          Write-Host "2weso_test_laa_no quick precheck failed with exit code: $laaNoQuickExit"
-          exit $laaNoQuickExit
-        }
-
-    - name: Upload 2weso debug artifact (Windows)
-      if: matrix.config == 'optimized=1' && startsWith(matrix.os, 'windows') && always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: 2weso-debug-windows
-        path: |
-          ${{ github.workspace }}/1weso-debug.ndjson
-          ${{ github.workspace }}/2weso-no-laa-quick.ndjson
-          ${{ github.workspace }}/2weso-laa-no-quick.ndjson
-          ${{ github.workspace }}/2weso-no-laa-full.ndjson
-        if-no-files-found: ignore
 
     - name: Benchmark vdf_bench square (Ubuntu/Mac)
       if: matrix.config == 'optimized=1' && !startsWith(matrix.os, 'windows')

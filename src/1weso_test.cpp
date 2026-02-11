@@ -36,6 +36,22 @@ static LONG WINAPI dump_asm_tracking_on_crash(EXCEPTION_POINTERS*) {
     return EXCEPTION_EXECUTE_HANDLER;
 }
 #endif
+
+static LONG CALLBACK agent_vectored_exception_logger(EXCEPTION_POINTERS* info) {
+    if (info == nullptr || info->ExceptionRecord == nullptr) {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+    const auto* rec = info->ExceptionRecord;
+    const void* addr = rec->ExceptionAddress;
+    std::cerr << "AGENTDBG H24 veh_exception"
+              << " code=0x" << std::hex << static_cast<unsigned long>(rec->ExceptionCode) << std::dec
+              << " flags=0x" << std::hex << static_cast<unsigned long>(rec->ExceptionFlags) << std::dec
+              << " thread_id=" << GetCurrentThreadId()
+              << " address=" << addr
+              << " params=" << rec->NumberParameters
+              << "\n";
+    return EXCEPTION_CONTINUE_SEARCH;
+}
 #endif
 
 int main(int argc, char const* argv[]) try
@@ -49,6 +65,8 @@ int main(int argc, char const* argv[]) try
     assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
     init_gmp();
 #ifdef _WIN32
+    void* agent_veh_handle = AddVectoredExceptionHandler(1, agent_vectored_exception_logger);
+    (void)agent_veh_handle;
 #ifdef GENERATE_ASM_TRACKING_DATA
     SetUnhandledExceptionFilter(dump_asm_tracking_on_crash);
 #endif

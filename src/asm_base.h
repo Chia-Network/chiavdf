@@ -141,7 +141,7 @@ string track_asm(string comment, string jump_to = "") {
             + ",\"operand_literal\":\"RIP+comment_label\"}"
     );
     // #endregion
-    APPEND_M(str( "LEA RAX, [RIP+comment_label] " ));
+    APPEND_M(str( "LEA RAX, [RIP+#] ", comment_label ));
 #else
     APPEND_M(str( "MOV RAX, OFFSET FLAT:#", comment_label ));
 #endif

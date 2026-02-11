@@ -131,7 +131,6 @@ static inline void repeated_square_nudupl(
         fallback_reducer.emplace();
     }
     for (uint64_t i = 0; i < iterations; i++) {
-        const uint64_t current_iter = base + i + 1;
         nudupl_form(f, f, D, L);
 
         // Reduce only when `a` grows beyond a small limb threshold. Reducing every iteration

@@ -174,9 +174,9 @@ jobs:
         if ($env:MPIR_ROOT -and (Test-Path "$env:MPIR_ROOT\bin")) { $dllPaths += "$env:MPIR_ROOT\bin" }
         if (Test-Path "$env:GITHUB_WORKSPACE\mpir_gc_x64") { $dllPaths += "$env:GITHUB_WORKSPACE\mpir_gc_x64" }
         if ($dllPaths.Count -gt 0) { $env:PATH = ($dllPaths -join ';') + ';' + $env:PATH }
-        function Invoke-TestExe([string]$name, [string[]]$args = @()) {
+        function Invoke-TestExe([string]$name, [string[]]$testArgs = @()) {
           Write-Host "Running $name"
-          & ".\$name.exe" @args
+          & ".\$name.exe" @testArgs
           $exitCode = $LASTEXITCODE
           if ($exitCode -ne 0) {
             Write-Host "$name exit code: $exitCode"

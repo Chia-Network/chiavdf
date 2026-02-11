@@ -794,8 +794,13 @@ template<class mpz_type> bool gcd_unsigned(
         assert((uint64(data.out_uv_addr)&63)==0); //should be cache line aligned
     }
 
+    static const bool agent_debug_gcd_logs = []() {
+        const char* v = getenv("CHIA_DEBUG_GCD_LOGS");
+        return (v && v[0] != 0 && v[0] != '0');
+    }();
+
     // #region agent log
-    if (a_limbs >= 3) {
+    if (agent_debug_gcd_logs && a_limbs >= 3) {
         std::cerr << "AGENTDBG H14 gcd_enter"
                   << " is_slave=" << (c_thread_state.is_slave ? 1 : 0)
                   << " counter_start=" << c_thread_state.counter_start
@@ -827,7 +832,7 @@ template<class mpz_type> bool gcd_unsigned(
 #endif
     const bool use_avx2_gcd = hasAVX2() && !force_cel_gcd;
     // #region agent log
-    if (a_limbs >= 3) {
+    if (agent_debug_gcd_logs && a_limbs >= 3) {
         std::cerr << "AGENTDBG H15 gcd_impl_select"
                   << " is_slave=" << (c_thread_state.is_slave ? 1 : 0)
                   << " use_avx2=" << (use_avx2_gcd ? 1 : 0)
@@ -865,7 +870,7 @@ template<class mpz_type> bool gcd_unsigned(
 #endif
 
     // #region agent log
-    if (a_limbs >= 3) {
+    if (agent_debug_gcd_logs && a_limbs >= 3) {
         std::cerr << "AGENTDBG H14 gcd_after_asm"
                   << " is_slave=" << (c_thread_state.is_slave ? 1 : 0)
                   << " error_code=" << error_code

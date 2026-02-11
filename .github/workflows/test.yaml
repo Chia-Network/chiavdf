@@ -213,6 +213,7 @@ jobs:
         Write-Host "CI commit (HEAD): $env:GITHUB_SHA"
         git rev-parse --short HEAD
         cd build
+        $env:CHIA_DEBUG_GCD_LOGS = "1"
         $dllPaths = @()
         if ($env:MPIR_ROOT -and (Test-Path "$env:MPIR_ROOT\bin")) { $dllPaths += "$env:MPIR_ROOT\bin" }
         if (Test-Path "$env:GITHUB_WORKSPACE\mpir_gc_x64") { $dllPaths += "$env:GITHUB_WORKSPACE\mpir_gc_x64" }

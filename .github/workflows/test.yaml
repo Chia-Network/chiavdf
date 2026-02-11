@@ -72,11 +72,26 @@ jobs:
         cd src
         make ${{ matrix.config }} CPPFLAGS="-I${BOOST_INCLUDE} ${CPPFLAGS:-}" -f Makefile.vdf-client
 
+    - name: Cache Boost on Windows
+      if: startsWith(matrix.os, 'windows')
+      id: cache-boost
+      uses: actions/cache@v4
+      with:
+        path: C:\local\boost_*
+        key: windows-boost-msvc-14.3-v1
+
     - name: Install LLVM and Ninja on Windows
       if: startsWith(matrix.os, 'windows')
       shell: pwsh
+      env:
+        BOOST_CACHE_HIT: ${{ steps.cache-boost.outputs.cache-hit }}
       run: |
-        choco install llvm ninja boost-msvc-14.3 -y
+        choco install llvm ninja -y
+        if ("$env:BOOST_CACHE_HIT" -ne "true") {
+          choco install boost-msvc-14.3 -y
+        } else {
+          Write-Host "Boost cache hit, skipping boost-msvc-14.3 install"
+        }
         "C:\Program Files\LLVM\bin" | Out-File -Append -FilePath $env:GITHUB_PATH
         "CHIA_ENABLE_AVX512_IFMA=0" | Out-File -Append -FilePath $env:GITHUB_ENV
         $boostDir = Get-ChildItem "C:\local" -Directory -Filter "boost_*" | Select-Object -First 1
@@ -85,8 +100,16 @@ jobs:
         }
         "BOOST_INCLUDE_DIR=$($boostDir.FullName)" | Out-File -Append -FilePath $env:GITHUB_ENV
 
-    - name: Checkout mpir for Windows
+    - name: Cache mpir checkout on Windows
       if: startsWith(matrix.os, 'windows')
+      id: cache-mpir
+      uses: actions/cache@v4
+      with:
+        path: mpir_gc_x64
+        key: windows-mpir-gc-x64-v1
+
+    - name: Checkout mpir for Windows
+      if: startsWith(matrix.os, 'windows') && steps.cache-mpir.outputs.cache-hit != 'true'
       uses: actions/checkout@v6
       with:
         repository: Chia-Network/mpir_gc_x64

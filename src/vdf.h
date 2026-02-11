@@ -294,7 +294,17 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
             //the fast algorithm terminated prematurely for whatever reason. f is still valid
             //it might terminate prematurely again (e.g. gcd quotient too large), so will do one iteration of the slow algorithm
             //this will also reduce f if the fast algorithm terminated because it was too big
+            // #region agent log
+            std::cerr << "AGENTDBG H6 fallback_before_slow num_iterations=" << num_iterations
+                      << " actual_iterations=" << actual_iterations
+                      << " batch_size=" << batch_size << "\n";
+            // #endregion
             repeated_square_original(*weso->vdfo, f, D, L, num_iterations+actual_iterations, 1, weso);
+            // #region agent log
+            std::cerr << "AGENTDBG H6 fallback_after_slow num_iterations=" << num_iterations
+                      << " actual_iterations=" << actual_iterations
+                      << " batch_size=" << batch_size << "\n";
+            // #endregion
 
             #ifdef VDF_TEST
                 ++num_iterations_slow;
@@ -308,6 +318,12 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
         }
 
         num_iterations+=actual_iterations;
+        // #region agent log
+        if (num_iterations == actual_iterations) {
+            std::cerr << "AGENTDBG H7 first_loop_after_accumulate num_iterations=" << num_iterations
+                      << " last_checkpoint=" << last_checkpoint << "\n";
+        }
+        // #endregion
         if (num_iterations >= last_checkpoint) {
             weso->iterations = num_iterations;
 

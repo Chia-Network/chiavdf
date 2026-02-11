@@ -3,6 +3,9 @@
 
 #include "alloc.hpp"
 #include <atomic>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 //mp_limb_t is an unsigned integer
 static_assert(sizeof(mp_limb_t)==8, "");
@@ -835,9 +838,31 @@ template<class mpz_type> bool gcd_unsigned(
                   << "\n";
     }
     // #endregion
-    int error_code=use_avx2_gcd ?
-        asm_code::asm_avx2_func_gcd_unsigned(&data):
+    int error_code = 0;
+#ifdef CHIA_WINDOWS
+    unsigned long agent_seh_code = 0;
+    __try {
+        error_code = use_avx2_gcd ?
+            asm_code::asm_avx2_func_gcd_unsigned(&data) :
+            asm_code::asm_cel_func_gcd_unsigned(&data);
+    } __except ((agent_seh_code = GetExceptionCode()), EXCEPTION_EXECUTE_HANDLER) {
+        // #region agent log
+        std::cerr << "AGENTDBG H22 seh_in_gcd_asm"
+                  << " is_slave=" << (c_thread_state.is_slave ? 1 : 0)
+                  << " use_avx2=" << (use_avx2_gcd ? 1 : 0)
+                  << " code=0x" << std::hex << agent_seh_code << std::dec
+                  << " a0=" << data.a[0]
+                  << " b0=" << data.b[0]
+                  << " a_end_index=" << data.a_end_index
+                  << "\n";
+        // #endregion
+        error_code = -1;
+    }
+#else
+    error_code = use_avx2_gcd ?
+        asm_code::asm_avx2_func_gcd_unsigned(&data) :
         asm_code::asm_cel_func_gcd_unsigned(&data);
+#endif
 
     // #region agent log
     if (a_limbs >= 3) {

@@ -60,7 +60,8 @@ inline bool CallbackAgentDebugShouldMirror(const char* hypothesis_id) {
            std::strcmp(hypothesis_id, "H50") == 0 ||
            std::strcmp(hypothesis_id, "H51") == 0 ||
            std::strcmp(hypothesis_id, "H53") == 0 ||
-           std::strcmp(hypothesis_id, "H54") == 0;
+           std::strcmp(hypothesis_id, "H54") == 0 ||
+           std::strcmp(hypothesis_id, "H55") == 0;
 }
 
 inline void CallbackAgentDebugLog(const char* run_id, const char* hypothesis_id, const char* location, const char* message, const std::string& data_json) {
@@ -245,6 +246,20 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
             "callback.h:TwoWesolowskiCallback:seed_h54_stage0_pre_source_reads",
             "H54 before reading source num_bits",
             "{}");
+        // #endregion
+        const int source_a_size = f.a.impl[0]._mp_size;
+        const int source_a_alloc = f.a.impl[0]._mp_alloc;
+        const uint64_t source_a_ptr = static_cast<uint64_t>(
+            reinterpret_cast<uintptr_t>(f.a.impl[0]._mp_d));
+        // #region agent log
+        CallbackAgentDebugLog(
+            "post-fix",
+            "H55",
+            "callback.h:TwoWesolowskiCallback:seed_h55_stage0_a_raw",
+            "H55 raw a metadata before num_bits",
+            std::string("{\"a_size\":") + std::to_string(source_a_size) +
+                ",\"a_alloc\":" + std::to_string(source_a_alloc) +
+                ",\"a_ptr\":" + std::to_string(source_a_ptr) + "}");
         // #endregion
         const uint64_t source_a_bits = static_cast<uint64_t>(f.a.num_bits());
         // #region agent log

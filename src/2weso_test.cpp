@@ -40,7 +40,8 @@ bool AgentDebugShouldMirror(const char* hypothesis_id) {
            std::strcmp(hypothesis_id, "H28") == 0 ||
            std::strcmp(hypothesis_id, "H29") == 0 ||
            std::strcmp(hypothesis_id, "H36") == 0 ||
-           std::strcmp(hypothesis_id, "H37") == 0;
+           std::strcmp(hypothesis_id, "H37") == 0 ||
+           std::strcmp(hypothesis_id, "H55") == 0;
 }
 
 void AgentDebugLog(const char* run_id, const char* hypothesis_id, const char* location, const char* message, const std::string& data_json) {
@@ -127,7 +128,7 @@ int main(int argc, char const* argv[]) try
         "H37",
         "2weso_test.cpp:main:instrumentation_version_marker",
         "Instrumentation marker for artifact/version validation",
-        "{\"instrumentation_version\":\"H54\",\"source\":\"2weso_test\"}");
+        "{\"instrumentation_version\":\"H55\",\"source\":\"2weso_test\"}");
     // #endregion
 
     assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
@@ -208,6 +209,17 @@ int main(int argc, char const* argv[]) try
         "2weso_test.cpp:main:after_root_generator",
         "Computed L and generator",
         "{}");
+    // #endregion
+    // #region agent log
+    AgentDebugLog(
+        "post-fix",
+        "H55",
+        "2weso_test.cpp:main:generator_state_before_callback_ctor",
+        "H55 generator state before callback constructor",
+        std::string("{\"f_valid\":") + (f.check_valid(D) ? "true" : "false") +
+            ",\"f_a_bits\":" + std::to_string(f.a.num_bits()) +
+            ",\"f_b_bits\":" + std::to_string(f.b.num_bits()) +
+            ",\"f_c_bits\":" + std::to_string(f.c.num_bits()) + "}");
     // #endregion
 
     std::atomic<bool> stopped = false;

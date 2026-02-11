@@ -172,6 +172,8 @@ jobs:
         Write-Host "Instrumentation marker source line:"
         Select-String -Path "$env:GITHUB_WORKSPACE\src\2weso_test.cpp" -Pattern 'instrumentation_version' | ForEach-Object { $_.Line }
         cd build
+        Write-Host "2weso_test.exe PE file-header characteristics:"
+        & llvm-readobj --file-headers ".\\2weso_test.exe"
         $dllPaths = @()
         if ($env:MPIR_ROOT -and (Test-Path "$env:MPIR_ROOT\bin")) { $dllPaths += "$env:MPIR_ROOT\bin" }
         if (Test-Path "$env:GITHUB_WORKSPACE\mpir_gc_x64") { $dllPaths += "$env:GITHUB_WORKSPACE\mpir_gc_x64" }

@@ -296,7 +296,9 @@ if(BUILD_VDF_TESTS)
   endif()
   vdf_add_boost_includes(2weso_test)
   target_link_libraries(2weso_test PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
-  vdf_add_windows_asm_linker_flags(2weso_test)
+  # Intentionally do not force /LARGEADDRESSAWARE:NO for 2weso_test.
+  # This target is built with CHIA_DISABLE_ASM on Windows, and we want to
+  # isolate crashes correlated with the linker flag.
   vdf_add_windows_clang_opts(2weso_test)
 
   add_executable(prover_test

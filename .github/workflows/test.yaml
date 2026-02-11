@@ -225,6 +225,10 @@ jobs:
         & llvm-readobj --file-headers .\vdf_client.exe
         Write-Host "PE headers (vdf_bench)"
         & llvm-readobj --file-headers .\vdf_bench.exe
+        Write-Host "Disasm head (asm_avx2_func_gcd_unsigned)"
+        & llvm-objdump --no-show-raw-insn --disassemble-symbols=asm_avx2_func_gcd_unsigned .\1weso_test.exe
+        Write-Host "Disasm head (asm_cel_func_gcd_unsigned)"
+        & llvm-objdump --no-show-raw-insn --disassemble-symbols=asm_cel_func_gcd_unsigned .\1weso_test.exe
         function Invoke-BenchSmoke([string]$mode, [string]$forceCel = "") {
           if ($forceCel -ne "") {
             $env:CHIA_DEBUG_FORCE_CEL_GCD = $forceCel

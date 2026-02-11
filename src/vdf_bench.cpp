@@ -19,6 +19,9 @@
 #include "create_discriminant.h"
 
 #include <cstdlib>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 #define CH_SIZE 32
 
@@ -46,6 +49,27 @@ static inline void agent_debug_log_ndjson_vdf_bench(
         << "}\n";
 }
 
+#if defined(_WIN32) && !defined(CHIA_DISABLE_ASM)
+static LONG CALLBACK agent_vectored_exception_logger_vdf_bench(EXCEPTION_POINTERS* info) {
+    if (info == nullptr || info->ExceptionRecord == nullptr) {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+    const auto* rec = info->ExceptionRecord;
+    const uintptr_t crash_ip = reinterpret_cast<uintptr_t>(rec->ExceptionAddress);
+    const uintptr_t avx2_gcd_unsigned_ip = reinterpret_cast<uintptr_t>(&asm_code::asm_avx2_func_gcd_unsigned);
+    const uintptr_t cel_gcd_unsigned_ip = reinterpret_cast<uintptr_t>(&asm_code::asm_cel_func_gcd_unsigned);
+    std::cerr << "AGENTDBG H62 vdf_bench_veh_exception"
+              << " code=0x" << std::hex << static_cast<unsigned long>(rec->ExceptionCode) << std::dec
+              << " thread_id=" << GetCurrentThreadId()
+              << " address=" << rec->ExceptionAddress
+              << " d_avx2_gcd_unsigned=0x" << std::hex << (crash_ip - avx2_gcd_unsigned_ip)
+              << " d_cel_gcd_unsigned=0x" << (crash_ip - cel_gcd_unsigned_ip)
+              << std::dec
+              << "\n";
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+#endif
+
 static void usage(const char *progname)
 {
     fprintf(stderr, "Usage: %s {square_asm|square|discr} N\n", progname);
@@ -53,6 +77,10 @@ static void usage(const char *progname)
 
 int main(int argc, char **argv)
 {
+#if defined(_WIN32) && !defined(CHIA_DISABLE_ASM)
+    void* agent_veh_handle = AddVectoredExceptionHandler(1, agent_vectored_exception_logger_vdf_bench);
+    (void)agent_veh_handle;
+#endif
     assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
     init_gmp();
     set_rounding_mode();

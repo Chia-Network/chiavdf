@@ -313,6 +313,41 @@ if(BUILD_VDF_TESTS)
   target_link_libraries(prover_test PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
   vdf_add_windows_asm_linker_flags(prover_test)
   vdf_add_windows_clang_opts(prover_test)
+
+  # On Windows, keep the default test binaries on CHIA_DISABLE_ASM for stable
+  # algorithm-level coverage, and add explicit asm-enabled counterparts for
+  # production-parity coverage under /LARGEADDRESSAWARE:NO.
+  if(WIN32 AND ENABLE_GNU_ASM)
+    add_executable(1weso_test_asm
+      ${CMAKE_CURRENT_SOURCE_DIR}/1weso_test.cpp
+    )
+    target_sources(1weso_test_asm PRIVATE ${VDF_COMMON_SOURCES} ${VDF_ASM_SOURCES})
+    target_compile_definitions(1weso_test_asm PRIVATE ${VDF_COMMON_DEFINITIONS})
+    vdf_add_boost_includes(1weso_test_asm)
+    target_link_libraries(1weso_test_asm PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
+    vdf_add_windows_asm_linker_flags(1weso_test_asm)
+    vdf_add_windows_clang_opts(1weso_test_asm)
+
+    add_executable(2weso_test_asm
+      ${CMAKE_CURRENT_SOURCE_DIR}/2weso_test.cpp
+    )
+    target_sources(2weso_test_asm PRIVATE ${VDF_COMMON_SOURCES} ${VDF_ASM_SOURCES})
+    target_compile_definitions(2weso_test_asm PRIVATE ${VDF_COMMON_DEFINITIONS})
+    vdf_add_boost_includes(2weso_test_asm)
+    target_link_libraries(2weso_test_asm PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
+    vdf_add_windows_asm_linker_flags(2weso_test_asm)
+    vdf_add_windows_clang_opts(2weso_test_asm)
+
+    add_executable(prover_test_asm
+      ${CMAKE_CURRENT_SOURCE_DIR}/prover_test.cpp
+    )
+    target_sources(prover_test_asm PRIVATE ${VDF_COMMON_SOURCES} ${VDF_ASM_SOURCES})
+    target_compile_definitions(prover_test_asm PRIVATE ${VDF_COMMON_DEFINITIONS})
+    vdf_add_boost_includes(prover_test_asm)
+    target_link_libraries(prover_test_asm PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
+    vdf_add_windows_asm_linker_flags(prover_test_asm)
+    vdf_add_windows_clang_opts(prover_test_asm)
+  endif()
 endif()
 
 if(BUILD_HW_TOOLS)

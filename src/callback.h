@@ -4,6 +4,7 @@
 #include "util.h"
 #include "nudupl_listener.h"
 #include <algorithm>
+#include <atomic>
 #include <limits>
 #include <mutex>
 #include <stdexcept>

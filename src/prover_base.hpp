@@ -1,6 +1,7 @@
 #ifndef PROVER_BASE_H
 #define PROVER_BASE_H
 
+#include <atomic>
 #include <stdexcept>
 
 #include "proof_common.h"

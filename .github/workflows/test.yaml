@@ -123,7 +123,7 @@ jobs:
           "-DBUILD_HW_TOOLS=OFF"
         )
         & cmake @cmakeArgs
-        cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test
+        cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test 1weso_test_asm 2weso_test_asm prover_test_asm
 
     - name: Run vdf tests (optimized)
       if: matrix.config == 'optimized=1' && !startsWith(matrix.os, 'windows')
@@ -172,6 +172,10 @@ jobs:
         cd build
         Write-Host "2weso_test.exe PE file-header characteristics:"
         & llvm-readobj --file-headers ".\\2weso_test.exe"
+        if (Test-Path ".\\2weso_test_asm.exe") {
+          Write-Host "2weso_test_asm.exe PE file-header characteristics:"
+          & llvm-readobj --file-headers ".\\2weso_test_asm.exe"
+        }
         $dllPaths = @()
         if ($env:MPIR_ROOT -and (Test-Path "$env:MPIR_ROOT\bin")) { $dllPaths += "$env:MPIR_ROOT\bin" }
         if (Test-Path "$env:GITHUB_WORKSPACE\mpir_gc_x64") { $dllPaths += "$env:GITHUB_WORKSPACE\mpir_gc_x64" }
@@ -192,6 +196,16 @@ jobs:
         Invoke-TestExe "2weso_test"
         $env:CHIAVDF_PROVER_TEST_FAST = "1"
         Invoke-TestExe "prover_test"
+        if (Test-Path ".\\1weso_test_asm.exe") {
+          Write-Host "Running asm parity flow"
+          Invoke-TestExe "1weso_test_asm"
+          Write-Host "Running 2weso_test_asm quick precheck (100)"
+          Invoke-TestExe "2weso_test_asm" @("100")
+          Write-Host "Running 2weso_test_asm with half max iterations (500000)"
+          Invoke-TestExe "2weso_test_asm" @("500000")
+          $env:CHIAVDF_PROVER_TEST_FAST = "1"
+          Invoke-TestExe "prover_test_asm"
+        }
 
     - name: Benchmark vdf_bench square (Ubuntu/Mac)
       if: matrix.config == 'optimized=1' && !startsWith(matrix.os, 'windows')

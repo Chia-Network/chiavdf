@@ -123,7 +123,7 @@ jobs:
           "-DBUILD_HW_TOOLS=OFF"
         )
         & cmake @cmakeArgs
-        cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test
+        cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test 2weso_test_laa_no prover_test
 
     - name: Run vdf tests (optimized)
       if: matrix.config == 'optimized=1' && !startsWith(matrix.os, 'windows')
@@ -178,25 +178,33 @@ jobs:
         if ($env:MPIR_ROOT -and (Test-Path "$env:MPIR_ROOT\bin")) { $dllPaths += "$env:MPIR_ROOT\bin" }
         if (Test-Path "$env:GITHUB_WORKSPACE\mpir_gc_x64") { $dllPaths += "$env:GITHUB_WORKSPACE\mpir_gc_x64" }
         if ($dllPaths.Count -gt 0) { $env:PATH = ($dllPaths -join ';') + ';' + $env:PATH }
-        function Invoke-TestExe([string]$name, [string[]]$args = @()) {
+        function Invoke-TestExe([string]$name, [string[]]$args = @(), [string]$debugLog = "") {
+          if ($debugLog -ne "") {
+            $env:CHIAVDF_AGENT_DEBUG_LOG = "$env:GITHUB_WORKSPACE\\$debugLog"
+            if (Test-Path $env:CHIAVDF_AGENT_DEBUG_LOG) { Remove-Item $env:CHIAVDF_AGENT_DEBUG_LOG -Force }
+            Write-Host "CHIAVDF_AGENT_DEBUG_LOG=$env:CHIAVDF_AGENT_DEBUG_LOG"
+          }
           Write-Host "Running $name"
           & ".\$name.exe" @args
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "$name exit code: $LASTEXITCODE"
-            if ($name -eq "2weso_test" -and (Test-Path $env:CHIAVDF_AGENT_DEBUG_LOG)) {
-              Write-Host "=== 2weso debug log start ==="
-              Get-Content $env:CHIAVDF_AGENT_DEBUG_LOG
-              Write-Host "=== 2weso debug log end ==="
-            }
-            exit $LASTEXITCODE
+          $exitCode = $LASTEXITCODE
+          if ($debugLog -ne "" -and (Test-Path $env:CHIAVDF_AGENT_DEBUG_LOG)) {
+            Write-Host "=== $name debug log start ($debugLog) ==="
+            Get-Content $env:CHIAVDF_AGENT_DEBUG_LOG
+            Write-Host "=== $name debug log end ($debugLog) ==="
+          }
+          if ($exitCode -ne 0) {
+            Write-Host "$name exit code: $exitCode"
+            exit $exitCode
           }
         }
-        $env:CHIAVDF_AGENT_DEBUG_LOG = "$env:GITHUB_WORKSPACE\2weso-debug.ndjson"
-        if (Test-Path $env:CHIAVDF_AGENT_DEBUG_LOG) { Remove-Item $env:CHIAVDF_AGENT_DEBUG_LOG -Force }
-        Invoke-TestExe "1weso_test"
+        Invoke-TestExe "1weso_test" @() "1weso-debug.ndjson"
         Write-Host "Running 2weso_test quick precheck (100)"
-        Invoke-TestExe "2weso_test" @("100")
-        Invoke-TestExe "2weso_test"
+        Invoke-TestExe "2weso_test" @("100") "2weso-no-laa-quick.ndjson"
+        if (Test-Path ".\\2weso_test_laa_no.exe") {
+          Write-Host "Running 2weso_test_laa_no quick precheck (100)"
+          Invoke-TestExe "2weso_test_laa_no" @("100") "2weso-laa-no-quick.ndjson"
+        }
+        Invoke-TestExe "2weso_test" @() "2weso-no-laa-full.ndjson"
         $env:CHIAVDF_PROVER_TEST_FAST = "1"
         Invoke-TestExe "prover_test"
 
@@ -205,7 +213,11 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: 2weso-debug-windows
-        path: ${{ github.workspace }}/2weso-debug.ndjson
+        path: |
+          ${{ github.workspace }}/1weso-debug.ndjson
+          ${{ github.workspace }}/2weso-no-laa-quick.ndjson
+          ${{ github.workspace }}/2weso-laa-no-quick.ndjson
+          ${{ github.workspace }}/2weso-no-laa-full.ndjson
         if-no-files-found: ignore
 
     - name: Benchmark vdf_bench square (Ubuntu/Mac)

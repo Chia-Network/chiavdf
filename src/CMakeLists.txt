@@ -300,6 +300,20 @@ if(BUILD_VDF_TESTS)
   # This target is built with CHIA_DISABLE_ASM on Windows, and we want to
   # isolate crashes correlated with the linker flag.
   vdf_add_windows_clang_opts(2weso_test)
+  if(WIN32)
+    # A/B isolation target: same test binary but with the Windows asm linker
+    # flag helper enabled (/LARGEADDRESSAWARE:NO when applicable).
+    add_executable(2weso_test_laa_no
+      ${CMAKE_CURRENT_SOURCE_DIR}/2weso_test.cpp
+    )
+    target_sources(2weso_test_laa_no PRIVATE ${VDF_COMMON_SOURCES} ${VDF_ASM_SOURCES})
+    target_compile_definitions(2weso_test_laa_no PRIVATE ${VDF_COMMON_DEFINITIONS})
+    target_compile_definitions(2weso_test_laa_no PRIVATE CHIA_DISABLE_ASM)
+    vdf_add_boost_includes(2weso_test_laa_no)
+    target_link_libraries(2weso_test_laa_no PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
+    vdf_add_windows_asm_linker_flags(2weso_test_laa_no)
+    vdf_add_windows_clang_opts(2weso_test_laa_no)
+  endif()
 
   add_executable(prover_test
     ${CMAKE_CURRENT_SOURCE_DIR}/prover_test.cpp

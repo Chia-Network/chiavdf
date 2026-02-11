@@ -802,7 +802,14 @@ template<class mpz_type> bool gcd_unsigned(
                   << " a_end_index=" << data.a_end_index
                   << " a_ptr_mod64=" << (uint64(data.a) & 63)
                   << " b_ptr_mod64=" << (uint64(data.b) & 63)
+                  << " a2_ptr_mod64=" << (uint64(data.a_2) & 63)
+                  << " b2_ptr_mod64=" << (uint64(data.b_2) & 63)
+                  << " th_ptr_mod64=" << (uint64(data.threshold) & 63)
+                  << " th_ptr_mod32=" << (uint64(data.threshold) & 31)
+                  << " out_uv_counter_ptr_mod64=" << (uint64(data.out_uv_counter_addr) & 63)
                   << " out_uv_ptr_mod64=" << (uint64(data.out_uv_addr) & 63)
+                  << " a_eq_a2=" << (data.a == data.a_2 ? 1 : 0)
+                  << " b_eq_b2=" << (data.b == data.b_2 ? 1 : 0)
                   << " has_avx2=" << (hasAVX2() ? 1 : 0)
                   << "\n";
     }
@@ -822,6 +829,9 @@ template<class mpz_type> bool gcd_unsigned(
                   << " is_slave=" << (c_thread_state.is_slave ? 1 : 0)
                   << " use_avx2=" << (use_avx2_gcd ? 1 : 0)
                   << " force_cel=" << (force_cel_gcd ? 1 : 0)
+                  << " a0=" << data.a[0]
+                  << " b0=" << data.b[0]
+                  << " th0=" << data.threshold[0]
                   << "\n";
     }
     // #endregion

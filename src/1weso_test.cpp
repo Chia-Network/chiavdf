@@ -4,6 +4,9 @@
 
 #include <atomic>
 #include <cassert>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 int segments = 7;
 int thread_count = 3;
@@ -15,6 +18,26 @@ Proof CreateProof(ProverManager& pm, uint64_t iteration) {
 int gcd_base_bits=50;
 int gcd_128_max_iter=3;
 
+#ifdef _WIN32
+#ifdef GENERATE_ASM_TRACKING_DATA
+static LONG WINAPI dump_asm_tracking_on_crash(EXCEPTION_POINTERS*) {
+    std::cerr << "AGENTDBG H16 seh_unhandled_exception\n";
+    for (int i = 0; i < num_asm_tracking_data; ++i) {
+        if (!asm_tracking_data_comments[i]) {
+            continue;
+        }
+        if (asm_tracking_data[i] == 0) {
+            continue;
+        }
+        std::cerr << "AGENTDBG H16 asm_track idx=" << i
+                  << " count=" << asm_tracking_data[i]
+                  << " label=" << asm_tracking_data_comments[i] << "\n";
+    }
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+#endif
+#endif
+
 int main(int argc, char const* argv[]) try
 {
     // allow setting the multiplier for the number of iterations to test on the
@@ -25,6 +48,11 @@ int main(int argc, char const* argv[]) try
 
     assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
     init_gmp();
+#ifdef _WIN32
+#ifdef GENERATE_ASM_TRACKING_DATA
+    SetUnhandledExceptionFilter(dump_asm_tracking_on_crash);
+#endif
+#endif
     debug_mode = true;
     const bool has_avx2 = hasAVX2();
     // #region agent log

@@ -224,12 +224,14 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
         // x86/x64: use the phased pipeline.
         square_state_type square_state;
         square_state.pairindex = 0;
-        if (!agent_logged_fast_path) {
+        if (num_iterations < 32) {
             // #region agent log
-            std::cerr << "AGENTDBG H2 fast_before num_iterations=" << num_iterations
+            std::cerr << "AGENTDBG H9 fast_before_iter num_iterations=" << num_iterations
                       << " batch_size=" << batch_size
                       << " iterations_arg=" << iterations << "\n";
             // #endregion
+        }
+        if (!agent_logged_fast_path) {
             // #region agent log
             agent_debug_log_ndjson(
                 "H2",
@@ -242,11 +244,14 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
             // #endregion
         }
         actual_iterations = repeated_square_fast(square_state, f, D, L, num_iterations, batch_size, weso);
-        if (!agent_logged_fast_path) {
+        if (num_iterations < 32) {
             // #region agent log
-            std::cerr << "AGENTDBG H2 fast_after actual_iterations=" << actual_iterations
+            std::cerr << "AGENTDBG H9 fast_after_iter num_iterations=" << num_iterations
+                      << " actual_iterations=" << actual_iterations
                       << " batch_size=" << batch_size << "\n";
             // #endregion
+        }
+        if (!agent_logged_fast_path) {
             // #region agent log
             agent_debug_log_ndjson(
                 "H2",

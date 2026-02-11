@@ -1092,12 +1092,24 @@ uint64 repeated_square_fast_single_thread(square_state_type &square_state, form&
 
         for (int phase=0;phase<square_state_type::num_phases;++phase) {
             if (!thread_state_master.advance(square_state.get_counter_start(phase))) {
+                // #region agent log
+                if (base < 32) {
+                    std::cerr << "AGENTDBG H10 fast_err advance_master base=" << base
+                              << " iter=" << iter << " phase=" << phase << "\n";
+                }
+                // #endregion
                 thread_state_master.raise_error();
                 has_error=true;
                 break;
             }
 
             if (!thread_state_slave.advance(square_state.get_counter_start(phase))) {
+                // #region agent log
+                if (base < 32) {
+                    std::cerr << "AGENTDBG H10 fast_err advance_slave base=" << base
+                              << " iter=" << iter << " phase=" << phase << "\n";
+                }
+                // #endregion
                 thread_state_slave.raise_error();
                 has_error=true;
                 break;
@@ -1109,6 +1121,13 @@ uint64 repeated_square_fast_single_thread(square_state_type &square_state, form&
                 c_thread_state=(is_slave)? thread_state_slave : thread_state_master;
 
                 if (!square_state.call_phase(phase, is_slave)) {
+                    // #region agent log
+                    if (base < 32) {
+                        std::cerr << "AGENTDBG H10 fast_err call_phase base=" << base
+                                  << " iter=" << iter << " phase=" << phase
+                                  << " is_slave=" << (is_slave ? 1 : 0) << "\n";
+                    }
+                    // #endregion
                     c_thread_state.raise_error();
                     has_error=true;
                     break;
@@ -1133,6 +1152,13 @@ uint64 repeated_square_fast_single_thread(square_state_type &square_state, form&
 
     uint64 res;
     square_state.assign(f.a, f.b, f.c, res); //sets res to ~uint64(0) and leaves f unchanged if there is corruption
+    // #region agent log
+    if (base < 32) {
+        std::cerr << "AGENTDBG H10 fast_assign_result base=" << base
+                  << " has_error=" << (has_error ? 1 : 0)
+                  << " res=" << res << "\n";
+    }
+    // #endregion
 
     #ifdef ENABLE_TRACK_CYCLES
         print( "stats both threads:" );

@@ -452,7 +452,7 @@ void gcd_unsigned(
         APPEND_M(str( ".balign 8" ));
         APPEND_M(str( "#:", jump_table_label ));
 
-#ifdef CHIAOSX
+#if defined(CHIAOSX) || defined(CHIA_WINDOWS)
         APPEND_M(str( ".text" ));
 
         APPEND_M(str( "MOV `tmp, `spill_a_end_index" ));
@@ -482,7 +482,12 @@ void gcd_unsigned(
         }
         APPEND_M(str( ".text" ));
 
+        string bad_end_index_label = track_asm( "gcd_unsigned invalid a_end_index", m.alloc_error_label() );
         APPEND_M(str( "MOV `tmp, `spill_a_end_index" ));
+        APPEND_M(str( "SUB `tmp, 1" ));
+        APPEND_M(str( "JC #", bad_end_index_label ));
+        APPEND_M(str( "CMP `tmp, #", to_hex(int_size-1) ));
+        APPEND_M(str( "JA #", bad_end_index_label ));
 #ifdef CHIA_WINDOWS
         reg_scalar table_addr=regs.bind_scalar(m, "table_addr");
         APPEND_M(str( "LEA `table_addr, [RIP+#]", jump_table_label ));

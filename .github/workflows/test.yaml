@@ -227,8 +227,6 @@ jobs:
     - name: Test vdf-client (Windows)
       if: matrix.config == 'optimized=1' && startsWith(matrix.os, 'windows')
       shell: pwsh
-      env:
-        CHIA_DEBUG_FORCE_CEL_GCD: "1"
       run: |
         Write-Host "CI commit (HEAD): $env:GITHUB_SHA"
         git rev-parse --short HEAD

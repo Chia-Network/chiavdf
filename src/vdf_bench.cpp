@@ -32,6 +32,28 @@ int main(int argc, char **argv)
     assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
     init_gmp();
     set_rounding_mode();
+    // #region agent log
+#ifdef CHIA_DISABLE_ASM
+    constexpr int agent_asm_enabled = 0;
+#else
+    constexpr int agent_asm_enabled = 1;
+#endif
+    const bool agent_has_avx2 = hasAVX2();
+    std::cerr << "AGENTDBG H60 vdf_bench_start"
+              << " asm_enabled=" << agent_asm_enabled
+              << " has_avx2=" << (agent_has_avx2 ? 1 : 0)
+              << " argc=" << argc
+              << "\n";
+    agent_debug_log_ndjson(
+        "H60",
+        "src/vdf_bench.cpp:main:start",
+        "vdf_bench_runtime_caps",
+        std::string("{\"asm_enabled\":") + std::to_string(agent_asm_enabled) +
+            ",\"has_avx2\":" + std::to_string(agent_has_avx2 ? 1 : 0) +
+            ",\"argc\":" + std::to_string(argc) + "}",
+        "pre-fix"
+    );
+    // #endregion
 
     if (argc < 3) {
         usage(argv[0]);
@@ -49,6 +71,20 @@ int main(int argc, char **argv)
 
     auto t1 = std::chrono::high_resolution_clock::now();
     if (!strcmp(argv[1], "square_asm")) {
+        // #region agent log
+        std::cerr << "AGENTDBG H61 vdf_bench_square_asm_enter"
+                  << " iters=" << iters
+                  << " asm_enabled=" << agent_asm_enabled
+                  << "\n";
+        agent_debug_log_ndjson(
+            "H61",
+            "src/vdf_bench.cpp:main:square_asm",
+            "entered_square_asm_mode",
+            std::string("{\"iters\":") + std::to_string(iters) +
+                ",\"asm_enabled\":" + std::to_string(agent_asm_enabled) + "}",
+            "pre-fix"
+        );
+        // #endregion
         is_asm = true;
 #if (defined(ARCH_X86) || defined(ARCH_X64)) && !defined(CHIA_DISABLE_ASM)
         for (i = 0; i < iters; ) {

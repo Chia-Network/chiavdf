@@ -28,6 +28,10 @@ int main(int argc, char const* argv[]) try
     debug_mode = true;
     const bool has_avx2 = hasAVX2();
     // #region agent log
+    std::cerr << "AGENTDBG H1 init iter_multiplier=" << iter_multiplier
+              << " has_avx2=" << (has_avx2 ? 1 : 0) << "\n";
+    // #endregion
+    // #region agent log
     agent_debug_log_ndjson(
         "H1",
         "src/1weso_test.cpp:main:init",
@@ -60,6 +64,9 @@ int main(int argc, char const* argv[]) try
     OneWesolowskiCallback weso(D, f, iter);
     FastStorage* fast_storage = nullptr;
     // #region agent log
+    std::cerr << "AGENTDBG H3 before_worker iter=" << iter << "\n";
+    // #endregion
+    // #region agent log
     agent_debug_log_ndjson(
         "H3",
         "src/1weso_test.cpp:main:before_worker",
@@ -69,6 +76,9 @@ int main(int argc, char const* argv[]) try
     // #endregion
     std::thread vdf_worker(repeated_square, iter, f, D, L, &weso, fast_storage, std::ref(stopped));
     // #region agent log
+    std::cerr << "AGENTDBG H3 before_prove iter=" << iter << "\n";
+    // #endregion
+    // #region agent log
     agent_debug_log_ndjson(
         "H3",
         "src/1weso_test.cpp:main:before_prove",
@@ -77,6 +87,10 @@ int main(int argc, char const* argv[]) try
     );
     // #endregion
     Proof const proof = ProveOneWesolowski(iter, D, f, &weso, stopped);
+    // #region agent log
+    std::cerr << "AGENTDBG H4 after_prove proof_y_size=" << proof.y.size()
+              << " proof_proof_size=" << proof.proof.size() << "\n";
+    // #endregion
     // #region agent log
     agent_debug_log_ndjson(
         "H4",
@@ -88,6 +102,9 @@ int main(int argc, char const* argv[]) try
     // #endregion
     stopped = true;
     vdf_worker.join();
+    // #region agent log
+    std::cerr << "AGENTDBG H5 after_join iter=" << iter << "\n";
+    // #endregion
     // #region agent log
     agent_debug_log_ndjson(
         "H5",

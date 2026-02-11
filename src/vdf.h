@@ -226,6 +226,11 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
         square_state.pairindex = 0;
         if (!agent_logged_fast_path) {
             // #region agent log
+            std::cerr << "AGENTDBG H2 fast_before num_iterations=" << num_iterations
+                      << " batch_size=" << batch_size
+                      << " iterations_arg=" << iterations << "\n";
+            // #endregion
+            // #region agent log
             agent_debug_log_ndjson(
                 "H2",
                 "src/vdf.h:repeated_square:fast_before",
@@ -238,6 +243,10 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
         }
         actual_iterations = repeated_square_fast(square_state, f, D, L, num_iterations, batch_size, weso);
         if (!agent_logged_fast_path) {
+            // #region agent log
+            std::cerr << "AGENTDBG H2 fast_after actual_iterations=" << actual_iterations
+                      << " batch_size=" << batch_size << "\n";
+            // #endregion
             // #region agent log
             agent_debug_log_ndjson(
                 "H2",

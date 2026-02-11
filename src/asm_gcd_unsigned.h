@@ -443,7 +443,7 @@ void gcd_unsigned(
         string jump_table_label=m.alloc_label();
 
 #ifdef CHIA_WINDOWS
-        APPEND_M(str( ".section .rdata,\"dr\"" ));
+        APPEND_M(str( ".text 1" ));
 #elif defined(CHIAOSX)
         APPEND_M(str( ".text " ));
 #else

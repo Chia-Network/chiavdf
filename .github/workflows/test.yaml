@@ -75,7 +75,7 @@ jobs:
     - name: Cache Boost on Windows
       if: startsWith(matrix.os, 'windows')
       id: cache-boost
-      uses: actions/cache@v4
+      uses: actions/cache/restore@v4
       with:
         path: C:\local\boost_*
         key: windows-boost-msvc-14.3-v1
@@ -83,7 +83,7 @@ jobs:
     - name: Cache LLVM and Ninja on Windows
       if: startsWith(matrix.os, 'windows')
       id: cache-llvm-ninja
-      uses: actions/cache@v4
+      uses: actions/cache/restore@v4
       with:
         path: |
           C:\Program Files\LLVM
@@ -128,6 +128,24 @@ jobs:
           throw "Boost install not found under C:\local"
         }
         "BOOST_INCLUDE_DIR=$($boostDir.FullName)" | Out-File -Append -FilePath $env:GITHUB_ENV
+
+    - name: Save Boost cache on Windows
+      if: startsWith(matrix.os, 'windows') && steps.cache-boost.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: C:\local\boost_*
+        key: ${{ steps.cache-boost.outputs.cache-primary-key }}
+
+    - name: Save LLVM and Ninja cache on Windows
+      if: startsWith(matrix.os, 'windows') && steps.cache-llvm-ninja.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          C:\Program Files\LLVM
+          C:\ProgramData\chocolatey\lib\llvm
+          C:\ProgramData\chocolatey\lib\ninja
+          C:\ProgramData\chocolatey\bin\ninja.exe
+        key: ${{ steps.cache-llvm-ninja.outputs.cache-primary-key }}
 
     - name: Cache mpir checkout on Windows
       if: startsWith(matrix.os, 'windows')

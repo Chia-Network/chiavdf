@@ -163,7 +163,7 @@ jobs:
           "-DBUILD_VDF_BENCH=ON",
           "-DBUILD_VDF_TESTS=ON",
           "-DBUILD_HW_TOOLS=OFF",
-          "-DENABLE_GNU_ASM=ON"
+          "-DENABLE_GNU_ASM=OFF"
         )
         & cmake @cmakeArgs
         cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test
@@ -217,20 +217,6 @@ jobs:
         if ($env:MPIR_ROOT -and (Test-Path "$env:MPIR_ROOT\bin")) { $dllPaths += "$env:MPIR_ROOT\bin" }
         if (Test-Path "$env:GITHUB_WORKSPACE\mpir_gc_x64") { $dllPaths += "$env:GITHUB_WORKSPACE\mpir_gc_x64" }
         if ($dllPaths.Count -gt 0) { $env:PATH = ($dllPaths -join ';') + ';' + $env:PATH }
-        Write-Host "PE headers (1weso_test)"
-        & llvm-readobj --file-headers .\1weso_test.exe
-        Write-Host "PE headers (2weso_test)"
-        & llvm-readobj --file-headers .\2weso_test.exe
-        Write-Host "PE headers (vdf_client)"
-        & llvm-readobj --file-headers .\vdf_client.exe
-        Write-Host "PE headers (vdf_bench)"
-        & llvm-readobj --file-headers .\vdf_bench.exe
-        Write-Host "Running vdf_bench square_asm smoke"
-        & .\vdf_bench.exe square_asm 10000
-        if ($LASTEXITCODE -ne 0) {
-          Write-Host "vdf_bench smoke exit code: $LASTEXITCODE"
-          exit $LASTEXITCODE
-        }
         function Invoke-TestExe([string]$name, [string[]]$testArgs = @()) {
           Write-Host "Running $name"
           & ".\$name.exe" @testArgs

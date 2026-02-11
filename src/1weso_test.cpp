@@ -43,12 +43,25 @@ static LONG CALLBACK agent_vectored_exception_logger(EXCEPTION_POINTERS* info) {
     }
     const auto* rec = info->ExceptionRecord;
     const void* addr = rec->ExceptionAddress;
+    const uintptr_t crash_ip = reinterpret_cast<uintptr_t>(addr);
+    const uintptr_t avx2_gcd_unsigned_ip = reinterpret_cast<uintptr_t>(&asm_code::asm_avx2_func_gcd_unsigned);
+    const uintptr_t cel_gcd_unsigned_ip = reinterpret_cast<uintptr_t>(&asm_code::asm_cel_func_gcd_unsigned);
+    const uintptr_t avx2_gcd_128_ip = reinterpret_cast<uintptr_t>(&asm_code::asm_avx2_func_gcd_128);
+    const uintptr_t cel_gcd_128_ip = reinterpret_cast<uintptr_t>(&asm_code::asm_cel_func_gcd_128);
+    const uintptr_t module_base = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
     std::cerr << "AGENTDBG H24 veh_exception"
               << " code=0x" << std::hex << static_cast<unsigned long>(rec->ExceptionCode) << std::dec
               << " flags=0x" << std::hex << static_cast<unsigned long>(rec->ExceptionFlags) << std::dec
               << " thread_id=" << GetCurrentThreadId()
               << " address=" << addr
               << " params=" << rec->NumberParameters
+              << " module_base=0x" << std::hex << module_base
+              << " ip_rva=0x" << (crash_ip - module_base)
+              << " d_avx2_gcd_unsigned=0x" << (crash_ip - avx2_gcd_unsigned_ip)
+              << " d_cel_gcd_unsigned=0x" << (crash_ip - cel_gcd_unsigned_ip)
+              << " d_avx2_gcd_128=0x" << (crash_ip - avx2_gcd_128_ip)
+              << " d_cel_gcd_128=0x" << (crash_ip - cel_gcd_128_ip)
+              << std::dec
               << "\n";
     return EXCEPTION_CONTINUE_SEARCH;
 }

@@ -210,61 +210,11 @@ jobs:
       if: matrix.config == 'optimized=1' && startsWith(matrix.os, 'windows')
       shell: pwsh
       run: |
-        Write-Host "CI commit (HEAD): $env:GITHUB_SHA"
-        git rev-parse --short HEAD
         cd build
-        $env:CHIA_DEBUG_GCD_LOGS = "1"
         $dllPaths = @()
         if ($env:MPIR_ROOT -and (Test-Path "$env:MPIR_ROOT\bin")) { $dllPaths += "$env:MPIR_ROOT\bin" }
         if (Test-Path "$env:GITHUB_WORKSPACE\mpir_gc_x64") { $dllPaths += "$env:GITHUB_WORKSPACE\mpir_gc_x64" }
         if ($dllPaths.Count -gt 0) { $env:PATH = ($dllPaths -join ';') + ';' + $env:PATH }
-        Write-Host "PE headers (1weso_test)"
-        & llvm-readobj --file-headers .\1weso_test.exe
-        Write-Host "PE headers (2weso_test)"
-        & llvm-readobj --file-headers .\2weso_test.exe
-        Write-Host "PE headers (vdf_client)"
-        & llvm-readobj --file-headers .\vdf_client.exe
-        Write-Host "PE headers (vdf_bench)"
-        & llvm-readobj --file-headers .\vdf_bench.exe
-        Write-Host "Disasm head (asm_avx2_func_gcd_unsigned)"
-        & llvm-objdump --no-show-raw-insn --disassemble-symbols=asm_avx2_func_gcd_unsigned .\1weso_test.exe
-        Write-Host "Disasm head (asm_cel_func_gcd_unsigned)"
-        & llvm-objdump --no-show-raw-insn --disassemble-symbols=asm_cel_func_gcd_unsigned .\1weso_test.exe
-        Write-Host "Disasm around AVX2 crash RVA window"
-        & llvm-objdump --no-show-raw-insn --disassemble --start-address=0x140025980 --stop-address=0x140025a40 .\1weso_test.exe
-        Write-Host "Disasm around CEL crash RVA window"
-        & llvm-objdump --no-show-raw-insn --disassemble --start-address=0x140020720 --stop-address=0x140020820 .\1weso_test.exe
-        function Invoke-BenchSmoke([string]$mode, [string]$forceCel = "") {
-          if ($forceCel -ne "") {
-            $env:CHIA_DEBUG_FORCE_CEL_GCD = $forceCel
-          } else {
-            Remove-Item Env:CHIA_DEBUG_FORCE_CEL_GCD -ErrorAction SilentlyContinue
-          }
-          Write-Host "Running vdf_bench square_asm smoke mode=$mode force_cel=${forceCel}"
-          $null = & .\vdf_bench.exe square_asm 10000
-          $exitCode = $LASTEXITCODE
-          Write-Host "vdf_bench smoke mode=$mode exit code: $exitCode"
-          return [int]$exitCode
-        }
-        $smokeDefault = Invoke-BenchSmoke "default"
-        $smokeCel = Invoke-BenchSmoke "force_cel" "1"
-        function Invoke-TestProbe([string]$name, [string[]]$testArgs = @(), [string]$forceCel = "") {
-          if ($forceCel -ne "") {
-            $env:CHIA_DEBUG_FORCE_CEL_GCD = $forceCel
-          } else {
-            Remove-Item Env:CHIA_DEBUG_FORCE_CEL_GCD -ErrorAction SilentlyContinue
-          }
-          Write-Host "Running probe $name force_cel=${forceCel}"
-          $null = & ".\$name.exe" @testArgs
-          $exitCode = $LASTEXITCODE
-          Write-Host "probe $name force_cel=${forceCel} exit code: $exitCode"
-          return [int]$exitCode
-        }
-        $probe1wesoDefault = Invoke-TestProbe "1weso_test" @("100") ""
-        $probe1wesoCel = Invoke-TestProbe "1weso_test" @("100") "1"
-        if ($smokeDefault -ne 0 -or $smokeCel -ne 0 -or $probe1wesoDefault -ne 0 -or $probe1wesoCel -ne 0) {
-          exit 1
-        }
         function Invoke-TestExe([string]$name, [string[]]$testArgs = @()) {
           Write-Host "Running $name"
           & ".\$name.exe" @testArgs

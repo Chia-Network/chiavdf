@@ -185,14 +185,11 @@ struct square_state_type {
     //
 
     bool phase_0_master() {
-        // #region agent log
         if (phase_start.num_valid_iterations == 0) {
-            std::cerr << "AGENTDBG H13 p0_master_enter a_bits=" << phase_start.a().num_bits()
                       << " b_bits=" << phase_start.b().num_bits()
                       << " a_sgn=" << phase_start.a().sgn()
                       << " b_higher=" << (phase_start.b_higher_magnitude_than_a ? 1 : 0) << "\n";
         }
-        // #endregion
         {
             TRACK_CYCLES //100
             if (!c_thread_state.fence(counter_start_phase_0)) {
@@ -230,14 +227,11 @@ struct square_state_type {
             ab_valid=(a.num_bits()<=max_bits_ab && b.num_bits()<=max_bits_ab && a.sgn()>=0);
         }
         if (!ab_valid) {
-            // #region agent log
             if (phase_start.num_valid_iterations == 0) {
-                std::cerr << "AGENTDBG H13 p0_master_ab_invalid a_bits=" << a.num_bits()
                           << " b_bits=" << b.num_bits()
                           << " max_bits_ab=" << max_bits_ab
                           << " a_sgn=" << a.sgn() << "\n";
             }
-            // #endregion
             return false;
         }
 
@@ -249,12 +243,9 @@ struct square_state_type {
             a_high_enough=(a.num_limbs()>L.num_limbs());
         }
         if (!a_high_enough) {
-            // #region agent log
             if (phase_start.num_valid_iterations == 0) {
-                std::cerr << "AGENTDBG H13 p0_master_a_low a_limbs=" << a.num_limbs()
                           << " L_limbs=" << L.num_limbs() << "\n";
             }
-            // #endregion
             return false;
         }
 
@@ -268,39 +259,27 @@ struct square_state_type {
 
         {
             TRACK_CYCLES //16070 (critical path 1)
-            // #region agent log
             if (phase_start.num_valid_iterations == 0) {
-                std::cerr << "AGENTDBG H13 p0_master_before_gcd\n";
             }
-            // #endregion
             if (!gcd_unsigned(counter_start_phase_0, gcd_1_0, gcd_zero)) {
                 TRACK_CYCLES_ABORT
-                // #region agent log
                 if (phase_start.num_valid_iterations == 0) {
-                    std::cerr << "AGENTDBG H13 p0_master_gcd_false\n";
                 }
-                // #endregion
                 return false;
             }
-            // #region agent log
             if (phase_start.num_valid_iterations == 0) {
-                std::cerr << "AGENTDBG H13 p0_master_after_gcd\n";
             }
-            // #endregion
         }
 
         return true;
     }
 
     bool phase_0_slave() {
-        // #region agent log
         if (phase_start.num_valid_iterations == 0) {
-            std::cerr << "AGENTDBG H13 p0_slave_enter a_bits=" << phase_start.a().num_bits()
                       << " b_bits=" << phase_start.b().num_bits()
                       << " a_sgn=" << phase_start.a().sgn()
                       << " b_higher=" << (phase_start.b_higher_magnitude_than_a ? 1 : 0) << "\n";
         }
-        // #endregion
         {
             TRACK_CYCLES //1698 (doesn't matter)
             if (!c_thread_state.fence(counter_start_phase_0)) {
@@ -351,17 +330,11 @@ struct square_state_type {
 
             if (!validate_c) {
                 TRACK_CYCLES //747
-                // #region agent log
                 if (phase_start.num_valid_iterations == 0) {
-                    std::cerr << "AGENTDBG H13 p0_slave_before_divide_exact\n";
                 }
-                // #endregion
                 c.set_divide_exact(b_b_D, a_4);
-                // #region agent log
                 if (phase_start.num_valid_iterations == 0) {
-                    std::cerr << "AGENTDBG H13 p0_slave_after_divide_exact\n";
                 }
-                // #endregion
             } else {
                 TRACK_CYCLES //1309; latency is hidden by gcd being slow
                 c.set_divide_floor(b_b_D, a_4, c_remainder);
@@ -1057,13 +1030,10 @@ void repeated_square_fast_work(square_state_type &square_state, bool is_slave, u
     c_thread_state.reset();
     c_thread_state.is_slave=is_slave;
     c_thread_state.pairindex=square_state.pairindex;
-    // #region agent log
     if (base < 32) {
-        std::cerr << "AGENTDBG H12 work_enter base=" << base
                   << " is_slave=" << (is_slave ? 1 : 0)
                   << " iterations=" << iterations << "\n";
     }
-    // #endregion
 
     bool has_error=false;
     int agent_phase=-1;
@@ -1079,57 +1049,42 @@ void repeated_square_fast_work(square_state_type &square_state, bool is_slave, u
 
         for (int phase=0;phase<square_state_type::num_phases;++phase) {
             agent_phase=phase;
-            // #region agent log
             if (base < 32 && iter < 2 && phase < 6) {
-                std::cerr << "AGENTDBG H12 phase_before_advance base=" << base
                           << " iter=" << iter
                           << " phase=" << phase
                           << " is_slave=" << (is_slave ? 1 : 0) << "\n";
             }
-            // #endregion
             if (!c_thread_state.advance(square_state.get_counter_start(phase))) {
-                // #region agent log
                 if (base < 32) {
-                    std::cerr << "AGENTDBG H12 err_advance base=" << base
                               << " iter=" << iter
                               << " phase=" << phase
                               << " is_slave=" << (is_slave ? 1 : 0) << "\n";
                 }
-                // #endregion
                 c_thread_state.raise_error();
                 has_error=true;
                 break;
             }
 
-            // #region agent log
             if (base < 32 && iter < 2 && phase < 6) {
-                std::cerr << "AGENTDBG H12 phase_before_call base=" << base
                           << " iter=" << iter
                           << " phase=" << phase
                           << " is_slave=" << (is_slave ? 1 : 0) << "\n";
             }
-            // #endregion
             if (!square_state.call_phase(phase, is_slave)) {
-                // #region agent log
                 if (base < 32) {
-                    std::cerr << "AGENTDBG H12 err_call_phase base=" << base
                               << " iter=" << iter
                               << " phase=" << phase
                               << " is_slave=" << (is_slave ? 1 : 0) << "\n";
                 }
-                // #endregion
                 c_thread_state.raise_error();
                 has_error=true;
                 break;
             }
-            // #region agent log
             if (base < 32 && iter < 2 && phase < 6) {
-                std::cerr << "AGENTDBG H12 phase_after_call base=" << base
                           << " iter=" << iter
                           << " phase=" << phase
                           << " is_slave=" << (is_slave ? 1 : 0) << "\n";
             }
-            // #endregion
         }
 
         if (has_error) {
@@ -1160,66 +1115,45 @@ void repeated_square_fast_work(square_state_type &square_state, bool is_slave, u
     #endif
 #ifdef CHIA_WINDOWS
     } __except ((agent_work_seh_code = GetExceptionCode()), EXCEPTION_EXECUTE_HANDLER) {
-        // #region agent log
-        std::cerr << "AGENTDBG H23 seh_in_fast_work"
                   << " is_slave=" << (is_slave ? 1 : 0)
                   << " base=" << base
                   << " iter=" << agent_iter
                   << " phase=" << agent_phase
                   << " code=0x" << std::hex << agent_work_seh_code << std::dec
                   << "\n";
-        // #endregion
         c_thread_state.raise_error();
     }
 #endif
 }
 
 uint64 repeated_square_fast_multithread(square_state_type &square_state, form& f, const integer& D, const integer& L, uint64 base, uint64 iterations, INUDUPLListener *nuduplListener) {
-    // #region agent log
     if (base < 32) {
-        std::cerr << "AGENTDBG H12 mt_enter base=" << base
                   << " iterations=" << iterations << "\n";
     }
-    // #endregion
     master_counter[square_state.pairindex].reset();
     slave_counter[square_state.pairindex].reset();
 
     square_state.init(D, L, f.a, f.b);
-    // #region agent log
     if (base < 32) {
-        std::cerr << "AGENTDBG H12 mt_after_init base=" << base << "\n";
     }
-    // #endregion
 
     thread slave_thread(repeated_square_fast_work, std::ref(square_state), false, base, iterations, std::ref(nuduplListener));
-    // #region agent log
     if (base < 32) {
-        std::cerr << "AGENTDBG H12 mt_slave_started base=" << base << "\n";
     }
-    // #endregion
 
     repeated_square_fast_work(square_state, true, base, iterations, nuduplListener);
-    // #region agent log
     if (base < 32) {
-        std::cerr << "AGENTDBG H12 mt_master_finished base=" << base << "\n";
     }
-    // #endregion
 
     slave_thread.join(); //slave thread can't get stuck; is supposed to error out instead
-    // #region agent log
     if (base < 32) {
-        std::cerr << "AGENTDBG H12 mt_slave_joined base=" << base << "\n";
     }
-    // #endregion
 
     uint64 res;
     square_state.assign(f.a, f.b, f.c, res);
-    // #region agent log
     if (base < 32) {
-        std::cerr << "AGENTDBG H12 mt_assign_result base=" << base
                   << " res=" << res << "\n";
     }
-    // #endregion
 
     return res;
 }
@@ -1248,24 +1182,18 @@ uint64 repeated_square_fast_single_thread(square_state_type &square_state, form&
 
         for (int phase=0;phase<square_state_type::num_phases;++phase) {
             if (!thread_state_master.advance(square_state.get_counter_start(phase))) {
-                // #region agent log
                 if (base < 32) {
-                    std::cerr << "AGENTDBG H10 fast_err advance_master base=" << base
                               << " iter=" << iter << " phase=" << phase << "\n";
                 }
-                // #endregion
                 thread_state_master.raise_error();
                 has_error=true;
                 break;
             }
 
             if (!thread_state_slave.advance(square_state.get_counter_start(phase))) {
-                // #region agent log
                 if (base < 32) {
-                    std::cerr << "AGENTDBG H10 fast_err advance_slave base=" << base
                               << " iter=" << iter << " phase=" << phase << "\n";
                 }
-                // #endregion
                 thread_state_slave.raise_error();
                 has_error=true;
                 break;
@@ -1277,13 +1205,10 @@ uint64 repeated_square_fast_single_thread(square_state_type &square_state, form&
                 c_thread_state=(is_slave)? thread_state_slave : thread_state_master;
 
                 if (!square_state.call_phase(phase, is_slave)) {
-                    // #region agent log
                     if (base < 32) {
-                        std::cerr << "AGENTDBG H10 fast_err call_phase base=" << base
                                   << " iter=" << iter << " phase=" << phase
                                   << " is_slave=" << (is_slave ? 1 : 0) << "\n";
                     }
-                    // #endregion
                     c_thread_state.raise_error();
                     has_error=true;
                     break;
@@ -1308,13 +1233,10 @@ uint64 repeated_square_fast_single_thread(square_state_type &square_state, form&
 
     uint64 res;
     square_state.assign(f.a, f.b, f.c, res); //sets res to ~uint64(0) and leaves f unchanged if there is corruption
-    // #region agent log
     if (base < 32) {
-        std::cerr << "AGENTDBG H10 fast_assign_result base=" << base
                   << " has_error=" << (has_error ? 1 : 0)
                   << " res=" << res << "\n";
     }
-    // #endregion
 
     #ifdef ENABLE_TRACK_CYCLES
         print( "stats both threads:" );

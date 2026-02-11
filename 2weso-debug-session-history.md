@@ -3,59 +3,56 @@
 ## Context
 
 - Platform: Windows CI (`windows-latest`)
-- Failing target: `1weso_test.exe` during `Test vdf-client (Windows)`
-- Symptom: hard process exit with code `-1073741819` (`0xC0000005`, access violation)
+- Symptom: hard runtime crashes in asm-enabled paths (`0xC0000005` and `0xC000001D`)
+- Affected binaries during debugging: `vdf_bench`, `1weso_test`, `2weso_test`
+- Goal: keep asm path enabled and make Windows CI pass
 
-## Timeline
+## Root Causes Found
 
-1. **Initial Windows integration**
-   - Added Windows CI matrix/build/test flow in `.github/workflows/test.yaml`.
-   - Enabled GNU asm pipeline on Windows and generated asm artifacts.
+1. **ASLR-incompatible absolute addressing in generated asm**
+   - Some global and table accesses were emitted as absolute addresses.
+   - Under Windows ASLR, those addresses were invalid at runtime.
 
-2. **Build failure (linker)**
-   - Error: undefined symbol for `comment_label`.
-   - Fix: corrected label emission in `src/asm_base.h` to use allocated label token expansion.
+2. **Indirect jump-table dispatch instability in `gcd_unsigned`**
+   - Crashes landed in regions decoding as non-code bytes near dispatch/table areas.
+   - Dispatch behavior was made deterministic by using compare/branch dispatch for Windows.
 
-3. **Runtime crash after linker fix**
-   - `1weso_test` crashed in Windows run.
-   - Added logs around fast path and GCD selection (`H1`, `H3`, `H6`, `H9`, `H12`, `H13`, `H14`, `H15`, `H21`).
+3. **Workflow false failure after runtime stabilization**
+   - The Windows smoke helper captured process stdout and exit code together, causing a bad gate check despite successful probes.
 
-4. **SEH instrumentation in GCD wrapper**
-   - Added `__try/__except` around AVX2/CEL GCD calls in `src/threading.h` with `H22`.
-   - Result: crash persisted; `H22` did not appear.
+## Final Fixes Applied
 
-5. **Worker-level SEH instrumentation**
-   - Added `H23` around `repeated_square_fast_work` loop in `src/vdf_fast.h`.
-   - Result: crash persisted; `H23` did not appear.
+- `src/asm_base.h`
+  - Kept tracking-data accesses RIP-relative on Windows:
+    - `track_asm_rax`
+    - `asm_tracking_data`
+    - `asm_tracking_data_comments`
 
-6. **Process-wide exception capture**
-   - Added vectored exception handler in `src/1weso_test.cpp` with `H24`.
-   - Result: captured first-chance access violation.
+- `src/asm_gcd_base_divide_table.h`
+  - Switched divide-table indexed loads to RIP-relative addressing on Windows.
 
-## Latest Evidence (most recent run)
+- `src/asm_gcd_base_continued_fractions.h`
+  - Switched `gcd_base_table` loads to RIP-relative addressing on Windows.
 
-From CI commit `bac43ae48d142bf8eb55a85580bf70e7905211e9`:
+- `src/asm_gcd_unsigned.h`
+  - Replaced Windows `multiply_uv` indirect jump-table dispatch with explicit compare/branch dispatch (same style as macOS path).
 
-- Last normal path logs:
-  - `H13 p0_master_before_gcd`
-  - `H14 gcd_enter ... a_limbs=5 b_limbs=4 ...`
-  - `H15 gcd_impl_select ... use_avx2=1 force_cel=0 ...`
-- Exception log:
-  - `H24 veh_exception code=0xc0000005 ...`
-  - `ip_rva=0x25378`
-  - `d_avx2_gcd_unsigned=0xda`
-  - `d_cel_gcd_unsigned=0x5b9b`
-  - `d_avx2_gcd_128=0xaa0`
-  - `d_cel_gcd_128=0x6c8d`
+- `.github/workflows/test.yaml`
+  - Fixed helper return handling to compare integer exit codes only.
+  - Removed temporary disassembly/probe debug instrumentation after validation.
 
-## Interpretation
+## Validation Evidence
 
-- The crash IP is very near the entry of `asm_avx2_func_gcd_unsigned` (`+0xDA`), strongly indicating the fault is **inside AVX2 unsigned GCD generated asm**.
-- The exception is an access violation (`0xC0000005`) and is not being caught by local `H22`/`H23` handlers before process termination.
-- No `H25 asm_track_at_crash` lines appeared in the provided run output (either tracking did not emit before termination, or no nonzero tracked counters were available at crash point).
+- Passing run: `https://github.com/Chia-Network/chiavdf/actions/runs/21924184980`
+- Result: `Test optimized=1 windows-latest` passed with asm enabled.
+- Verified stages:
+  - `vdf_bench` smoke (default): exit `0`
+  - `vdf_bench` smoke (forced CEL): exit `0`
+  - `1weso_test` probe (default): exit `0`
+  - `1weso_test` probe (forced CEL): exit `0`
+  - Windows `Test vdf-client` and benchmark step completed successfully
 
-## Current Status
+## Cleanup Status
 
-- Compile-time blockers previously seen on Windows are resolved.
-- Runtime fault remains reproducible in phase-0 fast path at base iteration where `a_bits=257`, `b_bits=256`.
-- Root-cause area is narrowed to early instructions in generated `asm_avx2_func_gcd_unsigned`.
+- Temporary runtime debug instrumentation has been removed from source and workflow files.
+- Functional asm fixes remain in place.

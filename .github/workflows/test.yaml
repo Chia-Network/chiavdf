@@ -259,10 +259,10 @@ jobs:
             Remove-Item Env:CHIA_DEBUG_FORCE_CEL_GCD -ErrorAction SilentlyContinue
           }
           Write-Host "Running vdf_bench square_asm smoke mode=$mode force_cel=${forceCel}"
-          & .\vdf_bench.exe square_asm 10000
+          $null = & .\vdf_bench.exe square_asm 10000
           $exitCode = $LASTEXITCODE
           Write-Host "vdf_bench smoke mode=$mode exit code: $exitCode"
-          return $exitCode
+          return [int]$exitCode
         }
         $smokeDefault = Invoke-BenchSmoke "default"
         $smokeCel = Invoke-BenchSmoke "force_cel" "1"
@@ -273,10 +273,10 @@ jobs:
             Remove-Item Env:CHIA_DEBUG_FORCE_CEL_GCD -ErrorAction SilentlyContinue
           }
           Write-Host "Running probe $name force_cel=${forceCel}"
-          & ".\$name.exe" @testArgs
+          $null = & ".\$name.exe" @testArgs
           $exitCode = $LASTEXITCODE
           Write-Host "probe $name force_cel=${forceCel} exit code: $exitCode"
-          return $exitCode
+          return [int]$exitCode
         }
         $probe1wesoDefault = Invoke-TestProbe "1weso_test" @("100") ""
         $probe1wesoCel = Invoke-TestProbe "1weso_test" @("100") "1"

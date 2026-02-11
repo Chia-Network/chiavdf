@@ -306,11 +306,7 @@ struct square_state_type {
 
             if (!validate_c) {
                 TRACK_CYCLES //747
-                if (phase_start.num_valid_iterations == 0) {
-                }
                 c.set_divide_exact(b_b_D, a_4);
-                if (phase_start.num_valid_iterations == 0) {
-                }
             } else {
                 TRACK_CYCLES //1309; latency is hidden by gcd being slow
                 c.set_divide_floor(b_b_D, a_4, c_remainder);

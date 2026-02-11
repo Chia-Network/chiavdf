@@ -452,7 +452,7 @@ void gcd_unsigned(
         APPEND_M(str( ".balign 8" ));
         APPEND_M(str( "#:", jump_table_label ));
 
-#if defined(CHIAOSX) || defined(CHIA_WINDOWS)
+#if defined(CHIAOSX)
         APPEND_M(str( ".text" ));
 
         APPEND_M(str( "MOV `tmp, `spill_a_end_index" ));

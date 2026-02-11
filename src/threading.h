@@ -791,9 +791,36 @@ template<class mpz_type> bool gcd_unsigned(
         assert((uint64(data.out_uv_addr)&63)==0); //should be cache line aligned
     }
 
+    // #region agent log
+    if (a_limbs >= 3) {
+        std::cerr << "AGENTDBG H14 gcd_enter"
+                  << " is_slave=" << (c_thread_state.is_slave ? 1 : 0)
+                  << " counter_start=" << c_thread_state.counter_start
+                  << " counter_start_delta=" << counter_start_delta
+                  << " a_limbs=" << a_limbs
+                  << " b_limbs=" << b_limbs
+                  << " a_end_index=" << data.a_end_index
+                  << " a_ptr_mod64=" << (uint64(data.a) & 63)
+                  << " b_ptr_mod64=" << (uint64(data.b) & 63)
+                  << " out_uv_ptr_mod64=" << (uint64(data.out_uv_addr) & 63)
+                  << " has_avx2=" << (hasAVX2() ? 1 : 0)
+                  << "\n";
+    }
+    // #endregion
+
     int error_code=hasAVX2()?
         asm_code::asm_avx2_func_gcd_unsigned(&data):
         asm_code::asm_cel_func_gcd_unsigned(&data);
+
+    // #region agent log
+    if (a_limbs >= 3) {
+        std::cerr << "AGENTDBG H14 gcd_after_asm"
+                  << " is_slave=" << (c_thread_state.is_slave ? 1 : 0)
+                  << " error_code=" << error_code
+                  << " iter=" << data.iter
+                  << "\n";
+    }
+    // #endregion
 
     if (error_code!=0) {
         c_thread_state.raise_error();

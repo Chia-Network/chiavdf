@@ -465,7 +465,7 @@ void gcd_unsigned(
                 ++mapped_size;
             }
 
-            APPEND_M(str( "CMP `tmp, #", size ));
+            APPEND_M(str( "CMP `tmp, #", end_index ));
 
             APPEND_M(str( "JE ")+asmprefix+str("multiply_uv_size_#", mapped_size ));
         }

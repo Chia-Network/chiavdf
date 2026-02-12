@@ -54,8 +54,6 @@ int main(int argc, char const* argv[]) try
     std::atomic<bool> stopped = false;
     fast_algorithm = false;
     two_weso = true;
-    const uint64_t max_test_iteration = 100 * iter_multiplier;
-    (void)max_test_iteration;
     TwoWesolowskiCallback weso(D, f);
     FastStorage* fast_storage = NULL;
     std::thread vdf_worker(repeated_square, 0, f, D, L, &weso, fast_storage, std::ref(stopped));

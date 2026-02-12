@@ -364,7 +364,7 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
         memcpy(d_str, &buf[4], d_size);
         d_str[d_size] = '\0';
         if ((uint64_t)bytes != 4 + d_size + 1 + buf[4 + d_size]) {
-            LOG_ERROR("Bad data size: %zd", bytes);
+            LOG_ERROR("Bad data size: %d", bytes);
             throw std::runtime_error("Bad data size");
         }
 
@@ -388,7 +388,7 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
     if (conn->state == STOPPED) {
         bytes = read_data(client, conn);
         if (bytes != 3 || memcmp(buf, "ACK", 3)) {
-            LOG_ERROR("Bad data size after stop: %zd", bytes);
+            LOG_ERROR("Bad data size after stop: %d", bytes);
         }
         close_conn(conn);
     } else if (conn->state == CLOSED && !g_stopping) {

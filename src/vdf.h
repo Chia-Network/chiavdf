@@ -53,8 +53,6 @@
 #include <thread>
 #include <future>
 #include <memory>
-
-#include <chrono>
 #include <condition_variable>
 #include "proof_common.h"
 #include "provers.h"

@@ -119,7 +119,8 @@ struct asm_function {
             // Windows x64: reserve spill area + shadow space + xmm save area + align to 64.
             const int windows_saved_rsp_bytes = 8;
             const int windows_shadow_space_bytes = 0x20;
-            const int windows_xmm_save_bytes = 10 * 32; // YMM6-15
+            const int windows_xmm_slot_bytes = enable_all_instructions ? 32 : 16;
+            const int windows_xmm_save_bytes = 10 * windows_xmm_slot_bytes; // XMM6-15 (or YMM6-15 for AVX codegen)
             const int windows_frame_bytes =
                 windows_saved_rsp_bytes + spill_bytes + windows_shadow_space_bytes + windows_xmm_save_bytes;
             APPEND_M(str( "MOV RAX, RSP" ));
@@ -129,16 +130,29 @@ struct asm_function {
             APPEND_M(str( "SUB RSP, 8" ));
             APPEND_M(str( "MOV [RSP], RAX" ));
             const int windows_xmm_save_base = windows_saved_rsp_bytes + spill_bytes + windows_shadow_space_bytes;
-            APPEND_M(str( "VMOVDQU [RSP+#], YMM6", to_hex(windows_xmm_save_base + 0 * 32) ));
-            APPEND_M(str( "VMOVDQU [RSP+#], YMM7", to_hex(windows_xmm_save_base + 1 * 32) ));
-            APPEND_M(str( "VMOVDQU [RSP+#], YMM8", to_hex(windows_xmm_save_base + 2 * 32) ));
-            APPEND_M(str( "VMOVDQU [RSP+#], YMM9", to_hex(windows_xmm_save_base + 3 * 32) ));
-            APPEND_M(str( "VMOVDQU [RSP+#], YMM10", to_hex(windows_xmm_save_base + 4 * 32) ));
-            APPEND_M(str( "VMOVDQU [RSP+#], YMM11", to_hex(windows_xmm_save_base + 5 * 32) ));
-            APPEND_M(str( "VMOVDQU [RSP+#], YMM12", to_hex(windows_xmm_save_base + 6 * 32) ));
-            APPEND_M(str( "VMOVDQU [RSP+#], YMM13", to_hex(windows_xmm_save_base + 7 * 32) ));
-            APPEND_M(str( "VMOVDQU [RSP+#], YMM14", to_hex(windows_xmm_save_base + 8 * 32) ));
-            APPEND_M(str( "VMOVDQU [RSP+#], YMM15", to_hex(windows_xmm_save_base + 9 * 32) ));
+            if (enable_all_instructions) {
+                APPEND_M(str( "VMOVDQU [RSP+#], YMM6", to_hex(windows_xmm_save_base + 0 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "VMOVDQU [RSP+#], YMM7", to_hex(windows_xmm_save_base + 1 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "VMOVDQU [RSP+#], YMM8", to_hex(windows_xmm_save_base + 2 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "VMOVDQU [RSP+#], YMM9", to_hex(windows_xmm_save_base + 3 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "VMOVDQU [RSP+#], YMM10", to_hex(windows_xmm_save_base + 4 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "VMOVDQU [RSP+#], YMM11", to_hex(windows_xmm_save_base + 5 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "VMOVDQU [RSP+#], YMM12", to_hex(windows_xmm_save_base + 6 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "VMOVDQU [RSP+#], YMM13", to_hex(windows_xmm_save_base + 7 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "VMOVDQU [RSP+#], YMM14", to_hex(windows_xmm_save_base + 8 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "VMOVDQU [RSP+#], YMM15", to_hex(windows_xmm_save_base + 9 * windows_xmm_slot_bytes) ));
+            } else {
+                APPEND_M(str( "MOVDQU [RSP+#], XMM6", to_hex(windows_xmm_save_base + 0 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "MOVDQU [RSP+#], XMM7", to_hex(windows_xmm_save_base + 1 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "MOVDQU [RSP+#], XMM8", to_hex(windows_xmm_save_base + 2 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "MOVDQU [RSP+#], XMM9", to_hex(windows_xmm_save_base + 3 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "MOVDQU [RSP+#], XMM10", to_hex(windows_xmm_save_base + 4 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "MOVDQU [RSP+#], XMM11", to_hex(windows_xmm_save_base + 5 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "MOVDQU [RSP+#], XMM12", to_hex(windows_xmm_save_base + 6 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "MOVDQU [RSP+#], XMM13", to_hex(windows_xmm_save_base + 7 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "MOVDQU [RSP+#], XMM14", to_hex(windows_xmm_save_base + 8 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "MOVDQU [RSP+#], XMM15", to_hex(windows_xmm_save_base + 9 * windows_xmm_slot_bytes) ));
+            }
 #else
             // RSP'=RSP&(~63) ; this makes it 64-aligned and can only reduce its value
             // RSP''=RSP'-64 ; still 64-aligned but now there is at least 64 bytes of unused stuff
@@ -166,20 +180,34 @@ struct asm_function {
         //this takes 4 cycles including ret, if there is nothing else to do
         if (d_align_stack) {
 #ifdef CHIA_WINDOWS
-            // Windows ABI: restore YMM6–YMM15 from the stack area reserved during prologue.
+            // Windows ABI: restore XMM6-XMM15 (or YMM6-YMM15 for AVX codegen).
             const int windows_saved_rsp_bytes = 8;
             const int windows_shadow_space_bytes = 0x20;
+            const int windows_xmm_slot_bytes = enable_all_instructions ? 32 : 16;
             const int windows_xmm_save_base = windows_saved_rsp_bytes + spill_bytes + windows_shadow_space_bytes;
-            APPEND_M(str( "VMOVDQU YMM6, [RSP+#]", to_hex(windows_xmm_save_base + 0 * 32) ));
-            APPEND_M(str( "VMOVDQU YMM7, [RSP+#]", to_hex(windows_xmm_save_base + 1 * 32) ));
-            APPEND_M(str( "VMOVDQU YMM8, [RSP+#]", to_hex(windows_xmm_save_base + 2 * 32) ));
-            APPEND_M(str( "VMOVDQU YMM9, [RSP+#]", to_hex(windows_xmm_save_base + 3 * 32) ));
-            APPEND_M(str( "VMOVDQU YMM10, [RSP+#]", to_hex(windows_xmm_save_base + 4 * 32) ));
-            APPEND_M(str( "VMOVDQU YMM11, [RSP+#]", to_hex(windows_xmm_save_base + 5 * 32) ));
-            APPEND_M(str( "VMOVDQU YMM12, [RSP+#]", to_hex(windows_xmm_save_base + 6 * 32) ));
-            APPEND_M(str( "VMOVDQU YMM13, [RSP+#]", to_hex(windows_xmm_save_base + 7 * 32) ));
-            APPEND_M(str( "VMOVDQU YMM14, [RSP+#]", to_hex(windows_xmm_save_base + 8 * 32) ));
-            APPEND_M(str( "VMOVDQU YMM15, [RSP+#]", to_hex(windows_xmm_save_base + 9 * 32) ));
+            if (enable_all_instructions) {
+                APPEND_M(str( "VMOVDQU YMM6, [RSP+#]", to_hex(windows_xmm_save_base + 0 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "VMOVDQU YMM7, [RSP+#]", to_hex(windows_xmm_save_base + 1 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "VMOVDQU YMM8, [RSP+#]", to_hex(windows_xmm_save_base + 2 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "VMOVDQU YMM9, [RSP+#]", to_hex(windows_xmm_save_base + 3 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "VMOVDQU YMM10, [RSP+#]", to_hex(windows_xmm_save_base + 4 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "VMOVDQU YMM11, [RSP+#]", to_hex(windows_xmm_save_base + 5 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "VMOVDQU YMM12, [RSP+#]", to_hex(windows_xmm_save_base + 6 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "VMOVDQU YMM13, [RSP+#]", to_hex(windows_xmm_save_base + 7 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "VMOVDQU YMM14, [RSP+#]", to_hex(windows_xmm_save_base + 8 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "VMOVDQU YMM15, [RSP+#]", to_hex(windows_xmm_save_base + 9 * windows_xmm_slot_bytes) ));
+            } else {
+                APPEND_M(str( "MOVDQU XMM6, [RSP+#]", to_hex(windows_xmm_save_base + 0 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "MOVDQU XMM7, [RSP+#]", to_hex(windows_xmm_save_base + 1 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "MOVDQU XMM8, [RSP+#]", to_hex(windows_xmm_save_base + 2 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "MOVDQU XMM9, [RSP+#]", to_hex(windows_xmm_save_base + 3 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "MOVDQU XMM10, [RSP+#]", to_hex(windows_xmm_save_base + 4 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "MOVDQU XMM11, [RSP+#]", to_hex(windows_xmm_save_base + 5 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "MOVDQU XMM12, [RSP+#]", to_hex(windows_xmm_save_base + 6 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "MOVDQU XMM13, [RSP+#]", to_hex(windows_xmm_save_base + 7 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "MOVDQU XMM14, [RSP+#]", to_hex(windows_xmm_save_base + 8 * windows_xmm_slot_bytes) ));
+                APPEND_M(str( "MOVDQU XMM15, [RSP+#]", to_hex(windows_xmm_save_base + 9 * windows_xmm_slot_bytes) ));
+            }
 #endif
             APPEND_M(str( "MOV RSP, [RSP]" ));
         }

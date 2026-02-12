@@ -60,11 +60,12 @@ cmake -S src -B build \
 cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test
 ```
 
-To build vdf_client set the environment variable BUILD_VDF_CLIENT to "Y".
-`export BUILD_VDF_CLIENT=Y`.
+For the legacy `setup.py` + `Makefile.vdf-client` flow (used by wheel hooks),
+you can control native binary builds with environment variables:
 
-Similarly, to build vdf_bench set the environment variable BUILD_VDF_BENCH to
-"Y". `export BUILD_VDF_BENCH=Y`.
+- `BUILD_VDF_CLIENT=Y` to include `vdf_client` (and related test binaries)
+- `BUILD_VDF_BENCH=Y` to include `vdf_bench`
+For direct CMake builds, use `-DBUILD_*` flags instead of these environment variables.
 
 AVX runtime flags:
 

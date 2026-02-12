@@ -435,6 +435,10 @@ std::string uint128_t::str(uint8_t base, const unsigned int & len) const{
         std::pair <uint128_t, uint128_t> qr(*this, uint128_0);
         do{
             qr = divmod(qr.first, base);
+            // Motivation: keep digit->char conversion explicit instead of relying on
+            // string-literal indexing + implicit char promotion. This is ABI/endianness
+            // agnostic and safe on x86-64 Linux/macOS/Windows, and performance is
+            // unchanged in practice since divmod dominates this formatting loop.
             uint8_t digit = static_cast<uint8_t>(qr.second);
             char c = (digit < 10) ? static_cast<char>('0' + digit)
                                   : static_cast<char>('a' + (digit - 10));

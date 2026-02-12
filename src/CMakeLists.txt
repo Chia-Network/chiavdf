@@ -6,6 +6,7 @@ option(BUILD_VDF_BENCH "Build the vdf_bench binary" OFF)
 option(BUILD_VDF_TESTS "Build vdf test binaries (1weso/2weso/prover)" OFF)
 option(BUILD_HW_TOOLS "Build hardware timelord tools" OFF)
 option(ENABLE_GNU_ASM "Enable GNU-style asm pipeline on x86/x64" ON)
+option(GENERATE_ASM_TRACKING_DATA "Emit asm tracking instrumentation data from compile_asm" OFF)
 option(HARDENING "Enable hardening" OFF)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -83,7 +84,10 @@ endif()
 # CMake 3.14+
 include(FetchContent)
 
-set(VDF_COMMON_DEFINITIONS VDF_MODE=0 FAST_MACHINE=1 GENERATE_ASM_TRACKING_DATA=1)
+set(VDF_COMMON_DEFINITIONS VDF_MODE=0 FAST_MACHINE=1)
+if(GENERATE_ASM_TRACKING_DATA)
+  list(APPEND VDF_COMMON_DEFINITIONS GENERATE_ASM_TRACKING_DATA=1)
+endif()
 set(VDF_COMMON_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
 )

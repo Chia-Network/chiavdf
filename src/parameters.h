@@ -43,6 +43,9 @@ inline bool env_flag(const char* name) {
   if (!value) {
     return false;
   }
+  if (value[0] == '\0') {
+    return false;
+  }
   if (value[0] == '1' || value[0] == 'y' || value[0] == 'Y' || value[0] == 't' || value[0] == 'T') {
     return true;
   }

@@ -136,12 +136,18 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
     }
 
     void IncreaseConstants(uint64_t num_iters) {
+        std::lock_guard<std::mutex> lk(forms_mutex);
         kl = 100;
         switch_iters = num_iters;
         switch_index = num_iters / 10;
     }
 
     int GetPosition(uint64_t power) {
+        std::lock_guard<std::mutex> lk(forms_mutex);
+        return GetPositionUnlocked(power);
+    }
+
+    int GetPositionUnlocked(uint64_t power) const {
         if (switch_iters == -1 || power < switch_iters) {
             return power / 10;
         } else {
@@ -151,7 +157,7 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
 
     form GetFormCopy(uint64_t power) {
         std::lock_guard<std::mutex> lk(forms_mutex);
-        const int pos = GetPosition(power);
+        const int pos = GetPositionUnlocked(power);
         if (pos < 0 || static_cast<size_t>(pos) >= forms_capacity) {
             throw std::runtime_error("TwoWesolowskiCallback::GetFormCopy out of bounds");
         }
@@ -159,17 +165,18 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
     }
 
     bool LargeConstants() {
+        std::lock_guard<std::mutex> lk(forms_mutex);
         return kl == 100;
     }
 
     void OnIteration(int type, void *data, uint64_t iteration) {
         iteration++;
+        std::lock_guard<std::mutex> lk(forms_mutex);
         if (iteration % kl == 0) {
-            const int pos = GetPosition(iteration);
+            const int pos = GetPositionUnlocked(iteration);
             if (pos < 0 || static_cast<size_t>(pos) >= forms_capacity) {
                 throw std::runtime_error("TwoWesolowskiCallback::OnIteration out of bounds");
             }
-            std::lock_guard<std::mutex> lk(forms_mutex);
             form* mulf = &forms[static_cast<size_t>(pos)];
             SetForm(type, data, mulf);
         }

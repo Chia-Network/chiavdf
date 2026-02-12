@@ -47,6 +47,7 @@ For direct CMake builds, the following options are available:
 - `BUILD_VDF_TESTS` - build `1weso_test`, `2weso_test`, and `prover_test`
 - `BUILD_HW_TOOLS` - build hardware timelord tools
 - `ENABLE_GNU_ASM` - enable GNU-style asm pipeline on x86/x64 (enabled by default)
+- `GENERATE_ASM_TRACKING_DATA` - enable `track_asm()` instrumentation in generated asm (off by default to avoid hot-loop overhead)
 
 Example:
 

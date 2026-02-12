@@ -131,27 +131,30 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
         forms_capacity = space_needed;
         forms.reset(new form[space_needed]);
         forms[0] = f;
-        kl = 10;
-        switch_iters = -1;
+        kl.store(10, std::memory_order_relaxed);
+        switch_iters.store(-1, std::memory_order_relaxed);
+        switch_index.store(0, std::memory_order_relaxed);
     }
 
     void IncreaseConstants(uint64_t num_iters) {
-        std::lock_guard<std::mutex> lk(forms_mutex);
-        kl = 100;
-        switch_iters = num_iters;
-        switch_index = num_iters / 10;
+        // Publish transition metadata first, then publish kl=100.
+        // OnIteration acquires kl before consuming switch state.
+        switch_index.store(num_iters / 10, std::memory_order_relaxed);
+        switch_iters.store(static_cast<int64_t>(num_iters), std::memory_order_relaxed);
+        kl.store(100, std::memory_order_release);
     }
 
     int GetPosition(uint64_t power) {
-        std::lock_guard<std::mutex> lk(forms_mutex);
         return GetPositionUnlocked(power);
     }
 
     int GetPositionUnlocked(uint64_t power) const {
-        if (switch_iters == -1 || power < switch_iters) {
+        const int64_t current_switch_iters = switch_iters.load(std::memory_order_acquire);
+        if (current_switch_iters == -1 || power < static_cast<uint64_t>(current_switch_iters)) {
             return power / 10;
         } else {
-            return (switch_index + (power - switch_iters) / 100);
+            const uint64_t current_switch_index = switch_index.load(std::memory_order_relaxed);
+            return static_cast<int>(current_switch_index + (power - static_cast<uint64_t>(current_switch_iters)) / 100);
         }
     }
 
@@ -165,27 +168,34 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
     }
 
     bool LargeConstants() {
-        std::lock_guard<std::mutex> lk(forms_mutex);
-        return kl == 100;
+        return kl.load(std::memory_order_relaxed) == 100;
     }
 
     void OnIteration(int type, void *data, uint64_t iteration) {
         iteration++;
-        std::lock_guard<std::mutex> lk(forms_mutex);
-        if (iteration % kl == 0) {
-            const int pos = GetPositionUnlocked(iteration);
-            if (pos < 0 || static_cast<size_t>(pos) >= forms_capacity) {
-                throw std::runtime_error("TwoWesolowskiCallback::OnIteration out of bounds");
-            }
-            form* mulf = &forms[static_cast<size_t>(pos)];
-            SetForm(type, data, mulf);
+        // Most iterations are not checkpoints. Avoid mutex lock/unlock on that hot path.
+        const uint32_t current_kl = kl.load(std::memory_order_relaxed);
+        if (iteration % current_kl != 0) {
+            return;
         }
+
+        std::lock_guard<std::mutex> lk(forms_mutex);
+        const uint32_t locked_kl = kl.load(std::memory_order_acquire);
+        if (iteration % locked_kl != 0) {
+            return;
+        }
+        const int pos = GetPositionUnlocked(iteration);
+        if (pos < 0 || static_cast<size_t>(pos) >= forms_capacity) {
+            throw std::runtime_error("TwoWesolowskiCallback::OnIteration out of bounds");
+        }
+        form* mulf = &forms[static_cast<size_t>(pos)];
+        SetForm(type, data, mulf);
     }
 
   private:
-    uint64_t switch_index;
-    int64_t switch_iters;
-    uint32_t kl;
+    std::atomic<uint64_t> switch_index{0};
+    std::atomic<int64_t> switch_iters{-1};
+    std::atomic<uint32_t> kl{10};
     std::mutex forms_mutex;
 };
 

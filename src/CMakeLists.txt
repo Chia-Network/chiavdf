@@ -195,7 +195,7 @@ endif()
 
 set(HAVE_BOOST_HEADERS FALSE)
 set(NEED_BOOST_HEADERS FALSE)
-if(BUILD_VDF_CLIENT OR BUILD_VDF_TESTS OR BUILD_HW_TOOLS)
+if(BUILD_VDF_CLIENT OR BUILD_VDF_TESTS)
   set(NEED_BOOST_HEADERS TRUE)
 endif()
 
@@ -350,21 +350,23 @@ if(BUILD_HW_TOOLS)
     endif()
   endif()
 
-  add_executable(emu_hw_test
-    ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_test.cpp
-  )
-  target_sources(emu_hw_test PRIVATE ${HW_COMMON_SOURCES} ${EMU_SOURCES} ${VDF_ASM_SOURCES} ${VDF_COMMON_SOURCES})
-  target_compile_definitions(emu_hw_test PRIVATE ${VDF_COMMON_DEFINITIONS})
-  target_include_directories(emu_hw_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/hw ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222)
-  target_link_libraries(emu_hw_test PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
+  if(NOT WIN32)
+    add_executable(emu_hw_test
+      ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_test.cpp
+    )
+    target_sources(emu_hw_test PRIVATE ${HW_COMMON_SOURCES} ${EMU_SOURCES} ${VDF_ASM_SOURCES} ${VDF_COMMON_SOURCES})
+    target_compile_definitions(emu_hw_test PRIVATE ${VDF_COMMON_DEFINITIONS})
+    target_include_directories(emu_hw_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/hw ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222)
+    target_link_libraries(emu_hw_test PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
 
-  add_executable(emu_hw_vdf_client
-    ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_vdf_client.cpp
-  )
-  target_sources(emu_hw_vdf_client PRIVATE ${HW_COMMON_SOURCES} ${EMU_SOURCES} ${VDF_ASM_SOURCES} ${VDF_COMMON_SOURCES})
-  target_compile_definitions(emu_hw_vdf_client PRIVATE ${VDF_COMMON_DEFINITIONS})
-  target_include_directories(emu_hw_vdf_client PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/hw ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222)
-  target_link_libraries(emu_hw_vdf_client PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
+    add_executable(emu_hw_vdf_client
+      ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_vdf_client.cpp
+    )
+    target_sources(emu_hw_vdf_client PRIVATE ${HW_COMMON_SOURCES} ${EMU_SOURCES} ${VDF_ASM_SOURCES} ${VDF_COMMON_SOURCES})
+    target_compile_definitions(emu_hw_vdf_client PRIVATE ${VDF_COMMON_DEFINITIONS})
+    target_include_directories(emu_hw_vdf_client PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/hw ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222)
+    target_link_libraries(emu_hw_vdf_client PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
+  endif()
 endif()
 
 add_executable(verifier_test

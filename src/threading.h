@@ -3,9 +3,6 @@
 
 #include "alloc.hpp"
 #include <atomic>
-#ifdef _WIN32
-#include <excpt.h>
-#endif
 
 //mp_limb_t is an unsigned integer
 static_assert(sizeof(mp_limb_t)==8, "");

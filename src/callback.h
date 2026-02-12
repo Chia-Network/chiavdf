@@ -200,6 +200,7 @@ class FastAlgorithmCallback : public WesolowskiCallback {
             buckets_begin.push_back(buckets_begin[buckets_begin.size() - 1] + bucket_size2 * window_size);
         }
         int space_needed = window_size * (bucket_size1 + bucket_size2 * (segments - 1));
+        forms_capacity = static_cast<size_t>(space_needed);
         forms.reset(new form[space_needed]);
         checkpoints.reset(new form[1 << 18]);
 

@@ -42,7 +42,7 @@ if(APPLE)
 endif()
 
 if(WIN32)
-  add_compile_definitions(CHIA_WINDOWS)
+  add_compile_definitions(CHIA_WINDOWS NOMINMAX WIN32_LEAN_AND_MEAN)
   set(MPIR_LIBRARY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../mpir_gc_x64")
   set(MPIR_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../mpir_gc_x64")
   include_directories(
@@ -318,61 +318,70 @@ if(BUILD_HW_TOOLS)
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/emu_funcs.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/emu_runner.cpp
   )
-
-  if(NOT WIN32)
-    if(APPLE)
-      set(HW_LIBS
-        ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222/libft4222.dylib
-        ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222/libftd2xx.dylib
-      )
-    else()
-      set(HW_LIBS
-        ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222/build-x86_64/libft4222.so
-      )
-    endif()
-
-    add_executable(hw_test
-      ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_test.cpp
-      ${CMAKE_CURRENT_SOURCE_DIR}/hw/real_hw.cpp
-    )
-    target_sources(hw_test PRIVATE ${HW_COMMON_SOURCES} ${VDF_ASM_SOURCES} ${VDF_COMMON_SOURCES})
-    target_compile_definitions(hw_test PRIVATE ${VDF_COMMON_DEFINITIONS})
-    target_include_directories(hw_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/hw ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222)
-    target_link_libraries(hw_test PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads ${HW_LIBS})
-    if(APPLE)
-      target_link_options(hw_test PRIVATE "-Wl,-rpath,@executable_path/hw/libft4222")
-    endif()
-
-    add_executable(hw_vdf_client
-      ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_vdf_client.cpp
-      ${CMAKE_CURRENT_SOURCE_DIR}/hw/real_hw.cpp
-    )
-    target_sources(hw_vdf_client PRIVATE ${HW_COMMON_SOURCES} ${VDF_ASM_SOURCES} ${VDF_COMMON_SOURCES})
-    target_compile_definitions(hw_vdf_client PRIVATE ${VDF_COMMON_DEFINITIONS})
-    target_include_directories(hw_vdf_client PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/hw ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222)
-    target_link_libraries(hw_vdf_client PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads ${HW_LIBS})
-    if(APPLE)
-      target_link_options(hw_vdf_client PRIVATE "-Wl,-rpath,@executable_path/hw/libft4222")
-    endif()
+  set(HW_VDF_ASM_SOURCES ${VDF_ASM_SOURCES})
+  if(WIN32)
+    # Generated asm currently collides with lzcnt symbols for HW tool links on Windows.
+    set(HW_VDF_ASM_SOURCES)
   endif()
 
-  if(NOT WIN32)
-    add_executable(emu_hw_test
-      ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_test.cpp
+  if(WIN32)
+    set(HW_LIBS
+      ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222/libft4222.lib
+      ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222/ftd2xx.lib
     )
-    target_sources(emu_hw_test PRIVATE ${HW_COMMON_SOURCES} ${EMU_SOURCES} ${VDF_ASM_SOURCES} ${VDF_COMMON_SOURCES})
-    target_compile_definitions(emu_hw_test PRIVATE ${VDF_COMMON_DEFINITIONS})
-    target_include_directories(emu_hw_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/hw ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222)
-    target_link_libraries(emu_hw_test PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
-
-    add_executable(emu_hw_vdf_client
-      ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_vdf_client.cpp
+    set(HW_SOCKET_LIBS ws2_32)
+  elseif(APPLE)
+    set(HW_LIBS
+      ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222/libft4222.dylib
+      ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222/libftd2xx.dylib
     )
-    target_sources(emu_hw_vdf_client PRIVATE ${HW_COMMON_SOURCES} ${EMU_SOURCES} ${VDF_ASM_SOURCES} ${VDF_COMMON_SOURCES})
-    target_compile_definitions(emu_hw_vdf_client PRIVATE ${VDF_COMMON_DEFINITIONS})
-    target_include_directories(emu_hw_vdf_client PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/hw ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222)
-    target_link_libraries(emu_hw_vdf_client PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
+    set(HW_SOCKET_LIBS)
+  else()
+    set(HW_LIBS
+      ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222/build-x86_64/libft4222.so
+    )
+    set(HW_SOCKET_LIBS)
   endif()
+
+  add_executable(hw_test
+    ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_test.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/hw/real_hw.cpp
+  )
+  target_sources(hw_test PRIVATE ${HW_COMMON_SOURCES} ${HW_VDF_ASM_SOURCES} ${VDF_COMMON_SOURCES})
+  target_compile_definitions(hw_test PRIVATE ${VDF_COMMON_DEFINITIONS})
+  target_include_directories(hw_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/hw ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222)
+  target_link_libraries(hw_test PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads ${HW_LIBS})
+  if(APPLE)
+    target_link_options(hw_test PRIVATE "-Wl,-rpath,@executable_path/hw/libft4222")
+  endif()
+
+  add_executable(hw_vdf_client
+    ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_vdf_client.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/hw/real_hw.cpp
+  )
+  target_sources(hw_vdf_client PRIVATE ${HW_COMMON_SOURCES} ${HW_VDF_ASM_SOURCES} ${VDF_COMMON_SOURCES})
+  target_compile_definitions(hw_vdf_client PRIVATE ${VDF_COMMON_DEFINITIONS})
+  target_include_directories(hw_vdf_client PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/hw ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222)
+  target_link_libraries(hw_vdf_client PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads ${HW_LIBS} ${HW_SOCKET_LIBS})
+  if(APPLE)
+    target_link_options(hw_vdf_client PRIVATE "-Wl,-rpath,@executable_path/hw/libft4222")
+  endif()
+
+  add_executable(emu_hw_test
+    ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_test.cpp
+  )
+  target_sources(emu_hw_test PRIVATE ${HW_COMMON_SOURCES} ${EMU_SOURCES} ${HW_VDF_ASM_SOURCES} ${VDF_COMMON_SOURCES})
+  target_compile_definitions(emu_hw_test PRIVATE ${VDF_COMMON_DEFINITIONS})
+  target_include_directories(emu_hw_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/hw ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222)
+  target_link_libraries(emu_hw_test PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
+
+  add_executable(emu_hw_vdf_client
+    ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_vdf_client.cpp
+  )
+  target_sources(emu_hw_vdf_client PRIVATE ${HW_COMMON_SOURCES} ${EMU_SOURCES} ${HW_VDF_ASM_SOURCES} ${VDF_COMMON_SOURCES})
+  target_compile_definitions(emu_hw_vdf_client PRIVATE ${VDF_COMMON_DEFINITIONS})
+  target_include_directories(emu_hw_vdf_client PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/hw ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222)
+  target_link_libraries(emu_hw_vdf_client PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads ${HW_SOCKET_LIBS})
 endif()
 
 add_executable(verifier_test

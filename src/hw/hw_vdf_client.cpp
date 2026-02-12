@@ -166,7 +166,7 @@ void init_vdf_client(struct vdf_client *client)
             continue;
         }
         client->conns[i].vdf.idx = i;
-        client->conns[i].sock = -1;
+        client->conns[i].sock = kInvalidSocket;
         memset(client->conns[i].read_buf, 0, sizeof(client->conns[i].read_buf));
         client->conns[i].buf_pos = 0;
 

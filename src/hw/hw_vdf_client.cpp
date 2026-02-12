@@ -6,15 +6,25 @@
 #include "chia_driver.hpp"
 #include "pll_freqs.hpp"
 
-#include <arpa/inet.h>
 #include <cstdio>
-#include <fcntl.h>
 #include <getopt.h>
 #include <signal.h>
+
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+using vdf_socket_t = SOCKET;
+static constexpr vdf_socket_t kInvalidSocket = INVALID_SOCKET;
+#else
+#include <arpa/inet.h>
+#include <fcntl.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/ip.h>
 #include <unistd.h>
+using vdf_socket_t = int;
+static constexpr vdf_socket_t kInvalidSocket = -1;
+#endif
 
 enum conn_state {
     WAITING,
@@ -26,7 +36,7 @@ enum conn_state {
 
 struct vdf_conn {
     struct vdf_state vdf;
-    int sock;
+    vdf_socket_t sock;
     char read_buf[512];
     uint32_t buf_pos;
     enum conn_state state;
@@ -63,6 +73,52 @@ void write_data(struct vdf_conn *conn, const char *buf, size_t size);
 
 static volatile bool g_stopping = false;
 
+static int vdf_socket_set_nonblock(vdf_socket_t sock)
+{
+#ifdef _WIN32
+    u_long mode = 1;
+    return ioctlsocket(sock, FIONBIO, &mode);
+#else
+    return fcntl(sock, F_SETFL, O_NONBLOCK);
+#endif
+}
+
+static int vdf_socket_read(vdf_socket_t sock, char *buf, size_t size)
+{
+#ifdef _WIN32
+    return recv(sock, buf, static_cast<int>(size), 0);
+#else
+    return read(sock, buf, size);
+#endif
+}
+
+static int vdf_socket_write(vdf_socket_t sock, const char *buf, size_t size)
+{
+#ifdef _WIN32
+    return send(sock, buf, static_cast<int>(size), 0);
+#else
+    return write(sock, buf, size);
+#endif
+}
+
+static int vdf_socket_close(vdf_socket_t sock)
+{
+#ifdef _WIN32
+    return closesocket(sock);
+#else
+    return close(sock);
+#endif
+}
+
+static bool vdf_socket_would_block()
+{
+#ifdef _WIN32
+    return WSAGetLastError() == WSAEWOULDBLOCK;
+#else
+    return errno == EAGAIN || errno == EWOULDBLOCK;
+#endif
+}
+
 void signal_handler(int sig)
 {
     LOG_INFO("Interrupted");
@@ -72,21 +128,24 @@ void signal_handler(int sig)
 void init_conn(struct vdf_conn *conn, uint32_t ip, int port)
 {
     int ret;
-    struct sockaddr_in sa = { AF_INET, htons(port), { htonl(ip) } };
+    struct sockaddr_in sa = {};
+    sa.sin_family = AF_INET;
+    sa.sin_port = htons(static_cast<uint16_t>(port));
+    sa.sin_addr.s_addr = htonl(ip);
     conn->sock = socket(AF_INET, SOCK_STREAM, 0);
     LOG_INFO("Connecting to %s:%d", inet_ntoa(sa.sin_addr), port);
     ret = connect(conn->sock, (struct sockaddr *)&sa, sizeof(sa));
     if (ret < 0) {
         perror("connect");
-        sleep(1);
+        vdf_sleep(1);
         return;
     }
 
-    ret = fcntl(conn->sock, F_SETFL, O_NONBLOCK);
+    ret = vdf_socket_set_nonblock(conn->sock);
     if (ret < 0) {
-        perror("fcntl");
-        close(conn->sock);
-        conn->sock = -1;
+        perror("set_nonblock");
+        vdf_socket_close(conn->sock);
+        conn->sock = kInvalidSocket;
         return;
     }
     conn->state = WAITING;
@@ -126,7 +185,7 @@ void clear_vdf_client(struct vdf_client *client)
 
 void stop_conn(struct vdf_client *client, struct vdf_conn *conn)
 {
-    if (conn->sock >= 0) {
+    if (conn->sock != kInvalidSocket) {
         write_data(conn, "STOP", 4);
     }
     if (conn->vdf.init_done) {
@@ -135,24 +194,24 @@ void stop_conn(struct vdf_client *client, struct vdf_conn *conn)
         stop_hw_vdf(client->drv, conn->vdf.idx);
     }
     conn->state = STOPPED;
-    LOG_INFO("VDF %d: Stopped at iters=%lu", conn->vdf.idx, conn->vdf.cur_iters);
+    LOG_INFO("VDF %d: Stopped at iters=%llu", conn->vdf.idx, (unsigned long long)conn->vdf.cur_iters);
 }
 
 void close_conn(struct vdf_conn *conn)
 {
     if (conn->state != CLOSED) {
-        close(conn->sock);
-        conn->sock = -1;
+        vdf_socket_close(conn->sock);
+        conn->sock = kInvalidSocket;
         conn->state = CLOSED;
         LOG_INFO("VDF %d: Connection closed", conn->vdf.idx);
     }
 }
 
-ssize_t read_data(struct vdf_client *client, struct vdf_conn *conn)
+int read_data(struct vdf_client *client, struct vdf_conn *conn)
 {
-    ssize_t bytes = read(conn->sock, conn->read_buf + conn->buf_pos,
+    int bytes = vdf_socket_read(conn->sock, conn->read_buf + conn->buf_pos,
             sizeof(conn->read_buf) - conn->buf_pos);
-    if ((bytes < 0 && errno != EAGAIN) || bytes == 0) {
+    if ((bytes < 0 && !vdf_socket_would_block()) || bytes == 0) {
         if (bytes == 0) {
             LOG_ERROR("VDF %d: Unexpected EOF", conn->vdf.idx);
         } else {
@@ -169,7 +228,7 @@ ssize_t read_data(struct vdf_client *client, struct vdf_conn *conn)
 
 void write_data(struct vdf_conn *conn, const char *buf, size_t size)
 {
-    ssize_t bytes = write(conn->sock, buf, size);
+    int bytes = vdf_socket_write(conn->sock, buf, size);
     if (bytes < 0) {
         perror("write");
         throw std::runtime_error("Write error");
@@ -196,7 +255,7 @@ void handle_iters(struct vdf_client *client, struct vdf_conn *conn)
         iters = strtoul(iters_buf, NULL, 10);
 
         if (iters) {
-            LOG_DEBUG("VDF %d: Requested proof for iters=%lu", conn->vdf.idx, iters);
+            LOG_DEBUG("VDF %d: Requested proof for iters=%llu", conn->vdf.idx, (unsigned long long)iters);
             hw_request_proof(&conn->vdf, iters, false);
         } else {
             LOG_INFO("VDF %d: Stop requested", conn->vdf.idx);
@@ -217,8 +276,8 @@ void handle_iters(struct vdf_client *client, struct vdf_conn *conn)
         size_t pos = 0;
 
         for (size_t i = 0; i < n_proofs; i++) {
-            pos += snprintf(&iters_str[pos], sizeof(iters_str) - pos, "%s%lu",
-                    i ? ", " : "", conn->vdf.req_proofs[i].iters);
+            pos += snprintf(&iters_str[pos], sizeof(iters_str) - pos, "%s%llu",
+                    i ? ", " : "", (unsigned long long)conn->vdf.req_proofs[i].iters);
             if (pos >= sizeof(iters_str) - 1) {
                 break;
             }
@@ -243,7 +302,7 @@ void handle_proofs(struct vdf_client *client, struct vdf_conn *conn)
         uint8_t data[8 + 8 + 1 + BQFC_FORM_SIZE * 2];
         char tl_data[sizeof(data) * 2 + 5] = {0};
 
-        LOG_INFO("VDF %d: Proof retrieved for iters=%lu", conn->vdf.idx, proof->iters);
+        LOG_INFO("VDF %d: Proof retrieved for iters=%llu", conn->vdf.idx, (unsigned long long)proof->iters);
 
         Int64ToBytes(&data[0], proof->iters);
         Int64ToBytes(&data[8], BQFC_FORM_SIZE);
@@ -272,7 +331,7 @@ void handle_proofs(struct vdf_client *client, struct vdf_conn *conn)
 
 void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
 {
-    ssize_t bytes;
+    int bytes;
     char *buf = conn->read_buf;
     struct vdf_state *vdf = &conn->vdf;
 
@@ -386,8 +445,8 @@ void event_loop(struct vdf_client *client)
                         adjust_hw_freq(client->drv, running_mask & ~(1 << i), -1);
                     }
 
-                    LOG_INFO("VDF %d: Restarting VDF at %lu iters",
-                            vdf->idx, vdf->iters_offset);
+                    LOG_INFO("VDF %d: Restarting VDF at %llu iters",
+                            vdf->idx, (unsigned long long)vdf->iters_offset);
                     start_hw_vdf(client->drv, vdf->D.impl, f->a.impl, f->b.impl,
                             vdf->target_iters - vdf->iters_offset, vdf->idx);
                 }
@@ -413,7 +472,7 @@ void event_loop(struct vdf_client *client)
         }
 
         if (chia_vdf_is_emu) {
-            usleep(50000);
+            vdf_usleep(50000);
         }
         loop_cnt++;
     }
@@ -531,6 +590,14 @@ int hw_vdf_client_main(int argc, char **argv)
     struct vdf_client client;
     struct sigaction sa = {0};
 
+#ifdef _WIN32
+    WSADATA wsa_data;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0) {
+        LOG_SIMPLE("Failed to initialize Winsock");
+        return 1;
+    }
+#endif
+
     if (parse_opts(argc, argv, &client.opts) < 0) {
         LOG_SIMPLE("\nUsage: %s [OPTIONS] PORT [N_VDFS]\n"
                 "List of options [default, min - max]:\n"
@@ -566,6 +633,9 @@ int hw_vdf_client_main(int argc, char **argv)
 
     stop_hw(client.drv);
     clear_vdf_client(&client);
+#ifdef _WIN32
+    WSACleanup();
+#endif
     return 0;
 }
 

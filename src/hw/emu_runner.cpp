@@ -9,8 +9,24 @@
 #include <thread>
 #include <mutex>
 
+#ifndef _WIN32
 #include <arpa/inet.h>
-#include <unistd.h>
+#endif
+
+#ifdef _WIN32
+static inline uint32_t bswap32_local(uint32_t x)
+{
+    return ((x & 0x000000FFu) << 24) |
+           ((x & 0x0000FF00u) << 8)  |
+           ((x & 0x00FF0000u) >> 8)  |
+           ((x & 0xFF000000u) >> 24);
+}
+static inline uint32_t htonl_local(uint32_t x) { return bswap32_local(x); }
+static inline uint32_t ntohl_local(uint32_t x) { return bswap32_local(x); }
+#else
+static inline uint32_t htonl_local(uint32_t x) { return htonl(x); }
+static inline uint32_t ntohl_local(uint32_t x) { return ntohl(x); }
+#endif
 
 #define N_VDFS 3
 
@@ -92,7 +108,7 @@ void run_job(int i)
         reducer.reduce(qf2);
 
         if (!(st->cur_iter % 4096)) {
-            usleep(10);
+            vdf_usleep(10);
         }
 
         st->mtx.lock();
@@ -114,7 +130,7 @@ static void start_job(int i)
     while (states[i]->running) {
         states[i]->stopping = true;
         LOG_INFO("Emu %d: Waiting for the old thread to finish", i);
-        usleep(1000);
+        vdf_usleep(1000);
     }
     clear_state(states[i]);
 
@@ -139,7 +155,11 @@ static void enable_engine(int i)
         states[i]->init_done = false;
         states[i]->stopping = true;
         states[i]->running = false;
+        #ifdef _WIN32
+        srand(1);
+        #else
         srand48(1);
+        #endif
     }
     if (states[i]->stopping) {
         states[i]->stopping = false;
@@ -155,7 +175,12 @@ void inject_error(struct job_status *stat, struct job_state *st)
         p = prob ? atoi(prob) : 0;
         g_error_prob = p;
     }
-    if (p != 0 && (st->error || (uint32_t)mrand48() % p == 0)) {
+    #ifdef _WIN32
+    const uint32_t rand_val = static_cast<uint32_t>(rand());
+    #else
+    const uint32_t rand_val = static_cast<uint32_t>(mrand48());
+    #endif
+    if (p != 0 && (st->error || (rand_val % static_cast<uint32_t>(p) == 0))) {
         // Inject error by messing up 'a' register
         stat->a[10] = ~stat->a[10];
         st->error = true;
@@ -269,7 +294,7 @@ int emu_do_io(uint8_t *buf_in, uint16_t size_in, uint8_t *buf_out, uint16_t size
         if (addr == job_control) {
             uint32_t data;
             memcpy(&data, buf_in, 4);
-            data = ntohl(data);
+            data = ntohl_local(data);
             if (data & (1U << CHIA_VDF_CONTROL_CLK_ENABLE_BIT)) {
                 enable_engine(i);
             } else {
@@ -287,7 +312,7 @@ int emu_do_io(uint8_t *buf_in, uint16_t size_in, uint8_t *buf_out, uint16_t size
         read_regs(addr, buf_out, size_out);
     } else if (!size_out && addr < sizeof(g_pll_regs)) {
         uint8_t *regs_addr = &((uint8_t *)g_pll_regs)[addr];
-        uint32_t status_val = htonl((1U << CLOCK_STATUS_DIVACK_BIT) |
+        uint32_t status_val = htonl_local((1U << CLOCK_STATUS_DIVACK_BIT) |
                 (1U << CLOCK_STATUS_LOCK_BIT));
 
         copy_regs(regs_addr, buf_in, size_in, sizeof(g_pll_regs) - addr, 0);

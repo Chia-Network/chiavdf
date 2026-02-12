@@ -37,6 +37,10 @@ endif()
 
 find_package(Threads REQUIRED)
 
+if(APPLE)
+  add_compile_definitions(CHIAOSX)
+endif()
+
 if(WIN32)
   add_compile_definitions(CHIA_WINDOWS)
   set(MPIR_LIBRARY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../mpir_gc_x64")
@@ -106,6 +110,8 @@ if(ENABLE_GNU_ASM AND (CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|i[3-6]86)$
   target_compile_definitions(compile_asm PRIVATE ${VDF_COMMON_DEFINITIONS})
   if(WIN32)
     target_compile_definitions(compile_asm PRIVATE CHIA_WINDOWS)
+  elseif(APPLE)
+    target_compile_definitions(compile_asm PRIVATE CHIAOSX)
   endif()
   target_link_libraries(compile_asm PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
   if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")

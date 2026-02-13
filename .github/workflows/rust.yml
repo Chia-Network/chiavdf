@@ -188,7 +188,7 @@ jobs:
         run: cargo publish --dry-run -p chiavdf --allow-dirty
 
       - name: Upload crate artifacts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: crate
           path: ./target/package/*-*.crate

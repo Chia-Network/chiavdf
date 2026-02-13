@@ -151,7 +151,7 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
 
     void IncreaseConstants(uint64_t num_iters) {
         std::lock_guard<std::mutex> lk(forms_mutex);
-        // Publish transition metadata as one atomic snapshot, then publish kl=100.
+        // Publish transition metadata first. `kl` is only a fast-path hint.
         transition_state.store(
             EncodeTransitionState(num_iters / 10, static_cast<int64_t>(num_iters)),
             std::memory_order_release
@@ -159,33 +159,28 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
         kl.store(100, std::memory_order_release);
     }
 
-    int GetPosition(uint64_t power) {
+    size_t GetPosition(uint64_t power) {
         std::lock_guard<std::mutex> lk(forms_mutex);
         return GetPositionUnlocked(power);
     }
 
-    int GetPositionUnlocked(uint64_t power) const {
+    size_t GetPositionUnlocked(uint64_t power) const {
         const uint64_t snapshot = transition_state.load(std::memory_order_acquire);
-        const int64_t current_switch_iters = DecodeSwitchIters(snapshot);
-        if (current_switch_iters == -1 || power < static_cast<uint64_t>(current_switch_iters)) {
-            return power / 10;
-        } else {
-            const uint64_t current_switch_index = DecodeSwitchIndex(snapshot);
-            return static_cast<int>(current_switch_index + (power - static_cast<uint64_t>(current_switch_iters)) / 100);
-        }
+        return GetPositionFromSnapshot(power, snapshot);
     }
 
     form GetFormCopy(uint64_t power) {
         std::lock_guard<std::mutex> lk(forms_mutex);
-        const int pos = GetPositionUnlocked(power);
-        if (pos < 0 || static_cast<size_t>(pos) >= forms_capacity) {
+        const size_t pos = GetPositionUnlocked(power);
+        if (pos >= forms_capacity) {
             throw std::runtime_error("TwoWesolowskiCallback::GetFormCopy out of bounds");
         }
-        return forms[static_cast<size_t>(pos)];
+        return forms[pos];
     }
 
     bool LargeConstants() {
-        return kl.load(std::memory_order_relaxed) == 100;
+        const uint64_t snapshot = transition_state.load(std::memory_order_acquire);
+        return DecodeSwitchIters(snapshot) != -1;
     }
 
     void OnIteration(int type, void *data, uint64_t iteration) {
@@ -197,15 +192,16 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
         }
 
         std::lock_guard<std::mutex> lk(forms_mutex);
-        const uint32_t locked_kl = kl.load(std::memory_order_acquire);
-        if (iteration % locked_kl != 0) {
+        const uint64_t snapshot = transition_state.load(std::memory_order_acquire);
+        const uint32_t effective_kl = GetEffectiveKl(iteration, snapshot);
+        if (iteration % effective_kl != 0) {
             return;
         }
-        const int pos = GetPositionUnlocked(iteration);
-        if (pos < 0 || static_cast<size_t>(pos) >= forms_capacity) {
+        const size_t pos = GetPositionFromSnapshot(iteration, snapshot);
+        if (pos >= forms_capacity) {
             throw std::runtime_error("TwoWesolowskiCallback::OnIteration out of bounds");
         }
-        form* mulf = &forms[static_cast<size_t>(pos)];
+        form* mulf = &forms[pos];
         SetForm(type, data, mulf);
     }
 
@@ -231,6 +227,22 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
     static int64_t DecodeSwitchIters(uint64_t state) {
         const uint32_t encoded_iters = static_cast<uint32_t>(state >> 32);
         return static_cast<int64_t>(encoded_iters) - 1;
+    }
+
+    static uint32_t GetEffectiveKl(uint64_t power, uint64_t state) {
+        const int64_t current_switch_iters = DecodeSwitchIters(state);
+        return (current_switch_iters == -1 || power < static_cast<uint64_t>(current_switch_iters)) ? 10U : 100U;
+    }
+
+    static size_t GetPositionFromSnapshot(uint64_t power, uint64_t state) {
+        const int64_t current_switch_iters = DecodeSwitchIters(state);
+        if (current_switch_iters == -1 || power < static_cast<uint64_t>(current_switch_iters)) {
+            return static_cast<size_t>(power / 10);
+        }
+        const uint64_t current_switch_index = DecodeSwitchIndex(state);
+        return static_cast<size_t>(
+            current_switch_index + (power - static_cast<uint64_t>(current_switch_iters)) / 100
+        );
     }
 
     std::atomic<uint64_t> transition_state{0};

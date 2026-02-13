@@ -74,6 +74,8 @@ class TwoWesolowskiProver : public Prover{
 
     virtual form* GetForm(uint64_t i) {
         const uint64_t power = done_iterations + i * k * l;
+        // `GenerateProof()` calls this on a single worker thread per prover instance.
+        // Returning `&cached_form` is safe under that invariant.
         cached_form = weso->GetFormCopy(power);
         return &cached_form;
     }

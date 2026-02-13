@@ -114,8 +114,6 @@ jobs:
         "C:\Program Files\LLVM\bin" | Out-File -Append -FilePath $env:GITHUB_PATH
         # Enable AVX-512 IFMA codegen in CI; runtime dispatch remains CPUID-gated.
         "CHIA_ENABLE_AVX512_IFMA=1" | Out-File -Append -FilePath $env:GITHUB_ENV
-        # Force AVX2 path to reproduce/validate forced-AVX2 behavior on Windows.
-        "CHIA_FORCE_AVX2=1" | Out-File -Append -FilePath $env:GITHUB_ENV
         if (-not $boostDir) {
           throw "Boost install not found under C:\local"
         }

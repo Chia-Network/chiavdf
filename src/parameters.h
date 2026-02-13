@@ -81,7 +81,6 @@ inline void init_avx_flags()
 {
 #if defined(ARCH_X86) || defined(ARCH_X64)
     const bool disable_avx2 = env_flag("CHIA_DISABLE_AVX2");
-    const bool force_avx2 = env_flag("CHIA_FORCE_AVX2");
     const bool disable_avx512 = env_flag("CHIA_DISABLE_AVX512_IFMA");
     const bool enable_avx512 = env_flag("CHIA_ENABLE_AVX512_IFMA");
     const bool force_avx512 = env_flag("CHIA_FORCE_AVX512_IFMA");
@@ -155,8 +154,6 @@ inline void init_avx_flags()
 
     if (disable_avx2) {
       bAVX2.store(false, std::memory_order_relaxed);
-    } else if (force_avx2) {
-      bAVX2.store(true, std::memory_order_relaxed);
     } else {
       bAVX2.store(avx2bit && adxbit && avxbit && os_avx2_state, std::memory_order_relaxed);
     }

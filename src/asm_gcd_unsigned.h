@@ -452,7 +452,7 @@ void gcd_unsigned(
         APPEND_M(str( ".balign 8" ));
         APPEND_M(str( "#:", jump_table_label ));
 
-#if defined(CHIAOSX) || defined(CHIA_WINDOWS)
+#if defined(CHIA_WINDOWS)
         APPEND_M(str( ".text" ));
 
         string bad_end_index_label = track_asm( "gcd_unsigned invalid a_end_index", m.alloc_error_label() );
@@ -472,6 +472,23 @@ void gcd_unsigned(
 
             APPEND_M(str( "JE ")+asmprefix+str("multiply_uv_size_#", mapped_size ));
         }
+#elif defined(CHIAOSX)
+        APPEND_M(str( ".text" ));
+
+        APPEND_M(str( "MOV `tmp, `spill_a_end_index" ));
+
+        for (int end_index=0;end_index<int_size;++end_index) {
+            int size=end_index+1;
+
+            int mapped_size=size;
+            while (mapped_size==0 || mapped_size%4!=0) {
+                ++mapped_size;
+            }
+
+            APPEND_M(str( "CMP `tmp, #", size ));
+
+            APPEND_M(str( "JE ")+asmprefix+str("multiply_uv_size_#", mapped_size ));
+        }
 #else
         for (int end_index=0;end_index<int_size;++end_index) {
             int size=end_index+1;
@@ -485,10 +502,7 @@ void gcd_unsigned(
         }
         APPEND_M(str( ".text" ));
 
-        string bad_end_index_label = track_asm( "gcd_unsigned invalid a_end_index", m.alloc_error_label() );
         APPEND_M(str( "MOV `tmp, `spill_a_end_index" ));
-        APPEND_M(str( "CMP `tmp, #", to_hex(int_size-1) ));
-        APPEND_M(str( "JA #", bad_end_index_label ));
         APPEND_M(str( "JMP QWORD PTR [#+`tmp*8]", jump_table_label ));
 #endif
     }

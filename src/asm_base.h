@@ -79,17 +79,29 @@ string track_asm(string comment, string jump_to = "") {
 
     assert(!enable_threads); //this code isn't atomic
 
+    #if defined(CHIAOSX) || defined(CHIA_WINDOWS)
     APPEND_M(str( "MOV [RIP+track_asm_rax], RAX" ));
     APPEND_M(str( "MOV RAX, [RIP+asm_tracking_data+#]", to_hex(8*(id-1)) ));
     APPEND_M(str( "LEA RAX, [RAX+1]" ));
     APPEND_M(str( "MOV [RIP+asm_tracking_data+#], RAX", to_hex(8*(id-1)) ));
+    #else
+    APPEND_M(str( "MOV [track_asm_rax], RAX" ));
+    APPEND_M(str( "MOV RAX, [asm_tracking_data+#]", to_hex(8*(id-1)) ));
+    APPEND_M(str( "LEA RAX, [RAX+1]" ));
+    APPEND_M(str( "MOV [asm_tracking_data+#], RAX", to_hex(8*(id-1)) ));
+    #endif
 #if defined(CHIAOSX) || defined(CHIA_WINDOWS)
     APPEND_M(str( "LEA RAX, [RIP+#] ", comment_label ));
 #else
     APPEND_M(str( "MOV RAX, OFFSET FLAT:#", comment_label ));
 #endif
+    #if defined(CHIAOSX) || defined(CHIA_WINDOWS)
     APPEND_M(str( "MOV [RIP+asm_tracking_data_comments+#], RAX", to_hex(8*(id-1)) ));
     APPEND_M(str( "MOV RAX, [RIP+track_asm_rax]" ));
+    #else
+    APPEND_M(str( "MOV [asm_tracking_data_comments+#], RAX", to_hex(8*(id-1)) ));
+    APPEND_M(str( "MOV RAX, [track_asm_rax]" ));
+    #endif
 
     if (!jump_to.empty()) {
         APPEND_M(str( "JMP #", jump_to ));

@@ -58,6 +58,10 @@ class TwoWesolowskiProver : public Prover{
             std::thread t([=] { GenerateProof(); });
             t.detach();
         } catch (const std::system_error& e) {
+#ifndef NDEBUG
+            std::cout << "Warning: Could not start detached proof thread: " << e.what() << "\n";
+            std::cout << "Falling back to synchronous proof generation.\n" << std::flush;
+#endif
             GenerateProof();
         }
     }

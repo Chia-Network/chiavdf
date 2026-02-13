@@ -158,7 +158,8 @@ inline void init_avx_flags()
     if (disable_avx2) {
       bAVX2.store(false, std::memory_order_relaxed);
     } else if (force_avx2) {
-      bAVX2.store(true, std::memory_order_relaxed);
+      // Force mode bypasses CPUID feature gating but still must respect OS xstate.
+      bAVX2.store(avx_os_state, std::memory_order_relaxed);
     } else {
       bAVX2.store(avxbit && avx2bit && adxbit && avx_os_state, std::memory_order_relaxed);
     }
@@ -174,7 +175,8 @@ inline void init_avx_flags()
     if (disable_avx512) {
       enable_avx512_ifma.store(false, std::memory_order_relaxed);
     } else if (force_avx512) {
-      enable_avx512_ifma.store(true, std::memory_order_relaxed);
+      // Force mode bypasses CPUID feature gating but still must respect OS xstate.
+      enable_avx512_ifma.store(avx512_os_state, std::memory_order_relaxed);
     } else if (enable_avx512) {
       enable_avx512_ifma.store(avxbit && avx512fbit && avx512ifmabit && avx512_os_state, std::memory_order_relaxed);
     } else {

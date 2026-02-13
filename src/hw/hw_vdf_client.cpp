@@ -643,11 +643,22 @@ int hw_vdf_client_main(int argc, char **argv)
 #endif
 
 #ifdef _WIN32
+    struct WinsockGuard {
+        bool started = false;
+
+        ~WinsockGuard() {
+            if (started) {
+                WSACleanup();
+            }
+        }
+    } winsock_guard;
+
     WSADATA wsa_data;
     if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0) {
         LOG_SIMPLE("Failed to initialize Winsock");
         return 1;
     }
+    winsock_guard.started = true;
 #endif
 
     if (parse_opts(argc, argv, &client.opts) < 0) {
@@ -662,26 +673,17 @@ int hw_vdf_client_main(int argc, char **argv)
                 "  --auto-freq-period N - auto-adjust frequency every N seconds [0, 10 - inf]\n"
                 "  --list - list available devices and exit",
                 argv[0], (int)HW_VDF_DEF_FREQ, HW_VDF_DEF_VOLTAGE);
-#ifdef _WIN32
-        WSACleanup();
-#endif
         return 1;
     }
 
     if (client.opts.do_list) {
         LOG_SIMPLE("List of available devices:");
         const int ret = list_hw() ? 1 : 0;
-#ifdef _WIN32
-        WSACleanup();
-#endif
         return ret;
     }
 
     client.drv = init_hw(client.opts.freq, client.opts.voltage);
     if (!client.drv) {
-#ifdef _WIN32
-        WSACleanup();
-#endif
         return 1;
     }
 
@@ -700,9 +702,6 @@ int hw_vdf_client_main(int argc, char **argv)
 
     stop_hw(client.drv);
     clear_vdf_client(&client);
-#ifdef _WIN32
-    WSACleanup();
-#endif
     return 0;
 }
 

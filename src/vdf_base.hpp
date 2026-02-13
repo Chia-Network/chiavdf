@@ -308,7 +308,7 @@ class ParallelProver : public Prover {
     form x_vals[PARALLEL_PROVER_N_THREADS];
 };
 
-void nudupl_form(form &a, form &b, integer &D, integer &L);
+void nudupl_form(form &a, form &b, const integer &D, const integer &L);
 
 integer GetB(const integer& D, form &x, form& y);
 

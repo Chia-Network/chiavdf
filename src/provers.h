@@ -18,8 +18,8 @@ class OneWesolowskiProver : public Prover {
         }
     }
 
-    form* GetForm(uint64_t iteration) {
-        return &intermediates[iteration];
+    form GetForm(uint64_t iteration) {
+        return intermediates[iteration];
     }
 
     void start() {
@@ -53,22 +53,34 @@ class TwoWesolowskiProver : public Prover{
         l = (segm.length < 10000000) ? 1 : 10;
     }
 
+    ~TwoWesolowskiProver() {
+        stop();
+    }
+
     void start() {
+        if (worker.joinable()) {
+            return;
+        }
         try {
-            std::thread t([=] { GenerateProof(); });
-            t.detach();
+            worker = std::thread([this] { GenerateProof(); });
         } catch (const std::system_error& e) {
-            GenerateProof();
+#ifndef NDEBUG
+            std::cout << "Warning: Could not start proof thread: " << e.what() << "\n";
+            std::cout << "Aborting proof start to avoid synchronous fallback latency.\n" << std::flush;
+#endif
+            throw;
         }
     }
 
-    virtual form* GetForm(uint64_t i) {
+    virtual form GetForm(uint64_t i) {
         const uint64_t power = done_iterations + i * k * l;
-        cached_form = weso->GetFormCopy(power);
-        return &cached_form;
+        return weso->GetFormCopy(power);
     }
 
     void stop() {
+        if (worker.joinable()) {
+            worker.join();
+        }
     }
 
     bool PerformExtraStep() {
@@ -83,7 +95,7 @@ class TwoWesolowskiProver : public Prover{
     TwoWesolowskiCallback* weso;
     std::atomic<bool>& stop_signal;
     uint64_t done_iterations;
-    form cached_form;
+    std::thread worker;
 };
 
 extern bool new_event;
@@ -116,8 +128,8 @@ class InterruptableProver: public Prover {
         delete(th);
     }
 
-    form* GetForm(uint64_t i) {
-        return weso->GetForm(done_iterations + i * k * l, bucket);
+    form GetForm(uint64_t i) {
+        return *weso->GetForm(done_iterations + i * k * l, bucket);
     }
 
     void start() {

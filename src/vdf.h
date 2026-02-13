@@ -405,8 +405,10 @@ Proof ProveTwoWeso(integer& D, form x, uint64_t iters, uint64_t done_iterations,
     while (!stop_signal && !prover.IsFinished()) {
         std::this_thread::sleep_for (std::chrono::milliseconds(100));
     }
-    if (stop_signal)
+    if (stop_signal) {
+        prover.stop();
         return Proof();
+    }
     form proof = prover.GetProof();
 
     int d_bits = D.num_bits();

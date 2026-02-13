@@ -29,7 +29,9 @@ limitations under the License.
 # define HAS_ATTRIBUTE(x) 0
 #endif
 
-#if HAS_ATTRIBUTE(weak)
+#if defined(_WIN32)
+# define WEAK
+#elif HAS_ATTRIBUTE(weak)
 # define WEAK __attribute__((weak))
 #else
 # define WEAK

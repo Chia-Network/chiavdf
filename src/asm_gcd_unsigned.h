@@ -452,27 +452,7 @@ void gcd_unsigned(
         APPEND_M(str( ".balign 8" ));
         APPEND_M(str( "#:", jump_table_label ));
 
-#if defined(CHIA_WINDOWS)
-        APPEND_M(str( ".text" ));
-
-        string bad_end_index_label = track_asm( "gcd_unsigned invalid a_end_index", m.alloc_error_label() );
-        APPEND_M(str( "MOV `tmp, `spill_a_end_index" ));
-        APPEND_M(str( "CMP `tmp, #", to_hex(int_size-1) ));
-        APPEND_M(str( "JA #", bad_end_index_label ));
-
-        for (int end_index=0;end_index<int_size;++end_index) {
-            int size=end_index+1;
-
-            int mapped_size=size;
-            while (mapped_size==0 || mapped_size%4!=0) {
-                ++mapped_size;
-            }
-
-            APPEND_M(str( "CMP `tmp, #", end_index ));
-
-            APPEND_M(str( "JE ")+asmprefix+str("multiply_uv_size_#", mapped_size ));
-        }
-#elif defined(CHIAOSX)
+#if defined(CHIAOSX) || defined(CHIA_WINDOWS)
         APPEND_M(str( ".text" ));
 
         string bad_end_index_label = track_asm( "gcd_unsigned invalid a_end_index", m.alloc_error_label() );

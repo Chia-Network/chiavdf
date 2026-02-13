@@ -16,7 +16,7 @@ class Prover {
         is_finished = false;
     }
 
-    virtual form GetForm(uint64_t iteration) = 0;
+    virtual form* GetForm(uint64_t iteration) = 0;
     virtual void start() = 0;
     virtual void stop() = 0;
     virtual bool PerformExtraStep() = 0;
@@ -76,8 +76,8 @@ class Prover {
                         throw std::runtime_error("GenerateProof block index out of bounds");
                     }
                     if (!PerformExtraStep()) return;
-                    form tmp = GetForm(i);
-                    nucomp_form(ys[b], ys[b], tmp, D, L);
+                    form* tmp = GetForm(i);
+                    nucomp_form(ys[b], ys[b], *tmp, D, L);
                 }
             }
 

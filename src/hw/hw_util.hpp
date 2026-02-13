@@ -3,6 +3,7 @@
 
 #include <chrono>
 #include <cstdio>
+#include <thread>
 
 void vdf_do_log(const char *msg, ...);
 
@@ -31,6 +32,16 @@ static inline uint64_t vdf_get_elapsed_us(timepoint_t &t1)
 {
     auto t2 = vdf_get_cur_time();
     return std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
+}
+
+static inline void vdf_usleep(uint64_t usec)
+{
+    std::this_thread::sleep_for(std::chrono::microseconds(usec));
+}
+
+static inline void vdf_sleep(uint64_t sec)
+{
+    std::this_thread::sleep_for(std::chrono::seconds(sec));
 }
 
 #endif /* HW_UTIL_H */

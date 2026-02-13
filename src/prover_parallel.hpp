@@ -45,8 +45,8 @@ class ParallelProver : public Prover {
                 if (num_iterations >= k * (i * l + j + 1)) {
                     uint64_t b = GetBlock(i*l + j, k, num_iterations, B);
                     if (!PerformExtraStep()) return;
-                    form tmp = GetForm(i);
-                    nucomp_form(ys[b], ys[b], tmp, D, L);
+                    form* tmp = GetForm(i);
+                    nucomp_form(ys[b], ys[b], *tmp, D, L);
                 }
             }
 

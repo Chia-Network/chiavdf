@@ -9,7 +9,6 @@
 
 #include <stdexcept>
 #include <cstring>
-#include <unistd.h>
 
 #define REG_BYTES 4
 #define CHIA_VDF_JOB_SIZE (CHIA_VDF_CMD_START_REG_OFFSET - \

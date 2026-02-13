@@ -2,9 +2,9 @@
 #include <cstring>
 #include <cassert>
 #include <cmath>
-#include <unistd.h>
 #include "vdf_driver.hpp"
 #include "pll_freqs.hpp"
+#include "hw_util.hpp"
 
 #define VR_I2C_ADDR 0x38
 #define CS_I2C_ADDR 0x70
@@ -372,7 +372,7 @@ bool VdfDriver::SetPLLFrequency(double frequency, uint32_t entry_index) {
   while (((pll_status >> CLOCK_STATUS_DIVACK_BIT) & 0x1) == 0) {
     ret_val = RegRead(CLOCK_STATUS_REG_OFFSET, pll_status);
     read_attempts++;
-    usleep(1000);
+    vdf_usleep(1000);
     if ((read_attempts > 4) || (ret_val != 0)) {
       fprintf(stderr, "SetPLLFrequency pll div never ack'd\n");
       return false;
@@ -388,7 +388,7 @@ bool VdfDriver::SetPLLFrequency(double frequency, uint32_t entry_index) {
   while (((pll_status >> CLOCK_STATUS_LOCK_BIT) & 0x1) == 0) {
     ret_val = RegRead(CLOCK_STATUS_REG_OFFSET, pll_status);
     read_attempts++;
-    usleep(1000);
+    vdf_usleep(1000);
     if ((read_attempts > 4) || (ret_val != 0)) {
       fprintf(stderr, "SetPLLFrequency pll never locked\n");
       return false;
@@ -449,7 +449,7 @@ int VdfDriver::Reset(uint32_t sleep_duration = 1000) {
     fprintf(stderr, "Reset failed to set gpio, %d\n", ret_val);
     return ret_val;
   }
-  usleep(sleep_duration);
+  vdf_usleep(sleep_duration);
   // Some boards will contain FT4222H chips with the OTP programmed such
   // that GPIO2 (VDF_RST_N) is configured as an open drain output.  In
   // this case, GPIO2 powers up actively driving out low.  In order to
@@ -479,7 +479,7 @@ int VdfDriver::Reset(uint32_t sleep_duration = 1000) {
   if (ret_val != 0) {
     fprintf(stderr, "Reset failed to tri-state gpio, %d\n", ret_val);
   }
-  usleep(100000);
+  vdf_usleep(100000);
   return ret_val;
 }
 
@@ -604,7 +604,7 @@ double VdfDriver::GetBoardCurrent() {
     return 0.0;
   }
 
-  usleep(10000);
+  vdf_usleep(10000);
 
   ret_val = I2CReadReg(CS_I2C_ADDR, 0x0, 2, (uint8_t*)(&cs));
   if (ret_val != 0) {

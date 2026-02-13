@@ -13,7 +13,11 @@ void print_buf(size_t offset, uint8_t *buf, size_t size);
 
 class FtdiDriver {
 public:
-  typedef unsigned int DWORD;
+#ifdef _WIN32
+  using DWORD = ::DWORD;
+#else
+  using DWORD = unsigned int;
+#endif
   static const unsigned GPIO2 = 2;
   static const unsigned GPIO3 = 3;
 

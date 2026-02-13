@@ -150,6 +150,7 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
     }
 
     void IncreaseConstants(uint64_t num_iters) {
+        std::lock_guard<std::mutex> lk(forms_mutex);
         // Publish transition metadata as one atomic snapshot, then publish kl=100.
         transition_state.store(
             EncodeTransitionState(num_iters / 10, static_cast<int64_t>(num_iters)),
@@ -159,6 +160,7 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
     }
 
     int GetPosition(uint64_t power) {
+        std::lock_guard<std::mutex> lk(forms_mutex);
         return GetPositionUnlocked(power);
     }
 

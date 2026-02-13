@@ -608,7 +608,9 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
 int hw_vdf_client_main(int argc, char **argv)
 {
     struct vdf_client client;
+#ifndef _WIN32
     struct sigaction sa = {0};
+#endif
 
 #ifdef _WIN32
     WSADATA wsa_data;
@@ -645,9 +647,14 @@ int hw_vdf_client_main(int argc, char **argv)
 
     init_vdf_client(&client);
 
+#ifdef _WIN32
+    signal(SIGINT, signal_handler);
+    signal(SIGTERM, signal_handler);
+#else
     sa.sa_handler = signal_handler;
     sigaction(SIGINT, &sa, NULL);
     sigaction(SIGTERM, &sa, NULL);
+#endif
 
     event_loop(&client);
 

@@ -632,16 +632,26 @@ int hw_vdf_client_main(int argc, char **argv)
                 "  --auto-freq-period N - auto-adjust frequency every N seconds [0, 10 - inf]\n"
                 "  --list - list available devices and exit",
                 argv[0], (int)HW_VDF_DEF_FREQ, HW_VDF_DEF_VOLTAGE);
+#ifdef _WIN32
+        WSACleanup();
+#endif
         return 1;
     }
 
     if (client.opts.do_list) {
         LOG_SIMPLE("List of available devices:");
-        return list_hw() ? 1 : 0;
+        const int ret = list_hw() ? 1 : 0;
+#ifdef _WIN32
+        WSACleanup();
+#endif
+        return ret;
     }
 
     client.drv = init_hw(client.opts.freq, client.opts.voltage);
     if (!client.drv) {
+#ifdef _WIN32
+        WSACleanup();
+#endif
         return 1;
     }
 

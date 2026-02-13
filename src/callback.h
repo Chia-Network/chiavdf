@@ -94,10 +94,21 @@ class OneWesolowskiCallback: public WesolowskiCallback {
             k = 10;
             l = 1;
         }
-        kl = k * l;
-        uint64_t space_needed = wanted_iter / (k * l) + 100;
+        const uint64_t step = static_cast<uint64_t>(k) * static_cast<uint64_t>(l);
+        if (step == 0) {
+            throw std::overflow_error("OneWesolowskiCallback invalid checkpoint stride");
+        }
+        if (step > static_cast<uint64_t>(std::numeric_limits<uint32_t>::max())) {
+            throw std::overflow_error("OneWesolowskiCallback checkpoint stride too large");
+        }
+        kl = static_cast<uint32_t>(step);
+
+        const uint64_t space_needed = wanted_iter / step + 100;
+        if (space_needed > static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
+            throw std::overflow_error("OneWesolowskiCallback forms capacity overflow");
+        }
         forms_capacity = static_cast<size_t>(space_needed);
-        forms.reset(new form[space_needed]);
+        forms.reset(new form[forms_capacity]);
         forms[0] = f;
     }
 

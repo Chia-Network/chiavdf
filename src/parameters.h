@@ -32,11 +32,7 @@ extern bool enable_all_instructions;
 #include <atomic>
 #include <cstdlib>
 #include <cstdio>
-#include <cstdint>
 #include <mutex>
-#if defined(_MSC_VER)
-#include <intrin.h>
-#endif
 
 inline std::atomic<bool> bAVX2{false};
 inline std::atomic<bool> enable_avx512_ifma{false};
@@ -86,9 +82,7 @@ inline void init_avx_flags()
     const bool enable_avx512 = env_flag("CHIA_ENABLE_AVX512_IFMA");
     const bool force_avx512 = env_flag("CHIA_FORCE_AVX512_IFMA");
     int info[4] = {0};
-    int info1[4] = {0};
 #if defined(_MSC_VER)
-    __cpuid(info1, 0x1);
     __cpuid(info, 0x7);
 #elif defined(__GNUC__) || defined(__clang__)
 #if defined(ARCH_X86) && defined(__PIC__)
@@ -96,18 +90,9 @@ inline void init_avx_flags()
                 "xchg{l} {%%}ebx, %k1;"
                 "cpuid;"
                 "xchg{l} {%%}ebx, %k1;"
-                : "=a"(info1[0]), "=&r"(info1[1]), "=c"(info1[2]), "=d"(info1[3]) : "a"(0x1), "c"(0)
-    );
-    __asm__ __volatile__ (
-                "xchg{l} {%%}ebx, %k1;"
-                "cpuid;"
-                "xchg{l} {%%}ebx, %k1;"
                 : "=a"(info[0]), "=&r"(info[1]), "=c"(info[2]), "=d"(info[3]) : "a"(0x7), "c"(0)
     );
 #else
-    __asm__ __volatile__ (
-                "cpuid" : "=a"(info1[0]), "=b"(info1[1]), "=c"(info1[2]), "=d"(info1[3]) : "a"(0x1), "c"(0)
-    );
     __asm__ __volatile__ (
                 "cpuid" : "=a"(info[0]), "=b"(info[1]), "=c"(info[2]), "=d"(info[3]) : "a"(0x7), "c"(0)
     );
@@ -117,49 +102,21 @@ inline void init_avx_flags()
     const int ADX = 1<<19;
     const int AVX512F = 1<<16;
     const int AVX512IFMA = 1<<21;
-    const int XSAVE = 1<<26;
-    const int OSXSAVE = 1<<27;
-    const int AVX = 1<<28;
 
     bool avx2bit = ((info[1] & AVX2) == AVX2);
     bool adxbit = ((info[1] & ADX) == ADX);
     bool avx512fbit = ((info[1] & AVX512F) == AVX512F);
     bool avx512ifmabit = ((info[1] & AVX512IFMA) == AVX512IFMA);
-    bool xsavebit = ((info1[2] & XSAVE) == XSAVE);
-    bool osxsavebit = ((info1[2] & OSXSAVE) == OSXSAVE);
-    bool avxbit = ((info1[2] & AVX) == AVX);
-    bool os_avx2_state = false;
-    bool os_avx512_state = false;
-    if (xsavebit && osxsavebit) {
-#if defined(_MSC_VER)
-      unsigned long long xcr0 = _xgetbv(0);
-#elif defined(__GNUC__) || defined(__clang__)
-      uint32_t eax = 0;
-      uint32_t edx = 0;
-      __asm__ __volatile__ (
-        ".byte 0x0f, 0x01, 0xd0"
-        : "=a"(eax), "=d"(edx)
-        : "c"(0)
-      );
-      uint64_t xcr0 = (uint64_t(eax) | (uint64_t(edx) << 32));
-#else
-      uint64_t xcr0 = 0;
-#endif
-      const uint64_t xcr0_avx = (uint64_t(1) << 1) | (uint64_t(1) << 2);
-      const uint64_t xcr0_avx512 = xcr0_avx | (uint64_t(1) << 5) | (uint64_t(1) << 6) | (uint64_t(1) << 7);
-      os_avx2_state = (xcr0 & xcr0_avx) == xcr0_avx;
-      os_avx512_state = (xcr0 & xcr0_avx512) == xcr0_avx512;
-    }
 
     if (disable_avx2) {
       bAVX2.store(false, std::memory_order_relaxed);
     } else if (force_avx2) {
       bAVX2.store(true, std::memory_order_relaxed);
     } else {
-      bAVX2.store(avx2bit && adxbit && avxbit && os_avx2_state, std::memory_order_relaxed);
+      bAVX2.store(avx2bit && adxbit, std::memory_order_relaxed);
     }
     if (bAVX2.load(std::memory_order_relaxed) && should_log_avx()) {
-      std::fprintf(stderr, "AVX2 enabled (avx2=%d adx=%d avx=%d os_avx2=%d)\n", avx2bit ? 1 : 0, adxbit ? 1 : 0, avxbit ? 1 : 0, os_avx2_state ? 1 : 0);
+      std::fprintf(stderr, "AVX2 enabled (avx2=%d adx=%d)\n", avx2bit ? 1 : 0, adxbit ? 1 : 0);
     }
 
     if (disable_avx512) {
@@ -167,12 +124,12 @@ inline void init_avx_flags()
     } else if (force_avx512) {
       enable_avx512_ifma.store(true, std::memory_order_relaxed);
     } else if (enable_avx512) {
-      enable_avx512_ifma.store(avx512fbit && avx512ifmabit && avxbit && os_avx512_state, std::memory_order_relaxed);
+      enable_avx512_ifma.store(avx512fbit && avx512ifmabit, std::memory_order_relaxed);
     } else {
       enable_avx512_ifma.store(false, std::memory_order_relaxed);
     }
     if (enable_avx512_ifma.load(std::memory_order_relaxed) && should_log_avx()) {
-      std::fprintf(stderr, "AVX512 IFMA enabled (f=%d ifma=%d avx=%d os_avx512=%d)\n", avx512fbit ? 1 : 0, avx512ifmabit ? 1 : 0, avxbit ? 1 : 0, os_avx512_state ? 1 : 0);
+      std::fprintf(stderr, "AVX512 IFMA enabled (f=%d ifma=%d)\n", avx512fbit ? 1 : 0, avx512ifmabit ? 1 : 0);
     }
 #elif defined(ARCH_ARM)
     bAVX2.store(false, std::memory_order_relaxed);

@@ -231,6 +231,8 @@ jobs:
         working-directory: "${{ github.workspace }}/build"
         shell: pwsh
         run: |
+          # Keep native stderr as log output; emu binaries log diagnostics there.
+          $PSNativeCommandUseErrorActionPreference = $false
           $dllPaths = @()
           if (Test-Path "$env:GITHUB_WORKSPACE\mpir_gc_x64") { $dllPaths += "$env:GITHUB_WORKSPACE\mpir_gc_x64" }
           if (Test-Path "$env:GITHUB_WORKSPACE\src\hw\libft4222") { $dllPaths += "$env:GITHUB_WORKSPACE\src\hw\libft4222" }
@@ -238,6 +240,7 @@ jobs:
           if (Test-Path ".\hw_test.exe") { Write-Host "hw_test.exe present" }
           Write-Host "Running emu_hw_test"
           .\emu_hw_test.exe 1 2000
+          if ($LASTEXITCODE -ne 0) { throw "emu_hw_test failed with exit code $LASTEXITCODE" }
           Write-Host "emu_hw_test completed"
 
       - name: Upload Artifacts

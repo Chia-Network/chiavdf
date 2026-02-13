@@ -1,4 +1,5 @@
 #include "include.h"
+#include <chrono>
 #include "bit_manipulation.h"
 #include "double_utility.h"
 #include "parameters.h"
@@ -9,7 +10,7 @@
 #include "picosha2.h"
 #include "proof_common.h"
 
-#if defined(ARCH_X86) || defined(ARCH_X64)
+#if (defined(ARCH_X86) || defined(ARCH_X64)) && !defined(CHIA_DISABLE_ASM)
 #include "asm_main.h"
 #include "threading.h"
 #include "avx512_integer.h"
@@ -49,7 +50,7 @@ int main(int argc, char **argv)
     auto t1 = std::chrono::high_resolution_clock::now();
     if (!strcmp(argv[1], "square_asm")) {
         is_asm = true;
-#if defined(ARCH_X86) || defined(ARCH_X64)
+#if (defined(ARCH_X86) || defined(ARCH_X64)) && !defined(CHIA_DISABLE_ASM)
         for (i = 0; i < iters; ) {
             square_state_type sq_state;
             sq_state.pairindex = 0;

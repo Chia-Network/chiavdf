@@ -26,7 +26,8 @@ int main(int argc, char const* argv[]) try
     assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
     init_gmp();
     debug_mode = true;
-    if(hasAVX2())
+    const bool has_avx2 = hasAVX2();
+    if(has_avx2)
     {
       gcd_base_bits=63;
       gcd_128_max_iter=2;

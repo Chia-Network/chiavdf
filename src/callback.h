@@ -3,6 +3,11 @@
 
 #include "util.h"
 #include "nudupl_listener.h"
+#include <algorithm>
+#include <atomic>
+#include <limits>
+#include <mutex>
+#include <stdexcept>
 
 // Applies to n-weso.
 const int kWindowSize = 20;
@@ -33,7 +38,7 @@ public:
         switch(type) {
             case NL_SQUARESTATE:
             {
-#if defined(ARCH_X86) || defined(ARCH_X64)
+#if (defined(ARCH_X86) || defined(ARCH_X64)) && !defined(CHIA_DISABLE_ASM)
                 //cout << "NL_SQUARESTATE" << endl;
                 uint64 res;
 
@@ -70,6 +75,7 @@ public:
     virtual void OnIteration(int type, void *data, uint64_t iteration) = 0;
 
     std::unique_ptr<form[]> forms;
+    size_t forms_capacity = 0;
     std::atomic<int64_t> iterations{0};
     integer D;
     integer L;
@@ -90,6 +96,7 @@ class OneWesolowskiCallback: public WesolowskiCallback {
         }
         kl = k * l;
         uint64_t space_needed = wanted_iter / (k * l) + 100;
+        forms_capacity = static_cast<size_t>(space_needed);
         forms.reset(new form[space_needed]);
         forms[0] = f;
     }
@@ -100,7 +107,10 @@ class OneWesolowskiCallback: public WesolowskiCallback {
             return ;
 
         if (iteration % kl == 0) {
-            uint64_t pos = iteration / kl;
+            const size_t pos = static_cast<size_t>(iteration / kl);
+            if (pos >= forms_capacity) {
+                throw std::runtime_error("OneWesolowskiCallback::OnIteration out of bounds");
+            }
             form* mulf = &forms[pos];
             SetForm(type, data, mulf);
         }
@@ -116,8 +126,12 @@ class OneWesolowskiCallback: public WesolowskiCallback {
 
 class TwoWesolowskiCallback: public WesolowskiCallback {
   public:
-    TwoWesolowskiCallback(integer& D, form f) : WesolowskiCallback(D) {
-        int space_needed = kSwitchIters / 10 + (kMaxItersAllowed - kSwitchIters) / 100;
+    TwoWesolowskiCallback(integer& D, const form& f) : WesolowskiCallback(D) {
+        const uint64_t early_points = static_cast<uint64_t>(kSwitchIters) / 10;
+        const uint64_t late_points =
+            (static_cast<uint64_t>(kMaxItersAllowed) - static_cast<uint64_t>(kSwitchIters)) / 100;
+        const size_t space_needed = static_cast<size_t>(early_points + late_points);
+        forms_capacity = space_needed;
         forms.reset(new form[space_needed]);
         forms[0] = f;
         kl = 10;
@@ -125,12 +139,18 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
     }
 
     void IncreaseConstants(uint64_t num_iters) {
+        std::lock_guard<std::mutex> lk(forms_mutex);
         kl = 100;
         switch_iters = num_iters;
         switch_index = num_iters / 10;
     }
 
     int GetPosition(uint64_t power) {
+        std::lock_guard<std::mutex> lk(forms_mutex);
+        return GetPositionUnlocked(power);
+    }
+
+    int GetPositionUnlocked(uint64_t power) const {
         if (switch_iters == -1 || power < switch_iters) {
             return power / 10;
         } else {
@@ -138,19 +158,29 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
         }
     }
 
-    form *GetForm(uint64_t power) {
-        return &(forms[GetPosition(power)]);
+    form GetFormCopy(uint64_t power) {
+        std::lock_guard<std::mutex> lk(forms_mutex);
+        const int pos = GetPositionUnlocked(power);
+        if (pos < 0 || static_cast<size_t>(pos) >= forms_capacity) {
+            throw std::runtime_error("TwoWesolowskiCallback::GetFormCopy out of bounds");
+        }
+        return forms[static_cast<size_t>(pos)];
     }
 
     bool LargeConstants() {
+        std::lock_guard<std::mutex> lk(forms_mutex);
         return kl == 100;
     }
 
     void OnIteration(int type, void *data, uint64_t iteration) {
         iteration++;
+        std::lock_guard<std::mutex> lk(forms_mutex);
         if (iteration % kl == 0) {
-            uint64_t pos = GetPosition(iteration);
-            form* mulf = &forms[pos];
+            const int pos = GetPositionUnlocked(iteration);
+            if (pos < 0 || static_cast<size_t>(pos) >= forms_capacity) {
+                throw std::runtime_error("TwoWesolowskiCallback::OnIteration out of bounds");
+            }
+            form* mulf = &forms[static_cast<size_t>(pos)];
             SetForm(type, data, mulf);
         }
     }
@@ -159,6 +189,7 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
     uint64_t switch_index;
     int64_t switch_iters;
     uint32_t kl;
+    std::mutex forms_mutex;
 };
 
 class FastAlgorithmCallback : public WesolowskiCallback {
@@ -172,6 +203,7 @@ class FastAlgorithmCallback : public WesolowskiCallback {
             buckets_begin.push_back(buckets_begin[buckets_begin.size() - 1] + bucket_size2 * window_size);
         }
         int space_needed = window_size * (bucket_size1 + bucket_size2 * (segments - 1));
+        forms_capacity = static_cast<size_t>(space_needed);
         forms.reset(new form[space_needed]);
         checkpoints.reset(new form[1 << 18]);
 

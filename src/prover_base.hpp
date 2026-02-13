@@ -2,6 +2,7 @@
 #define PROVER_BASE_H
 
 #include <atomic>
+#include <stdexcept>
 
 #include "proof_common.h"
 #include "util.h"
@@ -15,7 +16,7 @@ class Prover {
         is_finished = false;
     }
 
-    virtual form* GetForm(uint64_t iteration) = 0;
+    virtual form GetForm(uint64_t iteration) = 0;
     virtual void start() = 0;
     virtual void stop() = 0;
     virtual bool PerformExtraStep() = 0;
@@ -47,7 +48,7 @@ class Prover {
             id = form::identity(D);
         } catch(std::exception& e) {
             std::cout << "Warning: Could not create identity: " << e.what() << "\n";
-            std::cout << "Discriminant: " << D.impl << "\n";
+            std::cout << "Discriminant: " << D.to_string() << "\n";
             std::cout << "Segment start:" << segm.start << "\n";
             std::cout << "Segment length:" << segm.length << "\n";
             std::cout << std::flush;
@@ -65,16 +66,18 @@ class Prover {
             for (uint64_t i = 0; i < (1UL << k); i++)
                 ys[i] = id;
 
-            form *tmp;
             uint64_t limit = num_iterations / (k * l);
             if (num_iterations % (k * l))
                 limit++;
             for (uint64_t i = 0; i < limit; i++) {
                 if (num_iterations >= k * (i * l + j + 1)) {
                     uint64_t b = GetBlock(i*l + j, k, num_iterations, B);
+                    if (b >= (1UL << k)) {
+                        throw std::runtime_error("GenerateProof block index out of bounds");
+                    }
                     if (!PerformExtraStep()) return;
-                    tmp = GetForm(i);
-                    nucomp_form(ys[b], ys[b], *tmp, D, L);
+                    form tmp = GetForm(i);
+                    nucomp_form(ys[b], ys[b], tmp, D, L);
                 }
             }
 

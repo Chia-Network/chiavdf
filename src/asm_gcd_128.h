@@ -511,7 +511,7 @@ void gcd_128(
         APPEND_M(str( "MOV `tmp_0, `ab_0_1" ));
         APPEND_M(str( "MOV `tmp_1, 64" ));
         APPEND_M(str( "CMP `ab_0_1, 0" ));
-#ifdef CHIAOSX
+#if defined(CHIAOSX) || defined(CHIA_WINDOWS)
         string cmoveq_label1=m.alloc_label();
         APPEND_M(str( "JNE #", cmoveq_label1));
         APPEND_M(str( "MOV `tmp_0, `ab_0_0" ));
@@ -568,7 +568,7 @@ void gcd_128(
         //vector_is_lehmer=((spill_is_lehmer | shift_amount)!=0)? <~0, ~0> : <0, 0>
         APPEND_M(str( "OR `tmp_2, `tmp_1" ));
         if (!use_divide_table) {
-#ifdef CHIAOSX
+#if defined(CHIAOSX) || defined(CHIA_WINDOWS)
             APPEND_M(str( "LEA `tmp_3, [RIP+#]", constant_address_uint64(0ull, 0ull, false) ));
             APPEND_M(str( "LEA `tmp_0, [RIP+#]", constant_address_uint64(~(0ull), ~(0ull), false) ));
 #else
@@ -576,7 +576,7 @@ void gcd_128(
             APPEND_M(str( "MOV `tmp_0, OFFSET FLAT:#", constant_address_uint64(~(0ull), ~(0ull), false) ));
 #endif
         } else {
-#ifdef CHIAOSX
+#if defined(CHIAOSX) || defined(CHIA_WINDOWS)
             APPEND_M(str( "LEA `tmp_3, [RIP+#]", constant_address_uint64(gcd_mask_exact[0], gcd_mask_exact[1], false) ));
             APPEND_M(str( "LEA `tmp_0, [RIP+#]", constant_address_uint64(gcd_mask_approximate[0], gcd_mask_approximate[1], false) ));
 #else

@@ -221,7 +221,7 @@ void nucomp_form(form &a, form const& b, form const& c, integer const& D, intege
     *a.c.impl = *fr.c;
 }
 
-void qfb_nudupl(qfb_t r, qfb_t f, mpz_t D, mpz_t L)
+void qfb_nudupl(qfb_t r, qfb_t f, mpz_t const& D, mpz_t const& L)
 {
 #if defined(VDF_TEST)
     chiavdf_nudupl_profile_stats* prof = chiavdf_nudupl_profile_sink;
@@ -416,7 +416,7 @@ void qfb_nudupl(qfb_t r, qfb_t f, mpz_t D, mpz_t L)
 }
 
 // a = b * b
-void nudupl_form(form &a, form &b, integer &D, integer &L)
+void nudupl_form(form &a, form &b, const integer &D, const integer &L)
 {
     qfb fr, fr2;
 

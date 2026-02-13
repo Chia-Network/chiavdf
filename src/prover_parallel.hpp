@@ -38,7 +38,6 @@ class ParallelProver : public Prover {
             for (uint64_t i = 0; i < (1UL << k); i++)
                 ys[i] = id;
 
-            form *tmp;
             uint64_t limit = num_iterations / (k * l);
             if (num_iterations % (k * l))
                 limit++;
@@ -46,8 +45,8 @@ class ParallelProver : public Prover {
                 if (num_iterations >= k * (i * l + j + 1)) {
                     uint64_t b = GetBlock(i*l + j, k, num_iterations, B);
                     if (!PerformExtraStep()) return;
-                    tmp = GetForm(i);
-                    nucomp_form(ys[b], ys[b], *tmp, D, L);
+                    form tmp = GetForm(i);
+                    nucomp_form(ys[b], ys[b], tmp, D, L);
                 }
             }
 

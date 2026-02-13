@@ -3,7 +3,7 @@
 
 #include "include.h"
 
-#if defined(ARCH_X86) || defined(ARCH_X64)
+#if (defined(ARCH_X86) || defined(ARCH_X64)) && !defined(CHIA_DISABLE_ASM)
 #include <x86intrin.h>
 #endif
 
@@ -26,7 +26,7 @@
 
 #include "nudupl_listener.h"
 
-#if defined(ARCH_X86) || defined(ARCH_X64)
+#if (defined(ARCH_X86) || defined(ARCH_X64)) && !defined(CHIA_DISABLE_ASM)
 #include "asm_main.h"
 
 #include "gcd_base_continued_fractions.h"
@@ -43,17 +43,16 @@
 
 #include "gpu_integer_gcd.h"
 
-#if defined(ARCH_X86) || defined(ARCH_X64)
+#if (defined(ARCH_X86) || defined(ARCH_X64)) && !defined(CHIA_DISABLE_ASM)
 #include "vdf_test.h"
 #endif
 #include <map>
 #include <algorithm>
+#include <chrono>
 
 #include <thread>
 #include <future>
 #include <memory>
-
-#include <chrono>
 #include <condition_variable>
 #include "proof_common.h"
 #include "provers.h"
@@ -116,8 +115,8 @@ void repeated_square_original(vdf_original &vdfo, form& f, const integer& D, con
 // implementation.
 static inline void repeated_square_nudupl(
     form& f,
-    integer& D,
-    integer& L,
+    const integer& D,
+    const integer& L,
     uint64 base,
     uint64 iterations,
     WesolowskiCallback* weso,
@@ -178,7 +177,7 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
                 f_copy=f;
                 c_checkpoint_interval=1;
 
-                #if defined(ARCH_X86) || defined(ARCH_X64)
+                #if (defined(ARCH_X86) || defined(ARCH_X64)) && !defined(CHIA_DISABLE_ASM)
                 f_copy_3=f;
                 f_copy_3_valid=square_fast_impl(f_copy_3, D, L, num_iterations);
                 #endif
@@ -193,16 +192,14 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
         #endif
 
         uint64 actual_iterations = 0;
-#if defined(ARCH_X86) || defined(ARCH_X64)
+#if (defined(ARCH_X86) || defined(ARCH_X64)) && !defined(CHIA_DISABLE_ASM)
         // x86/x64: use the phased pipeline.
         square_state_type square_state;
         square_state.pairindex = 0;
         actual_iterations = repeated_square_fast(square_state, f, D, L, num_iterations, batch_size, weso);
 #else
         // Non-x86: use the C++ NUDUPL path (faster and lower maintenance than the phased pipeline).
-        integer& D_nc = const_cast<integer&>(D);
-        integer& L_nc = const_cast<integer&>(L);
-        repeated_square_nudupl(f, D_nc, L_nc, num_iterations, batch_size, weso, weso);
+        repeated_square_nudupl(f, D, L, num_iterations, batch_size, weso, weso);
         actual_iterations = batch_size;
 #endif
 
@@ -361,7 +358,7 @@ Proof ProveTwoWeso(integer& D, form x, uint64_t iters, uint64_t done_iterations,
 
         vdf_original vdfo_proof;
         uint64 checkpoint = (done_iterations + iters) - (done_iterations + iters) % 100;
-        form y = *(weso->GetForm(checkpoint));
+        form y = weso->GetFormCopy(checkpoint);
         repeated_square_original(vdfo_proof, y, D, L, 0, (done_iterations + iters) % 100, NULL);
 
         Segment sg(
@@ -394,7 +391,7 @@ Proof ProveTwoWeso(integer& D, form x, uint64_t iters, uint64_t done_iterations,
     if (stop_signal)
         return Proof();
 
-    form y1 = *(weso->GetForm(done_iterations + iterations1));
+    form y1 = weso->GetFormCopy(done_iterations + iterations1);
     Segment sg(
         /*start=*/done_iterations,
         /*lenght=*/iterations1,
@@ -408,8 +405,10 @@ Proof ProveTwoWeso(integer& D, form x, uint64_t iters, uint64_t done_iterations,
     while (!stop_signal && !prover.IsFinished()) {
         std::this_thread::sleep_for (std::chrono::milliseconds(100));
     }
-    if (stop_signal)
+    if (stop_signal) {
+        prover.stop();
         return Proof();
+    }
     form proof = prover.GetProof();
 
     int d_bits = D.num_bits();

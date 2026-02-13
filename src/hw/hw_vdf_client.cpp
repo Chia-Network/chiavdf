@@ -7,7 +7,7 @@
 #include "pll_freqs.hpp"
 
 #include <cstdio>
-#include <getopt.h>
+#include <cstring>
 #include <signal.h>
 
 #ifdef _WIN32
@@ -480,20 +480,7 @@ void event_loop(struct vdf_client *client)
 
 int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
 {
-    const struct option long_opts[] = {
-        {"freq", required_argument, NULL, 1},
-        {"voltage", required_argument, NULL, 1},
-        {"ip", required_argument, NULL, 1},
-        {"vdfs-mask", required_argument, NULL, 1},
-        {"vdf-threads", required_argument, NULL, 1},
-        {"proof-threads", required_argument, NULL, 1},
-        {"list", no_argument, NULL, 1},
-        {"auto-freq-period", required_argument, NULL, 1},
-        {"max-freq", required_argument, NULL, 1},
-        {0}
-    };
-    int long_idx = -1;
-    int ret;
+    int argi = 1;
 
     opts->voltage = HW_VDF_DEF_VOLTAGE;
     opts->freq = HW_VDF_DEF_FREQ;
@@ -507,32 +494,65 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     opts->vpo.max_proof_threads = 0;
     opts->vdfs_mask = 0;
 
-    while ((ret = getopt_long(argc, argv, "", long_opts, &long_idx)) == 1) {
-        if (long_idx == 0) {
-            opts->freq = strtod(optarg, NULL);
-        } else if (long_idx == 1) {
-            opts->voltage = strtod(optarg, NULL);
-        } else if (long_idx == 2) {
-            opts->ip = ntohl(inet_addr(optarg));
-        } else if (long_idx == 3) {
-            opts->vdfs_mask = strtoul(optarg, NULL, 0);
-        } else if (long_idx == 4) {
-            opts->vpo.max_aux_threads = strtoul(optarg, NULL, 0);
-        } else if (long_idx == 5) {
-            opts->vpo.max_proof_threads = strtoul(optarg, NULL, 0);
-        } else if (long_idx == 6) {
-            opts->do_list = true;
-        } else if (long_idx == 7) {
-            opts->auto_freq = true;
-            opts->auto_freq_period = strtoul(optarg, NULL, 0);
-        } else if (long_idx == 8) {
-            opts->max_freq = strtod(optarg, NULL);
+    while (argi < argc && !strncmp(argv[argi], "--", 2)) {
+        const char *name = argv[argi] + 2;
+        const char *value = nullptr;
+        char name_buf[32] = {0};
+        const char *eq = strchr(name, '=');
+
+        if (eq) {
+            size_t len = static_cast<size_t>(eq - name);
+            if (len == 0 || len >= sizeof(name_buf)) {
+                LOG_SIMPLE("Invalid option");
+                return -1;
+            }
+            memcpy(name_buf, name, len);
+            name = name_buf;
+            value = eq + 1;
         }
+
+        if (!strcmp(name, "list")) {
+            if (value) {
+                LOG_SIMPLE("Invalid option");
+                return -1;
+            }
+            opts->do_list = true;
+            argi++;
+            continue;
+        }
+
+        if (!value) {
+            if (argi + 1 >= argc) {
+                LOG_SIMPLE("Invalid option");
+                return -1;
+            }
+            value = argv[++argi];
+        }
+
+        if (!strcmp(name, "freq")) {
+            opts->freq = strtod(value, NULL);
+        } else if (!strcmp(name, "voltage")) {
+            opts->voltage = strtod(value, NULL);
+        } else if (!strcmp(name, "ip")) {
+            opts->ip = ntohl(inet_addr(value));
+        } else if (!strcmp(name, "vdfs-mask")) {
+            opts->vdfs_mask = strtoul(value, NULL, 0);
+        } else if (!strcmp(name, "vdf-threads")) {
+            opts->vpo.max_aux_threads = strtoul(value, NULL, 0);
+        } else if (!strcmp(name, "proof-threads")) {
+            opts->vpo.max_proof_threads = strtoul(value, NULL, 0);
+        } else if (!strcmp(name, "auto-freq-period")) {
+            opts->auto_freq = true;
+            opts->auto_freq_period = strtoul(value, NULL, 0);
+        } else if (!strcmp(name, "max-freq")) {
+            opts->max_freq = strtod(value, NULL);
+        } else {
+            LOG_SIMPLE("Invalid option");
+            return -1;
+        }
+        argi++;
     }
-    if (ret != -1) {
-        LOG_SIMPLE("Invalid option");
-        return -1;
-    }
+
     if (opts->do_list) {
         return 0;
     }
@@ -570,12 +590,12 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
         return -1;
     }
 
-    if (optind == argc) {
+    if (argi == argc) {
         return -1;
     }
-    opts->port = atoi(argv[optind]);
-    if (argc > optind + 1) {
-        opts->n_vdfs = atoi(argv[optind + 1]);
+    opts->port = atoi(argv[argi]);
+    if (argc > argi + 1) {
+        opts->n_vdfs = atoi(argv[argi + 1]);
     }
     if (!opts->port || opts->n_vdfs < 1 || opts->n_vdfs > 3) {
         LOG_SIMPLE("Invalid port or VDF count");

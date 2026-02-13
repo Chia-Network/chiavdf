@@ -54,7 +54,6 @@ struct asm_function {
 
     bool d_align_stack=true;
     bool d_return_error_code=true;
-    bool d_windows_stack_args=true;
 
     //the scratch area ends at RSP (i.e. the last byte is at address RSP-1)
     //RSP is 64-byte aligned
@@ -69,14 +68,12 @@ struct asm_function {
         int num_args=0,
         int num_regs=15,
         bool align_stack=true,
-        bool return_error_code=true,
-        bool windows_stack_args=true
+        bool return_error_code=true
     ) {
         EXPAND_MACROS_SCOPE;
 
         d_align_stack=align_stack;
         d_return_error_code=return_error_code;
-        d_windows_stack_args=windows_stack_args;
 
         static bool outputted_header=false;
         if (!outputted_header) {
@@ -103,12 +100,11 @@ struct asm_function {
             args.push_back(r);
         }
 #ifdef CHIA_WINDOWS
-        // For ABI entry points, pull args 5+ from the caller stack per Win64 ABI.
-        // Internal asm-to-asm calls may pass args 5/6 in R10/R11 and opt out.
-        if (d_windows_stack_args && num_args > 4) {
+        // For Win64 ABI entry points, args 5+ are passed on the caller stack.
+        if (num_args > 4) {
             APPEND_M(str( "MOV R10, [RSP+0x28]" ));
         }
-        if (d_windows_stack_args && num_args > 5) {
+        if (num_args > 5) {
             APPEND_M(str( "MOV R11, [RSP+0x30]" ));
         }
 #endif

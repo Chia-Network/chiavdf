@@ -107,7 +107,10 @@ class OneWesolowskiCallback: public WesolowskiCallback {
             return ;
 
         if (iteration % kl == 0) {
-            uint64_t pos = iteration / kl;
+            const size_t pos = static_cast<size_t>(iteration / kl);
+            if (pos >= forms_capacity) {
+                throw std::runtime_error("OneWesolowskiCallback::OnIteration out of bounds");
+            }
             form* mulf = &forms[pos];
             SetForm(type, data, mulf);
         }

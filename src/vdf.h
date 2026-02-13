@@ -115,8 +115,8 @@ void repeated_square_original(vdf_original &vdfo, form& f, const integer& D, con
 // implementation.
 static inline void repeated_square_nudupl(
     form& f,
-    integer& D,
-    integer& L,
+    const integer& D,
+    const integer& L,
     uint64 base,
     uint64 iterations,
     WesolowskiCallback* weso,
@@ -199,9 +199,7 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
         actual_iterations = repeated_square_fast(square_state, f, D, L, num_iterations, batch_size, weso);
 #else
         // Non-x86: use the C++ NUDUPL path (faster and lower maintenance than the phased pipeline).
-        integer& D_nc = const_cast<integer&>(D);
-        integer& L_nc = const_cast<integer&>(L);
-        repeated_square_nudupl(f, D_nc, L_nc, num_iterations, batch_size, weso, weso);
+        repeated_square_nudupl(f, D, L, num_iterations, batch_size, weso, weso);
         actual_iterations = batch_size;
 #endif
 

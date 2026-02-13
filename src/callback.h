@@ -154,7 +154,9 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
         // Publish transition metadata first, then publish kl=100.
         // OnIteration acquires kl before consuming switch state.
         switch_index.store(num_iters / 10, std::memory_order_relaxed);
-        switch_iters.store(static_cast<int64_t>(num_iters), std::memory_order_relaxed);
+        // Readers branch on switch_iters and then consume switch_index.
+        // Release here pairs with acquire load in GetPositionUnlocked().
+        switch_iters.store(static_cast<int64_t>(num_iters), std::memory_order_release);
         kl.store(100, std::memory_order_release);
     }
 

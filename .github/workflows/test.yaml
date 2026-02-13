@@ -26,6 +26,8 @@ jobs:
             config: optimized=1
           - os: ubuntu-latest
             config: optimized=1
+          - os: windows-latest
+            config: optimized=1
 
     steps:
     - name: Checkout code

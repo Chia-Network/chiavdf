@@ -7,6 +7,7 @@
 #include "pll_freqs.hpp"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <signal.h>
 
@@ -498,6 +499,10 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
 
     while (argi < argc) {
         if (strncmp(argv[argi], "--", 2) != 0) {
+            if (argv[argi][0] == '-') {
+                LOG_SIMPLE("Invalid option");
+                return -1;
+            }
             if (positional_count < 2) {
                 positionals[positional_count] = argv[argi];
             }
@@ -604,11 +609,25 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     if (positional_count == 0) {
         return -1;
     }
-    opts->port = atoi(positionals[0]);
-    if (positional_count > 1) {
-        opts->n_vdfs = atoi(positionals[1]);
+    {
+        char *end = nullptr;
+        long parsed_port = strtol(positionals[0], &end, 10);
+        if (!positionals[0][0] || (end && *end) || parsed_port < 1 || parsed_port > 65535) {
+            LOG_SIMPLE("Invalid port or VDF count");
+            return -1;
+        }
+        opts->port = static_cast<int>(parsed_port);
     }
-    if (!opts->port || opts->n_vdfs < 1 || opts->n_vdfs > 3) {
+    if (positional_count > 1) {
+        char *end = nullptr;
+        long parsed_n_vdfs = strtol(positionals[1], &end, 10);
+        if (!positionals[1][0] || (end && *end) || parsed_n_vdfs < 1 || parsed_n_vdfs > 3) {
+            LOG_SIMPLE("Invalid port or VDF count");
+            return -1;
+        }
+        opts->n_vdfs = static_cast<int>(parsed_n_vdfs);
+    }
+    if (opts->n_vdfs < 1 || opts->n_vdfs > 3) {
         LOG_SIMPLE("Invalid port or VDF count");
         return -1;
     }

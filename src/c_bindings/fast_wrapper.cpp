@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstdio>
 #include <limits>
+#include <memory>
 #include <mutex>
 #include <queue>
 #include <thread>
@@ -654,6 +655,163 @@ struct BatchJobState {
           next_event_t(std::min(wanted_iter, next_checkpoint_t)) {}
 };
 
+struct BatchFinalizeLatch {
+    void add_task() {
+        std::lock_guard<std::mutex> lk(mutex);
+        remaining++;
+    }
+
+    void task_done() {
+        std::lock_guard<std::mutex> lk(mutex);
+        if (remaining > 0) {
+            remaining--;
+        }
+        if (remaining == 0) {
+            cv.notify_all();
+        }
+    }
+
+    void wait() {
+        std::unique_lock<std::mutex> lk(mutex);
+        cv.wait(lk, [this]() { return remaining == 0; });
+    }
+
+  private:
+    std::mutex mutex;
+    std::condition_variable cv;
+    size_t remaining = 0;
+};
+
+struct BatchFinalizeTask {
+    size_t idx;
+    int d_bits;
+    ChiavdfByteArray* out_arrays;
+    form y_ref;
+    StreamingWesolowskiBuckets buckets;
+    std::shared_ptr<BatchFinalizeLatch> latch;
+
+    BatchFinalizeTask(
+        size_t idx,
+        int d_bits,
+        ChiavdfByteArray* out_arrays,
+        form y_ref,
+        StreamingWesolowskiBuckets buckets,
+        std::shared_ptr<BatchFinalizeLatch> latch)
+        : idx(idx),
+          d_bits(d_bits),
+          out_arrays(out_arrays),
+          y_ref(std::move(y_ref)),
+          buckets(std::move(buckets)),
+          latch(std::move(latch)) {}
+};
+
+class GlobalBatchFinalizerPool final {
+  public:
+    static GlobalBatchFinalizerPool& instance() {
+        static GlobalBatchFinalizerPool pool;
+        return pool;
+    }
+
+    void enqueue(BatchFinalizeTask task) {
+        {
+            std::lock_guard<std::mutex> lk(mutex);
+            queue.push(std::move(task));
+        }
+        cv.notify_one();
+    }
+
+  private:
+    GlobalBatchFinalizerPool() { start_workers(); }
+
+    ~GlobalBatchFinalizerPool() {
+        {
+            std::lock_guard<std::mutex> lk(mutex);
+            shutdown = true;
+        }
+        cv.notify_all();
+        for (auto& t : workers) {
+            if (t.joinable()) {
+                t.join();
+            }
+        }
+    }
+
+    GlobalBatchFinalizerPool(const GlobalBatchFinalizerPool&) = delete;
+    GlobalBatchFinalizerPool& operator=(const GlobalBatchFinalizerPool&) = delete;
+
+    void start_workers() {
+        size_t count = std::thread::hardware_concurrency();
+        if (count == 0) {
+            count = 1;
+        }
+        // Keep this intentionally small: the caller already runs many compute
+        // threads (Rust `-p` workers), and each extra C++ worker carries large
+        // thread-local GMP scratch state (NUCOMP/NUDUPL).
+        count = std::max<size_t>(1, count / 4);
+        count = std::min<size_t>(count, 8);
+
+        workers.reserve(count);
+        for (size_t i = 0; i < count; i++) {
+            workers.emplace_back([this]() { worker_loop(); });
+        }
+    }
+
+    std::optional<BatchFinalizeTask> take_task() {
+        std::unique_lock<std::mutex> lk(mutex);
+        cv.wait(lk, [this]() { return shutdown || !queue.empty(); });
+        if (queue.empty()) {
+            return std::nullopt;
+        }
+        BatchFinalizeTask task = std::move(queue.front());
+        queue.pop();
+        return std::make_optional<BatchFinalizeTask>(std::move(task));
+    }
+
+    void worker_loop() {
+        PulmarkReducer reducer;
+        while (true) {
+            auto task_opt = take_task();
+            if (!task_opt.has_value()) {
+                return;
+            }
+            BatchFinalizeTask task = std::move(*task_opt);
+
+            struct LatchGuard {
+                std::shared_ptr<BatchFinalizeLatch> latch;
+                ~LatchGuard() {
+                    if (latch) {
+                        latch->task_done();
+                    }
+                }
+            } guard{task.latch};
+
+            try {
+                form proof_form = task.buckets.finalize_proof_with_reducer(reducer);
+                std::vector<unsigned char> y_serialized = SerializeForm(task.y_ref, task.d_bits);
+                std::vector<unsigned char> proof_serialized = SerializeForm(proof_form, task.d_bits);
+                if (y_serialized.empty() || proof_serialized.empty()) {
+                    task.out_arrays[task.idx] = empty_result();
+                    continue;
+                }
+
+                const size_t total = y_serialized.size() + proof_serialized.size();
+                uint8_t* out = new uint8_t[total];
+                std::copy(y_serialized.begin(), y_serialized.end(), out);
+                std::copy(proof_serialized.begin(), proof_serialized.end(), out + y_serialized.size());
+                task.out_arrays[task.idx] = ChiavdfByteArray{out, total};
+            } catch (...) {
+                task.out_arrays[task.idx] = empty_result();
+            }
+        }
+    }
+
+    std::vector<std::thread> workers;
+    std::mutex mutex;
+    std::condition_variable cv;
+    std::queue<BatchFinalizeTask> queue;
+    bool shutdown = false;
+};
+
 class BatchOneWesolowskiCallback final : public WesolowskiCallback {
   public:
     BatchOneWesolowskiCallback(
@@ -679,7 +837,9 @@ class BatchOneWesolowskiCallback final : public WesolowskiCallback {
           progress_interval(progress_interval),
           progress_cb(progress_cb),
 	          progress_user_data(progress_user_data),
-	          next_progress(progress_interval) {}
+	          next_progress(progress_interval),
+          finalizer_latch(std::make_shared<BatchFinalizeLatch>()) {
+    }
 
 	    void initialize(const form& x0) {
 	        for (size_t job_pos = 0; job_pos < jobs.size(); job_pos++) {
@@ -749,12 +909,7 @@ class BatchOneWesolowskiCallback final : public WesolowskiCallback {
     bool ok() const { return !fatal_error; }
 
     void join_finalizers() {
-        for (auto& t : finalizers) {
-            if (t.joinable()) {
-                t.join();
-            }
-        }
-        finalizers.clear();
+        finalizer_latch->wait();
     }
 
   private:
@@ -797,29 +952,14 @@ class BatchOneWesolowskiCallback final : public WesolowskiCallback {
         job.next_checkpoint_t = std::numeric_limits<uint64_t>::max();
         job.next_event_t = std::numeric_limits<uint64_t>::max();
 
-        size_t idx = job.index;
-        form y_ref = std::move(job.y_ref);
-        StreamingWesolowskiBuckets buckets = std::move(job.buckets);
-
-        finalizers.emplace_back([this, idx, y_ref = std::move(y_ref), buckets = std::move(buckets)]() mutable {
-            try {
-                form proof_form = buckets.finalize_proof();
-                std::vector<unsigned char> y_serialized = SerializeForm(y_ref, d_bits);
-                std::vector<unsigned char> proof_serialized = SerializeForm(proof_form, d_bits);
-                if (y_serialized.empty() || proof_serialized.empty()) {
-                    out_arrays[idx] = empty_result();
-                    return;
-                }
-
-                const size_t total = y_serialized.size() + proof_serialized.size();
-                uint8_t* out = new uint8_t[total];
-                std::copy(y_serialized.begin(), y_serialized.end(), out);
-                std::copy(proof_serialized.begin(), proof_serialized.end(), out + y_serialized.size());
-                out_arrays[idx] = ChiavdfByteArray{out, total};
-            } catch (...) {
-                out_arrays[idx] = empty_result();
-            }
-        });
+        finalizer_latch->add_task();
+        GlobalBatchFinalizerPool::instance().enqueue(BatchFinalizeTask(
+            job.index,
+            d_bits,
+            out_arrays,
+            std::move(job.y_ref),
+            std::move(job.buckets),
+            finalizer_latch));
     }
 
     const integer& shared_D;
@@ -829,7 +969,7 @@ class BatchOneWesolowskiCallback final : public WesolowskiCallback {
     size_t job_count;
     std::atomic<bool>& stopped;
     std::vector<BatchJobState> jobs;
-    std::vector<std::thread> finalizers;
+    std::shared_ptr<BatchFinalizeLatch> finalizer_latch;
     std::priority_queue<JobEvent, std::vector<JobEvent>, JobEventGreater> event_queue;
     uint64_t next_event = std::numeric_limits<uint64_t>::max();
     uint64_t progress_interval;

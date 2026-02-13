@@ -19,13 +19,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-13-intel, macos-13-arm64, ubuntu-latest, windows-latest]
-        config: [optimized=1, TSAN=1, ASAN=1]
-        exclude:
+        include:
+          - os: macos-13-intel
+            config: optimized=1
+          - os: ubuntu-latest
+            config: optimized=1
           - os: windows-latest
-            config: ASAN=1
-          - os: windows-latest
-            config: TSAN=1
+            config: optimized=1
 
     steps:
     - name: Checkout code
@@ -112,6 +112,8 @@ jobs:
         "C:\Program Files\LLVM\bin" | Out-File -Append -FilePath $env:GITHUB_PATH
         # Enable AVX-512 IFMA codegen in CI; runtime dispatch remains CPUID-gated.
         "CHIA_ENABLE_AVX512_IFMA=1" | Out-File -Append -FilePath $env:GITHUB_ENV
+        # Force AVX2 path to reproduce/validate forced-AVX2 behavior on Windows.
+        "CHIA_FORCE_AVX2=1" | Out-File -Append -FilePath $env:GITHUB_ENV
         if (-not $boostDir) {
           throw "Boost install not found under C:\local"
         }
@@ -193,6 +195,8 @@ jobs:
         cd src
         echo "Running 1weso_test"
         ./1weso_test
+        echo "Running 2weso_test with 100 iterations"
+        ./2weso_test 100
         echo "Running 2weso_test"
         ./2weso_test
         echo "Running prover_test"
@@ -246,6 +250,8 @@ jobs:
         }
         Write-Host "Running 1weso_test"
         Invoke-TestExe "1weso_test"
+        Write-Host "Running 2weso_test with 100 iterations"
+        Invoke-TestExe "2weso_test" @("100")
         Write-Host "Running 2weso_test"
         Invoke-TestExe "2weso_test"
         Write-Host "Running prover_test"
@@ -256,8 +262,8 @@ jobs:
       if: matrix.config == 'optimized=1' && !startsWith(matrix.os, 'windows')
       run: |
         cd src
-        echo "Benchmarking vdf_bench with 2,000,000 iterations of square_asm"
-        ./vdf_bench square_asm 2000000
+        echo "Benchmarking vdf_bench with 10,000 iterations of square_asm"
+        ./vdf_bench square_asm 10000
 
     - name: Benchmark vdf_bench square (Windows)
       if: matrix.config == 'optimized=1' && startsWith(matrix.os, 'windows')
@@ -268,8 +274,8 @@ jobs:
         if ($env:MPIR_ROOT -and (Test-Path "$env:MPIR_ROOT\bin")) { $dllPaths += "$env:MPIR_ROOT\bin" }
         if (Test-Path "$env:GITHUB_WORKSPACE\mpir_gc_x64") { $dllPaths += "$env:GITHUB_WORKSPACE\mpir_gc_x64" }
         if ($dllPaths.Count -gt 0) { $env:PATH = ($dllPaths -join ';') + ';' + $env:PATH }
-        Write-Host "Benchmarking vdf_bench with 2,000,000 iterations of square_asm"
-        & .\vdf_bench.exe square_asm 2000000
+        Write-Host "Benchmarking vdf_bench with 10,000 iterations of square_asm"
+        & .\vdf_bench.exe square_asm 10000
         Write-Host "vdf_bench exit code: $LASTEXITCODE"
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

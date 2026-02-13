@@ -150,6 +150,8 @@ inline void init_avx_flags()
       os_avx2_state = (xcr0 & xcr0_avx) == xcr0_avx;
       os_avx512_state = (xcr0 & xcr0_avx512) == xcr0_avx512;
     }
+    const bool avx512_supported = avx512fbit && avxbit && os_avx512_state;
+    const bool avx512_ifma_supported = avx512fbit && avx512ifmabit && avxbit && os_avx512_state;
 
     if (disable_avx2) {
       bAVX2.store(false, std::memory_order_relaxed);
@@ -160,6 +162,12 @@ inline void init_avx_flags()
     }
     if (bAVX2.load(std::memory_order_relaxed) && should_log_avx()) {
       std::fprintf(stderr, "AVX2 enabled (avx2=%d adx=%d avx=%d os_avx2=%d)\n", avx2bit ? 1 : 0, adxbit ? 1 : 0, avxbit ? 1 : 0, os_avx2_state ? 1 : 0);
+      if (!avx512_supported) {
+        std::fprintf(stderr, "AVX512 not supported on this run (f=%d avx=%d os_avx512=%d)\n", avx512fbit ? 1 : 0, avxbit ? 1 : 0, os_avx512_state ? 1 : 0);
+      }
+      if (!avx512_ifma_supported) {
+        std::fprintf(stderr, "AVX512 IFMA not supported on this run (f=%d ifma=%d avx=%d os_avx512=%d)\n", avx512fbit ? 1 : 0, avx512ifmabit ? 1 : 0, avxbit ? 1 : 0, os_avx512_state ? 1 : 0);
+      }
     }
 
     if (disable_avx512) {
@@ -167,7 +175,7 @@ inline void init_avx_flags()
     } else if (force_avx512) {
       enable_avx512_ifma.store(true, std::memory_order_relaxed);
     } else if (enable_avx512) {
-      enable_avx512_ifma.store(avx512fbit && avx512ifmabit && avxbit && os_avx512_state, std::memory_order_relaxed);
+      enable_avx512_ifma.store(avx512_ifma_supported, std::memory_order_relaxed);
     } else {
       enable_avx512_ifma.store(false, std::memory_order_relaxed);
     }

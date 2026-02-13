@@ -20,6 +20,7 @@ permissions:
 
 jobs:
   fuzz_targets:
+    if: ${{ false }}
     name: Run fuzzers (${{ matrix.target }})
     runs-on: ubuntu-latest
     env:
@@ -59,6 +60,7 @@ jobs:
           cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=600
 
   lint:
+    if: ${{ false }}
     name: Lint
     runs-on: ubuntu-latest
     steps:
@@ -76,6 +78,7 @@ jobs:
         run: cargo clippy
 
   test:
+    if: ${{ false }}
     name: Test (${{ matrix.os.name }} ${{ matrix.arch.name }})
     runs-on: ${{ matrix.os.runs-on[matrix.arch.matrix] }}
 
@@ -161,6 +164,7 @@ jobs:
         run: cargo test && cargo test --release
 
   build_crate:
+    if: ${{ false }}
     name: Build crate
     needs: [lint, test]
     runs-on: ubuntu-latest

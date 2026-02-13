@@ -12,7 +12,6 @@ on:
 
 jobs:
   test:
-    if: ${{ false }}
     name: Test ${{ matrix.config }} ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     env:
@@ -23,9 +22,9 @@ jobs:
         include:
           - os: macos-13-intel
             config: optimized=1
-          - os: ubuntu-latest
+          - os: macos-13-arm64
             config: optimized=1
-          - os: windows-latest
+          - os: ubuntu-latest
             config: optimized=1
 
     steps:

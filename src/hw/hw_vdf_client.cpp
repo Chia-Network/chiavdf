@@ -481,6 +481,8 @@ void event_loop(struct vdf_client *client)
 int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
 {
     int argi = 1;
+    int positional_count = 0;
+    const char *positionals[2] = {nullptr, nullptr};
 
     opts->voltage = HW_VDF_DEF_VOLTAGE;
     opts->freq = HW_VDF_DEF_FREQ;
@@ -494,7 +496,16 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     opts->vpo.max_proof_threads = 0;
     opts->vdfs_mask = 0;
 
-    while (argi < argc && !strncmp(argv[argi], "--", 2)) {
+    while (argi < argc) {
+        if (strncmp(argv[argi], "--", 2) != 0) {
+            if (positional_count < 2) {
+                positionals[positional_count] = argv[argi];
+            }
+            positional_count++;
+            argi++;
+            continue;
+        }
+
         const char *name = argv[argi] + 2;
         const char *value = nullptr;
         char name_buf[32] = {0};
@@ -590,12 +601,12 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
         return -1;
     }
 
-    if (argi == argc) {
+    if (positional_count == 0) {
         return -1;
     }
-    opts->port = atoi(argv[argi]);
-    if (argc > argi + 1) {
-        opts->n_vdfs = atoi(argv[argi + 1]);
+    opts->port = atoi(positionals[0]);
+    if (positional_count > 1) {
+        opts->n_vdfs = atoi(positionals[1]);
     }
     if (!opts->port || opts->n_vdfs < 1 || opts->n_vdfs > 3) {
         LOG_SIMPLE("Invalid port or VDF count");

@@ -226,6 +226,8 @@ jobs:
         run: |
           cmake --build build --target emu_hw_test
           cmake --build build --target hw_test
+          cmake --build build --target emu_hw_vdf_client
+          cmake --build build --target hw_vdf_client
 
       - name: Smoke test
         working-directory: "${{ github.workspace }}/build"
@@ -237,11 +239,17 @@ jobs:
           if (Test-Path "$env:GITHUB_WORKSPACE\mpir_gc_x64") { $dllPaths += "$env:GITHUB_WORKSPACE\mpir_gc_x64" }
           if (Test-Path "$env:GITHUB_WORKSPACE\src\hw\libft4222") { $dllPaths += "$env:GITHUB_WORKSPACE\src\hw\libft4222" }
           if ($dllPaths.Count -gt 0) { $env:PATH = ($dllPaths -join ';') + ';' + $env:PATH }
-          if (Test-Path ".\hw_test.exe") { Write-Host "hw_test.exe present" }
+          if (-not (Test-Path ".\hw_test.exe")) { throw "hw_test.exe is missing" }
+          if (-not (Test-Path ".\hw_vdf_client.exe")) { throw "hw_vdf_client.exe is missing" }
+          Write-Host "hw_test.exe and hw_vdf_client.exe present"
           Write-Host "Running emu_hw_test"
           .\emu_hw_test.exe 1 2000
           if ($LASTEXITCODE -ne 0) { throw "emu_hw_test failed with exit code $LASTEXITCODE" }
           Write-Host "emu_hw_test completed"
+          Write-Host "Running emu_hw_vdf_client --list"
+          .\emu_hw_vdf_client.exe --list
+          if ($LASTEXITCODE -ne 0) { throw "emu_hw_vdf_client --list failed with exit code $LASTEXITCODE" }
+          Write-Host "emu_hw_vdf_client --list completed"
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v5
@@ -250,6 +258,8 @@ jobs:
           path: |
             ${{ github.workspace }}/build/emu_hw_test.exe
             ${{ github.workspace }}/build/hw_test.exe
+            ${{ github.workspace }}/build/emu_hw_vdf_client.exe
+            ${{ github.workspace }}/build/hw_vdf_client.exe
             ${{ github.workspace }}/src/hw/libft4222/libft4222.dll
             ${{ github.workspace }}/src/hw/libft4222/ftd2xx.dll
             ${{ github.workspace }}/src/hw/libft4222/libft4222.lib

@@ -146,17 +146,15 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
         forms.reset(new form[space_needed]);
         forms[0] = f;
         kl.store(10, std::memory_order_relaxed);
-        switch_iters.store(-1, std::memory_order_relaxed);
-        switch_index.store(0, std::memory_order_relaxed);
+        transition_state.store(EncodeTransitionState(/*switch_index=*/0, /*switch_iters=*/-1), std::memory_order_relaxed);
     }
 
     void IncreaseConstants(uint64_t num_iters) {
-        // Publish transition metadata first, then publish kl=100.
-        // OnIteration acquires kl before consuming switch state.
-        switch_index.store(num_iters / 10, std::memory_order_relaxed);
-        // Readers branch on switch_iters and then consume switch_index.
-        // Release here pairs with acquire load in GetPositionUnlocked().
-        switch_iters.store(static_cast<int64_t>(num_iters), std::memory_order_release);
+        // Publish transition metadata as one atomic snapshot, then publish kl=100.
+        transition_state.store(
+            EncodeTransitionState(num_iters / 10, static_cast<int64_t>(num_iters)),
+            std::memory_order_release
+        );
         kl.store(100, std::memory_order_release);
     }
 
@@ -165,11 +163,12 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
     }
 
     int GetPositionUnlocked(uint64_t power) const {
-        const int64_t current_switch_iters = switch_iters.load(std::memory_order_acquire);
+        const uint64_t snapshot = transition_state.load(std::memory_order_acquire);
+        const int64_t current_switch_iters = DecodeSwitchIters(snapshot);
         if (current_switch_iters == -1 || power < static_cast<uint64_t>(current_switch_iters)) {
             return power / 10;
         } else {
-            const uint64_t current_switch_index = switch_index.load(std::memory_order_relaxed);
+            const uint64_t current_switch_index = DecodeSwitchIndex(snapshot);
             return static_cast<int>(current_switch_index + (power - static_cast<uint64_t>(current_switch_iters)) / 100);
         }
     }
@@ -209,8 +208,30 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
     }
 
   private:
-    std::atomic<uint64_t> switch_index{0};
-    std::atomic<int64_t> switch_iters{-1};
+    static uint64_t EncodeTransitionState(uint64_t switch_index_value, int64_t switch_iters_value) {
+        if (switch_index_value > static_cast<uint64_t>(std::numeric_limits<uint32_t>::max())) {
+            throw std::overflow_error("TwoWesolowskiCallback switch_index overflow");
+        }
+        // Persist switch_iters in 32 bits with +1 encoding to represent -1 (unset) as 0.
+        if (switch_iters_value < -1 ||
+            switch_iters_value > static_cast<int64_t>(std::numeric_limits<uint32_t>::max() - 1)) {
+            throw std::overflow_error("TwoWesolowskiCallback switch_iters overflow");
+        }
+        const uint32_t encoded_iters = static_cast<uint32_t>(switch_iters_value + 1);
+        return (static_cast<uint64_t>(encoded_iters) << 32) |
+               static_cast<uint64_t>(static_cast<uint32_t>(switch_index_value));
+    }
+
+    static uint64_t DecodeSwitchIndex(uint64_t state) {
+        return static_cast<uint64_t>(state & 0xffffffffULL);
+    }
+
+    static int64_t DecodeSwitchIters(uint64_t state) {
+        const uint32_t encoded_iters = static_cast<uint32_t>(state >> 32);
+        return static_cast<int64_t>(encoded_iters) - 1;
+    }
+
+    std::atomic<uint64_t> transition_state{0};
     std::atomic<uint32_t> kl{10};
     std::mutex forms_mutex;
 };

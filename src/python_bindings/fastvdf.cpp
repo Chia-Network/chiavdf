@@ -1,7 +1,6 @@
 #include <pybind11/pybind11.h>
 #include "../verifier.h"
 #include "../prover_slow.h"
-#include "../alloc.hpp"
 
 namespace py = pybind11;
 

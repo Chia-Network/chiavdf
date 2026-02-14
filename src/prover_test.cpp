@@ -51,7 +51,6 @@ int gcd_128_max_iter=3;
 
 int main() {
     assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
-    init_gmp();
     if(hasAVX2())
     {
       gcd_base_bits=63;

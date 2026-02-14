@@ -286,7 +286,7 @@ jobs:
         $metricsPath = Join-Path $env:RUNNER_TEMP "PERF_INVESTIGATION_TEMP_windows_metrics.txt"
         "PERF_INVESTIGATION_TEMP begin" | Out-File -FilePath $metricsPath -Encoding utf8
         for ($i = 1; $i -le $repetitions; $i++) {
-          Write-Host "PERF_INVESTIGATION_TEMP run $i/$repetitions: square_asm $iterations"
+          Write-Host "PERF_INVESTIGATION_TEMP run $i/${repetitions}: square_asm $iterations"
           $runOutput = & .\vdf_bench.exe square_asm $iterations 2>&1
           $exitCode = $LASTEXITCODE
           $runOutput | ForEach-Object { Write-Host $_ }

@@ -6,6 +6,7 @@ on:
 
 jobs:
   stale:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     steps:
       - uses: chia-network/stale@main

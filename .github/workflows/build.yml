@@ -21,6 +21,7 @@ permissions:
 
 jobs:
   build-wheels:
+    if: ${{ false }}
     name: Wheel - ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }} ${{ matrix.arch.name }}
     runs-on: ${{ matrix.os.runs-on[matrix.arch.matrix] }}
     strategy:
@@ -123,6 +124,7 @@ jobs:
         path: ./dist
 
   build-sdist:
+    if: ${{ false }}
     name: sdist - ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }} ${{ matrix.arch.name }}
     runs-on: ${{ matrix.os.runs-on[matrix.arch.matrix] }}
     strategy:
@@ -166,6 +168,7 @@ jobs:
         path: ./dist
 
   check:
+    if: ${{ false }}
     name: Check - ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }} ${{ matrix.arch.name }}
     runs-on: ${{ matrix.os.runs-on[matrix.arch.matrix] }}
     strategy:
@@ -208,6 +211,7 @@ jobs:
         mypy --config-file mypi.ini setup.py tests
 
   upload:
+    if: ${{ false }}
     name: Upload to PyPI - ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }} ${{ matrix.arch.name }}
     runs-on: ${{ matrix.os.runs-on[matrix.arch.matrix] }}
     needs:

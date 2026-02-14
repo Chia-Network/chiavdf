@@ -72,7 +72,6 @@ AVX runtime flags:
 
 - `CHIAVDF_LOG_AVX=1`: emit AVX detection logs at startup
 - `CHIA_DISABLE_AVX2=1`: disable AVX2 path even when supported
-- `CHIA_FORCE_AVX2=1`: force AVX2 path
 - `CHIA_DISABLE_AVX512_IFMA=1`: disable AVX-512 IFMA path
 - `CHIA_ENABLE_AVX512_IFMA=1`: enable AVX-512 IFMA path when CPUID support is present
 - `CHIA_FORCE_AVX512_IFMA=1`: force AVX-512 IFMA path

@@ -358,6 +358,11 @@ Proof ProveTwoWeso(integer& D, form x, uint64_t iters, uint64_t done_iterations,
 
         vdf_original vdfo_proof;
         uint64 checkpoint = (done_iterations + iters) - (done_iterations + iters) % 100;
+        while (!stop_signal && !weso->IsPublished(checkpoint)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        if (stop_signal)
+            return Proof();
         form y = weso->GetFormCopy(checkpoint);
         repeated_square_original(vdfo_proof, y, D, L, 0, (done_iterations + iters) % 100, NULL);
 
@@ -391,6 +396,11 @@ Proof ProveTwoWeso(integer& D, form x, uint64_t iters, uint64_t done_iterations,
     if (stop_signal)
         return Proof();
 
+    while (!stop_signal && !weso->IsPublished(done_iterations + iterations1)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    if (stop_signal)
+        return Proof();
     form y1 = weso->GetFormCopy(done_iterations + iterations1);
     Segment sg(
         /*start=*/done_iterations,

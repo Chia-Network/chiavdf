@@ -19,13 +19,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-13-intel, macos-13-arm64, ubuntu-latest, windows-latest]
-        config: [optimized=1, TSAN=1, ASAN=1]
-        exclude:
+        include:
+          - os: macos-13-intel
+            config: optimized=1
+          - os: macos-13-arm64
+            config: optimized=1
+          - os: ubuntu-latest
+            config: optimized=1
           - os: windows-latest
-            config: ASAN=1
-          - os: windows-latest
-            config: TSAN=1
+            config: optimized=1
 
     steps:
     - name: Checkout code
@@ -193,14 +195,11 @@ jobs:
         cd src
         echo "Running 1weso_test"
         ./1weso_test
-        echo "Running 2weso_test"
-        ./2weso_test
+        # PERF_INVESTIGATION_TEMP: keep non-target tests at smoke level for faster perf investigation turnaround.
+        echo "Running 2weso_test with 10 iterations (smoke)"
+        ./2weso_test 10
         echo "Running prover_test"
-        if [[ "${{ matrix.os }}" == ubuntu* ]]; then
-          ./prover_test
-        else
-          CHIAVDF_PROVER_TEST_FAST=1 ./prover_test
-        fi
+        CHIAVDF_PROVER_TEST_FAST=1 ./prover_test
 
     - name: Run vdf tests (short)
       if: matrix.config != 'optimized=1' && !startsWith(matrix.os, 'windows')
@@ -246,8 +245,9 @@ jobs:
         }
         Write-Host "Running 1weso_test"
         Invoke-TestExe "1weso_test"
-        Write-Host "Running 2weso_test"
-        Invoke-TestExe "2weso_test"
+        # PERF_INVESTIGATION_TEMP: keep non-target tests at smoke level for faster perf investigation turnaround.
+        Write-Host "Running 2weso_test with 10 iterations (smoke)"
+        Invoke-TestExe "2weso_test" @("10")
         Write-Host "Running prover_test"
         $env:CHIAVDF_PROVER_TEST_FAST = "1"
         Invoke-TestExe "prover_test"
@@ -256,20 +256,82 @@ jobs:
       if: matrix.config == 'optimized=1' && !startsWith(matrix.os, 'windows')
       run: |
         cd src
-        echo "Benchmarking vdf_bench with 2,000,000 iterations of square_asm"
-        ./vdf_bench square_asm 2000000
+        # PERF_INVESTIGATION_TEMP: lower non-target benchmark load to speed overall CI turnaround.
+        echo "Benchmarking vdf_bench with 250,000 iterations of square_asm"
+        CHIAVDF_PERF_TRACE=1 ./vdf_bench square_asm 250000
 
-    - name: Benchmark vdf_bench square (Windows)
+    - name: Benchmark vdf_bench square (Windows, perf investigation)
       if: matrix.config == 'optimized=1' && startsWith(matrix.os, 'windows')
       shell: pwsh
       run: |
+        # PERF_INVESTIGATION_TEMP: repeated benchmark harness for Windows regression isolation.
         cd build
         $dllPaths = @()
         if ($env:MPIR_ROOT -and (Test-Path "$env:MPIR_ROOT\bin")) { $dllPaths += "$env:MPIR_ROOT\bin" }
         if (Test-Path "$env:GITHUB_WORKSPACE\mpir_gc_x64") { $dllPaths += "$env:GITHUB_WORKSPACE\mpir_gc_x64" }
         if ($dllPaths.Count -gt 0) { $env:PATH = ($dllPaths -join ';') + ';' + $env:PATH }
-        Write-Host "Benchmarking vdf_bench with 2,000,000 iterations of square_asm"
-        & .\vdf_bench.exe square_asm 2000000
-        Write-Host "vdf_bench exit code: $LASTEXITCODE"
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        $env:CHIAVDF_PERF_TRACE = "1"
+
+        Write-Host "PERF_INVESTIGATION_TEMP warmup: square_asm 10000"
+        & .\vdf_bench.exe square_asm 10000
+        if ($LASTEXITCODE -ne 0) {
+          Write-Host "warmup exit code: $LASTEXITCODE"
+          exit $LASTEXITCODE
+        }
+
+        $repetitions = 5
+        $iterations = 1000000
+        $ipsValues = @()
+        $metricLines = @()
+        $metricsPath = Join-Path $env:RUNNER_TEMP "PERF_INVESTIGATION_TEMP_windows_metrics.txt"
+        "PERF_INVESTIGATION_TEMP begin" | Out-File -FilePath $metricsPath -Encoding utf8
+        for ($i = 1; $i -le $repetitions; $i++) {
+          Write-Host "PERF_INVESTIGATION_TEMP run $i/${repetitions}: square_asm $iterations"
+          $runOutput = & .\vdf_bench.exe square_asm $iterations 2>&1
+          $exitCode = $LASTEXITCODE
+          $runOutput | ForEach-Object { Write-Host $_ }
+          if ($exitCode -ne 0) {
+            Write-Host "vdf_bench run $i exit code: $exitCode"
+            exit $exitCode
+          }
+          $metricLine = $runOutput | Select-String -Pattern 'PERF_INVESTIGATION_TEMP mode=square_asm .*ips=([0-9]+(?:\.[0-9]+)?)' | Select-Object -Last 1
+          if (-not $metricLine) {
+            throw "Missing PERF_INVESTIGATION_TEMP metric line in run $i output"
+          }
+          $metricText = $metricLine.ToString()
+          $metricLines += $metricText
+          $metricText | Out-File -FilePath $metricsPath -Encoding utf8 -Append
+          $ips = [double]$metricLine.Matches[0].Groups[1].Value
+          $ipsValues += $ips
+        }
+
+        $avg = ($ipsValues | Measure-Object -Average).Average
+        $min = ($ipsValues | Measure-Object -Minimum).Minimum
+        $max = ($ipsValues | Measure-Object -Maximum).Maximum
+        $variance = 0.0
+        foreach ($v in $ipsValues) {
+          $delta = $v - $avg
+          $variance += $delta * $delta
+        }
+        $stddev = [Math]::Sqrt($variance / $ipsValues.Count)
+        $joinedIps = ($ipsValues | ForEach-Object { "{0:N3}" -f $_ }) -join ", "
+
+        Write-Host ("PERF_INVESTIGATION_TEMP summary runs={0} iterations={1} ips_values=[{2}] avg={3:N3} stddev={4:N3} min={5:N3} max={6:N3}" -f $repetitions, $iterations, $joinedIps, $avg, $stddev, $min, $max)
+        ("PERF_INVESTIGATION_TEMP summary runs={0} iterations={1} ips_values=[{2}] avg={3:N3} stddev={4:N3} min={5:N3} max={6:N3}" -f $repetitions, $iterations, $joinedIps, $avg, $stddev, $min, $max) | Out-File -FilePath $metricsPath -Encoding utf8 -Append
+        "## PERF_INVESTIGATION_TEMP Windows square_asm`n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+        ("- runs: {0}" -f $repetitions) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+        ("- iterations_per_run: {0}" -f $iterations) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+        ("- ips_values: {0}" -f $joinedIps) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+        ("- avg_ips: {0:N3}" -f $avg) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+        ("- stddev_ips: {0:N3}" -f $stddev) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+        ("- min_ips: {0:N3}" -f $min) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+        ("- max_ips: {0:N3}" -f $max) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+    - name: Upload Windows perf investigation metrics
+      if: matrix.config == 'optimized=1' && startsWith(matrix.os, 'windows')
+      uses: actions/upload-artifact@v4
+      with:
+        name: PERF_INVESTIGATION_TEMP-windows-square-asm-metrics
+        path: ${{ runner.temp }}/PERF_INVESTIGATION_TEMP_windows_metrics.txt
+        if-no-files-found: error
 

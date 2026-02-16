@@ -267,7 +267,7 @@ class Prover {
         is_finished = false;
     }
 
-    virtual form* GetForm(uint64_t iteration) = 0;
+    virtual form GetForm(uint64_t iteration) = 0;
     virtual void start() = 0;
     virtual void stop() = 0;
     virtual bool PerformExtraStep() = 0;

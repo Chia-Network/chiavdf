@@ -576,13 +576,13 @@ class HwProver : public ParallelProver {
         pos_offset = segm.start / vdf->interval;
     }
 
-    form* GetForm(uint64_t pos) {
+    form GetForm(uint64_t pos) {
         pos += pos_offset;
         if (hw_proof_wait_value(vdf, pos)) {
             // Provide arbitrary value when stopping - proof won't be computed
-            return &vdf->values[0][0];
+            return vdf->values[0][0];
         }
-        return hw_proof_value_at(vdf, pos);
+        return *hw_proof_value_at(vdf, pos);
     }
 
     void start() {

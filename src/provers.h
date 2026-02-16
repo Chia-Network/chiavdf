@@ -18,8 +18,8 @@ class OneWesolowskiProver : public Prover {
         }
     }
 
-    form* GetForm(uint64_t iteration) {
-        return &intermediates[iteration];
+    form GetForm(uint64_t iteration) {
+        return intermediates[iteration];
     }
 
     void start() {
@@ -72,12 +72,9 @@ class TwoWesolowskiProver : public Prover{
         }
     }
 
-    virtual form* GetForm(uint64_t i) {
+    virtual form GetForm(uint64_t i) {
         const uint64_t power = done_iterations + i * k * l;
-        // `GenerateProof()` calls this on a single worker thread per prover instance.
-        // Returning `&cached_form` is safe under that invariant.
-        cached_form = weso->GetFormCopy(power);
-        return &cached_form;
+        return weso->GetFormCopy(power);
     }
 
     void stop() {
@@ -98,7 +95,6 @@ class TwoWesolowskiProver : public Prover{
     TwoWesolowskiCallback* weso;
     std::atomic<bool>& stop_signal;
     uint64_t done_iterations;
-    form cached_form;
     std::thread worker;
 };
 
@@ -132,8 +128,8 @@ class InterruptableProver: public Prover {
         delete(th);
     }
 
-    form* GetForm(uint64_t i) {
-        return weso->GetForm(done_iterations + i * k * l, bucket);
+    form GetForm(uint64_t i) {
+        return *weso->GetForm(done_iterations + i * k * l, bucket);
     }
 
     void start() {

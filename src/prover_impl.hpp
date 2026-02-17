@@ -1,0 +1,187 @@
+#ifndef PROVER_IMPL_H
+#define PROVER_IMPL_H
+
+#include <iostream>
+#include <stdexcept>
+#include <thread>
+
+inline Prover::Prover(Segment segm, integer D) {
+    this->segm = segm;
+    this->D = D;
+    this->num_iterations = segm.length;
+    is_finished = false;
+}
+
+inline bool Prover::IsFinished() {
+    return is_finished;
+}
+
+inline form Prover::GetProof() {
+    return proof;
+}
+
+inline uint64_t Prover::GetBlock(uint64_t i, uint64_t k, uint64_t T, integer& B) {
+    integer res = FastPow(2, T - k * (i + 1), B);
+    mpz_mul_2exp(res.impl, res.impl, k);
+    res = res / B;
+    auto res_vector = res.to_vector();
+    return res_vector.empty() ? 0 : res_vector[0];
+}
+
+inline void Prover::GenerateProof() {
+    PulmarkReducer reducer;
+
+    integer B = GetB(D, segm.x, segm.y);
+    integer L = root(-D, 4);
+    form id;
+    try {
+        id = form::identity(D);
+    } catch (std::exception& e) {
+        std::cout << "Warning: Could not create identity: " << e.what() << "\n";
+        std::cout << "Discriminant: " << D.to_string() << "\n";
+        std::cout << "Segment start:" << segm.start << "\n";
+        std::cout << "Segment length:" << segm.length << "\n";
+        std::cout << std::flush;
+
+        return;
+    }
+    uint64_t k1 = k / 2;
+    uint64_t k0 = k - k1;
+    form x = id;
+
+    for (int64_t j = l - 1; j >= 0; j--) {
+        x = FastPowFormNucomp(x, D, integer(1 << k), L, reducer);
+
+        std::vector<form> ys((1 << k));
+        for (uint64_t i = 0; i < (1UL << k); i++)
+            ys[i] = id;
+
+        uint64_t limit = num_iterations / (k * l);
+        if (num_iterations % (k * l))
+            limit++;
+        for (uint64_t i = 0; i < limit; i++) {
+            if (num_iterations >= k * (i * l + j + 1)) {
+                uint64_t b = GetBlock(i * l + j, k, num_iterations, B);
+                if (b >= (1UL << k)) {
+                    throw std::runtime_error("GenerateProof block index out of bounds");
+                }
+                if (!PerformExtraStep()) return;
+                form tmp = GetForm(i);
+                nucomp_form(ys[b], ys[b], tmp, D, L);
+            }
+        }
+
+        for (uint64_t b1 = 0; b1 < (1UL << k1); b1++) {
+            form z = id;
+            for (uint64_t b0 = 0; b0 < (1UL << k0); b0++) {
+                if (!PerformExtraStep()) return;
+                nucomp_form(z, z, ys[b1 * (1 << k0) + b0], D, L);
+            }
+            z = FastPowFormNucomp(z, D, integer(b1 * (1 << k0)), L, reducer);
+            nucomp_form(x, x, z, D, L);
+        }
+
+        for (uint64_t b0 = 0; b0 < (1UL << k0); b0++) {
+            form z = id;
+            for (uint64_t b1 = 0; b1 < (1UL << k1); b1++) {
+                if (!PerformExtraStep()) return;
+                nucomp_form(z, z, ys[b1 * (1 << k0) + b0], D, L);
+            }
+            z = FastPowFormNucomp(z, D, integer(b0), L, reducer);
+            nucomp_form(x, x, z, D, L);
+        }
+    }
+    reducer.reduce(x);
+    proof = x;
+    OnFinish();
+}
+
+inline ParallelProver::ParallelProver(Segment segm, integer D) : Prover(segm, D) {}
+
+inline void ParallelProver::ProofThread(ParallelProver* prover, uint8_t thr_idx, uint32_t start, uint32_t len) {
+    prover->ProvePart(thr_idx, start, len);
+}
+
+inline void ParallelProver::SquareFormN(form& f, uint64_t cnt, PulmarkReducer& reducer)
+{
+    for (uint64_t i = 0; i < cnt; i++) {
+        nudupl_form(f, f, D, L);
+        reducer.reduce(f);
+    }
+}
+
+inline void ParallelProver::ProvePart(uint8_t thr_idx, uint32_t start, uint32_t len) {
+    PulmarkReducer reducer;
+
+    uint64_t k1 = k / 2;
+    uint64_t k0 = k - k1;
+    form x = id;
+    int64_t end = start - len;
+    int64_t j;
+
+    for (j = start - 1; j >= end; j--) {
+        x = FastPowFormNucomp(x, D, integer(1 << k), L, reducer);
+
+        std::vector<form> ys((1 << k));
+        for (uint64_t i = 0; i < (1UL << k); i++)
+            ys[i] = id;
+
+        uint64_t limit = num_iterations / (k * l);
+        if (num_iterations % (k * l))
+            limit++;
+        for (uint64_t i = 0; i < limit; i++) {
+            if (num_iterations >= k * (i * l + j + 1)) {
+                uint64_t b = GetBlock(i * l + j, k, num_iterations, B);
+                if (!PerformExtraStep()) return;
+                form tmp = GetForm(i);
+                nucomp_form(ys[b], ys[b], tmp, D, L);
+            }
+        }
+
+        for (uint64_t b1 = 0; b1 < (1UL << k1); b1++) {
+            form z = id;
+            for (uint64_t b0 = 0; b0 < (1UL << k0); b0++) {
+                if (!PerformExtraStep()) return;
+                nucomp_form(z, z, ys[b1 * (1 << k0) + b0], D, L);
+            }
+            z = FastPowFormNucomp(z, D, integer(b1 * (1 << k0)), L, reducer);
+            nucomp_form(x, x, z, D, L);
+        }
+
+        for (uint64_t b0 = 0; b0 < (1UL << k0); b0++) {
+            form z = id;
+            for (uint64_t b1 = 0; b1 < (1UL << k1); b1++) {
+                if (!PerformExtraStep()) return;
+                nucomp_form(z, z, ys[b1 * (1 << k0) + b0], D, L);
+            }
+            z = FastPowFormNucomp(z, D, integer(b0), L, reducer);
+            nucomp_form(x, x, z, D, L);
+        }
+    }
+
+    SquareFormN(x, end * k, reducer);
+    x_vals[thr_idx] = x;
+}
+
+inline void ParallelProver::GenerateProof() {
+    PulmarkReducer reducer;
+
+    this->B = GetB(D, segm.x, segm.y);
+    this->L = root(-D, 4);
+    this->id = form::identity(D);
+
+    uint32_t l0 = l / 2;
+    uint32_t l1 = l - l0;
+    std::thread proof_thr(ParallelProver::ProofThread, this, 0, l, l0);
+    ProvePart(1, l1, l1);
+
+    proof_thr.join();
+    if (!PerformExtraStep()) {
+        return;
+    }
+    nucomp_form(proof, x_vals[0], x_vals[1], D, L);
+    reducer.reduce(proof);
+    OnFinish();
+}
+
+#endif // PROVER_IMPL_H

@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <atomic>
 #include <limits>
-#include <mutex>
 #include <stdexcept>
 
 // Applies to n-weso.
@@ -134,32 +133,44 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
         forms_capacity = space_needed;
         forms.reset(new form[space_needed]);
         forms[0] = f;
-        kl = 10;
-        switch_iters = -1;
+        switch_iters.store(0, std::memory_order_relaxed);
+        switch_index.store(0, std::memory_order_relaxed);
+        large_constants.store(false, std::memory_order_relaxed);
+        // forms[0] is valid immediately at construction.
+        max_published_power.store(0, std::memory_order_relaxed);
     }
 
     void IncreaseConstants(uint64_t num_iters) {
-        std::lock_guard<std::mutex> lk(forms_mutex);
-        kl = 100;
-        switch_iters = num_iters;
-        switch_index = num_iters / 10;
+        // Publish the switch in a single direction: false -> true.
+        switch_iters.store(num_iters, std::memory_order_release);
+        switch_index.store(num_iters / 10, std::memory_order_release);
+        large_constants.store(true, std::memory_order_release);
     }
 
     int GetPosition(uint64_t power) {
-        std::lock_guard<std::mutex> lk(forms_mutex);
         return GetPositionUnlocked(power);
     }
 
+    bool IsPublished(uint64_t power) const {
+        return max_published_power.load(std::memory_order_acquire) >= power;
+    }
+
     int GetPositionUnlocked(uint64_t power) const {
-        if (switch_iters == -1 || power < switch_iters) {
+        if (!large_constants.load(std::memory_order_acquire)) {
             return power / 10;
-        } else {
-            return (switch_index + (power - switch_iters) / 100);
         }
+        const uint64_t switch_iters_local = switch_iters.load(std::memory_order_acquire);
+        if (power < switch_iters_local) {
+            return power / 10;
+        }
+        const uint64_t switch_index_local = switch_index.load(std::memory_order_acquire);
+        return (switch_index_local + (power - switch_iters_local) / 100);
     }
 
     form GetFormCopy(uint64_t power) {
-        std::lock_guard<std::mutex> lk(forms_mutex);
+        if (!IsPublished(power)) {
+            throw std::runtime_error("TwoWesolowskiCallback::GetFormCopy not yet published");
+        }
         const int pos = GetPositionUnlocked(power);
         if (pos < 0 || static_cast<size_t>(pos) >= forms_capacity) {
             throw std::runtime_error("TwoWesolowskiCallback::GetFormCopy out of bounds");
@@ -168,13 +179,12 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
     }
 
     bool LargeConstants() {
-        std::lock_guard<std::mutex> lk(forms_mutex);
-        return kl == 100;
+        return large_constants.load(std::memory_order_acquire);
     }
 
     void OnIteration(int type, void *data, uint64_t iteration) {
         iteration++;
-        std::lock_guard<std::mutex> lk(forms_mutex);
+        const uint32_t kl = large_constants.load(std::memory_order_acquire) ? 100 : 10;
         if (iteration % kl == 0) {
             const int pos = GetPositionUnlocked(iteration);
             if (pos < 0 || static_cast<size_t>(pos) >= forms_capacity) {
@@ -182,14 +192,16 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
             }
             form* mulf = &forms[static_cast<size_t>(pos)];
             SetForm(type, data, mulf);
+            // Publish this completed checkpoint after writing the form data.
+            max_published_power.store(iteration, std::memory_order_release);
         }
     }
 
   private:
-    uint64_t switch_index;
-    int64_t switch_iters;
-    uint32_t kl;
-    std::mutex forms_mutex;
+    std::atomic<uint64_t> switch_index;
+    std::atomic<uint64_t> switch_iters;
+    std::atomic<bool> large_constants;
+    std::atomic<uint64_t> max_published_power;
 };
 
 class FastAlgorithmCallback : public WesolowskiCallback {

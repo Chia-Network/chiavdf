@@ -21,6 +21,7 @@ permissions:
 
 jobs:
   build_wheels:
+    if: ${{ false }}
     name: ${{ matrix.os.emoji }} 📦 Build ${{ matrix.python.major-dot-minor }}
     runs-on: ${{ matrix.os.runs-on }}
     strategy:
@@ -80,6 +81,7 @@ jobs:
           path: ./dist
           if-no-files-found: error
   upload:
+    if: ${{ false }}
     name: Upload to Chia PyPI
     runs-on: ubuntu-latest
     needs:

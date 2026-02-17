@@ -63,6 +63,10 @@ inline bool should_log_avx() {
   return env_flag("CHIAVDF_LOG_AVX");
 }
 
+inline bool should_perf_trace() {
+  return env_flag("CHIAVDF_PERF_TRACE");
+}
+
 #if defined(__i386) || defined(_M_IX86)
     #define ARCH_X86
 #elif defined(__x86_64__) || defined(_M_X64)
@@ -81,7 +85,6 @@ inline void init_avx_flags()
 {
 #if defined(ARCH_X86) || defined(ARCH_X64)
     const bool disable_avx2 = env_flag("CHIA_DISABLE_AVX2");
-    const bool force_avx2 = env_flag("CHIA_FORCE_AVX2");
     const bool disable_avx512 = env_flag("CHIA_DISABLE_AVX512_IFMA");
     const bool enable_avx512 = env_flag("CHIA_ENABLE_AVX512_IFMA");
     const bool force_avx512 = env_flag("CHIA_FORCE_AVX512_IFMA");
@@ -150,16 +153,22 @@ inline void init_avx_flags()
       os_avx2_state = (xcr0 & xcr0_avx) == xcr0_avx;
       os_avx512_state = (xcr0 & xcr0_avx512) == xcr0_avx512;
     }
+    const bool avx512_supported = avx512fbit && avxbit && os_avx512_state;
+    const bool avx512_ifma_supported = avx512fbit && avx512ifmabit && avxbit && os_avx512_state;
 
     if (disable_avx2) {
       bAVX2.store(false, std::memory_order_relaxed);
-    } else if (force_avx2) {
-      bAVX2.store(true, std::memory_order_relaxed);
     } else {
       bAVX2.store(avx2bit && adxbit && avxbit && os_avx2_state, std::memory_order_relaxed);
     }
     if (bAVX2.load(std::memory_order_relaxed) && should_log_avx()) {
       std::fprintf(stderr, "AVX2 enabled (avx2=%d adx=%d avx=%d os_avx2=%d)\n", avx2bit ? 1 : 0, adxbit ? 1 : 0, avxbit ? 1 : 0, os_avx2_state ? 1 : 0);
+      if (!avx512_supported) {
+        std::fprintf(stderr, "AVX512 not supported on this run (f=%d avx=%d os_avx512=%d)\n", avx512fbit ? 1 : 0, avxbit ? 1 : 0, os_avx512_state ? 1 : 0);
+      }
+      if (!avx512_ifma_supported) {
+        std::fprintf(stderr, "AVX512 IFMA not supported on this run (f=%d ifma=%d avx=%d os_avx512=%d)\n", avx512fbit ? 1 : 0, avx512ifmabit ? 1 : 0, avxbit ? 1 : 0, os_avx512_state ? 1 : 0);
+      }
     }
 
     if (disable_avx512) {
@@ -167,12 +176,30 @@ inline void init_avx_flags()
     } else if (force_avx512) {
       enable_avx512_ifma.store(true, std::memory_order_relaxed);
     } else if (enable_avx512) {
-      enable_avx512_ifma.store(avx512fbit && avx512ifmabit && avxbit && os_avx512_state, std::memory_order_relaxed);
+      enable_avx512_ifma.store(avx512_ifma_supported, std::memory_order_relaxed);
     } else {
       enable_avx512_ifma.store(false, std::memory_order_relaxed);
     }
     if (enable_avx512_ifma.load(std::memory_order_relaxed) && should_log_avx()) {
       std::fprintf(stderr, "AVX512 IFMA enabled (f=%d ifma=%d avx=%d os_avx512=%d)\n", avx512fbit ? 1 : 0, avx512ifmabit ? 1 : 0, avxbit ? 1 : 0, os_avx512_state ? 1 : 0);
+    }
+    if (should_perf_trace()) {
+      // PERF_INVESTIGATION_TEMP: explicit AVX dispatch diagnostics for CI triage.
+      std::fprintf(stderr,
+                   "PERF_INVESTIGATION_TEMP avx_flags disable_avx2=%d avx2_cpuid=%d adx_cpuid=%d avx_cpuid=%d os_avx2=%d disable_avx512_ifma=%d enable_avx512_ifma_env=%d force_avx512_ifma=%d avx512f_cpuid=%d avx512ifma_cpuid=%d os_avx512=%d selected_avx2=%d selected_avx512_ifma=%d\n",
+                   disable_avx2 ? 1 : 0,
+                   avx2bit ? 1 : 0,
+                   adxbit ? 1 : 0,
+                   avxbit ? 1 : 0,
+                   os_avx2_state ? 1 : 0,
+                   disable_avx512 ? 1 : 0,
+                   enable_avx512 ? 1 : 0,
+                   force_avx512 ? 1 : 0,
+                   avx512fbit ? 1 : 0,
+                   avx512ifmabit ? 1 : 0,
+                   os_avx512_state ? 1 : 0,
+                   bAVX2.load(std::memory_order_relaxed) ? 1 : 0,
+                   enable_avx512_ifma.load(std::memory_order_relaxed) ? 1 : 0);
     }
 #elif defined(ARCH_ARM)
     bAVX2.store(false, std::memory_order_relaxed);

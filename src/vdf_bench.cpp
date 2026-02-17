@@ -22,6 +22,12 @@
 
 #define CH_SIZE 32
 
+static bool perf_trace_enabled()
+{
+    const char* value = std::getenv("CHIAVDF_PERF_TRACE");
+    return value != nullptr && value[0] != '\0' && value[0] != '0';
+}
+
 static void usage(const char *progname)
 {
     fprintf(stderr, "Usage: %s {square_asm|square|discr} N\n", progname);
@@ -117,12 +123,21 @@ int main(int argc, char **argv)
         printf("WARNING: too few iterations, results will be inaccurate!\n");
         duration = 1;
     }
+    const double ips = (1000.0 * static_cast<double>(iters)) / static_cast<double>(duration);
+    const bool perf_trace = perf_trace_enabled();
     printf("Time: %d ms; ", duration);
     if (is_comp) {
         if (is_asm)
             printf("n_slow: %d; ", n_slow);
 
         printf("speed: %d.%dK ips\n", iters/duration, iters*10/duration % 10);
+        if (perf_trace) {
+            // PERF_INVESTIGATION_TEMP: machine-readable perf output for CI parsing.
+            const int avx2 = hasAVX2() ? 1 : 0;
+            const int avx512_ifma = enable_avx512_ifma.load(std::memory_order_relaxed) ? 1 : 0;
+            printf("PERF_INVESTIGATION_TEMP mode=%s iters=%d duration_ms=%d ips=%.3f n_slow=%d avx2=%d avx512_ifma=%d\n",
+                argv[1], iters, duration, ips, n_slow, avx2, avx512_ifma);
+        }
         printf("a = %s\n", y.a.to_string().c_str());
         printf("b = %s\n", y.b.to_string().c_str());
         printf("c = %s\n", y.c.to_string().c_str());

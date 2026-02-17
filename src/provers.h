@@ -74,6 +74,9 @@ class TwoWesolowskiProver : public Prover{
 
     virtual form GetForm(uint64_t i) {
         const uint64_t power = done_iterations + i * k * l;
+        while (!stop_signal && !weso->IsPublished(power)) {
+            std::this_thread::yield();
+        }
         return weso->GetFormCopy(power);
     }
 

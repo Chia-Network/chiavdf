@@ -79,11 +79,7 @@ string track_asm(string comment, string jump_to = "") {
 
     assert(!enable_threads); //this code isn't atomic
 
-#ifndef CHIA_LINUX_USE_ABSOLUTE_TRACK_ASM
-#define CHIA_LINUX_USE_ABSOLUTE_TRACK_ASM 0
-#endif
-
-#if defined(CHIAOSX) || defined(CHIA_WINDOWS) || !CHIA_LINUX_USE_ABSOLUTE_TRACK_ASM
+#if defined(CHIAOSX) || defined(CHIA_WINDOWS)
     APPEND_M(str( "MOV [RIP+track_asm_rax], RAX" ));
     APPEND_M(str( "MOV RAX, [RIP+asm_tracking_data+#]", to_hex(8*(id-1)) ));
     APPEND_M(str( "LEA RAX, [RAX+1]" ));
@@ -99,7 +95,7 @@ string track_asm(string comment, string jump_to = "") {
 #else
     APPEND_M(str( "MOV RAX, OFFSET FLAT:#", comment_label ));
 #endif
-#if defined(CHIAOSX) || defined(CHIA_WINDOWS) || !CHIA_LINUX_USE_ABSOLUTE_TRACK_ASM
+#if defined(CHIAOSX) || defined(CHIA_WINDOWS)
     APPEND_M(str( "MOV [RIP+asm_tracking_data_comments+#], RAX", to_hex(8*(id-1)) ));
     APPEND_M(str( "MOV RAX, [RIP+track_asm_rax]" ));
 #else

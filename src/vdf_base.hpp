@@ -258,55 +258,7 @@ struct Segment {
     int GetSegmentBucket();
 };
 
-class Prover {
-  public:
-    Prover(Segment segm, integer D) {
-        this->segm = segm;
-        this->D = D;
-        this->num_iterations = segm.length;
-        is_finished = false;
-    }
-
-    virtual form GetForm(uint64_t iteration) = 0;
-    virtual void start() = 0;
-    virtual void stop() = 0;
-    virtual bool PerformExtraStep() = 0;
-    virtual void OnFinish() = 0;
-
-    bool IsFinished() {
-        return is_finished;
-    }
-
-    form GetProof() {
-        return proof;
-    }
-
-    uint64_t GetBlock(uint64_t i, uint64_t k, uint64_t T, integer& B);
-
-    void GenerateProof();
-
-  protected:
-    Segment segm;
-    integer D;
-    form proof;
-    uint64_t num_iterations;
-    uint32_t k;
-    uint32_t l;
-    std::atomic<bool> is_finished;
-};
-
-#define PARALLEL_PROVER_N_THREADS 2
-
-class ParallelProver : public Prover {
-  public:
-    ParallelProver(Segment segm, integer D) : Prover(segm, D) {}
-    void GenerateProof();
-  protected:
-    integer B;
-    integer L;
-    form id;
-    form x_vals[PARALLEL_PROVER_N_THREADS];
-};
+#include "prover_interface.hpp"
 
 void nudupl_form(form &a, form &b, const integer &D, const integer &L);
 

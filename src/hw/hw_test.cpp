@@ -5,7 +5,6 @@
 //#include <cstdint>
 //#include <cstring>
 //#include <gmp.h>
-//#include "alloc.hpp"
 //#include "create_discriminant.h"
 
 //#include "libft4222.h"
@@ -30,7 +29,6 @@ static const char *discrs[] = {
 void init_chia(void)
 {
     VdfBaseInit();
-    //init_gmp();
     //set_rounding_mode();
     //fesetround(FE_TOWARDZERO);
 }

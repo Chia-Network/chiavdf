@@ -24,7 +24,6 @@ int main(int argc, char const* argv[]) try
         ? std::stoull(argv[1]) : 1000000;
 
     assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
-    init_gmp();
     debug_mode = true;
     const bool has_avx2 = hasAVX2();
     if(has_avx2)

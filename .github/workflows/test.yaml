@@ -259,6 +259,81 @@ jobs:
         echo "Benchmarking vdf_bench with 2,000,000 iterations of square_asm"
         ./vdf_bench square_asm 2000000
 
+    - name: Benchmark track_asm addressing modes (Ubuntu)
+      if: matrix.config == 'optimized=1' && matrix.os == 'ubuntu-latest'
+      run: |
+        set -euo pipefail
+        cd src
+
+        run_variant() {
+          local variant="$1"
+          local variant_cppflags="$2"
+          echo "Building variant: ${variant}"
+          make clean
+          make optimized=1 -f Makefile.vdf-client CPPFLAGS="${variant_cppflags} ${CPPFLAGS:-}"
+          echo "Benchmarking variant: ${variant}"
+          ./vdf_bench square_asm 2000000 | tee "../bench_${variant}.txt"
+          cp asm_compiled.s "../asm_compiled_${variant}.s"
+          cp avx2_asm_compiled.s "../avx2_asm_compiled_${variant}.s"
+          cp avx512_asm_compiled.s "../avx512_asm_compiled_${variant}.s"
+        }
+
+        run_variant "rip_relative" "-DGENERATE_ASM_TRACKING_DATA=1 -DCHIA_LINUX_USE_ABSOLUTE_TRACK_ASM=0"
+        run_variant "absolute" "-DGENERATE_ASM_TRACKING_DATA=1 -DCHIA_LINUX_USE_ABSOLUTE_TRACK_ASM=1"
+
+    - name: Summarize track_asm addressing benchmark delta (Ubuntu)
+      if: matrix.config == 'optimized=1' && matrix.os == 'ubuntu-latest'
+      run: |
+        python3 - <<'PY'
+        import pathlib
+        import re
+        import sys
+
+        def parse(path):
+          text = pathlib.Path(path).read_text(encoding="utf-8", errors="replace")
+          t = re.search(r"Time:\s*(\d+)\s*ms;", text)
+          s = re.search(r"speed:\s*([0-9]+(?:\.[0-9]+)?)K\s+ips", text)
+          if not t or not s:
+            print(f"Could not parse benchmark output in {path}", file=sys.stderr)
+            sys.exit(1)
+          return int(t.group(1)), float(s.group(1))
+
+        rip_ms, rip_kips = parse("bench_rip_relative.txt")
+        abs_ms, abs_kips = parse("bench_absolute.txt")
+
+        speed_delta_pct = ((abs_kips - rip_kips) / rip_kips) * 100.0
+        time_delta_pct = ((abs_ms - rip_ms) / rip_ms) * 100.0
+
+        print("track_asm addressing benchmark summary")
+        print(f"  rip_relative: time={rip_ms} ms, speed={rip_kips:.1f}K ips")
+        print(f"  absolute:     time={abs_ms} ms, speed={abs_kips:.1f}K ips")
+        print(f"  delta: speed={speed_delta_pct:+.2f}% (absolute vs rip_relative), time={time_delta_pct:+.2f}%")
+
+        summary_path = pathlib.Path(pathlib.os.environ["GITHUB_STEP_SUMMARY"])
+        with summary_path.open("a", encoding="utf-8") as f:
+          f.write("## track_asm addressing benchmark (Ubuntu)\n")
+          f.write("| variant | time (ms) | speed (K ips) |\n")
+          f.write("|---|---:|---:|\n")
+          f.write(f"| rip_relative | {rip_ms} | {rip_kips:.1f} |\n")
+          f.write(f"| absolute | {abs_ms} | {abs_kips:.1f} |\n")
+          f.write(f"| delta (absolute vs rip_relative) | {time_delta_pct:+.2f}% time | {speed_delta_pct:+.2f}% speed |\n")
+        PY
+
+    - name: Upload track_asm addressing benchmark artifacts (Ubuntu)
+      if: matrix.config == 'optimized=1' && matrix.os == 'ubuntu-latest'
+      uses: actions/upload-artifact@v4
+      with:
+        name: track-asm-addressing-${{ github.run_id }}-${{ github.run_attempt }}
+        path: |
+          bench_rip_relative.txt
+          bench_absolute.txt
+          asm_compiled_rip_relative.s
+          asm_compiled_absolute.s
+          avx2_asm_compiled_rip_relative.s
+          avx2_asm_compiled_absolute.s
+          avx512_asm_compiled_rip_relative.s
+          avx512_asm_compiled_absolute.s
+
     - name: Benchmark vdf_bench square (Windows)
       if: matrix.config == 'optimized=1' && startsWith(matrix.os, 'windows')
       shell: pwsh

@@ -258,56 +258,11 @@ struct Segment {
     int GetSegmentBucket();
 };
 
-class Prover {
-  public:
-    Prover(Segment segm, integer D) {
-        this->segm = segm;
-        this->D = D;
-        this->num_iterations = segm.length;
-        is_finished = false;
-    }
+#include "prover_interface.hpp"
 
-    virtual form GetForm(uint64_t iteration) = 0;
-    virtual void start() = 0;
-    virtual void stop() = 0;
-    virtual bool PerformExtraStep() = 0;
-    virtual void OnFinish() = 0;
-
-    bool IsFinished() {
-        return is_finished;
-    }
-
-    form GetProof() {
-        return proof;
-    }
-
-    uint64_t GetBlock(uint64_t i, uint64_t k, uint64_t T, integer& B);
-
-    void GenerateProof();
-
-  protected:
-    Segment segm;
-    integer D;
-    form proof;
-    uint64_t num_iterations;
-    uint32_t k;
-    uint32_t l;
-    std::atomic<bool> is_finished;
-};
-
-#define PARALLEL_PROVER_N_THREADS 2
-
-class ParallelProver : public Prover {
-  public:
-    ParallelProver(Segment segm, integer D) : Prover(segm, D) {}
-    void GenerateProof();
-  protected:
-    integer B;
-    integer L;
-    form id;
-    form x_vals[PARALLEL_PROVER_N_THREADS];
-};
-
+integer FastPow(uint64_t a, uint64_t b, integer& c);
+form FastPowFormNucomp(form x, integer &D, integer num_iterations, integer &L, PulmarkReducer& reducer);
+void nucomp_form(form &a, form const& b, form const& c, integer const& D, integer const& L);
 void nudupl_form(form &a, form &b, const integer &D, const integer &L);
 
 integer GetB(const integer& D, form &x, form& y);
@@ -322,4 +277,6 @@ void VerifyWesolowskiProof(integer &D, form x, form y, form proof, uint64_t iter
 
 void Int64ToBytes(uint8_t *result, uint64_t input);
 void Int32ToBytes(uint8_t *result, uint32_t input);
+
+#include "prover_impl.hpp"
 #endif // VDF_BASE_H

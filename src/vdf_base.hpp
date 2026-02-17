@@ -260,6 +260,9 @@ struct Segment {
 
 #include "prover_interface.hpp"
 
+integer FastPow(uint64_t a, uint64_t b, integer& c);
+form FastPowFormNucomp(form x, integer &D, integer num_iterations, integer &L, PulmarkReducer& reducer);
+void nucomp_form(form &a, form const& b, form const& c, integer const& D, integer const& L);
 void nudupl_form(form &a, form &b, const integer &D, const integer &L);
 
 integer GetB(const integer& D, form &x, form& y);
@@ -274,4 +277,6 @@ void VerifyWesolowskiProof(integer &D, form x, form y, form proof, uint64_t iter
 
 void Int64ToBytes(uint8_t *result, uint64_t input);
 void Int32ToBytes(uint8_t *result, uint32_t input);
+
+#include "prover_impl.hpp"
 #endif // VDF_BASE_H

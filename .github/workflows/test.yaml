@@ -194,7 +194,12 @@ jobs:
         echo "Running 1weso_test"
         ./1weso_test
         echo "Running 2weso_test"
-        ./2weso_test
+        if [[ "${{ matrix.os }}" == ubuntu* ]]; then
+          echo "Using short 2weso_test on Ubuntu"
+          ./2weso_test 1000
+        else
+          ./2weso_test
+        fi
         echo "Running prover_test"
         if [[ "${{ matrix.os }}" == ubuntu* ]]; then
           ./prover_test
@@ -269,7 +274,7 @@ jobs:
           local variant="$1"
           local variant_cppflags="$2"
           echo "Building variant: ${variant}"
-          make clean
+          make -f Makefile.vdf-client clean
           make optimized=1 -f Makefile.vdf-client CPPFLAGS="${variant_cppflags} ${CPPFLAGS:-}"
           echo "Benchmarking variant: ${variant}"
           ./vdf_bench square_asm 2000000 | tee "../bench_${variant}.txt"

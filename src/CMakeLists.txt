@@ -306,6 +306,7 @@ endif()
 if(BUILD_HW_TOOLS)
   set(HW_COMMON_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/vdf_base.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/prover_runtime.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_util.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_proof.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_interface.cpp

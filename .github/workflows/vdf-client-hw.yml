@@ -25,7 +25,7 @@ env:
 
 jobs:
   build:
-    name: Build binaries (${{ matrix.config }} ${{ matrix.os }})
+    name: CI (${{ matrix.os }}, ${{ matrix.config }})
     runs-on: ${{ matrix.os }}
     env:
       # Runtime feature gate read via getenv() in parameters.h.
@@ -215,11 +215,6 @@ jobs:
           cd src
           ./1weso_test
           ./2weso_test
-          if [[ "${{ matrix.os }}" == ubuntu* ]]; then
-            ./prover_test
-          else
-            CHIAVDF_PROVER_TEST_FAST=1 ./prover_test
-          fi
 
       - name: Run vdf tests (short)
         if: matrix.config != 'optimized=1' && matrix.os != 'windows-latest'
@@ -231,11 +226,10 @@ jobs:
       # macos thread sanitizer will give false positives on ./prover_test because
       # it prints to std::cout from multiple threads. Which is allowed by the
       # standard
-      - name: test Prover
-        if: matrix.config != 'optimized=1' && (matrix.config != 'TSAN=1' || startsWith(matrix.os, 'ubuntu')) && matrix.os != 'windows-latest'
+      - name: Run prover test (Ubuntu/macOS)
+        if: matrix.os != 'windows-latest' && (matrix.config != 'TSAN=1' || matrix.os == 'ubuntu-latest')
         run: |
           cd src
-          echo "Running prover_test"
           if [[ "${{ matrix.os }}" == ubuntu* ]]; then
             ./prover_test
           else
@@ -265,6 +259,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "1weso_test failed with exit code $LASTEXITCODE" }
           .\2weso_test.exe
           if ($LASTEXITCODE -ne 0) { throw "2weso_test failed with exit code $LASTEXITCODE" }
+
+      - name: Run prover test (Windows)
+        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
+        shell: pwsh
+        run: |
+          cd build
+          $env:PATH = "$PWD;$PWD\..\src\hw\libft4222;$PWD\..\mpir_gc_x64;$env:PATH"
           $env:CHIAVDF_PROVER_TEST_FAST = "1"
           .\prover_test.exe
           if ($LASTEXITCODE -ne 0) { throw "prover_test failed with exit code $LASTEXITCODE" }

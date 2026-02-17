@@ -1,4 +1,4 @@
-name: Build vdf_client and hw_vdf_client - test - package - upload
+name: VDF client & HW CI
 
 on:
   push:
@@ -75,13 +75,31 @@ jobs:
         run: |
           brew ls --versions gmp >/dev/null 2>&1 || brew install gmp
           brew ls --versions boost >/dev/null 2>&1 || brew install boost
+          BOOST_VERSION="$(brew list --versions boost | awk '{print $2}')"
+          BOOST_INCLUDE=""
+          for cand in \
+            "$(brew --prefix boost)/include" \
+            "$(brew --prefix)/include" \
+            "$(brew --cellar boost)/${BOOST_VERSION}/include"; do
+            if [ -f "$cand/boost/asio.hpp" ]; then
+              BOOST_INCLUDE="$cand"
+              break
+            fi
+          done
+          if [ -z "$BOOST_INCLUDE" ]; then
+            echo "Could not locate boost/asio.hpp for brew boost=${BOOST_VERSION}" >&2
+            brew --prefix boost || true
+            brew --cellar boost || true
+            brew info boost || true
+            exit 1
+          fi
           if [[ "${{ matrix.os }}" == "macos-13-intel" ]]; then
             echo "CHIA_ENABLE_AVX512=1" >> "$GITHUB_ENV"
             echo "CHIA_ENABLE_AVX512_IFMA=1" >> "$GITHUB_ENV"
           fi
           ./scripts/get-libft4222.sh install
           cd src
-          make ${{ matrix.config }} -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+          make ${{ matrix.config }} CPPFLAGS="-I${BOOST_INCLUDE} ${CPPFLAGS:-}" -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
 
       - name: Cache Boost on Windows
         if: matrix.os == 'windows-latest'

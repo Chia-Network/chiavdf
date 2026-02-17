@@ -244,11 +244,11 @@ jobs:
           Copy-Item "src/hw/libft4222/*.lib" "stage/"
           Copy-Item "mpir_gc_x64/*.dll" "stage/"
 
-      - name: Save staged binaries cache
-        uses: actions/cache/save@v4
+      - name: Upload staged binaries (handoff)
+        uses: actions/upload-artifact@v5
         with:
+          name: handoff-binaries-${{ matrix.config }}-${{ matrix.os }}
           path: stage
-          key: vdf-binaries-${{ github.run_id }}-${{ matrix.config }}-${{ matrix.os }}
 
   test:
     name: Test (${{ matrix.config }} ${{ matrix.os }})
@@ -265,10 +265,10 @@ jobs:
           - os: windows-latest
             config: TSAN=1
     steps:
-      - name: Restore binaries cache
-        uses: actions/cache/restore@v4
+      - name: Download staged binaries (handoff)
+        uses: actions/download-artifact@v6
         with:
-          key: vdf-binaries-${{ github.run_id }}-${{ matrix.config }}-${{ matrix.os }}
+          name: handoff-binaries-${{ matrix.config }}-${{ matrix.os }}
           path: artifact
 
       - name: Run HW smoke test (Ubuntu/macOS)
@@ -368,9 +368,9 @@ jobs:
           fetch-depth: 0
 
       - name: Restore Ubuntu binaries cache
-        uses: actions/cache/restore@v4
+        uses: actions/download-artifact@v6
         with:
-          key: vdf-binaries-${{ github.run_id }}-optimized=1-ubuntu-latest
+          name: handoff-binaries-optimized=1-ubuntu-latest
           path: artifact
 
       - name: Assemble .deb
@@ -411,11 +411,11 @@ jobs:
           mkdir -p installer-stage
           cp "dist/${{ env.DEB_NAME }}" installer-stage/
 
-      - name: Save installer cache
-        uses: actions/cache/save@v4
+      - name: Upload installer (handoff)
+        uses: actions/upload-artifact@v5
         with:
+          name: handoff-installer-ubuntu
           path: installer-stage
-          key: vdf-installer-${{ github.run_id }}-ubuntu
 
   upload-binaries:
     name: Upload binaries (${{ matrix.config }} ${{ matrix.os }})
@@ -432,10 +432,10 @@ jobs:
           - os: windows-latest
             config: TSAN=1
     steps:
-      - name: Restore binaries cache
-        uses: actions/cache/restore@v4
+      - name: Download staged binaries (handoff)
+        uses: actions/download-artifact@v6
         with:
-          key: vdf-binaries-${{ github.run_id }}-${{ matrix.config }}-${{ matrix.os }}
+          name: handoff-binaries-${{ matrix.config }}-${{ matrix.os }}
           path: artifact
 
       - name: Upload binaries artifact
@@ -450,9 +450,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Restore installer cache
-        uses: actions/cache/restore@v4
+        uses: actions/download-artifact@v6
         with:
-          key: vdf-installer-${{ github.run_id }}-ubuntu
+          name: handoff-installer-ubuntu
           path: installer-artifact
 
       - name: Upload installer artifact

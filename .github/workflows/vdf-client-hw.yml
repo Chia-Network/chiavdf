@@ -1,0 +1,453 @@
+name: Build vdf_client and hw_vdf_client - test - package - upload
+
+on:
+  push:
+    branches:
+      - main
+  release:
+    types: [published]
+  pull_request:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+concurrency:
+  # SHA is added to the end if on `main` to let all main workflows run
+  group: ${{ github.ref }}-${{ github.workflow }}-${{ github.event_name }}-${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/long_lived/')) && github.sha || '' }}
+  cancel-in-progress: true
+
+permissions:
+  id-token: write
+  contents: write
+
+env:
+  CHIAVDF_LOG_AVX: "1"
+
+jobs:
+  build:
+    name: Build binaries (${{ matrix.config }} ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-13-intel, macos-13-arm64, windows-latest]
+        config: [optimized=1, TSAN=1, ASAN=1]
+        exclude:
+          - os: windows-latest
+            config: ASAN=1
+          - os: windows-latest
+            config: TSAN=1
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install Python
+        uses: Chia-Network/actions/setup-python@main
+        with:
+          python-version: "3.10"
+
+      - name: Set Env
+        uses: Chia-Network/actions/setjobenv@main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # See: https://github.com/google/sanitizers/issues/1716
+      # Fixes `FATAL: ThreadSanitizer: unexpected memory mapping 0x70498d8ae000-0x70498dd00000` type errors
+      - name: Adjust mmap_rnd_bits on ubuntu
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo sysctl vm.mmap_rnd_bits=28
+
+      - name: Build on Ubuntu
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          echo "CHIA_ENABLE_AVX512=1" >> "$GITHUB_ENV"
+          echo "CHIA_ENABLE_AVX512_IFMA=1" >> "$GITHUB_ENV"
+          sudo apt-get update -y -o Acquire::Retries=3
+          sudo apt-get install -y build-essential cmake libgmp-dev libboost-python-dev libpython3-dev libboost-system-dev
+          ./scripts/get-libft4222.sh install
+          cd src
+          make ${{ matrix.config }} -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+
+      - name: Build on macOS
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          brew ls --versions gmp >/dev/null 2>&1 || brew install gmp
+          brew ls --versions boost >/dev/null 2>&1 || brew install boost
+          if [[ "${{ matrix.os }}" == "macos-13-intel" ]]; then
+            echo "CHIA_ENABLE_AVX512=1" >> "$GITHUB_ENV"
+            echo "CHIA_ENABLE_AVX512_IFMA=1" >> "$GITHUB_ENV"
+          fi
+          ./scripts/get-libft4222.sh install
+          cd src
+          make ${{ matrix.config }} -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+
+      - name: Cache Boost on Windows
+        if: matrix.os == 'windows-latest'
+        id: cache-boost
+        uses: actions/cache/restore@v4
+        with:
+          path: C:\local\boost_*
+          key: windows-boost-msvc-14.3-v1
+
+      - name: Cache mpir checkout on Windows
+        if: matrix.os == 'windows-latest'
+        id: cache-mpir
+        uses: actions/cache@v4
+        with:
+          path: mpir_gc_x64
+          key: windows-mpir-gc-x64-v1
+
+      - name: Checkout mpir for Windows
+        if: matrix.os == 'windows-latest' && steps.cache-mpir.outputs.cache-hit != 'true'
+        uses: actions/checkout@v6
+        with:
+          repository: Chia-Network/mpir_gc_x64
+          fetch-depth: 1
+          path: mpir_gc_x64
+
+      - name: Install LLVM, Ninja and Boost on Windows
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        env:
+          BOOST_CACHE_HIT: ${{ steps.cache-boost.outputs.cache-hit }}
+        run: |
+          $llvmBin = "C:\Program Files\LLVM\bin\clang-cl.exe"
+          $ninjaBin = "C:\ProgramData\chocolatey\bin\ninja.exe"
+          if (-not (Test-Path $llvmBin) -or -not (Test-Path $ninjaBin)) {
+            choco install llvm ninja -y
+          }
+          $boostDir = Get-ChildItem "C:\local" -Directory -Filter "boost_*" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $boostDir) {
+            if ("$env:BOOST_CACHE_HIT" -ne "true") {
+              choco install boost-msvc-14.3 -y
+            } else {
+              choco install boost-msvc-14.3 -y
+            }
+            $boostDir = Get-ChildItem "C:\local" -Directory -Filter "boost_*" -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+          "C:\Program Files\LLVM\bin" | Out-File -Append -FilePath $env:GITHUB_PATH
+          "CHIA_ENABLE_AVX512=1" | Out-File -Append -FilePath $env:GITHUB_ENV
+          "CHIA_ENABLE_AVX512_IFMA=1" | Out-File -Append -FilePath $env:GITHUB_ENV
+          if (-not $boostDir) {
+            throw "Boost install not found under C:\local"
+          }
+          "BOOST_INCLUDE_DIR=$($boostDir.FullName)" | Out-File -Append -FilePath $env:GITHUB_ENV
+
+      - name: Save Boost cache on Windows
+        if: matrix.os == 'windows-latest' && steps.cache-boost.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: C:\local\boost_*
+          key: ${{ steps.cache-boost.outputs.cache-primary-key }}
+
+      - name: Set up MSVC environment (Windows SDK + CRT libs)
+        if: matrix.os == 'windows-latest'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Download USB drivers (FT4222H) on Windows
+        if: matrix.os == 'windows-latest'
+        run: powershell -ExecutionPolicy Bypass -File scripts/get-libft4222.ps1 install
+
+      - name: Build on Windows
+        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
+        shell: pwsh
+        run: |
+          $cmakeArgs = @(
+            "-S", "src",
+            "-B", "build",
+            "-G", "Ninja",
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DCMAKE_TRY_COMPILE_CONFIGURATION=Release",
+            "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL",
+            "-DCMAKE_C_COMPILER=clang-cl",
+            "-DCMAKE_CXX_COMPILER=clang-cl",
+            "-DCMAKE_ASM_COMPILER=clang-cl",
+            "-DBOOST_INCLUDE_DIR=$env:BOOST_INCLUDE_DIR",
+            "-DBUILD_PYTHON=OFF",
+            "-DBUILD_CHIAVDFC=OFF",
+            "-DBUILD_VDF_CLIENT=ON",
+            "-DBUILD_VDF_BENCH=ON",
+            "-DBUILD_VDF_TESTS=ON",
+            "-DBUILD_HW_TOOLS=ON",
+            "-DENABLE_GNU_ASM=ON"
+          )
+          & cmake @cmakeArgs
+          cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+
+      - name: Stage binaries (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          mkdir -p stage
+          cp src/vdf_client stage/
+          cp src/vdf_bench stage/
+          cp src/1weso_test stage/
+          cp src/2weso_test stage/
+          cp src/prover_test stage/
+          cp src/emu_hw_test stage/
+          cp src/hw_test stage/
+          cp src/emu_hw_vdf_client stage/
+          cp src/hw_vdf_client stage/
+          cp src/hw/libft4222/build-x86_64/libft4222.so stage/
+
+      - name: Stage binaries (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          mkdir -p stage
+          cp src/vdf_client stage/
+          cp src/vdf_bench stage/
+          cp src/1weso_test stage/
+          cp src/2weso_test stage/
+          cp src/prover_test stage/
+          cp src/emu_hw_test stage/
+          cp src/hw_test stage/
+          cp src/emu_hw_vdf_client stage/
+          cp src/hw_vdf_client stage/
+          cp src/hw/libft4222/*.dylib stage/
+
+      - name: Stage binaries (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path "stage" -Force | Out-Null
+          Copy-Item "build/vdf_client.exe" "stage/"
+          Copy-Item "build/vdf_bench.exe" "stage/"
+          Copy-Item "build/1weso_test.exe" "stage/"
+          Copy-Item "build/2weso_test.exe" "stage/"
+          Copy-Item "build/prover_test.exe" "stage/"
+          Copy-Item "build/emu_hw_test.exe" "stage/"
+          Copy-Item "build/hw_test.exe" "stage/"
+          Copy-Item "build/emu_hw_vdf_client.exe" "stage/"
+          Copy-Item "build/hw_vdf_client.exe" "stage/"
+          Copy-Item "src/hw/libft4222/*.dll" "stage/"
+          Copy-Item "src/hw/libft4222/*.lib" "stage/"
+          Copy-Item "mpir_gc_x64/*.dll" "stage/"
+
+      - name: Save staged binaries cache
+        uses: actions/cache/save@v4
+        with:
+          path: stage
+          key: vdf-binaries-${{ github.run_id }}-${{ matrix.config }}-${{ matrix.os }}
+
+  test:
+    name: Test (${{ matrix.config }} ${{ matrix.os }})
+    needs: [build]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-13-intel, macos-13-arm64, windows-latest]
+        config: [optimized=1, TSAN=1, ASAN=1]
+        exclude:
+          - os: windows-latest
+            config: ASAN=1
+          - os: windows-latest
+            config: TSAN=1
+    steps:
+      - name: Restore binaries cache
+        uses: actions/cache/restore@v4
+        with:
+          key: vdf-binaries-${{ github.run_id }}-${{ matrix.config }}-${{ matrix.os }}
+          path: artifact
+
+      - name: Run HW smoke test (Ubuntu/macOS)
+        if: matrix.os != 'windows-latest'
+        run: |
+          cd artifact
+          test -x ./hw_vdf_client
+          test -x ./hw_test
+          ./emu_hw_test 1 2000
+          ./emu_hw_vdf_client --list
+
+      - name: Run vdf tests (optimized)
+        if: matrix.config == 'optimized=1' && matrix.os != 'windows-latest'
+        run: |
+          cd artifact
+          ./1weso_test
+          ./2weso_test
+          if [[ "${{ matrix.os }}" == ubuntu* ]]; then
+            ./prover_test
+          else
+            CHIAVDF_PROVER_TEST_FAST=1 ./prover_test
+          fi
+
+      - name: Run vdf tests (short)
+        if: matrix.config != 'optimized=1' && matrix.os != 'windows-latest'
+        run: |
+          cd artifact
+          ./1weso_test 1000
+          ./2weso_test 1000
+
+      # macos thread sanitizer will give false positives on ./prover_test because
+      # it prints to std::cout from multiple threads. Which is allowed by the
+      # standard
+      - name: test Prover
+        if: matrix.config != 'optimized=1' && (matrix.config != 'TSAN=1' || startsWith(matrix.os, 'ubuntu')) && matrix.os != 'windows-latest'
+        run: |
+          cd artifact
+          echo "Running prover_test"
+          if [[ "${{ matrix.os }}" == ubuntu* ]]; then
+            ./prover_test
+          else
+            CHIAVDF_PROVER_TEST_FAST=1 ./prover_test
+          fi
+
+      - name: Run HW smoke test (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          cd artifact
+          $env:PATH = "$PWD;$env:PATH"
+          if (-not (Test-Path ".\hw_test.exe")) { throw "hw_test.exe is missing" }
+          if (-not (Test-Path ".\hw_vdf_client.exe")) { throw "hw_vdf_client.exe is missing" }
+          .\emu_hw_test.exe 1 2000
+          if ($LASTEXITCODE -ne 0) { throw "emu_hw_test failed with exit code $LASTEXITCODE" }
+          .\emu_hw_vdf_client.exe --list
+          if ($LASTEXITCODE -ne 0) { throw "emu_hw_vdf_client --list failed with exit code $LASTEXITCODE" }
+
+      - name: Run vdf tests (Windows)
+        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
+        shell: pwsh
+        run: |
+          cd artifact
+          $env:PATH = "$PWD;$env:PATH"
+          .\1weso_test.exe
+          if ($LASTEXITCODE -ne 0) { throw "1weso_test failed with exit code $LASTEXITCODE" }
+          .\2weso_test.exe
+          if ($LASTEXITCODE -ne 0) { throw "2weso_test failed with exit code $LASTEXITCODE" }
+          $env:CHIAVDF_PROVER_TEST_FAST = "1"
+          .\prover_test.exe
+          if ($LASTEXITCODE -ne 0) { throw "prover_test failed with exit code $LASTEXITCODE" }
+
+      - name: Benchmark vdf_bench square (Ubuntu/Mac)
+        if: matrix.config == 'optimized=1' && matrix.os != 'windows-latest'
+        run: |
+          cd artifact
+          echo "Benchmarking vdf_bench with 2,000,000 iterations of square_asm"
+          ./vdf_bench square_asm 2000000
+
+      - name: Benchmark vdf_bench square (Windows)
+        if: matrix.config == 'optimized=1' && matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          cd artifact
+          $env:PATH = "$PWD;$env:PATH"
+          Write-Host "Benchmarking vdf_bench with 2,000,000 iterations of square_asm"
+          .\vdf_bench.exe square_asm 2000000
+          if ($LASTEXITCODE -ne 0) { throw "vdf_bench failed with exit code $LASTEXITCODE" }
+
+  package:
+    name: Package (Ubuntu)
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Restore Ubuntu binaries cache
+        uses: actions/cache/restore@v4
+        with:
+          key: vdf-binaries-${{ github.run_id }}-optimized=1-ubuntu-latest
+          path: artifact
+
+      - name: Assemble .deb
+        env:
+          INSTALLER_VERSION: "${{ env.RELEASE_TAG || format('0.0.1-{0}', github.run_id) }}"
+          PLATFORM: "amd64"
+        run: |
+          pip install jinjanator
+          CLI_DEB_BASE="chiavdf-hw_$INSTALLER_VERSION-1_$PLATFORM"
+          mkdir -p "dist/$CLI_DEB_BASE/usr/bin"
+          mkdir -p "dist/$CLI_DEB_BASE/usr/lib"
+          mkdir -p "dist/$CLI_DEB_BASE/DEBIAN"
+          mkdir -p "dist/$CLI_DEB_BASE/etc/udev/rules.d"
+          j2 -o "dist/$CLI_DEB_BASE/DEBIAN/control" assets/deb/control.j2
+
+          cp artifact/vdf_client dist/$CLI_DEB_BASE/usr/bin/
+          cp artifact/vdf_bench dist/$CLI_DEB_BASE/usr/bin/
+          cp artifact/1weso_test dist/$CLI_DEB_BASE/usr/bin/
+          cp artifact/2weso_test dist/$CLI_DEB_BASE/usr/bin/
+          cp artifact/prover_test dist/$CLI_DEB_BASE/usr/bin/
+          cp artifact/emu_hw_test dist/$CLI_DEB_BASE/usr/bin/
+          cp artifact/hw_test dist/$CLI_DEB_BASE/usr/bin/
+          cp artifact/hw_vdf_client dist/$CLI_DEB_BASE/usr/bin/
+          cp artifact/emu_hw_vdf_client dist/$CLI_DEB_BASE/usr/bin/
+          cp artifact/libft4222.so dist/$CLI_DEB_BASE/usr/lib/
+          echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="601c", MODE="0666"' > dist/$CLI_DEB_BASE/etc/udev/rules.d/99-chiavdf.rules
+          dpkg-deb --build --root-owner-group "dist/$CLI_DEB_BASE"
+
+          echo "DEB_NAME=$CLI_DEB_BASE.deb" >> "$GITHUB_ENV"
+
+      - name: Packaging plan for macOS and Windows
+        run: |
+          echo "TODO (follow-up PR): add macOS package assembly and artifact upload."
+          echo "TODO (follow-up PR): add Windows package assembly and artifact upload."
+
+      - name: Stage Ubuntu installer
+        run: |
+          mkdir -p installer-stage
+          cp "dist/${{ env.DEB_NAME }}" installer-stage/
+
+      - name: Save installer cache
+        uses: actions/cache/save@v4
+        with:
+          path: installer-stage
+          key: vdf-installer-${{ github.run_id }}-ubuntu
+
+  upload-binaries:
+    name: Upload binaries (${{ matrix.config }} ${{ matrix.os }})
+    needs: [test, package]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-13-intel, macos-13-arm64, windows-latest]
+        config: [optimized=1, TSAN=1, ASAN=1]
+        exclude:
+          - os: windows-latest
+            config: ASAN=1
+          - os: windows-latest
+            config: TSAN=1
+    steps:
+      - name: Restore binaries cache
+        uses: actions/cache/restore@v4
+        with:
+          key: vdf-binaries-${{ github.run_id }}-${{ matrix.config }}-${{ matrix.os }}
+          path: artifact
+
+      - name: Upload binaries artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: binaries-${{ matrix.config }}-${{ matrix.os }}
+          path: artifact
+
+  upload-installer:
+    name: Upload installer (Ubuntu)
+    needs: [upload-binaries]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restore installer cache
+        uses: actions/cache/restore@v4
+        with:
+          key: vdf-installer-${{ github.run_id }}-ubuntu
+          path: installer-artifact
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: installer-ubuntu
+          path: installer-artifact
+
+      - name: Upload release artifacts
+        if: env.RELEASE == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload \
+            $RELEASE_TAG \
+            installer-artifact/*.deb

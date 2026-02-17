@@ -19,8 +19,6 @@
 #include <cfenv>
 #include <thread>
 
-#include <unistd.h>
-
 static const char *discrs[] = {
     "-0xac566497f63870a7b661f5482f47336cd1aa85ab43914828b7998f255916729c2ad965bcf7fe231721d96706ea7d823ed4adf663a0263714bb80144aebafcdd2915b6c7ef68c2d19447be83e7f39b4a7442640914053d2e7d6a561aa29b9449c815717af7da97a823798f402d073901a1f2bd8cd879b8b1afe2496649197021f",
     "-0xc3657f850b3f2b659d70273704564bc69b849fe1d8c70b096933efdcf7143931b393676f500d79624da783d73e0c5303ae48fb9543502c4161586d8fdaf03709d2115df21aeeee4a58614050cbdfe74024063b9620de084d8ef46f474fa57983c4bebfa7e8a69efeb523a167558fe1487a086c11337e20b773ad3d4710671417",
@@ -100,7 +98,7 @@ int hw_test_main(int argc, char **argv)
             //break;
         //}
         if (chia_vdf_is_emu) {
-            usleep(50000);
+            vdf_usleep(50000);
         }
         read_cnt++;
     }

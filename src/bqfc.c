@@ -3,6 +3,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* xgcd_partial.c is linked via C++ translation units; declare symbol for C++ compile path. */
+void mpz_xgcd_partial(mpz_t co2, mpz_t co1, mpz_t r2, mpz_t r1, const mpz_t L);
+
 int bqfc_compr(struct qfb_c *out_c, mpz_t a, mpz_t b)
 {
     mpz_t a_sqrt, a_copy, b_copy, dummy;

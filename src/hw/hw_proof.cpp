@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <cstdlib>
-#include <unistd.h>
 
 static const uint32_t g_chkp_thres = 1000000;
 static const uint32_t g_skip_thres = 10;
@@ -474,13 +473,13 @@ void hw_proof_wait_values(struct vdf_state *vdf, bool finish_work)
 {
     if (finish_work) {
         while (!vdf->wq.empty()) {
-            usleep(100000);
+            vdf_usleep(100000);
             hw_proof_process_work(vdf);
         }
     }
 
     while (vdf->aux_threads_busy) {
-        usleep(10000);
+        vdf_usleep(10000);
     }
 
     if (!finish_work) {
@@ -495,7 +494,7 @@ void hw_proof_wait_values(struct vdf_state *vdf, bool finish_work)
 int hw_proof_wait_value(struct vdf_state *vdf, size_t pos)
 {
     while (!(vdf->valid_values[pos / 8] & (1 << (pos % 8)))) {
-        usleep(100000);
+        vdf_usleep(100000);
         if (vdf->stopping) {
             return -1;
         }

@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   build-hw:
-    name: Build HW VDF Client
+    name: Build HW VDF Client (Ubuntu)
     runs-on: [ubuntu-22.04]
     steps:
       - name: Checkout code
@@ -43,20 +43,24 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake libgmp-dev libboost-system-dev
+          sudo apt-get install -y build-essential cmake libgmp-dev
 
       - name: Download USB drivers
-        run: |
-          mkdir libft4222
-          cd libft4222
-          wget https://download.chia.net/vdf/libft4222-linux-1.4.4.170.tgz
-          tar -xvzf libft4222-linux-1.4.4.170.tgz
-          ln -s ${{ github.workspace }}/libft4222 ${{ github.workspace }}/src/hw/libft4222
-          ln -s ${{ github.workspace }}/libft4222/build-x86_64/libft4222.so.1.4.4.170 ${{ github.workspace }}/libft4222/build-x86_64/libft4222.so
+        run: ./scripts/get-libft4222.sh install
 
       - name: Compile
         working-directory: "${{ github.workspace }}/src"
         run: make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+
+      - name: Smoke test
+        working-directory: "${{ github.workspace }}/src"
+        run: |
+          # CI runners do not have FT4222 hardware attached; only validate binaries exist.
+          test -x ./hw_vdf_client
+          test -x ./hw_test
+          echo "Running emu_hw_test"
+          ./emu_hw_test 1 2000
+          ./emu_hw_vdf_client --list
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v5
@@ -119,3 +123,144 @@ jobs:
           glue_url: ${{ secrets.GLUE_API_URL }}
           glue_project: "chiavdf-hw"
           glue_path: "trigger"
+
+  build-hw-macos-arm64:
+    name: Build HW VDF Client (macOS arm64)
+    runs-on: [macos-13-arm64]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: Chia-Network/actions/setup-python@main
+        name: Install Python
+        with:
+          python-version: "3.10"
+
+      - name: Set Env
+        uses: Chia-Network/actions/setjobenv@main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install deps
+        run: |
+          brew ls --versions gmp >/dev/null 2>&1 || brew install gmp
+
+      - name: Download USB drivers (FT4222H)
+        run: ./scripts/get-libft4222.sh install
+
+      - name: Compile
+        working-directory: "${{ github.workspace }}/src"
+        run: make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+
+      - name: Smoke test
+        working-directory: "${{ github.workspace }}/src"
+        run: |
+          # CI runners do not have FT4222 hardware attached; only validate binaries exist.
+          test -x ./hw_vdf_client
+          test -x ./hw_test
+          echo "Running emu_hw_test"
+          ./emu_hw_test 1 2000
+          ./emu_hw_vdf_client --list
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: hw-vdf-macos-arm64
+          path: |
+            ${{ github.workspace }}/src/emu_hw_test
+            ${{ github.workspace }}/src/hw_test
+            ${{ github.workspace }}/src/hw_vdf_client
+            ${{ github.workspace }}/src/emu_hw_vdf_client
+            ${{ github.workspace }}/src/hw/libft4222/libft4222.dylib
+            ${{ github.workspace }}/src/hw/libft4222/libft4222.1.4.4.190.dylib
+            ${{ github.workspace }}/src/hw/libft4222/libftd2xx.dylib
+
+  build-hw-windows:
+    name: Build HW VDF Client (Windows)
+    runs-on: [windows-latest]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Set Env
+        uses: Chia-Network/actions/setjobenv@main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout mpir for Windows
+        uses: actions/checkout@v6
+        with:
+          repository: Chia-Network/mpir_gc_x64
+          fetch-depth: 1
+          path: mpir_gc_x64
+
+      - name: Install LLVM and Ninja on Windows
+        shell: pwsh
+        run: |
+          $llvmBin = "C:\Program Files\LLVM\bin\clang-cl.exe"
+          $ninjaBin = "C:\ProgramData\chocolatey\bin\ninja.exe"
+          if (-not (Test-Path $llvmBin) -or -not (Test-Path $ninjaBin)) {
+            choco install llvm ninja -y
+          }
+          "C:\Program Files\LLVM\bin" | Out-File -Append -FilePath $env:GITHUB_PATH
+
+      - name: Set up MSVC environment (Windows SDK + CRT libs)
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Download USB drivers (FT4222H)
+        run: powershell -ExecutionPolicy Bypass -File scripts/get-libft4222.ps1 install
+
+      - name: Configure hw tools
+        shell: pwsh
+        run: |
+          cmake -S src -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TRY_COMPILE_CONFIGURATION=Release -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_ASM_COMPILER=clang-cl -DBUILD_PYTHON=OFF -DBUILD_CHIAVDFC=OFF -DBUILD_HW_TOOLS=ON
+
+      - name: Build hw tools
+        shell: pwsh
+        run: |
+          cmake --build build --target emu_hw_test
+          cmake --build build --target hw_test
+          cmake --build build --target emu_hw_vdf_client
+          cmake --build build --target hw_vdf_client
+
+      - name: Smoke test
+        working-directory: "${{ github.workspace }}/build"
+        shell: pwsh
+        run: |
+          # Keep native stderr as log output; emu binaries log diagnostics there.
+          $PSNativeCommandUseErrorActionPreference = $false
+          $dllPaths = @()
+          if (Test-Path "$env:GITHUB_WORKSPACE\mpir_gc_x64") { $dllPaths += "$env:GITHUB_WORKSPACE\mpir_gc_x64" }
+          if (Test-Path "$env:GITHUB_WORKSPACE\src\hw\libft4222") { $dllPaths += "$env:GITHUB_WORKSPACE\src\hw\libft4222" }
+          if ($dllPaths.Count -gt 0) { $env:PATH = ($dllPaths -join ';') + ';' + $env:PATH }
+          if (-not (Test-Path ".\hw_test.exe")) { throw "hw_test.exe is missing" }
+          if (-not (Test-Path ".\hw_vdf_client.exe")) { throw "hw_vdf_client.exe is missing" }
+          Write-Host "hw_test.exe and hw_vdf_client.exe present"
+          Write-Host "Running emu_hw_test"
+          .\emu_hw_test.exe 1 2000
+          if ($LASTEXITCODE -ne 0) { throw "emu_hw_test failed with exit code $LASTEXITCODE" }
+          Write-Host "emu_hw_test completed"
+          Write-Host "Running emu_hw_vdf_client --list"
+          .\emu_hw_vdf_client.exe --list
+          if ($LASTEXITCODE -ne 0) { throw "emu_hw_vdf_client --list failed with exit code $LASTEXITCODE" }
+          Write-Host "emu_hw_vdf_client --list completed"
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: hw-vdf-windows
+          path: |
+            ${{ github.workspace }}/build/emu_hw_test.exe
+            ${{ github.workspace }}/build/hw_test.exe
+            ${{ github.workspace }}/build/emu_hw_vdf_client.exe
+            ${{ github.workspace }}/build/hw_vdf_client.exe
+            ${{ github.workspace }}/src/hw/libft4222/libft4222.dll
+            ${{ github.workspace }}/src/hw/libft4222/ftd2xx.dll
+            ${{ github.workspace }}/src/hw/libft4222/libft4222.lib
+            ${{ github.workspace }}/src/hw/libft4222/ftd2xx.lib

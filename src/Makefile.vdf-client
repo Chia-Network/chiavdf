@@ -3,8 +3,14 @@ ARCH := $(shell uname -m)
 
 ifneq (,$(findstring clang, $(shell $(CXX) --version)))
 NOPIE = -fno-PIE
+LTO_FLAGS = -flto
 else
 NOPIE = -no-pie
+LTO_FLAGS = -flto=auto
+endif
+# Windows builds don't use PIE flags.
+ifeq ($(OS),Windows_NT)
+NOPIE =
 endif
 # macOS arm64 ignores -no_pie and warns; omit to avoid deprecation warnings
 ifeq ($(UNAME),Darwin)
@@ -13,18 +19,26 @@ NOPIE =
 endif
 endif
 
-LDFLAGS += -flto $(NOPIE) -g
+CFLAGS += $(LTO_FLAGS) $(NOPIE)
+LDFLAGS += $(LTO_FLAGS) $(NOPIE) -g
+ifeq ($(OS),Windows_NT)
+LDLIBS += -lmpirxx -lmpir -lws2_32
+CXXFLAGS += $(LTO_FLAGS) -std=c++1z -D VDF_MODE=0 -D FAST_MACHINE=1 $(NOPIE) -fvisibility=hidden
+else
 LDLIBS += -lgmpxx -lgmp -pthread
-CXXFLAGS += -flto -std=c++1z -D VDF_MODE=0 -D FAST_MACHINE=1 -pthread $(NOPIE) -fvisibility=hidden
+CXXFLAGS += $(LTO_FLAGS) -std=c++1z -D VDF_MODE=0 -D FAST_MACHINE=1 -pthread $(NOPIE) -fvisibility=hidden
+endif
 ifeq ($(UNAME),Darwin)
 CXXFLAGS += -D CHIAOSX=1
 # Homebrew (common on macOS) installs boost/gmp to /opt/homebrew or /usr/local
 ifneq ($(wildcard /opt/homebrew/include/boost/asio.hpp),)
 CXXFLAGS += -I/opt/homebrew/include
+CFLAGS += -I/opt/homebrew/include
 LDFLAGS += -L/opt/homebrew/lib
 endif
 ifneq ($(wildcard /usr/local/include/boost/asio.hpp),)
 CXXFLAGS += -I/usr/local/include
+CFLAGS += -I/usr/local/include
 LDFLAGS += -L/usr/local/lib
 endif
 endif
@@ -62,7 +76,7 @@ $(BINS) avx512_test: %: %.o lzcnt.o $(ASM_OBJS)
 $(addsuffix .o,$(BINS)) avx512_test.o: CXXFLAGS += $(OPT_CFLAGS)
 
 lzcnt.o: refcode/lzcnt.c
-	$(CC) -c refcode/lzcnt.c
+	$(CC) $(CFLAGS) -c refcode/lzcnt.c
 
 asm_compiled.s: compile_asm
 	./compile_asm
@@ -76,17 +90,35 @@ avx512_asm_compiled.s: compile_asm
 compile_asm: compile_asm.o
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-HW_OBJS = $(addprefix hw/,hw_util.o hw_proof.o hw_interface.o chia_driver.o ftdi_driver.o vdf_driver.o pll_freqs.o) vdf_base.o lzcnt.o
+HW_OBJS = $(addprefix hw/,hw_util.o hw_proof.o hw_interface.o chia_driver.o ftdi_driver.o vdf_driver.o pll_freqs.o) vdf_base_hw.o vdf_hw_symbol_anchors.o prover_runtime.o lzcnt.o
 EMU_OBJS = hw/emu_funcs.o hw/emu_runner.o
+ifeq ($(OS),Windows_NT)
+HW_LIB = hw/libft4222/libft4222.lib
+HW_FTD2XX_LIB = hw/libft4222/ftd2xx.lib
+HW_LIBS = $(HW_LIB) $(HW_FTD2XX_LIB)
+else
+ifeq ($(UNAME),Darwin)
+HW_LIB = hw/libft4222/libft4222.dylib
+HW_FTD2XX_LIB = hw/libft4222/libftd2xx.dylib
+HW_LIBS = $(HW_LIB) $(HW_FTD2XX_LIB)
+else
 HW_LIB = hw/libft4222/build-x86_64/libft4222.so
+HW_LIBS = $(HW_LIB)
+endif
+endif
 
-hw_test: hw/hw_test.o $(HW_OBJS) $(HW_LIB) hw/real_hw.o
+ifeq ($(UNAME),Darwin)
+# Ensure HW client binaries can locate USB driver dylibs bundled in-tree.
+hw_test hw_vdf_client: LDFLAGS += -Wl,-rpath,@executable_path/hw/libft4222
+endif
+
+hw_test: hw/hw_test.o $(HW_OBJS) $(HW_LIBS) hw/real_hw.o
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 emu_hw_test: hw/hw_test.o $(HW_OBJS) $(EMU_OBJS)
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-hw_vdf_client: hw/hw_vdf_client.o $(HW_OBJS) $(HW_LIB) hw/real_hw.o
+hw_vdf_client: hw/hw_vdf_client.o $(HW_OBJS) $(HW_LIBS) hw/real_hw.o
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 emu_hw_vdf_client: hw/hw_vdf_client.o $(HW_OBJS) $(EMU_OBJS)

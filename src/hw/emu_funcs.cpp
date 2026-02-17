@@ -10,6 +10,19 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifdef _WIN32
+// The vendor headers mark these APIs as dllimport; emulator builds provide
+// local definitions, so drop import attributes for this translation unit.
+#ifdef FTD2XX_API
+#undef FTD2XX_API
+#endif
+#define FTD2XX_API
+#ifdef LIBFT4222_API
+#undef LIBFT4222_API
+#endif
+#define LIBFT4222_API
+#endif
+
 int chia_vdf_is_emu = 1;
 
 #define EMU_LOC_ID 0x88888

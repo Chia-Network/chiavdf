@@ -278,5 +278,4 @@ void VerifyWesolowskiProof(integer &D, form x, form y, form proof, uint64_t iter
 void Int64ToBytes(uint8_t *result, uint64_t input);
 void Int32ToBytes(uint8_t *result, uint32_t input);
 
-#include "prover_impl.hpp"
 #endif // VDF_BASE_H

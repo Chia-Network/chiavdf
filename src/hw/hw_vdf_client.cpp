@@ -6,15 +6,26 @@
 #include "chia_driver.hpp"
 #include "pll_freqs.hpp"
 
-#include <arpa/inet.h>
 #include <cstdio>
-#include <fcntl.h>
-#include <getopt.h>
+#include <cstdlib>
+#include <cstring>
 #include <signal.h>
+
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+using vdf_socket_t = SOCKET;
+static constexpr vdf_socket_t kInvalidSocket = INVALID_SOCKET;
+#else
+#include <arpa/inet.h>
+#include <fcntl.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/ip.h>
 #include <unistd.h>
+using vdf_socket_t = int;
+static constexpr vdf_socket_t kInvalidSocket = -1;
+#endif
 
 enum conn_state {
     WAITING,
@@ -26,7 +37,7 @@ enum conn_state {
 
 struct vdf_conn {
     struct vdf_state vdf;
-    int sock;
+    vdf_socket_t sock;
     char read_buf[512];
     uint32_t buf_pos;
     enum conn_state state;
@@ -63,6 +74,52 @@ void write_data(struct vdf_conn *conn, const char *buf, size_t size);
 
 static volatile bool g_stopping = false;
 
+static int vdf_socket_set_nonblock(vdf_socket_t sock)
+{
+#ifdef _WIN32
+    u_long mode = 1;
+    return ioctlsocket(sock, FIONBIO, &mode);
+#else
+    return fcntl(sock, F_SETFL, O_NONBLOCK);
+#endif
+}
+
+static int vdf_socket_read(vdf_socket_t sock, char *buf, size_t size)
+{
+#ifdef _WIN32
+    return recv(sock, buf, static_cast<int>(size), 0);
+#else
+    return read(sock, buf, size);
+#endif
+}
+
+static int vdf_socket_write(vdf_socket_t sock, const char *buf, size_t size)
+{
+#ifdef _WIN32
+    return send(sock, buf, static_cast<int>(size), 0);
+#else
+    return write(sock, buf, size);
+#endif
+}
+
+static int vdf_socket_close(vdf_socket_t sock)
+{
+#ifdef _WIN32
+    return closesocket(sock);
+#else
+    return close(sock);
+#endif
+}
+
+static bool vdf_socket_would_block()
+{
+#ifdef _WIN32
+    return WSAGetLastError() == WSAEWOULDBLOCK;
+#else
+    return errno == EAGAIN || errno == EWOULDBLOCK;
+#endif
+}
+
 void signal_handler(int sig)
 {
     LOG_INFO("Interrupted");
@@ -72,21 +129,24 @@ void signal_handler(int sig)
 void init_conn(struct vdf_conn *conn, uint32_t ip, int port)
 {
     int ret;
-    struct sockaddr_in sa = { AF_INET, htons(port), { htonl(ip) } };
+    struct sockaddr_in sa = {};
+    sa.sin_family = AF_INET;
+    sa.sin_port = htons(static_cast<uint16_t>(port));
+    sa.sin_addr.s_addr = htonl(ip);
     conn->sock = socket(AF_INET, SOCK_STREAM, 0);
     LOG_INFO("Connecting to %s:%d", inet_ntoa(sa.sin_addr), port);
     ret = connect(conn->sock, (struct sockaddr *)&sa, sizeof(sa));
     if (ret < 0) {
         perror("connect");
-        sleep(1);
+        vdf_sleep(1);
         return;
     }
 
-    ret = fcntl(conn->sock, F_SETFL, O_NONBLOCK);
+    ret = vdf_socket_set_nonblock(conn->sock);
     if (ret < 0) {
-        perror("fcntl");
-        close(conn->sock);
-        conn->sock = -1;
+        perror("set_nonblock");
+        vdf_socket_close(conn->sock);
+        conn->sock = kInvalidSocket;
         return;
     }
     conn->state = WAITING;
@@ -107,7 +167,7 @@ void init_vdf_client(struct vdf_client *client)
             continue;
         }
         client->conns[i].vdf.idx = i;
-        client->conns[i].sock = -1;
+        client->conns[i].sock = kInvalidSocket;
         memset(client->conns[i].read_buf, 0, sizeof(client->conns[i].read_buf));
         client->conns[i].buf_pos = 0;
 
@@ -126,7 +186,7 @@ void clear_vdf_client(struct vdf_client *client)
 
 void stop_conn(struct vdf_client *client, struct vdf_conn *conn)
 {
-    if (conn->sock >= 0) {
+    if (conn->sock != kInvalidSocket) {
         write_data(conn, "STOP", 4);
     }
     if (conn->vdf.init_done) {
@@ -135,24 +195,24 @@ void stop_conn(struct vdf_client *client, struct vdf_conn *conn)
         stop_hw_vdf(client->drv, conn->vdf.idx);
     }
     conn->state = STOPPED;
-    LOG_INFO("VDF %d: Stopped at iters=%lu", conn->vdf.idx, conn->vdf.cur_iters);
+    LOG_INFO("VDF %d: Stopped at iters=%llu", conn->vdf.idx, (unsigned long long)conn->vdf.cur_iters);
 }
 
 void close_conn(struct vdf_conn *conn)
 {
     if (conn->state != CLOSED) {
-        close(conn->sock);
-        conn->sock = -1;
+        vdf_socket_close(conn->sock);
+        conn->sock = kInvalidSocket;
         conn->state = CLOSED;
         LOG_INFO("VDF %d: Connection closed", conn->vdf.idx);
     }
 }
 
-ssize_t read_data(struct vdf_client *client, struct vdf_conn *conn)
+int read_data(struct vdf_client *client, struct vdf_conn *conn)
 {
-    ssize_t bytes = read(conn->sock, conn->read_buf + conn->buf_pos,
+    int bytes = vdf_socket_read(conn->sock, conn->read_buf + conn->buf_pos,
             sizeof(conn->read_buf) - conn->buf_pos);
-    if ((bytes < 0 && errno != EAGAIN) || bytes == 0) {
+    if ((bytes < 0 && !vdf_socket_would_block()) || bytes == 0) {
         if (bytes == 0) {
             LOG_ERROR("VDF %d: Unexpected EOF", conn->vdf.idx);
         } else {
@@ -169,7 +229,7 @@ ssize_t read_data(struct vdf_client *client, struct vdf_conn *conn)
 
 void write_data(struct vdf_conn *conn, const char *buf, size_t size)
 {
-    ssize_t bytes = write(conn->sock, buf, size);
+    int bytes = vdf_socket_write(conn->sock, buf, size);
     if (bytes < 0) {
         perror("write");
         throw std::runtime_error("Write error");
@@ -196,7 +256,7 @@ void handle_iters(struct vdf_client *client, struct vdf_conn *conn)
         iters = strtoul(iters_buf, NULL, 10);
 
         if (iters) {
-            LOG_DEBUG("VDF %d: Requested proof for iters=%lu", conn->vdf.idx, iters);
+            LOG_DEBUG("VDF %d: Requested proof for iters=%llu", conn->vdf.idx, (unsigned long long)iters);
             hw_request_proof(&conn->vdf, iters, false);
         } else {
             LOG_INFO("VDF %d: Stop requested", conn->vdf.idx);
@@ -217,8 +277,8 @@ void handle_iters(struct vdf_client *client, struct vdf_conn *conn)
         size_t pos = 0;
 
         for (size_t i = 0; i < n_proofs; i++) {
-            pos += snprintf(&iters_str[pos], sizeof(iters_str) - pos, "%s%lu",
-                    i ? ", " : "", conn->vdf.req_proofs[i].iters);
+            pos += snprintf(&iters_str[pos], sizeof(iters_str) - pos, "%s%llu",
+                    i ? ", " : "", (unsigned long long)conn->vdf.req_proofs[i].iters);
             if (pos >= sizeof(iters_str) - 1) {
                 break;
             }
@@ -243,7 +303,7 @@ void handle_proofs(struct vdf_client *client, struct vdf_conn *conn)
         uint8_t data[8 + 8 + 1 + BQFC_FORM_SIZE * 2];
         char tl_data[sizeof(data) * 2 + 5] = {0};
 
-        LOG_INFO("VDF %d: Proof retrieved for iters=%lu", conn->vdf.idx, proof->iters);
+        LOG_INFO("VDF %d: Proof retrieved for iters=%llu", conn->vdf.idx, (unsigned long long)proof->iters);
 
         Int64ToBytes(&data[0], proof->iters);
         Int64ToBytes(&data[8], BQFC_FORM_SIZE);
@@ -272,7 +332,7 @@ void handle_proofs(struct vdf_client *client, struct vdf_conn *conn)
 
 void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
 {
-    ssize_t bytes;
+    int bytes;
     char *buf = conn->read_buf;
     struct vdf_state *vdf = &conn->vdf;
 
@@ -305,7 +365,7 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
         memcpy(d_str, &buf[4], d_size);
         d_str[d_size] = '\0';
         if ((uint64_t)bytes != 4 + d_size + 1 + buf[4 + d_size]) {
-            LOG_ERROR("Bad data size: %zd", bytes);
+            LOG_ERROR("Bad data size: %d", bytes);
             throw std::runtime_error("Bad data size");
         }
 
@@ -329,7 +389,7 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
     if (conn->state == STOPPED) {
         bytes = read_data(client, conn);
         if (bytes != 3 || memcmp(buf, "ACK", 3)) {
-            LOG_ERROR("Bad data size after stop: %zd", bytes);
+            LOG_ERROR("Bad data size after stop: %d", bytes);
         }
         close_conn(conn);
     } else if (conn->state == CLOSED && !g_stopping) {
@@ -386,8 +446,8 @@ void event_loop(struct vdf_client *client)
                         adjust_hw_freq(client->drv, running_mask & ~(1 << i), -1);
                     }
 
-                    LOG_INFO("VDF %d: Restarting VDF at %lu iters",
-                            vdf->idx, vdf->iters_offset);
+                    LOG_INFO("VDF %d: Restarting VDF at %llu iters",
+                            vdf->idx, (unsigned long long)vdf->iters_offset);
                     start_hw_vdf(client->drv, vdf->D.impl, f->a.impl, f->b.impl,
                             vdf->target_iters - vdf->iters_offset, vdf->idx);
                 }
@@ -413,7 +473,7 @@ void event_loop(struct vdf_client *client)
         }
 
         if (chia_vdf_is_emu) {
-            usleep(50000);
+            vdf_usleep(50000);
         }
         loop_cnt++;
     }
@@ -421,20 +481,9 @@ void event_loop(struct vdf_client *client)
 
 int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
 {
-    const struct option long_opts[] = {
-        {"freq", required_argument, NULL, 1},
-        {"voltage", required_argument, NULL, 1},
-        {"ip", required_argument, NULL, 1},
-        {"vdfs-mask", required_argument, NULL, 1},
-        {"vdf-threads", required_argument, NULL, 1},
-        {"proof-threads", required_argument, NULL, 1},
-        {"list", no_argument, NULL, 1},
-        {"auto-freq-period", required_argument, NULL, 1},
-        {"max-freq", required_argument, NULL, 1},
-        {0}
-    };
-    int long_idx = -1;
-    int ret;
+    int argi = 1;
+    int positional_count = 0;
+    const char *positionals[2] = {nullptr, nullptr};
 
     opts->voltage = HW_VDF_DEF_VOLTAGE;
     opts->freq = HW_VDF_DEF_FREQ;
@@ -448,32 +497,78 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     opts->vpo.max_proof_threads = 0;
     opts->vdfs_mask = 0;
 
-    while ((ret = getopt_long(argc, argv, "", long_opts, &long_idx)) == 1) {
-        if (long_idx == 0) {
-            opts->freq = strtod(optarg, NULL);
-        } else if (long_idx == 1) {
-            opts->voltage = strtod(optarg, NULL);
-        } else if (long_idx == 2) {
-            opts->ip = ntohl(inet_addr(optarg));
-        } else if (long_idx == 3) {
-            opts->vdfs_mask = strtoul(optarg, NULL, 0);
-        } else if (long_idx == 4) {
-            opts->vpo.max_aux_threads = strtoul(optarg, NULL, 0);
-        } else if (long_idx == 5) {
-            opts->vpo.max_proof_threads = strtoul(optarg, NULL, 0);
-        } else if (long_idx == 6) {
-            opts->do_list = true;
-        } else if (long_idx == 7) {
-            opts->auto_freq = true;
-            opts->auto_freq_period = strtoul(optarg, NULL, 0);
-        } else if (long_idx == 8) {
-            opts->max_freq = strtod(optarg, NULL);
+    while (argi < argc) {
+        if (strncmp(argv[argi], "--", 2) != 0) {
+            if (argv[argi][0] == '-') {
+                LOG_SIMPLE("Invalid option");
+                return -1;
+            }
+            if (positional_count < 2) {
+                positionals[positional_count] = argv[argi];
+            }
+            positional_count++;
+            argi++;
+            continue;
         }
+
+        const char *name = argv[argi] + 2;
+        const char *value = nullptr;
+        char name_buf[32] = {0};
+        const char *eq = strchr(name, '=');
+
+        if (eq) {
+            size_t len = static_cast<size_t>(eq - name);
+            if (len == 0 || len >= sizeof(name_buf)) {
+                LOG_SIMPLE("Invalid option");
+                return -1;
+            }
+            memcpy(name_buf, name, len);
+            name = name_buf;
+            value = eq + 1;
+        }
+
+        if (!strcmp(name, "list")) {
+            if (value) {
+                LOG_SIMPLE("Invalid option");
+                return -1;
+            }
+            opts->do_list = true;
+            argi++;
+            continue;
+        }
+
+        if (!value) {
+            if (argi + 1 >= argc) {
+                LOG_SIMPLE("Invalid option");
+                return -1;
+            }
+            value = argv[++argi];
+        }
+
+        if (!strcmp(name, "freq")) {
+            opts->freq = strtod(value, NULL);
+        } else if (!strcmp(name, "voltage")) {
+            opts->voltage = strtod(value, NULL);
+        } else if (!strcmp(name, "ip")) {
+            opts->ip = ntohl(inet_addr(value));
+        } else if (!strcmp(name, "vdfs-mask")) {
+            opts->vdfs_mask = strtoul(value, NULL, 0);
+        } else if (!strcmp(name, "vdf-threads")) {
+            opts->vpo.max_aux_threads = strtoul(value, NULL, 0);
+        } else if (!strcmp(name, "proof-threads")) {
+            opts->vpo.max_proof_threads = strtoul(value, NULL, 0);
+        } else if (!strcmp(name, "auto-freq-period")) {
+            opts->auto_freq = true;
+            opts->auto_freq_period = strtoul(value, NULL, 0);
+        } else if (!strcmp(name, "max-freq")) {
+            opts->max_freq = strtod(value, NULL);
+        } else {
+            LOG_SIMPLE("Invalid option");
+            return -1;
+        }
+        argi++;
     }
-    if (ret != -1) {
-        LOG_SIMPLE("Invalid option");
-        return -1;
-    }
+
     if (opts->do_list) {
         return 0;
     }
@@ -511,14 +606,28 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
         return -1;
     }
 
-    if (optind == argc) {
+    if (positional_count == 0) {
         return -1;
     }
-    opts->port = atoi(argv[optind]);
-    if (argc > optind + 1) {
-        opts->n_vdfs = atoi(argv[optind + 1]);
+    {
+        char *end = nullptr;
+        long parsed_port = strtol(positionals[0], &end, 10);
+        if (!positionals[0][0] || (end && *end) || parsed_port < 1 || parsed_port > 65535) {
+            LOG_SIMPLE("Invalid port or VDF count");
+            return -1;
+        }
+        opts->port = static_cast<int>(parsed_port);
     }
-    if (!opts->port || opts->n_vdfs < 1 || opts->n_vdfs > 3) {
+    if (positional_count > 1) {
+        char *end = nullptr;
+        long parsed_n_vdfs = strtol(positionals[1], &end, 10);
+        if (!positionals[1][0] || (end && *end) || parsed_n_vdfs < 1 || parsed_n_vdfs > 3) {
+            LOG_SIMPLE("Invalid port or VDF count");
+            return -1;
+        }
+        opts->n_vdfs = static_cast<int>(parsed_n_vdfs);
+    }
+    if (opts->n_vdfs < 1 || opts->n_vdfs > 3) {
         LOG_SIMPLE("Invalid port or VDF count");
         return -1;
     }
@@ -529,7 +638,28 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
 int hw_vdf_client_main(int argc, char **argv)
 {
     struct vdf_client client;
+#ifndef _WIN32
     struct sigaction sa = {0};
+#endif
+
+#ifdef _WIN32
+    struct WinsockGuard {
+        bool started = false;
+
+        ~WinsockGuard() {
+            if (started) {
+                WSACleanup();
+            }
+        }
+    } winsock_guard;
+
+    WSADATA wsa_data;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0) {
+        LOG_SIMPLE("Failed to initialize Winsock");
+        return 1;
+    }
+    winsock_guard.started = true;
+#endif
 
     if (parse_opts(argc, argv, &client.opts) < 0) {
         LOG_SIMPLE("\nUsage: %s [OPTIONS] PORT [N_VDFS]\n"
@@ -548,7 +678,8 @@ int hw_vdf_client_main(int argc, char **argv)
 
     if (client.opts.do_list) {
         LOG_SIMPLE("List of available devices:");
-        return list_hw() ? 1 : 0;
+        const int ret = list_hw() ? 1 : 0;
+        return ret;
     }
 
     client.drv = init_hw(client.opts.freq, client.opts.voltage);
@@ -558,9 +689,14 @@ int hw_vdf_client_main(int argc, char **argv)
 
     init_vdf_client(&client);
 
+#ifdef _WIN32
+    signal(SIGINT, signal_handler);
+    signal(SIGTERM, signal_handler);
+#else
     sa.sa_handler = signal_handler;
     sigaction(SIGINT, &sa, NULL);
     sigaction(SIGTERM, &sa, NULL);
+#endif
 
     event_loop(&client);
 

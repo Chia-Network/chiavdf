@@ -63,9 +63,19 @@ jobs:
           brew ls --versions boost >/dev/null 2>&1 || brew install boost
           echo "DYLD_FALLBACK_LIBRARY_PATH=$(brew --prefix gmp)/lib:${DYLD_FALLBACK_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
 
+      # Runtime workaround for TSAN-instrumented binaries on Ubuntu runners.
+      # Apply before build because make TSAN=1 runs ./compile_asm during build.
+      # See: https://github.com/google/sanitizers/issues/1716
+      - name: Adjust mmap_rnd_bits before Ubuntu TSAN build/test execution
+        if: matrix.os == 'ubuntu-latest' && matrix.config == 'TSAN=1'
+        run: |
+          sudo sysctl vm.mmap_rnd_bits=28
+
       - name: Build on Ubuntu
         if: matrix.os == 'ubuntu-latest'
         run: |
+          # Keep mmap_rnd_bits workaround step above this build for TSAN=1:
+          # make TSAN=1 executes thread-sanitized ./compile_asm during build.
           sudo apt-get update -y -o Acquire::Retries=3
           sudo apt-get install -y build-essential cmake libgmp-dev libboost-python-dev libpython3-dev libboost-system-dev
           ./scripts/get-libft4222.sh install
@@ -190,13 +200,6 @@ jobs:
           & cmake @cmakeArgs
           cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
 
-      # Runtime workaround for TSAN-instrumented tests on Ubuntu runners.
-      # See: https://github.com/google/sanitizers/issues/1716
-      - name: Adjust mmap_rnd_bits before Ubuntu TSAN test execution
-        if: matrix.os == 'ubuntu-latest' && matrix.config == 'TSAN=1'
-        run: |
-          sudo sysctl vm.mmap_rnd_bits=28
-
       - name: Run HW smoke test (Ubuntu/macOS)
         if: matrix.os != 'windows-latest'
         run: |
@@ -284,7 +287,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "vdf_bench failed with exit code $LASTEXITCODE" }
 
       - name: Upload binaries artifact (Ubuntu/macOS)
-        if: matrix.os != 'windows-latest'
+        if: matrix.os != 'windows-latest' && matrix.config == 'optimized=1'
         uses: actions/upload-artifact@v5
         with:
           name: binaries-${{ matrix.config }}-${{ matrix.os }}
@@ -302,7 +305,7 @@ jobs:
             src/hw/libft4222/*.dylib
 
       - name: Upload binaries artifact (Windows)
-        if: matrix.os == 'windows-latest'
+        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
         uses: actions/upload-artifact@v5
         with:
           name: binaries-${{ matrix.config }}-${{ matrix.os }}
@@ -320,28 +323,11 @@ jobs:
             src/hw/libft4222/*.lib
             mpir_gc_x64/*.dll
 
-  package:
-    name: Package (Ubuntu)
-    needs: [build]
-    runs-on: ubuntu-latest
-    env:
-      RELEASE: ${{ github.event_name == 'release' && 'true' || 'false' }}
-      RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Restore Ubuntu binaries cache
-        uses: actions/download-artifact@v6
-        with:
-          name: binaries-optimized=1-ubuntu-latest
-          path: artifact
-
-      - name: Assemble .deb
+      - name: Assemble Ubuntu .deb (same runner as build)
+        if: matrix.os == 'ubuntu-latest' && matrix.config == 'optimized=1'
         env:
-          INSTALLER_VERSION: "${{ env.RELEASE_TAG || format('0.0.1-{0}', github.run_id) }}"
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
+          INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
           PLATFORM: "amd64"
         run: |
           pip install jinjanator
@@ -352,32 +338,27 @@ jobs:
           mkdir -p "dist/$CLI_DEB_BASE/etc/udev/rules.d"
           j2 -o "dist/$CLI_DEB_BASE/DEBIAN/control" assets/deb/control.j2
 
-          cp artifact/vdf_client dist/$CLI_DEB_BASE/usr/bin/
-          cp artifact/vdf_bench dist/$CLI_DEB_BASE/usr/bin/
-          cp artifact/1weso_test dist/$CLI_DEB_BASE/usr/bin/
-          cp artifact/2weso_test dist/$CLI_DEB_BASE/usr/bin/
-          cp artifact/prover_test dist/$CLI_DEB_BASE/usr/bin/
-          cp artifact/emu_hw_test dist/$CLI_DEB_BASE/usr/bin/
-          cp artifact/hw_test dist/$CLI_DEB_BASE/usr/bin/
-          cp artifact/hw_vdf_client dist/$CLI_DEB_BASE/usr/bin/
-          cp artifact/emu_hw_vdf_client dist/$CLI_DEB_BASE/usr/bin/
-          cp artifact/libft4222.so dist/$CLI_DEB_BASE/usr/lib/
+          cp src/vdf_client dist/$CLI_DEB_BASE/usr/bin/
+          cp src/vdf_bench dist/$CLI_DEB_BASE/usr/bin/
+          cp src/1weso_test dist/$CLI_DEB_BASE/usr/bin/
+          cp src/2weso_test dist/$CLI_DEB_BASE/usr/bin/
+          cp src/prover_test dist/$CLI_DEB_BASE/usr/bin/
+          cp src/emu_hw_test dist/$CLI_DEB_BASE/usr/bin/
+          cp src/hw_test dist/$CLI_DEB_BASE/usr/bin/
+          cp src/hw_vdf_client dist/$CLI_DEB_BASE/usr/bin/
+          cp src/emu_hw_vdf_client dist/$CLI_DEB_BASE/usr/bin/
+          cp src/hw/libft4222/build-x86_64/libft4222.so dist/$CLI_DEB_BASE/usr/lib/
           echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="601c", MODE="0666"' > dist/$CLI_DEB_BASE/etc/udev/rules.d/99-chiavdf.rules
           dpkg-deb --build --root-owner-group "dist/$CLI_DEB_BASE"
 
-          echo "DEB_NAME=$CLI_DEB_BASE.deb" >> "$GITHUB_ENV"
-
-      - name: Packaging plan for macOS and Windows
-        run: |
-          echo "TODO (follow-up PR): add macOS package assembly and artifact upload."
-          echo "TODO (follow-up PR): add Windows package assembly and artifact upload."
-
-      - name: Stage Ubuntu installer
+      - name: Stage Ubuntu installer (handoff)
+        if: matrix.os == 'ubuntu-latest' && matrix.config == 'optimized=1'
         run: |
           mkdir -p installer-stage
-          cp "dist/${{ env.DEB_NAME }}" installer-stage/
+          cp dist/*.deb installer-stage/
 
-      - name: Upload installer (handoff)
+      - name: Upload Ubuntu installer (handoff)
+        if: matrix.os == 'ubuntu-latest' && matrix.config == 'optimized=1'
         uses: actions/upload-artifact@v5
         with:
           name: handoff-installer-ubuntu
@@ -385,7 +366,7 @@ jobs:
 
   upload-installer:
     name: Upload installer (Ubuntu)
-    needs: [package]
+    needs: [build]
     runs-on: ubuntu-latest
     env:
       RELEASE: ${{ github.event_name == 'release' && 'true' || 'false' }}

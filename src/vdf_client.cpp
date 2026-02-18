@@ -87,10 +87,17 @@ void InitSession(tcp::socket& sock) {
 
     boost::asio::read(sock, boost::asio::buffer(disc_size, 3), error);
     disc_int_size = atoi(disc_size);
+    if (disc_int_size <= 0 || disc_int_size >= (int)sizeof(disc)) {
+        throw std::runtime_error("Invalid discriminant size");
+    }
     boost::asio::read(sock, boost::asio::buffer(disc, disc_int_size), error);
 
+    // Signed char is intentional: values 128-255 wrap negative, caught by the <= 0 check below
     char form_size;
     boost::asio::read(sock, boost::asio::buffer(&form_size, 1), error);
+    if (form_size <= 0 || form_size > (int)sizeof(initial_form_s)) {
+        throw std::runtime_error("Invalid form size");
+    }
     boost::asio::read(sock, boost::asio::buffer(initial_form_s, form_size), error);
 
     if (error == boost::asio::error::eof)

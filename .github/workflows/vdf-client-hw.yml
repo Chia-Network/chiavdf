@@ -31,6 +31,8 @@ jobs:
       # Runtime feature gate read via getenv() in parameters.h.
       # Keep this at job scope so all test/bench steps see it.
       CHIA_ENABLE_AVX512_IFMA: "1"
+      # On release workflows, pin embedded CLI version to the tag.
+      RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -80,7 +82,11 @@ jobs:
           sudo apt-get install -y build-essential cmake libgmp-dev libboost-python-dev libpython3-dev libboost-system-dev
           ./scripts/get-libft4222.sh install
           cd src
-          make ${{ matrix.config }} -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+          if [ -n "$RELEASE_TAG" ]; then
+            make ${{ matrix.config }} CHIAVDF_VERSION="$RELEASE_TAG" -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+          else
+            make ${{ matrix.config }} -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+          fi
 
       - name: Build on macOS
         if: startsWith(matrix.os, 'macos')
@@ -105,7 +111,11 @@ jobs:
           fi
           ./scripts/get-libft4222.sh install
           cd src
-          make ${{ matrix.config }} CPPFLAGS="-I${BOOST_INCLUDE} ${CPPFLAGS:-}" -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+          if [ -n "$RELEASE_TAG" ]; then
+            make ${{ matrix.config }} CHIAVDF_VERSION="$RELEASE_TAG" CPPFLAGS="-I${BOOST_INCLUDE} ${CPPFLAGS:-}" -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+          else
+            make ${{ matrix.config }} CPPFLAGS="-I${BOOST_INCLUDE} ${CPPFLAGS:-}" -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+          fi
 
       - name: Cache Boost on Windows
         if: matrix.os == 'windows-latest'
@@ -201,6 +211,9 @@ jobs:
             "-DBUILD_HW_TOOLS=ON",
             "-DENABLE_GNU_ASM=ON"
           )
+          if ($env:RELEASE_TAG) {
+            $cmakeArgs += "-DCHIAVDF_VERSION=$env:RELEASE_TAG"
+          }
           & cmake @cmakeArgs
           $gnuAsmEnabled = (& cmake -N -L build | Select-String '^ENABLE_GNU_ASM:BOOL=ON$')
           if (-not $gnuAsmEnabled) {

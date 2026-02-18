@@ -1,5 +1,7 @@
 UNAME := $(shell uname)
 ARCH := $(shell uname -m)
+GIT_DESCRIBE := $(strip $(shell git describe --tags --always 2>/dev/null))
+CHIAVDF_VERSION ?= $(if $(GIT_DESCRIBE),$(GIT_DESCRIBE),dev)
 
 ifneq (,$(findstring clang, $(shell $(CXX) --version)))
 NOPIE = -fno-PIE
@@ -42,6 +44,8 @@ CFLAGS += -I/usr/local/include
 LDFLAGS += -L/usr/local/lib
 endif
 endif
+
+CXXFLAGS += -DCHIAVDF_VERSION=\"$(CHIAVDF_VERSION)\"
 
 OPT_CFLAGS = -O3 -g
 

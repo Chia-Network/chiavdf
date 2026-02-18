@@ -38,7 +38,10 @@ fn main() {
             },
         );
 
-    if cfg!(target_os = "windows") {
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let target_env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+
+    if target_os == "windows" && target_env == "msvc" {
         // Rust MSVC links against msvcrt in both debug/release test builds.
         // Keep CMake-produced static libs on the same CRT to avoid *_dbg unresolved symbols.
         config
@@ -59,7 +62,7 @@ fn main() {
             .unwrap()
     );
 
-    if cfg!(target_os = "windows") {
+    if target_os == "windows" {
         println!("cargo:rustc-link-lib=static=mpir");
         println!(
             "cargo:rustc-link-search=native={}",
@@ -70,7 +73,7 @@ fn main() {
                 .to_str()
                 .unwrap()
         );
-    } else if cfg!(target_os = "macos") {
+    } else if target_os == "macos" {
         println!("cargo:rustc-link-lib=static=gmp");
         let homebrew_path = if fs::metadata("/opt/homebrew").is_ok() {
             "/opt/homebrew/lib"

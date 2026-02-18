@@ -1,0 +1,413 @@
+name: VDF client & HW CI
+
+on:
+  push:
+    branches:
+      - main
+  release:
+    types: [published]
+  pull_request:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+concurrency:
+  # SHA is added to the end if on `main` to let all main workflows run
+  group: ${{ github.ref }}-${{ github.workflow }}-${{ github.event_name }}-${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/long_lived/')) && github.sha || '' }}
+  cancel-in-progress: true
+
+permissions:
+  id-token: write
+  contents: write
+
+env:
+  CHIAVDF_LOG_AVX: "1"
+
+jobs:
+  build:
+    name: CI (${{ matrix.os }}, ${{ matrix.config }})
+    runs-on: ${{ matrix.os }}
+    env:
+      # Runtime feature gate read via getenv() in parameters.h.
+      # Keep this at job scope so all test/bench steps see it.
+      CHIA_ENABLE_AVX512_IFMA: "1"
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-13-intel, macos-13-arm64, windows-latest]
+        config: [optimized=1, TSAN=1, ASAN=1]
+        exclude:
+          - os: windows-latest
+            config: ASAN=1
+          - os: windows-latest
+            config: TSAN=1
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install Python
+        uses: Chia-Network/actions/setup-python@main
+        with:
+          python-version: "3.10"
+
+      - name: Set Env
+        uses: Chia-Network/actions/setjobenv@main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install macOS deps (build + runtime)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          brew ls --versions gmp >/dev/null 2>&1 || brew install gmp
+          brew ls --versions boost >/dev/null 2>&1 || brew install boost
+          echo "DYLD_FALLBACK_LIBRARY_PATH=$(brew --prefix gmp)/lib:${DYLD_FALLBACK_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
+
+      # Runtime workaround for TSAN-instrumented binaries on Ubuntu runners.
+      # Apply before build because make TSAN=1 runs ./compile_asm during build.
+      # See: https://github.com/google/sanitizers/issues/1716
+      - name: Adjust mmap_rnd_bits before Ubuntu TSAN build/test execution
+        if: matrix.os == 'ubuntu-latest' && matrix.config == 'TSAN=1'
+        run: |
+          sudo sysctl vm.mmap_rnd_bits=28
+
+      - name: Build on Ubuntu
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          # Keep mmap_rnd_bits workaround step above this build for TSAN=1:
+          # make TSAN=1 executes thread-sanitized ./compile_asm during build.
+          sudo apt-get update -y -o Acquire::Retries=3
+          sudo apt-get install -y build-essential cmake libgmp-dev libboost-python-dev libpython3-dev libboost-system-dev
+          ./scripts/get-libft4222.sh install
+          cd src
+          make ${{ matrix.config }} -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+
+      - name: Build on macOS
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          BOOST_VERSION="$(brew list --versions boost | awk '{print $2}')"
+          BOOST_INCLUDE=""
+          for cand in \
+            "$(brew --prefix boost)/include" \
+            "$(brew --prefix)/include" \
+            "$(brew --cellar boost)/${BOOST_VERSION}/include"; do
+            if [ -f "$cand/boost/asio.hpp" ]; then
+              BOOST_INCLUDE="$cand"
+              break
+            fi
+          done
+          if [ -z "$BOOST_INCLUDE" ]; then
+            echo "Could not locate boost/asio.hpp for brew boost=${BOOST_VERSION}" >&2
+            brew --prefix boost || true
+            brew --cellar boost || true
+            brew info boost || true
+            exit 1
+          fi
+          ./scripts/get-libft4222.sh install
+          cd src
+          make ${{ matrix.config }} CPPFLAGS="-I${BOOST_INCLUDE} ${CPPFLAGS:-}" -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+
+      - name: Cache Boost on Windows
+        if: matrix.os == 'windows-latest'
+        id: cache-boost
+        uses: actions/cache/restore@v4
+        with:
+          path: C:\local\boost_*
+          key: windows-boost-msvc-14.3-v1
+
+      - name: Cache mpir checkout on Windows
+        if: matrix.os == 'windows-latest'
+        id: cache-mpir
+        uses: actions/cache@v4
+        with:
+          path: mpir_gc_x64
+          key: windows-mpir-gc-x64-v1
+
+      - name: Checkout mpir for Windows
+        if: matrix.os == 'windows-latest' && steps.cache-mpir.outputs.cache-hit != 'true'
+        uses: actions/checkout@v6
+        with:
+          repository: Chia-Network/mpir_gc_x64
+          fetch-depth: 1
+          path: mpir_gc_x64
+
+      - name: Install LLVM, Ninja and Boost on Windows
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        env:
+          BOOST_CACHE_HIT: ${{ steps.cache-boost.outputs.cache-hit }}
+        run: |
+          $llvmBin = "C:\Program Files\LLVM\bin\clang-cl.exe"
+          $ninjaBin = "C:\ProgramData\chocolatey\bin\ninja.exe"
+          if (-not (Test-Path $llvmBin) -or -not (Test-Path $ninjaBin)) {
+            choco install llvm ninja -y
+          }
+          $boostDir = Get-ChildItem "C:\local" -Directory -Filter "boost_*" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $boostDir) {
+            if ("$env:BOOST_CACHE_HIT" -ne "true") {
+              Write-Host "Boost cache miss and boost not found, installing boost-msvc-14.3"
+              choco install boost-msvc-14.3 -y
+            } else {
+              Write-Host "Boost cache reported hit but boost directory missing; reinstalling boost-msvc-14.3"
+              choco install boost-msvc-14.3 -y
+            }
+            $boostDir = Get-ChildItem "C:\local" -Directory -Filter "boost_*" -ErrorAction SilentlyContinue | Select-Object -First 1
+          } else {
+            Write-Host "Boost already present at $($boostDir.FullName), skipping choco install"
+          }
+          "C:\Program Files\LLVM\bin" | Out-File -Append -FilePath $env:GITHUB_PATH
+          if (-not $boostDir) {
+            throw "Boost install not found under C:\local"
+          }
+          "BOOST_INCLUDE_DIR=$($boostDir.FullName)" | Out-File -Append -FilePath $env:GITHUB_ENV
+
+      - name: Save Boost cache on Windows
+        if: matrix.os == 'windows-latest' && steps.cache-boost.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: C:\local\boost_*
+          key: ${{ steps.cache-boost.outputs.cache-primary-key }}
+
+      - name: Set up MSVC environment (Windows SDK + CRT libs)
+        if: matrix.os == 'windows-latest'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Download USB drivers (FT4222H) on Windows
+        if: matrix.os == 'windows-latest'
+        run: powershell -ExecutionPolicy Bypass -File scripts/get-libft4222.ps1 install
+
+      - name: Build on Windows
+        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
+        shell: pwsh
+        run: |
+          $cmakeArgs = @(
+            "-S", "src",
+            "-B", "build",
+            "-G", "Ninja",
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DCMAKE_TRY_COMPILE_CONFIGURATION=Release",
+            "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL",
+            "-DCMAKE_C_COMPILER=clang-cl",
+            "-DCMAKE_CXX_COMPILER=clang-cl",
+            "-DCMAKE_ASM_COMPILER=clang-cl",
+            "-DBOOST_INCLUDE_DIR=$env:BOOST_INCLUDE_DIR",
+            "-DBUILD_PYTHON=OFF",
+            "-DBUILD_CHIAVDFC=OFF",
+            "-DBUILD_VDF_CLIENT=ON",
+            "-DBUILD_VDF_BENCH=ON",
+            "-DBUILD_VDF_TESTS=ON",
+            "-DBUILD_HW_TOOLS=ON",
+            "-DENABLE_GNU_ASM=ON"
+          )
+          & cmake @cmakeArgs
+          $gnuAsmEnabled = (& cmake -N -L build | Select-String '^ENABLE_GNU_ASM:BOOL=ON$')
+          if (-not $gnuAsmEnabled) {
+            throw "ENABLE_GNU_ASM is not ON on Windows CI build"
+          }
+          cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+          $asmFiles = @(
+            "build/asm_compiled.s",
+            "build/avx2_asm_compiled.s",
+            "build/avx512_asm_compiled.s"
+          )
+          foreach ($asmFile in $asmFiles) {
+            if (-not (Test-Path $asmFile)) {
+              throw "Expected generated asm output not found: $asmFile"
+            }
+          }
+
+      - name: Run HW smoke test (Ubuntu/macOS)
+        if: matrix.os != 'windows-latest' && (matrix.config != 'TSAN=1' || matrix.os == 'ubuntu-latest')
+        run: |
+          cd src
+          # CI runners do not have FT4222 hardware attached; only validate binaries exist.
+          test -x ./hw_vdf_client
+          test -x ./hw_test
+          echo "Running emu_hw_test"
+          ./emu_hw_test 1 2000
+          echo "Running emu_hw_vdf_client --list"
+          ./emu_hw_vdf_client --list
+
+      - name: Run vdf tests (optimized)
+        if: matrix.config == 'optimized=1' && matrix.os != 'windows-latest'
+        run: |
+          cd src
+          echo "Running 1weso_test"
+          ./1weso_test
+          echo "Running 2weso_test"
+          ./2weso_test
+
+      - name: Run vdf tests (short)
+        if: matrix.config != 'optimized=1' && matrix.os != 'windows-latest'
+        run: |
+          cd src
+          echo "Running 1weso_test"
+          ./1weso_test 1000
+          echo "Running 2weso_test"
+          ./2weso_test 1000
+
+      # macos thread sanitizer will give false positives on ./prover_test because
+      # it prints to std::cout from multiple threads. Which is allowed by the
+      # standard
+      - name: Run prover test (Ubuntu/macOS)
+        if: matrix.os != 'windows-latest' && (matrix.config != 'TSAN=1' || matrix.os == 'ubuntu-latest')
+        run: |
+          cd src
+          echo "Running prover_test"
+          if [[ "${{ matrix.os }}" == ubuntu* ]]; then
+            ./prover_test
+          else
+            CHIAVDF_PROVER_TEST_FAST=1 ./prover_test
+          fi
+
+      - name: Run HW smoke test (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          cd build
+          # Keep native stderr as log output; emu binaries log diagnostics there.
+          $PSNativeCommandUseErrorActionPreference = $false
+          $env:PATH = "$PWD;$PWD\..\src\hw\libft4222;$PWD\..\mpir_gc_x64;$env:PATH"
+          # CI runners do not have FT4222 hardware attached; only validate binaries exist.
+          if (-not (Test-Path ".\hw_test.exe")) { throw "hw_test.exe is missing" }
+          if (-not (Test-Path ".\hw_vdf_client.exe")) { throw "hw_vdf_client.exe is missing" }
+          Write-Host "Running emu_hw_test"
+          .\emu_hw_test.exe 1 2000
+          if ($LASTEXITCODE -ne 0) { throw "emu_hw_test failed with exit code $LASTEXITCODE" }
+          Write-Host "Running emu_hw_vdf_client --list"
+          .\emu_hw_vdf_client.exe --list
+          if ($LASTEXITCODE -ne 0) { throw "emu_hw_vdf_client --list failed with exit code $LASTEXITCODE" }
+
+      - name: Run vdf tests (Windows)
+        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
+        shell: pwsh
+        run: |
+          cd build
+          $env:PATH = "$PWD;$PWD\..\src\hw\libft4222;$PWD\..\mpir_gc_x64;$env:PATH"
+          Write-Host "Running 1weso_test"
+          .\1weso_test.exe
+          if ($LASTEXITCODE -ne 0) { throw "1weso_test failed with exit code $LASTEXITCODE" }
+          Write-Host "Running 2weso_test"
+          .\2weso_test.exe
+          if ($LASTEXITCODE -ne 0) { throw "2weso_test failed with exit code $LASTEXITCODE" }
+
+      - name: Run prover test (Windows)
+        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
+        shell: pwsh
+        run: |
+          cd build
+          $env:PATH = "$PWD;$PWD\..\src\hw\libft4222;$PWD\..\mpir_gc_x64;$env:PATH"
+          Write-Host "Running prover_test"
+          $env:CHIAVDF_PROVER_TEST_FAST = "1"
+          .\prover_test.exe
+          if ($LASTEXITCODE -ne 0) { throw "prover_test failed with exit code $LASTEXITCODE" }
+
+      - name: Benchmark vdf_bench square (Ubuntu/Mac)
+        if: matrix.config == 'optimized=1' && matrix.os != 'windows-latest'
+        run: |
+          cd src
+          echo "Benchmarking vdf_bench with 2,000,000 iterations of square_asm"
+          ./vdf_bench square_asm 2000000
+
+      - name: Benchmark vdf_bench square (Windows)
+        if: matrix.config == 'optimized=1' && matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          cd build
+          $env:PATH = "$PWD;$PWD\..\src\hw\libft4222;$PWD\..\mpir_gc_x64;$env:PATH"
+          Write-Host "Benchmarking vdf_bench with 2,000,000 iterations of square_asm"
+          .\vdf_bench.exe square_asm 2000000
+          if ($LASTEXITCODE -ne 0) { throw "vdf_bench failed with exit code $LASTEXITCODE" }
+
+      - name: Upload binaries artifact (Ubuntu/macOS)
+        if: matrix.os != 'windows-latest' && matrix.config == 'optimized=1'
+        uses: actions/upload-artifact@v5
+        with:
+          name: binaries-${{ matrix.config }}-${{ matrix.os }}
+          path: |
+            src/vdf_client
+            src/vdf_bench
+            src/1weso_test
+            src/2weso_test
+            src/prover_test
+            src/emu_hw_test
+            src/hw_test
+            src/emu_hw_vdf_client
+            src/hw_vdf_client
+            src/hw/libft4222/build-x86_64/libft4222.so
+            src/hw/libft4222/*.dylib
+
+      - name: Upload binaries artifact (Windows)
+        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
+        uses: actions/upload-artifact@v5
+        with:
+          name: binaries-${{ matrix.config }}-${{ matrix.os }}
+          path: |
+            build/vdf_client.exe
+            build/vdf_bench.exe
+            build/1weso_test.exe
+            build/2weso_test.exe
+            build/prover_test.exe
+            build/emu_hw_test.exe
+            build/hw_test.exe
+            build/emu_hw_vdf_client.exe
+            build/hw_vdf_client.exe
+            src/hw/libft4222/*.dll
+            src/hw/libft4222/*.lib
+            mpir_gc_x64/*.dll
+
+      - name: Assemble Ubuntu .deb (same runner as build)
+        if: matrix.os == 'ubuntu-latest' && matrix.config == 'optimized=1'
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
+          INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
+          PLATFORM: "amd64"
+        run: |
+          pip install jinjanator
+          CLI_DEB_BASE="chiavdf_$INSTALLER_VERSION-1_$PLATFORM"
+          mkdir -p "dist/$CLI_DEB_BASE/usr/bin"
+          mkdir -p "dist/$CLI_DEB_BASE/usr/lib"
+          mkdir -p "dist/$CLI_DEB_BASE/DEBIAN"
+          mkdir -p "dist/$CLI_DEB_BASE/etc/udev/rules.d"
+          j2 -o "dist/$CLI_DEB_BASE/DEBIAN/control" assets/deb/control.j2
+
+          cp src/vdf_client dist/$CLI_DEB_BASE/usr/bin/
+          cp src/vdf_bench dist/$CLI_DEB_BASE/usr/bin/
+          cp src/emu_hw_test dist/$CLI_DEB_BASE/usr/bin/
+          cp src/hw_test dist/$CLI_DEB_BASE/usr/bin/
+          cp src/hw_vdf_client dist/$CLI_DEB_BASE/usr/bin/
+          cp src/emu_hw_vdf_client dist/$CLI_DEB_BASE/usr/bin/
+          cp src/hw/libft4222/build-x86_64/libft4222.so dist/$CLI_DEB_BASE/usr/lib/
+          echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="601c", MODE="0666"' > dist/$CLI_DEB_BASE/etc/udev/rules.d/99-chiavdf.rules
+          dpkg-deb --build --root-owner-group "dist/$CLI_DEB_BASE"
+
+      - name: Upload Ubuntu installer
+        if: matrix.os == 'ubuntu-latest' && matrix.config == 'optimized=1'
+        uses: actions/upload-artifact@v5
+        with:
+          name: installer
+          path: dist/*.deb
+
+      - name: Upload release artifacts
+        if: matrix.os == 'ubuntu-latest' && matrix.config == 'optimized=1' && github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh release upload \
+            $RELEASE_TAG \
+            dist/*.deb
+
+      - uses: Chia-Network/actions/github/jwt@main
+        if: matrix.os == 'ubuntu-latest' && matrix.config == 'optimized=1' && github.event_name == 'release'
+
+      - name: Trigger repo update
+        if: matrix.os == 'ubuntu-latest' && matrix.config == 'optimized=1' && github.event_name == 'release'
+        uses: Chia-Network/actions/github/glue@main
+        with:
+          json_data: '{"release_version":"${{ github.event.release.tag_name }}"}'
+          glue_url: ${{ secrets.GLUE_API_URL }}
+          glue_project: "chiavdf"
+          glue_path: "trigger"

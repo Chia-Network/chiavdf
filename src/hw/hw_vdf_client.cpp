@@ -5,6 +5,7 @@
 #include "vdf_base.hpp"
 #include "chia_driver.hpp"
 #include "pll_freqs.hpp"
+#include "version.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -51,6 +52,7 @@ struct vdf_client_opts {
     int n_vdfs;
     uint32_t auto_freq_period;
     bool do_list;
+    bool show_version;
     bool auto_freq;
     double max_freq; // Used when auto_freq mode is turned on, to limit the max frequency
     struct vdf_proof_opts vpo;
@@ -491,6 +493,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     opts->port = 0;
     opts->n_vdfs = 3;
     opts->do_list = false;
+    opts->show_version = false;
     opts->auto_freq = false;
     opts->max_freq = pll_entries[VALID_PLL_FREQS - 1].freq;
     opts->vpo.max_aux_threads = HW_VDF_DEFAULT_MAX_AUX_THREADS;
@@ -536,6 +539,15 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
             argi++;
             continue;
         }
+        if (!strcmp(name, "version")) {
+            if (value) {
+                LOG_SIMPLE("Invalid option");
+                return -1;
+            }
+            opts->show_version = true;
+            argi++;
+            continue;
+        }
 
         if (!value) {
             if (argi + 1 >= argc) {
@@ -570,6 +582,9 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     }
 
     if (opts->do_list) {
+        return 0;
+    }
+    if (opts->show_version) {
         return 0;
     }
     if (opts->voltage == 0.0 || opts->freq == 0.0) {
@@ -671,9 +686,15 @@ int hw_vdf_client_main(int argc, char **argv)
                 "  --vdf-threads N - number of software threads per VDF engine [4, 2 - 64]\n"
                 "  --proof-threads N - number of proof threads per VDF engine\n"
                 "  --auto-freq-period N - auto-adjust frequency every N seconds [0, 10 - inf]\n"
+                "  --version - print version and exit\n"
                 "  --list - list available devices and exit",
                 argv[0], (int)HW_VDF_DEF_FREQ, HW_VDF_DEF_VOLTAGE);
         return 1;
+    }
+
+    if (client.opts.show_version) {
+        PrintCliVersion(argv[0]);
+        return 0;
     }
 
     if (client.opts.do_list) {

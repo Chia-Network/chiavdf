@@ -9,6 +9,7 @@
 #include "nucomp.h"
 #include "picosha2.h"
 #include "proof_common.h"
+#include "version.hpp"
 
 #if (defined(ARCH_X86) || defined(ARCH_X64)) && !defined(CHIA_DISABLE_ASM)
 #include "asm_main.h"
@@ -32,6 +33,11 @@ int main(int argc, char **argv)
     assert(is_vdf_test); //assertions should be disabled in VDF_MODE==0
     init_gmp();
     set_rounding_mode();
+
+    if (argc == 2 && !strcmp(argv[1], "--version")) {
+        PrintCliVersion(argv[0]);
+        return 0;
+    }
 
     if (argc < 3) {
         usage(argv[0]);

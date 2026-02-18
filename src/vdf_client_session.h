@@ -9,12 +9,12 @@
 #include <string>
 
 inline char disc[350];
-inline char disc_size[5];
-inline int disc_int_size;
 inline uint8_t initial_form_s[BQFC_FORM_SIZE];
 
 inline void InitSession(boost::asio::ip::tcp::socket& sock) {
     boost::system::error_code error;
+    char disc_size[5];
+    int disc_int_size;
     auto check_read_error = [&](const char* field_name) {
         if (error == boost::asio::error::eof) {
             throw std::runtime_error(std::string("Connection closed while reading ") + field_name);

@@ -366,7 +366,7 @@ jobs:
           PLATFORM: "amd64"
         run: |
           pip install jinjanator
-          CLI_DEB_BASE="chiavdf-hw_$INSTALLER_VERSION-1_$PLATFORM"
+          CLI_DEB_BASE="chiavdf_$INSTALLER_VERSION-1_$PLATFORM"
           mkdir -p "dist/$CLI_DEB_BASE/usr/bin"
           mkdir -p "dist/$CLI_DEB_BASE/usr/lib"
           mkdir -p "dist/$CLI_DEB_BASE/DEBIAN"
@@ -383,37 +383,35 @@ jobs:
           echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="601c", MODE="0666"' > dist/$CLI_DEB_BASE/etc/udev/rules.d/99-chiavdf.rules
           dpkg-deb --build --root-owner-group "dist/$CLI_DEB_BASE"
 
-      - name: Stage Ubuntu installer (handoff)
+      - name: Stage Ubuntu installer
         if: matrix.os == 'ubuntu-latest' && matrix.config == 'optimized=1'
         run: |
           mkdir -p installer-stage
           cp dist/*.deb installer-stage/
 
-      - name: Upload Ubuntu installer (handoff)
+      - name: Upload Ubuntu installer
         if: matrix.os == 'ubuntu-latest' && matrix.config == 'optimized=1'
         uses: actions/upload-artifact@v5
         with:
-          name: handoff-installer-ubuntu
+          name: installer
           path: installer-stage
 
   upload-installer:
     name: Upload installer (Ubuntu)
     needs: [build]
+    # Preserve old HW workflow behavior: allow release upload/glue to run
+    # when the Ubuntu optimized build produced the installer artifact,
+    # even if unrelated matrix legs (e.g. TSAN/ASAN) failed.
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     env:
       RELEASE: ${{ github.event_name == 'release' && 'true' || 'false' }}
       RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
     steps:
-      - name: Restore installer cache
+      - name: Restore installer artifact
         uses: actions/download-artifact@v6
         with:
-          name: handoff-installer-ubuntu
-          path: installer-artifact
-
-      - name: Upload installer artifact
-        uses: actions/upload-artifact@v5
-        with:
-          name: installer-ubuntu
+          name: installer
           path: installer-artifact
 
       - name: Upload release artifacts

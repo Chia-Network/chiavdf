@@ -293,6 +293,19 @@ if(BUILD_VDF_BENCH)
 endif()
 
 if(BUILD_VDF_TESTS)
+  enable_testing()
+  include(GoogleTest)
+  if(WIN32)
+    # Match parent CRT choice on Windows to avoid link/runtime mismatches.
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+  endif()
+  FetchContent_Declare(
+    googletest
+    GIT_REPOSITORY https://github.com/google/googletest.git
+    GIT_TAG        v1.14.0
+  )
+  FetchContent_MakeAvailable(googletest)
+
   add_executable(1weso_test
     ${CMAKE_CURRENT_SOURCE_DIR}/1weso_test.cpp
   )
@@ -319,6 +332,14 @@ if(BUILD_VDF_TESTS)
   vdf_add_boost_includes(prover_test)
   target_link_libraries(prover_test PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
   vdf_add_windows_clang_opts(prover_test)
+
+  add_executable(vdf_client_session_test
+    ${CMAKE_CURRENT_SOURCE_DIR}/vdf_client_session_test.cpp
+  )
+  vdf_add_boost_includes(vdf_client_session_test)
+  target_link_libraries(vdf_client_session_test PRIVATE GTest::gtest_main Threads::Threads)
+  vdf_add_windows_clang_opts(vdf_client_session_test)
+  gtest_discover_tests(vdf_client_session_test TEST_PREFIX "regression.")
 
 endif()
 

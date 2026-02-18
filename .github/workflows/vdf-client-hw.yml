@@ -219,7 +219,7 @@ jobs:
           if (-not $gnuAsmEnabled) {
             throw "ENABLE_GNU_ASM is not ON on Windows CI build"
           }
-          cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+          cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test vdf_client_session_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
           $asmFiles = @(
             "build/asm_compiled.s",
             "build/avx2_asm_compiled.s",
@@ -316,6 +316,20 @@ jobs:
           $env:CHIAVDF_PROVER_TEST_FAST = "1"
           .\prover_test.exe
           if ($LASTEXITCODE -ne 0) { throw "prover_test failed with exit code $LASTEXITCODE" }
+
+      - name: Run vdf_client_session regression (GoogleTest, Unix)
+        if: matrix.config == 'optimized=1' && matrix.os != 'windows-latest'
+        run: |
+          cmake -S src -B build-regression -DBUILD_PYTHON=OFF -DBUILD_CHIAVDFC=OFF -DBUILD_VDF_CLIENT=OFF -DBUILD_VDF_BENCH=OFF -DBUILD_VDF_TESTS=ON -DBUILD_HW_TOOLS=OFF -DENABLE_GNU_ASM=ON
+          cmake --build build-regression --target vdf_client_session_test
+          ctest --test-dir build-regression --output-on-failure -R '^regression\.'
+
+      - name: Run vdf_client_session regression (GoogleTest, Windows)
+        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
+        shell: pwsh
+        run: |
+          cd build
+          ctest -C Release --output-on-failure -R '^regression\.'
 
       - name: Benchmark vdf_bench square (Ubuntu/Mac)
         if: matrix.config == 'optimized=1' && matrix.os != 'windows-latest'

@@ -1,6 +1,7 @@
 #include <boost/asio.hpp>
 #include "vdf.h"
 #include "version.hpp"
+#include "vdf_client_session.h"
 #include <atomic>
 
 using boost::asio::ip::tcp;
@@ -17,12 +18,6 @@ void PrintInfo(std::string input) {
     std::cout << "VDF Client: " << input << "\n";
     std::cout << std::flush;
 }
-
-char disc[350];
-char disc_size[5];
-int disc_int_size;
-
-uint8_t initial_form_s[BQFC_FORM_SIZE];
 
 void WriteProof(uint64_t iteration, Proof& result, tcp::socket& sock) {
     // Writes the number of iterations
@@ -80,32 +75,7 @@ void CreateAndWriteProofTwoWeso(integer& D, form f, uint64_t iters, TwoWesolowsk
     WriteProof(iters, result, sock);
 }
 
-void InitSession(tcp::socket& sock) {
-    boost::system::error_code error;
-
-    memset(disc, 0x00, sizeof(disc)); // For null termination
-    memset(disc_size, 0x00, sizeof(disc_size)); // For null termination
-
-    boost::asio::read(sock, boost::asio::buffer(disc_size, 3), error);
-    disc_int_size = atoi(disc_size);
-    if (disc_int_size <= 0 || disc_int_size >= (int)sizeof(disc)) {
-        throw std::runtime_error("Invalid discriminant size");
-    }
-    boost::asio::read(sock, boost::asio::buffer(disc, disc_int_size), error);
-
-    // Signed char is intentional: values 128-255 wrap negative, caught by the <= 0 check below
-    char form_size;
-    boost::asio::read(sock, boost::asio::buffer(&form_size, 1), error);
-    if (form_size <= 0 || form_size > (int)sizeof(initial_form_s)) {
-        throw std::runtime_error("Invalid form size");
-    }
-    boost::asio::read(sock, boost::asio::buffer(initial_form_s, form_size), error);
-
-    if (error == boost::asio::error::eof)
-        return ; // Connection closed cleanly by peer.
-    else if (error)
-        throw boost::system::system_error(error); // Some other error.
-
+void ConfigureSessionRuntime() {
     if (getenv("warn_on_corruption_in_production") != nullptr) {
         warn_on_corruption_in_production = true;
     }
@@ -154,6 +124,7 @@ uint64_t ReadIteration(tcp::socket& sock) {
 
 void SessionFastAlgorithm(tcp::socket& sock) {
     InitSession(sock);
+    ConfigureSessionRuntime();
     try {
         integer D(disc);
         integer L = root(-D, 4);
@@ -202,6 +173,7 @@ void SessionFastAlgorithm(tcp::socket& sock) {
 
 void SessionOneWeso(tcp::socket& sock) {
     InitSession(sock);
+    ConfigureSessionRuntime();
     try {
         integer D(disc);
         integer L = root(-D, 4);
@@ -238,6 +210,7 @@ void SessionOneWeso(tcp::socket& sock) {
 void SessionTwoWeso(tcp::socket& sock) {
     const int kMaxProcessesAllowed = 100;
     InitSession(sock);
+    ConfigureSessionRuntime();
     try {
         integer D(disc);
         integer L = root(-D, 4);

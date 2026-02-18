@@ -37,6 +37,7 @@ src/hw_vdf_client
 /verifier
 /verifier_test
 /build/*
+/build-*/
 *.whl
 *.egg-info
 *.o

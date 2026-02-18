@@ -44,7 +44,7 @@ For direct CMake builds, the following options are available:
 
 - `BUILD_VDF_CLIENT` - build `vdf_client`
 - `BUILD_VDF_BENCH` - build `vdf_bench`
-- `BUILD_VDF_TESTS` - build `1weso_test`, `2weso_test`, and `prover_test`
+- `BUILD_VDF_TESTS` - build test binaries (`1weso_test`, `2weso_test`, `prover_test`) and CTest/GoogleTest targets (for example `vdf_client_session_test`)
 - `BUILD_HW_TOOLS` - build hardware timelord tools
 - `ENABLE_GNU_ASM` - enable GNU-style asm pipeline on x86/x64 (enabled by default)
 - `GENERATE_ASM_TRACKING_DATA` - enable `track_asm()` instrumentation in generated asm (off by default to avoid hot-loop overhead)
@@ -58,7 +58,7 @@ cmake -S src -B build \
   -DBUILD_VDF_CLIENT=ON \
   -DBUILD_VDF_BENCH=ON \
   -DBUILD_VDF_TESTS=ON
-cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test
+cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test vdf_client_session_test
 ```
 
 For the legacy `setup.py` + `Makefile.vdf-client` flow (used by wheel hooks),
@@ -95,6 +95,30 @@ Those tests will simulate the vdf_client and verify for correctness the produced
 
 Note: `./prover_test` defaults to a long soak/stress run. Set
 `CHIAVDF_PROVER_TEST_FAST=1` to run a short, CI-friendly correctness check.
+
+Regression tests for specific bugs are now added with GoogleTest and run via
+CTest. Example:
+
+```bash
+cmake -S src -B build \
+  -DBUILD_PYTHON=OFF \
+  -DBUILD_CHIAVDFC=OFF \
+  -DBUILD_VDF_CLIENT=OFF \
+  -DBUILD_VDF_BENCH=OFF \
+  -DBUILD_VDF_TESTS=ON \
+  -DBUILD_HW_TOOLS=OFF
+cmake --build build --target vdf_client_session_test
+ctest --test-dir build --output-on-failure -R '^regression\.'
+```
+
+### Testing matrix
+
+- Binary integration tests (existing): `1weso_test`, `2weso_test`,
+  `prover_test`; these simulate `vdf_client` and validate proof correctness.
+- Regression tests (new): GoogleTest targets executed via CTest (for example
+  `vdf_client_session_test`, typically filtered with `ctest -R '^regression\.'`).
+- Hardware tests: standalone binaries such as `hw_test` and `emu_hw_test`
+  described in `README_ASIC.md`.
 
 ## Fuzzing
 

@@ -17,6 +17,10 @@ cd src
 make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
 ```
 
+Note: the software regression tests in this repository use CMake + CTest +
+GoogleTest (for example `vdf_client_session_test`). The ASIC hardware checks in
+this guide (`hw_test`, `emu_hw_test`) remain standalone binaries.
+
 Connect the Chia VDF ASIC device and verify that it is detected:
 ```bash
 # in chiavdf/src/ directory

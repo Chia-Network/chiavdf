@@ -15,8 +15,10 @@
 #include "hw_proof.hpp"
 #include "vdf_base.hpp"
 #include "bqfc.h"
+#include "version.hpp"
 
 #include <cfenv>
+#include <cstring>
 #include <thread>
 
 static const char *discrs[] = {
@@ -48,6 +50,11 @@ int hw_test_main(int argc, char **argv)
     ChiaDriver *drv;
     uint64_t read_cnt = 0;
     uint32_t temp_period = chia_vdf_is_emu ? 200 : 2000;
+
+    if (argc == 2 && !strcmp(argv[1], "--version")) {
+        PrintCliVersion(argv[0]);
+        return 0;
+    }
 
     if (argc > 1) {
         n_vdfs = strtoul(argv[1], NULL, 0);

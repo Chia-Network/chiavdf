@@ -221,6 +221,8 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz {
         //if c_mpz.data wasn't reallocated, it has to point to this instance's data and not some other instance's data
         //if mpz_swap was used, this might be violated
         assert((uint64(c_mpz._mp_d)&63)==16 || c_mpz._mp_d==data);
+        // just checking what this shows and that it gets hit
+        assert(false);
         mpz_clear(&c_mpz);
     }
 

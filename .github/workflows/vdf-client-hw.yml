@@ -145,11 +145,15 @@ jobs:
           $boostDir = Get-ChildItem "C:\local" -Directory -Filter "boost_*" -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $boostDir) {
             if ("$env:BOOST_CACHE_HIT" -ne "true") {
+              Write-Host "Boost cache miss and boost not found, installing boost-msvc-14.3"
               choco install boost-msvc-14.3 -y
             } else {
+              Write-Host "Boost cache reported hit but boost directory missing; reinstalling boost-msvc-14.3"
               choco install boost-msvc-14.3 -y
             }
             $boostDir = Get-ChildItem "C:\local" -Directory -Filter "boost_*" -ErrorAction SilentlyContinue | Select-Object -First 1
+          } else {
+            Write-Host "Boost already present at $($boostDir.FullName), skipping choco install"
           }
           "C:\Program Files\LLVM\bin" | Out-File -Append -FilePath $env:GITHUB_PATH
           if (-not $boostDir) {
@@ -198,29 +202,50 @@ jobs:
             "-DENABLE_GNU_ASM=ON"
           )
           & cmake @cmakeArgs
+          $gnuAsmEnabled = (& cmake -N -L build | Select-String '^ENABLE_GNU_ASM:BOOL=ON$')
+          if (-not $gnuAsmEnabled) {
+            throw "ENABLE_GNU_ASM is not ON on Windows CI build"
+          }
           cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+          $asmFiles = @(
+            "build/asm_compiled.s",
+            "build/avx2_asm_compiled.s",
+            "build/avx512_asm_compiled.s"
+          )
+          foreach ($asmFile in $asmFiles) {
+            if (-not (Test-Path $asmFile)) {
+              throw "Expected generated asm output not found: $asmFile"
+            }
+          }
 
       - name: Run HW smoke test (Ubuntu/macOS)
-        if: matrix.os != 'windows-latest'
+        if: matrix.os != 'windows-latest' && (matrix.config != 'TSAN=1' || matrix.os == 'ubuntu-latest')
         run: |
           cd src
+          # CI runners do not have FT4222 hardware attached; only validate binaries exist.
           test -x ./hw_vdf_client
           test -x ./hw_test
+          echo "Running emu_hw_test"
           ./emu_hw_test 1 2000
+          echo "Running emu_hw_vdf_client --list"
           ./emu_hw_vdf_client --list
 
       - name: Run vdf tests (optimized)
         if: matrix.config == 'optimized=1' && matrix.os != 'windows-latest'
         run: |
           cd src
+          echo "Running 1weso_test"
           ./1weso_test
+          echo "Running 2weso_test"
           ./2weso_test
 
       - name: Run vdf tests (short)
         if: matrix.config != 'optimized=1' && matrix.os != 'windows-latest'
         run: |
           cd src
+          echo "Running 1weso_test"
           ./1weso_test 1000
+          echo "Running 2weso_test"
           ./2weso_test 1000
 
       # macos thread sanitizer will give false positives on ./prover_test because
@@ -230,6 +255,7 @@ jobs:
         if: matrix.os != 'windows-latest' && (matrix.config != 'TSAN=1' || matrix.os == 'ubuntu-latest')
         run: |
           cd src
+          echo "Running prover_test"
           if [[ "${{ matrix.os }}" == ubuntu* ]]; then
             ./prover_test
           else
@@ -241,11 +267,16 @@ jobs:
         shell: pwsh
         run: |
           cd build
+          # Keep native stderr as log output; emu binaries log diagnostics there.
+          $PSNativeCommandUseErrorActionPreference = $false
           $env:PATH = "$PWD;$PWD\..\src\hw\libft4222;$PWD\..\mpir_gc_x64;$env:PATH"
+          # CI runners do not have FT4222 hardware attached; only validate binaries exist.
           if (-not (Test-Path ".\hw_test.exe")) { throw "hw_test.exe is missing" }
           if (-not (Test-Path ".\hw_vdf_client.exe")) { throw "hw_vdf_client.exe is missing" }
+          Write-Host "Running emu_hw_test"
           .\emu_hw_test.exe 1 2000
           if ($LASTEXITCODE -ne 0) { throw "emu_hw_test failed with exit code $LASTEXITCODE" }
+          Write-Host "Running emu_hw_vdf_client --list"
           .\emu_hw_vdf_client.exe --list
           if ($LASTEXITCODE -ne 0) { throw "emu_hw_vdf_client --list failed with exit code $LASTEXITCODE" }
 
@@ -255,8 +286,10 @@ jobs:
         run: |
           cd build
           $env:PATH = "$PWD;$PWD\..\src\hw\libft4222;$PWD\..\mpir_gc_x64;$env:PATH"
+          Write-Host "Running 1weso_test"
           .\1weso_test.exe
           if ($LASTEXITCODE -ne 0) { throw "1weso_test failed with exit code $LASTEXITCODE" }
+          Write-Host "Running 2weso_test"
           .\2weso_test.exe
           if ($LASTEXITCODE -ne 0) { throw "2weso_test failed with exit code $LASTEXITCODE" }
 
@@ -266,6 +299,7 @@ jobs:
         run: |
           cd build
           $env:PATH = "$PWD;$PWD\..\src\hw\libft4222;$PWD\..\mpir_gc_x64;$env:PATH"
+          Write-Host "Running prover_test"
           $env:CHIAVDF_PROVER_TEST_FAST = "1"
           .\prover_test.exe
           if ($LASTEXITCODE -ne 0) { throw "prover_test failed with exit code $LASTEXITCODE" }
@@ -341,9 +375,6 @@ jobs:
 
           cp src/vdf_client dist/$CLI_DEB_BASE/usr/bin/
           cp src/vdf_bench dist/$CLI_DEB_BASE/usr/bin/
-          cp src/1weso_test dist/$CLI_DEB_BASE/usr/bin/
-          cp src/2weso_test dist/$CLI_DEB_BASE/usr/bin/
-          cp src/prover_test dist/$CLI_DEB_BASE/usr/bin/
           cp src/emu_hw_test dist/$CLI_DEB_BASE/usr/bin/
           cp src/hw_test dist/$CLI_DEB_BASE/usr/bin/
           cp src/hw_vdf_client dist/$CLI_DEB_BASE/usr/bin/

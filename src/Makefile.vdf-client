@@ -14,11 +14,9 @@ endif
 ifeq ($(OS),Windows_NT)
 NOPIE =
 endif
-# macOS arm64 ignores -no_pie and warns; omit to avoid deprecation warnings
+# macOS linker warns that -no_pie is deprecated; omit across Darwin targets.
 ifeq ($(UNAME),Darwin)
-ifneq ($(filter $(ARCH),arm64),)
 NOPIE =
-endif
 endif
 
 CFLAGS += $(LTO_FLAGS) $(NOPIE)
@@ -57,6 +55,10 @@ endif
 ifneq ($(TSAN),)
 LDFLAGS += -fsanitize=thread
 CXXFLAGS += -g -fsanitize=thread
+ifneq (,$(findstring clang, $(shell $(CXX) --version)))
+else
+CXXFLAGS += -Wno-tsan
+endif
 endif
 
 .PHONY: all clean

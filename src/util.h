@@ -129,10 +129,10 @@ void ApproximateParameters(uint64_t T, uint32_t& L, uint32_t& K) {
     double log_T = log2(T);
     L = 1;
     if (log_T - log_memory > 0.000001) {
-        L = ceil(pow(2, log_memory - 20));
+        L = static_cast<uint32_t>(ceil(pow(2, log_memory - 20)));
     }
     double intermediate = T * (double)0.6931471 / (2.0 * L);
-    K = std::max(std::round(log(intermediate) - log(log(intermediate)) + 0.25), 1.0);
+    K = static_cast<uint32_t>(std::max(std::round(log(intermediate) - log(log(intermediate)) + 0.25), 1.0));
 }
 
 struct Proof {

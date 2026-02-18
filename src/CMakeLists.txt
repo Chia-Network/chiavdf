@@ -1,4 +1,4 @@
-CMAKE_MINIMUM_REQUIRED(VERSION 3.14 FATAL_ERROR)
+CMAKE_MINIMUM_REQUIRED(VERSION 3.18 FATAL_ERROR)
 option(BUILD_CHIAVDFC "Build the chiavdfc shared library" OFF)
 option(BUILD_PYTHON "Build the python bindings for chiavdf" ON)
 option(BUILD_VDF_CLIENT "Build the vdf_client binary" OFF)
@@ -8,6 +8,7 @@ option(BUILD_HW_TOOLS "Build hardware timelord tools" OFF)
 option(ENABLE_GNU_ASM "Enable GNU-style asm pipeline on x86/x64" ON)
 option(GENERATE_ASM_TRACKING_DATA "Emit asm tracking instrumentation data from compile_asm" OFF)
 option(HARDENING "Enable hardening" OFF)
+option(REQUIRE_MPIRXX "Require mpirxx/gmpxx C++ wrapper library on Windows" OFF)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -44,6 +45,15 @@ set(CMAKE_MODULE_PATH
 
 if(MSVC)
   add_compile_options(/EHsc)
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    # Keep Windows clang-cl output focused on actionable issues.
+    # Keep this list minimal and avoid broad suppressions globally.
+    add_compile_options(
+      "/clang:-Qunused-arguments"
+      "/clang:-Wno-unused-command-line-argument"
+      "/clang:-Wno-unused-private-field"
+    )
+  endif()
   if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     # MSVC does not provide the GNU intrinsics headers used by compile_asm.
     set(ENABLE_GNU_ASM OFF CACHE BOOL "Enable GNU-style asm pipeline on x86/x64" FORCE)
@@ -60,7 +70,7 @@ if(APPLE)
 endif()
 
 if(WIN32)
-  add_compile_definitions(CHIA_WINDOWS NOMINMAX WIN32_LEAN_AND_MEAN)
+  add_compile_definitions(CHIA_WINDOWS NOMINMAX WIN32_LEAN_AND_MEAN _WIN32_WINNT=0x0601)
   set(MPIR_LIBRARY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../mpir_gc_x64")
   set(MPIR_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../mpir_gc_x64")
   include_directories(
@@ -87,7 +97,11 @@ if(WIN32)
     set(GMPXX_LIBRARIES ${MPIRXX_LIBRARY})
     link_libraries(${MPIRXX_LIBRARY})
   else()
-    message(WARNING "MPIRXX library not found; gmpxx iostream operators may be missing")
+    set(GMPXX_LIBRARIES "")
+    if(REQUIRE_MPIRXX)
+      message(FATAL_ERROR "MPIRXX library not found but REQUIRE_MPIRXX=ON")
+    endif()
+    message(STATUS "MPIRXX library not found; continuing without gmpxx iostream operators")
   endif()
 
   list(APPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../mpir_gc_x64")
@@ -195,12 +209,33 @@ if(ENABLE_GNU_ASM AND (CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|i[3-6]86)$
 endif()
 
 if(BUILD_PYTHON)
-  FetchContent_Declare(
-    pybind11-src
-    GIT_REPOSITORY https://github.com/pybind/pybind11.git
-    GIT_TAG        v2.13.6
-  )
-  FetchContent_MakeAvailable(pybind11-src)
+  # Prefer the pybind11 package from the active Python build environment.
+  # This avoids unnecessary FetchContent downloads and upstream CMake warning noise.
+  set(PYBIND11_FINDPYTHON ON)
+  find_package(Python REQUIRED COMPONENTS Interpreter Development.Module)
+
+  if(DEFINED Python_EXECUTABLE)
+    execute_process(
+      COMMAND "${Python_EXECUTABLE}" -m pybind11 --cmakedir
+      OUTPUT_VARIABLE PYBIND11_CMAKE_DIR
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      ERROR_QUIET
+      RESULT_VARIABLE PYBIND11_CMAKEDIR_RESULT
+    )
+    if(PYBIND11_CMAKEDIR_RESULT EQUAL 0 AND EXISTS "${PYBIND11_CMAKE_DIR}")
+      list(PREPEND CMAKE_PREFIX_PATH "${PYBIND11_CMAKE_DIR}")
+    endif()
+  endif()
+
+  find_package(pybind11 CONFIG QUIET)
+  if(NOT pybind11_FOUND)
+    FetchContent_Declare(
+      pybind11-src
+      GIT_REPOSITORY https://github.com/pybind/pybind11.git
+      GIT_TAG        v2.13.6
+    )
+    FetchContent_MakeAvailable(pybind11-src)
+  endif()
 
   pybind11_add_module(chiavdf
     ${CMAKE_CURRENT_SOURCE_DIR}/python_bindings/fastvdf.cpp
@@ -255,6 +290,11 @@ function(vdf_add_windows_clang_opts target_name)
         "$<$<COMPILE_LANGUAGE:C,CXX>:/O2>"
         "$<$<COMPILE_LANGUAGE:C,CXX>:/fp:fast>"
         "$<$<COMPILE_LANGUAGE:C,CXX>:/clang:-fno-math-errno>"
+        "$<$<COMPILE_LANGUAGE:C,CXX>:/clang:-Wno-unused-command-line-argument>"
+        # Finite-math mode can trigger this in transitive/system headers on clang-cl.
+        # Keep this suppression target-scoped to fast-math targets only.
+        "$<$<COMPILE_LANGUAGE:C,CXX>:/clang:-Wno-nan-infinity-disabled>"
+        "$<$<COMPILE_LANGUAGE:CXX>:/clang:-Wno-deprecated-literal-operator>"
       )
     else()
       target_compile_options(
@@ -392,6 +432,7 @@ if(BUILD_HW_TOOLS)
   target_compile_definitions(hw_test PRIVATE ${VDF_COMMON_DEFINITIONS})
   target_include_directories(hw_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/hw ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222)
   target_link_libraries(hw_test PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads ${HW_LIBS})
+  vdf_add_windows_clang_opts(hw_test)
   if(APPLE)
     target_link_options(hw_test PRIVATE "-Wl,-rpath,@executable_path/hw/libft4222")
   endif()
@@ -404,6 +445,7 @@ if(BUILD_HW_TOOLS)
   target_compile_definitions(hw_vdf_client PRIVATE ${VDF_COMMON_DEFINITIONS})
   target_include_directories(hw_vdf_client PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/hw ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222)
   target_link_libraries(hw_vdf_client PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads ${HW_LIBS} ${HW_SOCKET_LIBS})
+  vdf_add_windows_clang_opts(hw_vdf_client)
   if(APPLE)
     target_link_options(hw_vdf_client PRIVATE "-Wl,-rpath,@executable_path/hw/libft4222")
   endif()
@@ -415,6 +457,7 @@ if(BUILD_HW_TOOLS)
   target_compile_definitions(emu_hw_test PRIVATE ${VDF_COMMON_DEFINITIONS})
   target_include_directories(emu_hw_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/hw ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222)
   target_link_libraries(emu_hw_test PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
+  vdf_add_windows_clang_opts(emu_hw_test)
 
   add_executable(emu_hw_vdf_client
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_vdf_client.cpp
@@ -423,6 +466,7 @@ if(BUILD_HW_TOOLS)
   target_compile_definitions(emu_hw_vdf_client PRIVATE ${VDF_COMMON_DEFINITIONS})
   target_include_directories(emu_hw_vdf_client PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/hw ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222)
   target_link_libraries(emu_hw_vdf_client PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads ${HW_SOCKET_LIBS})
+  vdf_add_windows_clang_opts(emu_hw_vdf_client)
 endif()
 
 add_executable(verifier_test

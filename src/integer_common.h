@@ -2,6 +2,7 @@
 #define INTEGER_COMMON_H
 
 #include "primetest.h"
+#include <limits>
 
 //note: gmp already has c++ bindings so could have just used those. oh well
 
@@ -118,10 +119,12 @@ track_max_type track_max;
 typedef __mpz_struct mpz_struct;
 
 int mpz_num_bits_upper_bound(mpz_struct* v) {
-    return mpz_size(v)*sizeof(mp_limb_t)*8;
+    size_t bits = mpz_size(v)*sizeof(mp_limb_t)*8;
+    assert(bits <= static_cast<size_t>(std::numeric_limits<int>::max()));
+    return static_cast<int>(bits);
 }
 
-static bool allow_integer_constructor=false; //don't want static integers because they use the wrong allocator
+[[maybe_unused]] static bool allow_integer_constructor=false; //don't want static integers because they use the wrong allocator
 
 //16 bytes
 struct integer {
@@ -414,7 +417,9 @@ struct integer {
     }
 
     int num_bits() const {
-        return mpz_sizeinbase(impl, 2);
+        size_t bits = mpz_sizeinbase(impl, 2);
+        assert(bits <= static_cast<size_t>(std::numeric_limits<int>::max()));
+        return static_cast<int>(bits);
     }
 };
 

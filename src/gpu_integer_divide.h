@@ -60,7 +60,7 @@ uint64 calculate_reciprocal(uint32 high, uint32 low) {
 }
 
 //result is >= the actual quotient
-uint32 calculate_quotient(uint32 high, uint32 low, uint64 reciprocal, uint32 b) {
+uint32 calculate_quotient(uint32 high, uint32 low, uint64 reciprocal, uint32) {
     uint64 both=uint64(low) | (uint64(high)<<32);
 
     uint64 product_high=(uint128(both)*uint128(reciprocal))>>64;
@@ -76,7 +76,7 @@ uint32 calculate_quotient(uint32 high, uint32 low, uint64 reciprocal, uint32 b) 
 }
 
 fixed_integer<uint64, 2> calculate_reciprocal(uint64 high, uint64 low);
-uint64 calculate_quotient(uint64 high, uint64 low, fixed_integer<uint64, 2> reciprocal, uint64 b);
+uint64 calculate_quotient(uint64 high, uint64 low, fixed_integer<uint64, 2> reciprocal, uint64);
 
 //should pad a by 1 limb then left shift it by num_bits
 //all integers are unsigned
@@ -108,9 +108,6 @@ void divide_integers_impl(
             //ptxas generates horrible code which isn't scheduled properly
             //uint64 qj_64=((uint64(a[size_a-1-x])<<32) | uint64(a[size_a-2-x])) / uint64(b[size_b-1]);
             //uint32 qj=uint32(min( qj_64, uint64(~uint32(0)) ));
-
-            auto a_start=a;
-            type qj_start=qj;
 
             auto b_shifted_qj=b_shifted;
             b_shifted_qj*=qj;
@@ -305,7 +302,7 @@ fixed_integer<uint64, 2> calculate_reciprocal(uint64 high, uint64 low) {
 } */
 
 //result is >= the actual quotient
-uint64 calculate_quotient(uint64 high, uint64 low, fixed_integer<uint64, 2> reciprocal, uint64 b) {
+uint64 calculate_quotient(uint64 high, uint64 low, fixed_integer<uint64, 2> reciprocal, uint64) {
     fixed_integer<uint64, 2> both;
     both[0]=low;
     both[1]=high;

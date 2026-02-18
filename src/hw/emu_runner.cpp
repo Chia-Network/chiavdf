@@ -171,8 +171,19 @@ void inject_error(struct job_status *stat, struct job_state *st)
 {
     int p = g_error_prob;
     if (p == -1) {
-        char *prob = getenv("EMU_ERROR_PROB");
+#ifdef _WIN32
+        char* prob = nullptr;
+        size_t prob_len = 0;
+        if (_dupenv_s(&prob, &prob_len, "EMU_ERROR_PROB") == 0 && prob != nullptr) {
+            p = atoi(prob);
+            free(prob);
+        } else {
+            p = 0;
+        }
+#else
+        const char* prob = getenv("EMU_ERROR_PROB");
         p = prob ? atoi(prob) : 0;
+#endif
         g_error_prob = p;
     }
     #ifdef _WIN32

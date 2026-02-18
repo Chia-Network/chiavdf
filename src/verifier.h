@@ -43,6 +43,7 @@ void VerifyWesolowskiProof(integer &D, form x, form y, form proof, uint64_t iter
 
 bool CheckProofOfTimeNWesolowski(integer D, const uint8_t* x_s, const uint8_t* proof_blob, int32_t proof_blob_len, uint64_t iterations, uint64 disc_size_bits, int32_t depth)
 {
+    (void)disc_size_bits;
     int form_size = BQFC_FORM_SIZE;
     int segment_len = 8 + B_bytes + form_size;
     // Enforce all invariants and bounds before the loop        

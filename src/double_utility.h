@@ -93,9 +93,8 @@ double double_from_int(uint64 i) {
 //can make this handle shifted doubles easily
 uint64 int_from_double(double v, bool exact=true) {
     if (exact) {
-        uint64 v_test=v;
-        assert(v_test==v);
-        assert(v_test<(1ull<<52));
+        assert(uint64(v)==v);
+        assert(uint64(v)<(1ull<<52));
     }
 
     double res_1=fma(v, d_exp2(-52), 1); //one fma

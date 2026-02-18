@@ -132,11 +132,17 @@ void init_conn(struct vdf_conn *conn, uint32_t ip, int port)
 {
     int ret;
     struct sockaddr_in sa = {};
+    char ip_text[INET_ADDRSTRLEN] = {0};
     sa.sin_family = AF_INET;
     sa.sin_port = htons(static_cast<uint16_t>(port));
     sa.sin_addr.s_addr = htonl(ip);
     conn->sock = socket(AF_INET, SOCK_STREAM, 0);
-    LOG_INFO("Connecting to %s:%d", inet_ntoa(sa.sin_addr), port);
+#ifdef _WIN32
+    const char* addr_text = InetNtopA(AF_INET, &sa.sin_addr, ip_text, static_cast<DWORD>(sizeof(ip_text)));
+#else
+    const char* addr_text = inet_ntop(AF_INET, &sa.sin_addr, ip_text, sizeof(ip_text));
+#endif
+    LOG_INFO("Connecting to %s:%d", addr_text ? addr_text : "<invalid>", port);
     ret = connect(conn->sock, (struct sockaddr *)&sa, sizeof(sa));
     if (ret < 0) {
         perror("connect");
@@ -562,7 +568,20 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
         } else if (!strcmp(name, "voltage")) {
             opts->voltage = strtod(value, NULL);
         } else if (!strcmp(name, "ip")) {
-            opts->ip = ntohl(inet_addr(value));
+            struct in_addr parsed_addr = {};
+#ifdef _WIN32
+            if (InetPtonA(AF_INET, value, &parsed_addr) != 1) {
+                opts->ip = INADDR_NONE;
+            } else {
+                opts->ip = ntohl(parsed_addr.s_addr);
+            }
+#else
+            if (inet_pton(AF_INET, value, &parsed_addr) != 1) {
+                opts->ip = INADDR_NONE;
+            } else {
+                opts->ip = ntohl(parsed_addr.s_addr);
+            }
+#endif
         } else if (!strcmp(name, "vdfs-mask")) {
             opts->vdfs_mask = strtoul(value, NULL, 0);
         } else if (!strcmp(name, "vdf-threads")) {
@@ -654,7 +673,7 @@ int hw_vdf_client_main(int argc, char **argv)
 {
     struct vdf_client client;
 #ifndef _WIN32
-    struct sigaction sa = {0};
+    struct sigaction sa = {};
 #endif
 
 #ifdef _WIN32

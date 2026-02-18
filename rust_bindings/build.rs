@@ -23,7 +23,8 @@ fn main() {
             .to_path_buf();
     }
 
-    let dst = Config::new(src_dir.as_path())
+    let mut config = Config::new(src_dir.as_path());
+    config
         .build_target("chiavdfc_static")
         .define("BUILD_CHIAVDFC", "ON")
         .env("BUILD_VDF_CLIENT", "N")
@@ -35,8 +36,17 @@ fn main() {
             } else {
                 "OFF"
             },
-        )
-        .build();
+        );
+
+    if cfg!(target_os = "windows") {
+        // Rust MSVC links against msvcrt in both debug/release test builds.
+        // Keep CMake-produced static libs on the same CRT to avoid *_dbg unresolved symbols.
+        config
+            .define("CMAKE_POLICY_DEFAULT_CMP0091", "NEW")
+            .define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreadedDLL");
+    }
+
+    let dst = config.build();
 
     println!("cargo:rustc-link-lib=static=chiavdfc");
 

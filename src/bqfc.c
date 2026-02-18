@@ -1,5 +1,7 @@
 #include "bqfc.h"
 
+#include <assert.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -174,7 +176,8 @@ int bqfc_serialize_only(uint8_t *out_str, const struct qfb_c *c, size_t d_bits)
     out_str[0] = (uint8_t)c->b_sign << BQFC_B_SIGN_BIT;
     out_str[0] |= (mpz_sgn(c->t) < 0 ? 1 : 0) << BQFC_T_SIGN_BIT;
     g_size = (mpz_sizeinbase(c->g, 2) + 7) / 8 - 1;
-    out_str[1] = g_size;
+    assert(g_size <= UCHAR_MAX);
+    out_str[1] = (uint8_t)g_size;
     offset = 2;
 
     bqfc_export(out_str, &offset, d_bits / 16 - g_size, c->a);
@@ -222,7 +225,9 @@ int bqfc_deserialize_only(struct qfb_c *out_c, const uint8_t *str, size_t d_bits
 
 int bqfc_get_compr_size(size_t d_bits)
 {
-    return (d_bits + 31) / 32 * 3 + 4;
+    size_t size = (d_bits + 31) / 32 * 3 + 4;
+    assert(size <= INT_MAX);
+    return (int)size;
 }
 
 int bqfc_serialize(uint8_t *out_str, mpz_t a, mpz_t b, size_t d_bits)

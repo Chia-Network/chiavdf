@@ -476,6 +476,15 @@ void compile_asm_avx512_multiply(int in_a_num_limbs, int in_b_num_limbs, int out
 //
 
 #ifdef COMPILE_ASM
+void emit_nonexec_stack_note(std::ofstream& out) {
+#if !defined(CHIA_WINDOWS) && !defined(CHIAOSX)
+    // Mark generated asm objects as not requiring an executable stack on ELF targets.
+    out << "\n.section .note.GNU-stack,\"\",@progbits\n";
+#else
+    (void)out;
+#endif
+}
+
 void compile_asm(std::string filename) {
     compile_asm_gcd_base();
     compile_asm_gcd_128();
@@ -483,6 +492,7 @@ void compile_asm(std::string filename) {
 
     ofstream out( filename );
     out << m.format_res_text();
+    emit_nonexec_stack_note(out);
 }
 
 void compile_asm_avx512(std::string filename) {
@@ -493,6 +503,7 @@ void compile_asm_avx512(std::string filename) {
 
     ofstream out( filename );
     out << m.format_res_text();
+    emit_nonexec_stack_note(out);
 }
 #endif
 

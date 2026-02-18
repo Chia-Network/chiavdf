@@ -2,10 +2,15 @@
 #define PRIMETEST_H
 
 #include "pprods.h"
+#include <cassert>
+#include <limits>
 
 static int miller_rabin(const mpz_t n, mpz_t b, mpz_t d)
 {
-    int r = 0, s = mpz_scan1(n, 1);
+    int r = 0;
+    mp_bitcnt_t s_bits = mpz_scan1(n, 1);
+    assert(s_bits <= static_cast<mp_bitcnt_t>(std::numeric_limits<int>::max()));
+    int s = static_cast<int>(s_bits);
 
     mpz_tdiv_q_2exp(d, n, s);
     mpz_powm(b, b, d, n);
@@ -60,7 +65,11 @@ static void addmul_si(mpz_t p, mpz_t a, int b)
 static void find_lucas_v(mpz_t u1, mpz_t e, const mpz_t m, int p, int q,
         mpz_t u2, mpz_t tmp2)
 {
-    int i, l = mpz_sizeinbase(e, 2), minus_2q = -2 * q;
+    int i;
+    mp_bitcnt_t l_bits = mpz_sizeinbase(e, 2);
+    assert(l_bits <= static_cast<mp_bitcnt_t>(std::numeric_limits<int>::max()));
+    int l = static_cast<int>(l_bits);
+    int minus_2q = -2 * q;
 
     mpz_set_ui(u1, 1); /* U1 */
     mpz_set_ui(u2, p); /* U2 */

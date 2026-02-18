@@ -47,7 +47,6 @@ class FastStorage {
         int subbucket = 0;
         if (iter % (1 << 16))
             subbucket = 1;
-        bool arrived_segment = false;
         bool has_event = false;
         {
             intermediates_stored[2 * bucket + subbucket] = true;

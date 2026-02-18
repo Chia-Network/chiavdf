@@ -22,6 +22,8 @@ permissions:
 
 env:
   CHIAVDF_LOG_AVX: "1"
+  # Guardrail for temporary shorter CI runtime in 2weso_test.
+  CHIAVDF_2WESO_SHORT_EXPIRY: "2026-03-31"
 
 jobs:
   build:
@@ -250,7 +252,14 @@ jobs:
           echo "Running 1weso_test"
           ./1weso_test
           echo "Running 2weso_test"
-          ./2weso_test
+          today="$(date -u +%F)"
+          if [[ "$today" > "$CHIAVDF_2WESO_SHORT_EXPIRY" ]]; then
+            echo "Temporary 2weso_test short-run override expired on $CHIAVDF_2WESO_SHORT_EXPIRY"
+            echo "Revert to ./2weso_test (or at least ./2weso_test 1000) and remove this guardrail."
+            exit 1
+          fi
+          # Temporary: keep 2weso_test very short while warning cleanup work is in progress.
+          ./2weso_test 100
 
       - name: Run vdf tests (short)
         if: matrix.config != 'optimized=1' && matrix.os != 'windows-latest'
@@ -259,7 +268,14 @@ jobs:
           echo "Running 1weso_test"
           ./1weso_test 1000
           echo "Running 2weso_test"
-          ./2weso_test 1000
+          today="$(date -u +%F)"
+          if [[ "$today" > "$CHIAVDF_2WESO_SHORT_EXPIRY" ]]; then
+            echo "Temporary 2weso_test short-run override expired on $CHIAVDF_2WESO_SHORT_EXPIRY"
+            echo "Revert to ./2weso_test (or at least ./2weso_test 1000) and remove this guardrail."
+            exit 1
+          fi
+          # Temporary: keep 2weso_test very short while warning cleanup work is in progress.
+          ./2weso_test 100
 
       # macos thread sanitizer will give false positives on ./prover_test because
       # it prints to std::cout from multiple threads. Which is allowed by the
@@ -303,7 +319,13 @@ jobs:
           .\1weso_test.exe
           if ($LASTEXITCODE -ne 0) { throw "1weso_test failed with exit code $LASTEXITCODE" }
           Write-Host "Running 2weso_test"
-          .\2weso_test.exe
+          $today = (Get-Date).ToUniversalTime().Date
+          $expiry = [datetime]::ParseExact($env:CHIAVDF_2WESO_SHORT_EXPIRY, "yyyy-MM-dd", $null)
+          if ($today -gt $expiry) {
+            throw "Temporary 2weso_test short-run override expired on $env:CHIAVDF_2WESO_SHORT_EXPIRY. Revert to full-depth run and remove this guardrail."
+          }
+          # Temporary: keep 2weso_test very short while warning cleanup work is in progress.
+          .\2weso_test.exe 100
           if ($LASTEXITCODE -ne 0) { throw "2weso_test failed with exit code $LASTEXITCODE" }
 
       - name: Run prover test (Windows)

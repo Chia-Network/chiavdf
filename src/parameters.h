@@ -43,17 +43,28 @@ inline std::atomic<bool> enable_avx512_ifma{false};
 inline std::once_flag avx_flags_once;
 
 inline bool env_flag(const char* name) {
+#if defined(_WIN32)
+  char* value = nullptr;
+  size_t value_len = 0;
+  if (_dupenv_s(&value, &value_len, name) != 0 || value == nullptr) {
+    return false;
+  }
+  const char c0 = value[0];
+  free(value);
+#else
   const char* value = getenv(name);
   if (!value) {
     return false;
   }
-  if (value[0] == '\0') {
+  const char c0 = value[0];
+#endif
+  if (c0 == '\0') {
     return false;
   }
-  if (value[0] == '1' || value[0] == 'y' || value[0] == 'Y' || value[0] == 't' || value[0] == 'T') {
+  if (c0 == '1' || c0 == 'y' || c0 == 'Y' || c0 == 't' || c0 == 'T') {
     return true;
   }
-  if (value[0] == '0' || value[0] == 'n' || value[0] == 'N' || value[0] == 'f' || value[0] == 'F') {
+  if (c0 == '0' || c0 == 'n' || c0 == 'N' || c0 == 'f' || c0 == 'F') {
     return false;
   }
   return true;

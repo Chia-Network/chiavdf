@@ -207,6 +207,7 @@ public:
 
         int ret = solve_linear_congruence(mu, v, a, b, m);
 
+        (void)ret;
         assert(ret == 0);
 
         // solve (tv)n = (h - t * mu) mod s, of the form n = lamda + sigma n'
@@ -282,6 +283,7 @@ public:
     **/
     form* square(form &f1) {
         int ret = solve_linear_congruence(mu, f1.b, f1.c, f1.a);
+        (void)ret;
         assert(ret == 0);
 
         mpz_mul(m, f1.b, mu);

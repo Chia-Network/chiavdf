@@ -14,18 +14,7 @@ std::atomic<bool> stop_signal{false};
 
 static bool env_truthy(const char* name)
 {
-    const char* v = std::getenv(name);
-    if (v == nullptr) return false;
-    if (v[0] == '\0') return false;
-    // Accept common "truthy" strings.
-    if (!std::strcmp(v, "1")) return true;
-    if (!std::strcmp(v, "true")) return true;
-    if (!std::strcmp(v, "TRUE")) return true;
-    if (!std::strcmp(v, "yes")) return true;
-    if (!std::strcmp(v, "YES")) return true;
-    if (!std::strcmp(v, "on")) return true;
-    if (!std::strcmp(v, "ON")) return true;
-    return false;
+    return env_flag(name);
 }
 
 Proof CreateProof(integer D, ProverManager& pm, uint64_t iteration) {
@@ -60,7 +49,7 @@ int main() {
     std::vector<uint8_t> challenge_hash({0, 0, 1, 2, 3, 3, 4, 4});
     integer D = CreateDiscriminant(challenge_hash, 1024);
 
-    if (getenv( "warn_on_corruption_in_production" )!=nullptr) {
+    if (env_flag("warn_on_corruption_in_production")) {
         warn_on_corruption_in_production=true;
     }
     set_rounding_mode();
@@ -88,7 +77,7 @@ int main() {
     // Default behavior: run the historical long/soak test.
     // Fast/CI-friendly mode: set `CHIAVDF_PROVER_TEST_FAST=1` to run just a few proofs and exit.
     const bool fast_mode = env_truthy("CHIAVDF_PROVER_TEST_FAST");
-    const bool is_ci = (std::getenv("CI") != nullptr) || (std::getenv("GITHUB_ACTIONS") != nullptr);
+    const bool is_ci = env_flag("CI") || env_flag("GITHUB_ACTIONS");
 
     if (!fast_mode) {
         for (int i = 0; i <= 30; i++) {

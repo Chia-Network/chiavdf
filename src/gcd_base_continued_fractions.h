@@ -96,6 +96,7 @@ struct continued_fraction {
 
         for (int i : values) {
             bool is_exact=multiply_exact(quotient_matrix(i), res, res);
+            (void)is_exact;
             assert(is_exact);
         }
 
@@ -348,6 +349,7 @@ bool add_to_table(double_table<continued_fraction>& c_table, continued_fraction 
     }
 
     for (continued_fraction& c : old_values) {
+        (void)c;
         assert(c.is_superset_of(f));
     }
 
@@ -632,6 +634,7 @@ bool gcd_base_continued_fraction(vector2& ab, matrix2& uv, bool is_lehmer, doubl
         //print( "            gcd_base quotient", q );
 
         //print( "foo" );
+        #ifndef NDEBUG
         {
             //this would overflow a double; it works with modular arithmetic
             int64 a_expected=int64(uv[0][0])*int64(ab_start[0]) + int64(uv[0][1])*int64(ab_start[1]);
@@ -639,6 +642,7 @@ bool gcd_base_continued_fraction(vector2& ab, matrix2& uv, bool is_lehmer, doubl
             assert(int64(ab[0])==a_expected);
             assert(int64(ab[1])==b_expected);
         }
+        #endif
 
         if (iter>=gcd_base_max_iter) {
             break;

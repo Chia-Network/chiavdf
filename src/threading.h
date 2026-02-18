@@ -12,7 +12,7 @@ static_assert(sizeof(unsigned long int)==8, "");
 static_assert(sizeof(long int)==8, "");
 #endif
 
-static uint64 get_time_cycles() {
+[[maybe_unused]] static uint64 get_time_cycles() {
     // Returns the time in EDX:EAX.
     uint64 high;
     uint64 low;

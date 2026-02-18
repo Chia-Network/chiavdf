@@ -224,11 +224,11 @@ bool uint128_t::operator<(const uint128_t & rhs) const{
 }
 
 bool uint128_t::operator>=(const uint128_t & rhs) const{
-    return ((*this > rhs) | (*this == rhs));
+    return ((*this > rhs) || (*this == rhs));
 }
 
 bool uint128_t::operator<=(const uint128_t & rhs) const{
-    return ((*this < rhs) | (*this == rhs));
+    return ((*this < rhs) || (*this == rhs));
 }
 
 uint128_t uint128_t::operator+(const uint128_t & rhs) const{

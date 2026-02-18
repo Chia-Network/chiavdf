@@ -52,10 +52,8 @@ void reduce(integer& a, integer& b, integer& c) {
     TRACK_MAX(c); // 2
     */
 
-    int iter=0;
     while (a>c || (a==c && b<0)) {
         reduce_impl(a, b, c);
-        ++iter;
 
         /*if (iter==1) {
             TRACK_MAX(a); // 2
@@ -158,6 +156,9 @@ struct form {
     bool check_valid(const integer& d);
 
     void assert_valid(const integer& d) {
+#ifdef NDEBUG
+        (void)d;
+#endif
         assert(check_valid(d));
     }
 
@@ -207,6 +208,7 @@ integer three_gcd(integer a, integer b, integer c) {
 }
 
 gcd_res test_gcd(integer a_signed, integer b_signed, int index=0) {
+    (void)index;
     bool a_negative=a_signed<integer(0);
 
     integer a=abs(a_signed);
@@ -227,7 +229,6 @@ gcd_res test_gcd(integer a_signed, integer b_signed, int index=0) {
         parity=1;
     }
 
-    int iter=0;
     while (b!=integer(0)) {
         /*if (iter==0 && index==0) {
             TRACK_MAX(a); // 2
@@ -278,7 +279,6 @@ gcd_res test_gcd(integer a_signed, integer b_signed, int index=0) {
         u1=u1_new;
         parity=-parity;
 
-        ++iter;
     }
 
     gcd_res res;

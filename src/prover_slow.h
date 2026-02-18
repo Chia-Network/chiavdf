@@ -6,6 +6,7 @@
 #include "picosha2.h"
 #include "proof_common.h"
 #include <sys/stat.h>
+#include <limits>
 
 
 // TODO: Refactor to use 'Prover' class once new_vdf is merged in.
@@ -15,10 +16,14 @@ void ApproximateParameters(uint64_t T, int& l, int& k) {
     double log_T = log2(T);
     l = 1;
     if (log_T - log_memory > 0.000001) {
-        l = ceil(pow(2, log_memory - 20));
+        const double l_estimate = ceil(pow(2, log_memory - 20));
+        assert(l_estimate <= static_cast<double>(std::numeric_limits<int>::max()));
+        l = static_cast<int>(l_estimate);
     }
     double intermediate = T * (double)0.6931471 / (2.0 * l);
-    k = std::max(std::round(log(intermediate) - log(log(intermediate)) + 0.25), 1.0);
+    const double k_estimate = std::max(std::round(log(intermediate) - log(log(intermediate)) + 0.25), 1.0);
+    assert(k_estimate <= static_cast<double>(std::numeric_limits<int>::max()));
+    k = static_cast<int>(k_estimate);
 }
 
 uint64_t GetBlock(uint64_t i, uint64_t k, uint64_t T, integer& B) {
@@ -64,7 +69,8 @@ form GenerateWesolowski(form &y, form &x_init,
             for (uint64_t b0 = 0; b0 < (1ULL << k0); b0++) {
                 nucomp_form(z, z, ys[b1 * (1ULL << k0) + b0], D, L);
             }
-            z = FastPowFormNucomp(z, D, integer(b1 * (1 << k0)), L, reducer);
+            const uint64 shift_base = (uint64(1) << k0);
+            z = FastPowFormNucomp(z, D, integer(static_cast<uint64>(b1) * shift_base), L, reducer);
             nucomp_form(x, x, z, D, L);
         }
         for (uint64_t b0 = 0; b0 < (1ULL << k0); b0++) {

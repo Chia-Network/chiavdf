@@ -7,13 +7,13 @@
 namespace generic {
 using namespace std;
 
-template<class type_a> void print_impl(ostream& out, const type_a& a) {}
+template<class type_a> void print_impl(ostream&, const type_a&) {}
 
-template<class type_b> void print_impl(ostream& out, const char* a, const type_b& b) {
+template<class type_b> void print_impl(ostream& out, const char*, const type_b& b) {
     out << " " << b;
 }
 
-template<class type_a, class type_b> void print_impl(ostream& out, const type_a& a, const type_b& b) {
+template<class type_a, class type_b> void print_impl(ostream& out, const type_a&, const type_b& b) {
     out << ", " << b;
 }
 
@@ -41,9 +41,10 @@ string getstream(istream& targ, int block_size=10, string* buffer=nullptr) {
     while(1) {
         res.resize(res.size()+block_size);
         targ.read(&(res[res.size()-block_size]), block_size);
-        int c=targ.gcount();
-        if (c!=block_size) {
-            res.resize(res.size()-block_size+c);
+        std::streamsize c=targ.gcount();
+        if (c!=static_cast<std::streamsize>(block_size)) {
+            assert(c>=0);
+            res.resize(res.size()-block_size+static_cast<size_t>(c));
             assert(targ.eof());
             return new_buffer;
         }
@@ -246,7 +247,7 @@ template<class type_a, class type_b> class union_pair {
     }
 };
 
-void str_impl(vector<string>& out) {}
+void str_impl(vector<string>&) {}
 
 template<class type_a, class... types> void str_impl(
     vector<string>& out, const type_a& a, const types&... targs

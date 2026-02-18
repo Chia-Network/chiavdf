@@ -39,7 +39,6 @@ int hw_test_main(int argc, char **argv)
 {
     uint64_t n_iters = 1000000;
     uint8_t n_vdfs = 3;
-    uint8_t n_completed = 0;
     uint8_t vdfs_mask;
     uint8_t init_form[BQFC_FORM_SIZE] = { 0x08 };
     struct vdf_state vdfs[N_HW_VDFS];
@@ -94,7 +93,6 @@ int hw_test_main(int argc, char **argv)
             if (vdfs[i].completed && (vdfs_mask & (1 << i))) {
                 stop_hw_vdf(drv, i);
                 vdfs_mask &= ~(1 << i);
-                n_completed++;
                 proofs[i].iters = n_iters;
                 proofs[i].seg_iters = n_iters;
                 proof_threads[i] = std::thread(hw_compute_proof, &vdfs[i], SIZE_MAX, &proofs[i], 255);

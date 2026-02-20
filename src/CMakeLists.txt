@@ -141,6 +141,15 @@ if(ENABLE_GNU_ASM AND (CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|i[3-6]86)$
     ${CMAKE_CURRENT_SOURCE_DIR}/compile_asm.cpp
   )
   target_compile_definitions(compile_asm PRIVATE ${VDF_COMMON_DEFINITIONS})
+  if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    # mpir's gmpxx.h still uses legacy literal-operator spacing (operator"" _mpz),
+    # which clang-cl warns about; suppress for this utility target only.
+    target_compile_options(
+      compile_asm
+      PRIVATE
+      "$<$<COMPILE_LANGUAGE:CXX>:/clang:-Wno-deprecated-literal-operator>"
+    )
+  endif()
   if(WIN32)
     target_compile_definitions(compile_asm PRIVATE CHIA_WINDOWS)
   elseif(APPLE)

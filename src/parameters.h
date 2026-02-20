@@ -42,6 +42,20 @@ inline std::atomic<bool> bAVX2{false};
 inline std::atomic<bool> enable_avx512_ifma{false};
 inline std::once_flag avx_flags_once;
 
+inline bool env_exists(const char* name) {
+#if defined(_WIN32)
+  char* value = nullptr;
+  size_t value_len = 0;
+  if (_dupenv_s(&value, &value_len, name) != 0 || value == nullptr) {
+    return false;
+  }
+  free(value);
+  return true;
+#else
+  return getenv(name) != nullptr;
+#endif
+}
+
 inline bool env_flag(const char* name) {
 #if defined(_WIN32)
   char* value = nullptr;

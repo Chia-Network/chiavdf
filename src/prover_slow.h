@@ -5,6 +5,7 @@
 #include "nucomp.h"
 #include "picosha2.h"
 #include "proof_common.h"
+#include "checked_cast.h"
 #include <sys/stat.h>
 #include <limits>
 
@@ -12,18 +13,24 @@
 // TODO: Refactor to use 'Prover' class once new_vdf is merged in.
 
 void ApproximateParameters(uint64_t T, int& l, int& k) {
+    auto checked_double_to_int = [](double value) -> int {
+        if (!std::isfinite(value) || value < static_cast<double>(std::numeric_limits<int>::min()) ||
+            value > static_cast<double>(std::numeric_limits<int>::max())) {
+            throw std::overflow_error("ApproximateParameters: value out of range for int");
+        }
+        return checked_cast<int>(static_cast<int64_t>(value));
+    };
+
     double log_memory = 23.25349666;
     double log_T = log2(T);
     l = 1;
     if (log_T - log_memory > 0.000001) {
         const double l_estimate = ceil(pow(2, log_memory - 20));
-        assert(l_estimate <= static_cast<double>(std::numeric_limits<int>::max()));
-        l = static_cast<int>(l_estimate);
+        l = checked_double_to_int(l_estimate);
     }
     double intermediate = T * (double)0.6931471 / (2.0 * l);
     const double k_estimate = std::max(std::round(log(intermediate) - log(log(intermediate)) + 0.25), 1.0);
-    assert(k_estimate <= static_cast<double>(std::numeric_limits<int>::max()));
-    k = static_cast<int>(k_estimate);
+    k = checked_double_to_int(k_estimate);
 }
 
 uint64_t GetBlock(uint64_t i, uint64_t k, uint64_t T, integer& B) {

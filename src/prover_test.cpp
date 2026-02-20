@@ -72,7 +72,8 @@ int main() {
     // Default behavior: run the historical long/soak test.
     // Fast/CI-friendly mode: set `CHIAVDF_PROVER_TEST_FAST=1` to run just a few proofs and exit.
     const bool fast_mode = env_flag("CHIAVDF_PROVER_TEST_FAST");
-    const bool is_ci = env_flag("CI") || env_flag("GITHUB_ACTIONS");
+    // CI detection should be based on variable presence, not truthiness.
+    const bool is_ci = (std::getenv("CI") != nullptr) || (std::getenv("GITHUB_ACTIONS") != nullptr);
 
     if (!fast_mode) {
         for (int i = 0; i <= 30; i++) {

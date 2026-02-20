@@ -1,5 +1,4 @@
 #include "verifier.h"
-#include "checked_cast.h"
 #include <inttypes.h>
 #include <sstream>
 #include <string>
@@ -39,7 +38,7 @@ void doit(int thread, std::vector<job> const& jobs)
             j.discriminant_size,
             j.inputbytes.data(),
             j.outputbytes.data(),
-            checked_cast<int32_t>(j.outputbytes.size()),
+            j.outputbytes.size(),
             j.number_of_iterations,
             static_cast<int32_t>(j.witness_type));
         if (!is_valid) {

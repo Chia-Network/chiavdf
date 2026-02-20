@@ -58,12 +58,13 @@ bool CheckProofOfTimeNWesolowski(integer D, const uint8_t* x_s, const uint8_t* p
     if (x_s == nullptr || proof_blob == nullptr)
         return false;
 
-    // All accesses in the loop are now safe
-    size_t i = proof_blob_len - segment_len;
+    // Walk segments from the end without unsigned underflow.
+    size_t i = proof_blob_len;
     form x = DeserializeForm(D, x_s, form_size);
 
     bool is_valid = false;
-    while (i >= base_len) {
+    while (i > base_len) {
+        i -= segment_len;
         uint64_t segment_iters = BytesToInt64(&proof_blob[i]);
         form proof = DeserializeForm(D, &proof_blob[i + 8 + B_bytes], form_size);
         integer B(&proof_blob[i + 8], B_bytes);
@@ -76,10 +77,6 @@ bool CheckProofOfTimeNWesolowski(integer D, const uint8_t* x_s, const uint8_t* p
             return false;
         }
         iterations -= segment_iters;
-        if (i < base_len + segment_len) {
-            break;
-        }
-        i -= segment_len;
     }
 
     // Final forms are guaranteed to be in-bounds
@@ -98,10 +95,11 @@ bool CheckProofOfTimeNWesolowskiCommon(integer& D, form& x, const uint8_t* proof
     if (proof_blob_len < last_segment) return false;
     if ((proof_blob_len - last_segment) % segment_len != 0)
         return false;    
-    size_t i = proof_blob_len - segment_len;
+    size_t i = proof_blob_len;
     PulmarkReducer reducer;
 
-    while (i >= last_segment) {
+    while (i > last_segment) {
+        i -= segment_len;
         uint64_t segment_iters = BytesToInt64(&proof_blob[i]);
         form proof = DeserializeForm(D, &proof_blob[i + 8 + B_bytes], form_size);
         integer B(&proof_blob[i + 8], B_bytes);
@@ -122,10 +120,6 @@ bool CheckProofOfTimeNWesolowskiCommon(integer& D, form& x, const uint8_t* proof
             return false;
         }
         iterations -= segment_iters;
-        if (i < last_segment + segment_len) {
-            break;
-        }
-        i -= segment_len;
     }
     return true;
 }

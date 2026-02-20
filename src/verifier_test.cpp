@@ -28,10 +28,7 @@ std::vector<uint8_t> HexToBytes(const char *hex_proof) {
 ByteArray prove_wrapper(const uint8_t* challenge_hash, size_t challenge_size, const uint8_t* x_s, size_t x_s_size, size_t discriminant_size_bits, uint64_t num_iterations) {
     try {
         std::vector<uint8_t> challenge_hash_bytes(challenge_hash, challenge_hash + challenge_size);
-        if (discriminant_size_bits > static_cast<size_t>(std::numeric_limits<int>::max())) {
-            return ByteArray { nullptr, 0 };
-        }
-        integer discriminant = CreateDiscriminant(challenge_hash_bytes, static_cast<int>(discriminant_size_bits));
+        integer discriminant = CreateDiscriminant(challenge_hash_bytes, checked_cast<int>(discriminant_size_bits));
         form x = DeserializeForm(discriminant, x_s, x_s_size);
         std::vector<uint8_t> result = ProveSlow(discriminant, x, num_iterations, "");
 

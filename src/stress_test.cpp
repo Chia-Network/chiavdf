@@ -1,16 +1,16 @@
 #include "verifier.h"
+#include "checked_cast.h"
 #include <inttypes.h>
-#include <limits>
 #include <sstream>
 #include <string>
 #include <fstream>
 #include <thread>
 
 std::vector<uint8_t> HexToBytes(const char *hex_proof) {
-    size_t len = strlen(hex_proof);
+    auto len = strlen(hex_proof);
     assert(len % 2 == 0);
     std::vector<uint8_t> result;
-    for (size_t i = 0; i < len; i += 2)
+    for (auto i = size_t{0}; i < len; i += 2)
     {
         int hex1 = hex_proof[i] >= 'a' ? (hex_proof[i] - 'a' + 10) : (hex_proof[i] - '0');
         int hex2 = hex_proof[i + 1] >= 'a' ? (hex_proof[i + 1] - 'a' + 10) : (hex_proof[i + 1] - '0');
@@ -34,15 +34,12 @@ void doit(int thread, std::vector<job> const& jobs)
     int cnt = 0;
     for (job const& j : jobs)
     {
-        if (j.outputbytes.size() > static_cast<size_t>(std::numeric_limits<int32_t>::max())) {
-            std::terminate();
-        }
         bool const is_valid = CreateDiscriminantAndCheckProofOfTimeNWesolowski(
             j.challengebytes,
             j.discriminant_size,
             j.inputbytes.data(),
             j.outputbytes.data(),
-            static_cast<int32_t>(j.outputbytes.size()),
+            checked_cast<int32_t>(j.outputbytes.size()),
             j.number_of_iterations,
             static_cast<int32_t>(j.witness_type));
         if (!is_valid) {

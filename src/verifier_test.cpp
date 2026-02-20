@@ -1,8 +1,8 @@
 #include "verifier.h"
+#include "checked_cast.h"
 #include "create_discriminant.h"
 #include "c_bindings/c_wrapper.h"
 #include "prover_slow.h"
-#include <limits>
 
 void assertm(bool expr, std::string msg, bool verbose=false) {
     if (expr && verbose) {
@@ -23,13 +23,6 @@ std::vector<uint8_t> HexToBytes(const char *hex_proof) {
         result.push_back(hex1 * 16 + hex2);
     }
     return result;
-}
-
-static int32_t checked_size_to_i32(size_t value) {
-    if (value > static_cast<size_t>(std::numeric_limits<int32_t>::max())) {
-        std::terminate();
-    }
-    return static_cast<int32_t>(value);
 }
 
 ByteArray prove_wrapper(const uint8_t* challenge_hash, size_t challenge_size, const uint8_t* x_s, size_t x_s_size, size_t discriminant_size_bits, uint64_t num_iterations) {
@@ -79,7 +72,7 @@ std::copy(result.begin(), result.end(), arr);
             integer("-131653324254138636653163861414331698305531090221496467927360326686715180966094250598321899621249972220387687148397451395672779897144571112116763666653213748473909547482437246405018707472153290116227072825447643324530509016778432769802300913461285128339119844239772697652504835780459732685000796733645621728639"),
             DEFAULT_ELEMENT,
             arr,
-            checked_size_to_i32(result.size()),
+            checked_cast<int32_t>(result.size()),
             33554432,
             1024,
             2), "Known proof should verify");

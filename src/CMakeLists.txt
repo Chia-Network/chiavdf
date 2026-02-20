@@ -378,7 +378,9 @@ if(BUILD_VDF_TESTS)
   add_executable(regression_unit_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/regression_unit_tests.cpp
   )
-  target_sources(regression_unit_tests PRIVATE ${VDF_COMMON_SOURCES})
+  target_sources(regression_unit_tests PRIVATE ${VDF_COMMON_SOURCES} ${VDF_ASM_SOURCES})
+  target_compile_definitions(regression_unit_tests PRIVATE ${VDF_COMMON_DEFINITIONS})
+  vdf_add_boost_includes(regression_unit_tests)
   target_link_libraries(
     regression_unit_tests
     PRIVATE

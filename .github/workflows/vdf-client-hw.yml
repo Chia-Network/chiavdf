@@ -61,6 +61,7 @@ jobs:
       - name: Install macOS deps (build + runtime)
         if: startsWith(matrix.os, 'macos')
         run: |
+          brew ls --versions cmake >/dev/null 2>&1 || brew install cmake
           brew ls --versions gmp >/dev/null 2>&1 || brew install gmp
           brew ls --versions boost >/dev/null 2>&1 || brew install boost
           echo "DYLD_FALLBACK_LIBRARY_PATH=$(brew --prefix gmp)/lib:${DYLD_FALLBACK_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
@@ -220,6 +221,9 @@ jobs:
             throw "ENABLE_GNU_ASM is not ON on Windows CI build"
           }
           cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test regression_unit_tests regression_io_tests emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows build failed with exit code $LASTEXITCODE"
+          }
           $asmFiles = @("asm_compiled.s", "avx2_asm_compiled.s", "avx512_asm_compiled.s")
           foreach ($asmFile in $asmFiles) {
             # Depending on generator/layout, CMAKE_CURRENT_BINARY_DIR for src may resolve

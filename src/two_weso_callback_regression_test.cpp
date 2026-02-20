@@ -7,6 +7,10 @@
 #include <stdexcept>
 #include <vector>
 
+// Needed by headers pulled in via vdf.h (declared extern in parameters.h).
+int gcd_base_bits = 50;
+int gcd_128_max_iter = 3;
+
 namespace {
 
 integer make_fixture_discriminant() {

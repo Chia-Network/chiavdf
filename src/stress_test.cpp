@@ -40,7 +40,7 @@ void doit(int thread, std::vector<job> const& jobs)
             j.outputbytes.data(),
             j.outputbytes.size(),
             j.number_of_iterations,
-            static_cast<int32_t>(j.witness_type));
+            j.witness_type);
         if (!is_valid) {
             printf("thread %d cnt %d is valid %d %" PRIu64 " %d\n",
                 thread,

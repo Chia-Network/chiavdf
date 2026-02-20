@@ -132,8 +132,9 @@ jobs:
         # Use a fixed no-space location to avoid pipx path compatibility issues.
         PIPX_HOME: 'C:\pipx'
         PIPX_BIN_DIR: 'C:\pipx\bin'
-        # setuptools emits this benign warning in some Windows wheel builds.
-        PYTHONWARNINGS: 'ignore:.*Py_DEBUG.*ABI tag may be incorrect:RuntimeWarning'
+        # PYTHONWARNINGS uses literal message matching (not regex), so match a stable
+        # prefix and avoid the comma in the full warning text.
+        PYTHONWARNINGS: "ignore:Config variable 'Py_DEBUG' is unset:RuntimeWarning"
         CIBW_BUILD: ${{ matrix.python.cibw-build }}
         CIBW_PRERELEASE_PYTHONS: True
       run:

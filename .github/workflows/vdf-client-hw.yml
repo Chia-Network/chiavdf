@@ -350,7 +350,7 @@ jobs:
 
       - name: Upload binaries artifact (Ubuntu/macOS)
         if: matrix.os != 'windows-latest' && matrix.config == 'optimized=1'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: binaries-${{ matrix.config }}-${{ matrix.os }}
           path: |
@@ -368,7 +368,7 @@ jobs:
 
       - name: Upload binaries artifact (Windows)
         if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: binaries-${{ matrix.config }}-${{ matrix.os }}
           path: |
@@ -412,7 +412,7 @@ jobs:
 
       - name: Upload Ubuntu installer
         if: matrix.os == 'ubuntu-latest' && matrix.config == 'optimized=1'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: installer
           path: dist/*.deb

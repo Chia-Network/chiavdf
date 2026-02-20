@@ -388,7 +388,11 @@ if(BUILD_VDF_TESTS)
     ${GMPXX_LIBRARIES}
   )
   vdf_add_windows_clang_opts(regression_unit_tests)
-  gtest_discover_tests(regression_unit_tests TEST_PREFIX "regression.unit.")
+  gtest_discover_tests(
+    regression_unit_tests
+    TEST_PREFIX "regression.unit."
+    DISCOVERY_MODE PRE_TEST
+  )
 
   add_executable(regression_io_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/vdf_client_session_test.cpp
@@ -396,7 +400,11 @@ if(BUILD_VDF_TESTS)
   vdf_add_boost_includes(regression_io_tests)
   target_link_libraries(regression_io_tests PRIVATE GTest::gtest_main Threads::Threads)
   vdf_add_windows_clang_opts(regression_io_tests)
-  gtest_discover_tests(regression_io_tests TEST_PREFIX "regression.io.")
+  gtest_discover_tests(
+    regression_io_tests
+    TEST_PREFIX "regression.io."
+    DISCOVERY_MODE PRE_TEST
+  )
 
 endif()
 

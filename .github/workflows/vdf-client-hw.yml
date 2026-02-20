@@ -339,6 +339,7 @@ jobs:
         shell: pwsh
         run: |
           cd build
+          $env:PATH = "$PWD;$PWD\..\src\hw\libft4222;$PWD\..\mpir_gc_x64;$env:PATH"
           ctest -C Release --output-on-failure -R '^regression\.'
 
       - name: Benchmark vdf_bench square (Ubuntu/Mac)

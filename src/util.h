@@ -1,7 +1,9 @@
 #ifndef UTIL_H
 #define UTIL_H
 
+#include "checked_cast.h"
 #include "vdf_new.h"
+#include <limits>
 
 /* Platform-specific byte swap macros. */
 #if defined(_WIN32)
@@ -125,14 +127,24 @@ std::string BytesToStr(const std::vector<unsigned char> &in)
 }
 
 void ApproximateParameters(uint64_t T, uint32_t& L, uint32_t& K) {
+    auto checked_double_to_u32 = [](double value) -> uint32_t {
+        if (!std::isfinite(value) || value < 0.0 ||
+            value > static_cast<double>(std::numeric_limits<uint32_t>::max())) {
+            throw std::overflow_error("ApproximateParameters: value out of range for uint32_t");
+        }
+        return checked_cast<uint32_t>(static_cast<uint64_t>(value));
+    };
+
     double log_memory = 23.25349666;
     double log_T = log2(T);
     L = 1;
     if (log_T - log_memory > 0.000001) {
-        L = static_cast<uint32_t>(ceil(pow(2, log_memory - 20)));
+        const double l_estimate = ceil(pow(2, log_memory - 20));
+        L = checked_double_to_u32(l_estimate);
     }
     double intermediate = T * (double)0.6931471 / (2.0 * L);
-    K = static_cast<uint32_t>(std::max(std::round(log(intermediate) - log(log(intermediate)) + 0.25), 1.0));
+    const double k_estimate = std::max(std::round(log(intermediate) - log(log(intermediate)) + 0.25), 1.0);
+    K = checked_double_to_u32(k_estimate);
 }
 
 struct Proof {

@@ -9,6 +9,7 @@ class PulmarkReducer;
 class Prover {
   public:
     Prover(Segment segm, integer D);
+    virtual ~Prover() = default;
 
     virtual form GetForm(uint64_t iteration) = 0;
     virtual void start() = 0;

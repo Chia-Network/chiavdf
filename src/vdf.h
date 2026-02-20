@@ -89,7 +89,7 @@ bool fast_algorithm = false;
 bool two_weso = false;
 
 //always works
-void repeated_square_original(vdf_original &vdfo, form& f, const integer& D, const integer& L, uint64 base, uint64 iterations, INUDUPLListener *nuduplListener) {
+void repeated_square_original(vdf_original &vdfo, form& f, const integer&, const integer&, uint64 base, uint64 iterations, INUDUPLListener *nuduplListener) {
     vdf_original::form f_in, *f_res;
     f_in.a[0] = f.a.impl[0];
     f_in.b[0] = f.b.impl[0];
@@ -836,7 +836,6 @@ class ProverManager {
     uint64_t max_proving_iteration = 0;
     // Where the VDF thread is at.
     std::atomic<uint64_t> vdf_iteration{0};
-    bool proof_done;
     uint64_t intermediates_iter;
 };
 

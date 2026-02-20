@@ -16,8 +16,7 @@ template<int size> fixed_gcd_res<size> gcd(
     assert(!threshold.is_negative());
 
     bool a_negative=a_signed.is_negative();
-    bool b_negative=b_signed.is_negative();
-    assert(!b_negative);
+    assert(!b_signed.is_negative());
 
     array<fixed_integer<uint64, size>, 2> ab; //unsigned
     ab[0]=a_signed;

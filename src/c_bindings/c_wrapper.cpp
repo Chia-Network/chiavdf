@@ -1,4 +1,5 @@
 #include "c_wrapper.h"
+#include "../checked_cast.h"
 #include <vector>
 #include <gmpxx.h>
 #include "../verifier.h"
@@ -9,7 +10,7 @@ extern "C" {
     bool create_discriminant_wrapper(const uint8_t* seed, size_t seed_size, size_t size_bits, uint8_t* result) {
         try {
             std::vector<uint8_t> seed_vector(seed, seed + seed_size);
-            integer discriminant = CreateDiscriminant(seed_vector, size_bits);
+            integer discriminant = CreateDiscriminant(seed_vector, checked_cast<int>(size_bits));
             mpz_export(result, NULL, 1, 1, 0, 0, discriminant.impl);
             return true;
         } catch (...) {
@@ -20,7 +21,7 @@ extern "C" {
     ByteArray prove_wrapper(const uint8_t* challenge_hash, size_t challenge_size, const uint8_t* x_s, size_t x_s_size, size_t discriminant_size_bits, uint64_t num_iterations) {
         try {
             std::vector<uint8_t> challenge_hash_bytes(challenge_hash, challenge_hash + challenge_size);
-            integer discriminant = CreateDiscriminant(challenge_hash_bytes, discriminant_size_bits);
+            integer discriminant = CreateDiscriminant(challenge_hash_bytes, checked_cast<int>(discriminant_size_bits));
             form x = DeserializeForm(discriminant, x_s, x_s_size);
             std::vector<uint8_t> result = ProveSlow(discriminant, x, num_iterations, "");
 
@@ -38,7 +39,7 @@ extern "C" {
         try {
             integer discriminant;
             mpz_import(discriminant.impl, discriminant_size, 1, 1, 0, 0, discriminant_bytes);
-            
+
             return CheckProofOfTimeNWesolowski(
                 -discriminant,
                 x_s,

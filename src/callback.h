@@ -253,16 +253,28 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
 class FastAlgorithmCallback : public WesolowskiCallback {
   public:
     FastAlgorithmCallback(int segments, integer& D, form f, bool multi_proc_machine) : WesolowskiCallback(D) {
+        if (segments < 1) {
+            throw std::invalid_argument("FastAlgorithmCallback requires at least one segment");
+        }
+
         buckets_begin.push_back(0);
-        buckets_begin.push_back(bucket_size1 * window_size);
         this->segments = segments;
         this->multi_proc_machine = multi_proc_machine;
-        for (int i = 0; i < segments - 2; i++) {
-            buckets_begin.push_back(buckets_begin[buckets_begin.size() - 1] + bucket_size2 * window_size);
+        if (segments > 1) {
+            buckets_begin.push_back(bucket_size1 * window_size);
         }
-        int space_needed = window_size * (bucket_size1 + bucket_size2 * (segments - 1));
-        forms_capacity = static_cast<size_t>(space_needed);
-        forms.reset(new form[space_needed]);
+        for (int i = 2; i < segments; i++) {
+            buckets_begin.push_back(buckets_begin.back() + bucket_size2 * window_size);
+        }
+        const uint64_t per_window =
+            static_cast<uint64_t>(bucket_size1) +
+            static_cast<uint64_t>(bucket_size2) * static_cast<uint64_t>(segments - 1);
+        const uint64_t total_forms = static_cast<uint64_t>(window_size) * per_window;
+        if (total_forms > static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
+            throw std::overflow_error("FastAlgorithmCallback forms capacity overflow");
+        }
+        forms_capacity = static_cast<size_t>(total_forms);
+        forms.reset(new form[forms_capacity]);
         checkpoints.reset(new form[1 << 18]);
 
         y_ret = f;

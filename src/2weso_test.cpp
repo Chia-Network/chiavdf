@@ -44,7 +44,7 @@ int main(int argc, char const* argv[]) try
     std::vector<uint8_t> challenge_hash({0, 0, 1, 2, 3, 3, 4, 4});
     integer D = CreateDiscriminant(challenge_hash, 1024);
 
-    if (getenv( "warn_on_corruption_in_production" )!=nullptr) {
+    if (env_flag("warn_on_corruption_in_production")) {
         warn_on_corruption_in_production=true;
     }
     set_rounding_mode();

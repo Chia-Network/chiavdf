@@ -2,7 +2,9 @@
 #define VDF_BASE_H
 
 #if VDF_MODE==0
-    #define NDEBUG
+    #ifndef NDEBUG
+        #define NDEBUG
+    #endif
 #endif
 
 #include "Reducer.h"

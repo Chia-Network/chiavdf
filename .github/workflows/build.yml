@@ -106,12 +106,35 @@ jobs:
       run: |
         pip install pipx
 
-    - name: Build and test
+    - name: Build and test (Linux)
+      if: matrix.os.matrix == 'ubuntu'
       env:
         CIBW_BUILD: ${{ matrix.python.cibw-build }}
         CIBW_MANYLINUX_AARCH64_IMAGE: ${{ matrix.python.manylinux }}
         CIBW_MANYLINUX_X86_64_IMAGE: ${{ matrix.python.manylinux }}
+        CIBW_PRERELEASE_PYTHONS: True
+      run:
+        pipx run --spec=${{ matrix.python.cibuildwheel }} cibuildwheel --output-dir dist 2>&1
+
+    - name: Build and test (macOS)
+      if: matrix.os.matrix == 'macos'
+      env:
+        CIBW_BUILD: ${{ matrix.python.cibw-build }}
         CIBW_ARCHS_MACOS: ${{ matrix.os.cibw-archs-macos[matrix.arch.matrix] }}
+        CIBW_PRERELEASE_PYTHONS: True
+      run:
+        pipx run --spec=${{ matrix.python.cibuildwheel }} cibuildwheel --output-dir dist 2>&1
+
+    - name: Build and test (Windows)
+      if: matrix.os.matrix == 'windows'
+      env:
+        # pipx warns when its home path contains spaces (common on Windows runners).
+        # Use a fixed no-space location to avoid pipx path compatibility issues.
+        PIPX_HOME: 'C:\pipx'
+        PIPX_BIN_DIR: 'C:\pipx\bin'
+        # setuptools emits this benign warning in some Windows wheel builds.
+        PYTHONWARNINGS: 'ignore:.*Py_DEBUG.*ABI tag may be incorrect:RuntimeWarning'
+        CIBW_BUILD: ${{ matrix.python.cibw-build }}
         CIBW_PRERELEASE_PYTHONS: True
       run:
         pipx run --spec=${{ matrix.python.cibuildwheel }} cibuildwheel --output-dir dist 2>&1

@@ -36,7 +36,7 @@ int main(int argc, char const* argv[]) try
     int d_bits = 1024;
     integer D = CreateDiscriminant(challenge_hash, d_bits);
 
-    if (getenv( "warn_on_corruption_in_production" )!=nullptr) {
+    if (env_flag("warn_on_corruption_in_production")) {
         warn_on_corruption_in_production=true;
     }
     set_rounding_mode();

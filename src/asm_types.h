@@ -417,7 +417,7 @@ struct reg_vector {
     int value=-1;
 
     reg_vector() {}
-    explicit reg_vector(int i, int t_default_num_bits) : value(i), default_num_bits(t_default_num_bits) {}
+    explicit reg_vector(int i, int t_default_num_bits) : default_num_bits(t_default_num_bits), value(i) {}
 
     string name(int num_bits=512) const {
         assert(value>=0);

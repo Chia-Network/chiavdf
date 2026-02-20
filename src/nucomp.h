@@ -230,8 +230,6 @@ void qfb_nudupl(qfb_t r, qfb_t f, mpz_t const& D, mpz_t const& L)
         ++prof->qfb_nudupl_calls;
     }
 #else
-    chiavdf_nudupl_profile_stats* prof = nullptr;
-    const bool timing = false;
 #endif
     // Performance note:
     // This function is on the hot path for ARM `square_vdf` (NUDUPL). Avoid per-iteration
@@ -258,7 +256,6 @@ void qfb_nudupl(qfb_t r, qfb_t f, mpz_t const& D, mpz_t const& L)
     mpz_t& k  = ctx.k;
     mpz_t& s  = ctx.s;
     mpz_t& t  = ctx.t;
-    mpz_t& u2 = ctx.u2;
     mpz_t& v2 = ctx.v2;
     mpz_t& b_abs = ctx.b_abs;
 

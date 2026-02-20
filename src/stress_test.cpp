@@ -1,14 +1,15 @@
 #include "verifier.h"
+#include <inttypes.h>
 #include <sstream>
 #include <string>
 #include <fstream>
 #include <thread>
 
 std::vector<uint8_t> HexToBytes(const char *hex_proof) {
-    int len = strlen(hex_proof);
+    auto len = strlen(hex_proof);
     assert(len % 2 == 0);
     std::vector<uint8_t> result;
-    for (int i = 0; i < len; i += 2)
+    for (auto i = size_t{0}; i < len; i += 2)
     {
         int hex1 = hex_proof[i] >= 'a' ? (hex_proof[i] - 'a' + 10) : (hex_proof[i] - '0');
         int hex2 = hex_proof[i + 1] >= 'a' ? (hex_proof[i + 1] - 'a' + 10) : (hex_proof[i + 1] - '0');
@@ -41,11 +42,11 @@ void doit(int thread, std::vector<job> const& jobs)
             j.number_of_iterations,
             j.witness_type);
         if (!is_valid) {
-            printf("thread %d cnt %d is valid %d %llu %d\n",
+            printf("thread %d cnt %d is valid %d %" PRIu64 " %d\n",
                 thread,
                 cnt,
                 is_valid,
-                j.number_of_iterations,
+                static_cast<uint64_t>(j.number_of_iterations),
                 j.witness_type);
             std::terminate();
         }
@@ -82,12 +83,18 @@ int main()
 
         char *endptr;
 
-        uint64 noi=strtoll(number_of_iterations.c_str(),&endptr,10);
+        uint64 noi=strtoull(number_of_iterations.c_str(),&endptr,10);
         if (errno == ERANGE) std::terminate();
-        uint32 ds=strtoll(discriminant_size.c_str(),&endptr,10);
+        unsigned long long ds_ull=strtoull(discriminant_size.c_str(),&endptr,10);
         if (errno == ERANGE) std::terminate();
-        uint8 wt=strtoll(witness_type.c_str(),&endptr,10);
+        unsigned long long wt_ull=strtoull(witness_type.c_str(),&endptr,10);
         if (errno == ERANGE) std::terminate();
+        if (ds_ull > std::numeric_limits<uint32>::max() ||
+            wt_ull > std::numeric_limits<uint8>::max()) {
+            std::terminate();
+        }
+        uint32 ds = static_cast<uint32>(ds_ull);
+        uint8 wt = static_cast<uint8>(wt_ull);
 
         jobs.push_back({challengebytes, inputbytes, outputbytes, noi, ds, wt});
     }

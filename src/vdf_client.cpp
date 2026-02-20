@@ -6,7 +6,6 @@
 
 using boost::asio::ip::tcp;
 
-const int max_length = 2048;
 std::mutex socket_mutex;
 
 // Segments are 2^16, 2^18, ..., 2^30
@@ -76,7 +75,7 @@ void CreateAndWriteProofTwoWeso(integer& D, form f, uint64_t iters, TwoWesolowsk
 }
 
 void ConfigureSessionRuntime() {
-    if (getenv("warn_on_corruption_in_production") != nullptr) {
+    if (env_flag("warn_on_corruption_in_production")) {
         warn_on_corruption_in_production = true;
     }
     if (is_vdf_test) {

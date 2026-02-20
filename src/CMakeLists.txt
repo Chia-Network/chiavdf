@@ -389,6 +389,10 @@ if(BUILD_VDF_TESTS)
     ${GMP_LIBRARIES}
     ${GMPXX_LIBRARIES}
   )
+  if(UNIX AND NOT APPLE)
+    # Generated asm objects use absolute relocations; disable PIE for this target.
+    target_link_options(regression_unit_tests PRIVATE -no-pie)
+  endif()
   vdf_add_windows_clang_opts(regression_unit_tests)
   gtest_discover_tests(
     regression_unit_tests

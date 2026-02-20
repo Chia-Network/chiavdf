@@ -65,13 +65,14 @@ int main()
     auto known_challenge = HexToBytes("9104c5b5e45d48f374efa0488fe6a617790e9aecb3c9cddec06809b09f45ce9b");
     auto known_x = HexToBytes("08000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000");
     auto known_proof_blob = HexToBytes("0200553bf0f382fc65a94f20afad5dbce2c1ee8ba3bf93053559ac9960c8fd80ac2222e9b649701a4141a4d8999f0dbfe0c39ea744096598a7528328e5199f0aa30aec8aae8ab5018bf1245329a8272ddff1afbd87ad2eaba1b7fd57bd25edc62e0b010000003f0ffcd0dc307a2aa4678bafba661c77d176ef23afc86e7ea9f4f9eac52b8e1850748019245ecc96547da9b731dc72cded5582a9b0c63e13fd42446c7b28b41d3ded1d0b666d5ddb5b29719e4ebe70969e67e42ddd8591eae60d83dbe619f1250400");
-    assertm(CreateDiscriminantAndCheckProofOfTimeNWesolowski(
-            known_challenge,
-            1024,
+    integer known_discriminant = CreateDiscriminant(known_challenge, 1024);
+    assertm(CheckProofOfTimeNWesolowski(
+            known_discriminant,
             known_x.data(),
             known_proof_blob.data(),
             known_proof_blob.size(),
             129499136,
+            1024,
             0), "Known proof should verify");
 
     auto challenge_hash1 = HexToBytes(string("a4bb1461ade74ac602e9ae511af68bb254dfe65d61b7faf9fab82d0b4364a30b").data());

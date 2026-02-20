@@ -12,11 +12,6 @@ int segments = 7;
 int thread_count = 3;
 std::atomic<bool> stop_signal{false};
 
-static bool env_truthy(const char* name)
-{
-    return env_flag(name);
-}
-
 Proof CreateProof(integer D, ProverManager& pm, uint64_t iteration) {
     Proof proof = pm.Prove(iteration);
     if (!stop_signal) {
@@ -76,7 +71,7 @@ int main() {
     //
     // Default behavior: run the historical long/soak test.
     // Fast/CI-friendly mode: set `CHIAVDF_PROVER_TEST_FAST=1` to run just a few proofs and exit.
-    const bool fast_mode = env_truthy("CHIAVDF_PROVER_TEST_FAST");
+    const bool fast_mode = env_flag("CHIAVDF_PROVER_TEST_FAST");
     const bool is_ci = env_flag("CI") || env_flag("GITHUB_ACTIONS");
 
     if (!fast_mode) {

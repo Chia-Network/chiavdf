@@ -29,6 +29,12 @@ void ApproximateParameters(uint64_t T, int& l, int& k) {
         l = checked_double_to_int(l_estimate);
     }
     double intermediate = T * (double)0.6931471 / (2.0 * l);
+    if (intermediate <= 1.0) {
+        // For tiny iteration counts, the asymptotic estimate is undefined
+        // (log(log(intermediate)) domain). Keep parameters minimal and valid.
+        k = 1;
+        return;
+    }
     const double k_estimate = std::max(std::round(log(intermediate) - log(log(intermediate)) + 0.25), 1.0);
     k = checked_double_to_int(k_estimate);
 }

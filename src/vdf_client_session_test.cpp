@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <cstring>
 #include <exception>
 #include <string>
 #include <thread>
@@ -82,4 +83,17 @@ TEST(VdfClientSessionRegressionTest, WrappedNegativeFormSizeIsRejected) {
     const std::vector<uint8_t> payload = {'0', '0', '3', 'a', 'b', 'c', 0xFF};
     const std::string error = run_init_session_with_payload(payload);
     EXPECT_NE(error.find("Invalid form size"), std::string::npos);
+}
+
+TEST(VdfClientSessionRegressionTest, ValidPayloadParsesWithoutProtocolOverread) {
+    const std::vector<uint8_t> payload = {'0', '0', '3', 'a', 'b', 'c', 0x05, 0x10, 0x20, 0x30, 0x40, 0x50};
+    const std::string error = run_init_session_with_payload(payload);
+    EXPECT_TRUE(error.empty());
+
+    EXPECT_EQ(std::strncmp(disc, "abc", 3), 0);
+    EXPECT_EQ(initial_form_s[0], 0x10);
+    EXPECT_EQ(initial_form_s[1], 0x20);
+    EXPECT_EQ(initial_form_s[2], 0x30);
+    EXPECT_EQ(initial_form_s[3], 0x40);
+    EXPECT_EQ(initial_form_s[4], 0x50);
 }

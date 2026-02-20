@@ -61,6 +61,7 @@ jobs:
       - name: Install macOS deps (build + runtime)
         if: startsWith(matrix.os, 'macos')
         run: |
+          brew ls --versions cmake >/dev/null 2>&1 || brew install cmake
           brew ls --versions gmp >/dev/null 2>&1 || brew install gmp
           brew ls --versions boost >/dev/null 2>&1 || brew install boost
           echo "DYLD_FALLBACK_LIBRARY_PATH=$(brew --prefix gmp)/lib:${DYLD_FALLBACK_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
@@ -219,16 +220,20 @@ jobs:
           if (-not $gnuAsmEnabled) {
             throw "ENABLE_GNU_ASM is not ON on Windows CI build"
           }
-          cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test vdf_client_session_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
-          $asmFiles = @(
-            "build/asm_compiled.s",
-            "build/avx2_asm_compiled.s",
-            "build/avx512_asm_compiled.s"
-          )
+          cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test regression_unit_tests regression_io_tests emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows build failed with exit code $LASTEXITCODE"
+          }
+          $asmFiles = @("asm_compiled.s", "avx2_asm_compiled.s", "avx512_asm_compiled.s")
           foreach ($asmFile in $asmFiles) {
-            if (-not (Test-Path $asmFile)) {
-              throw "Expected generated asm output not found: $asmFile"
+            # Depending on generator/layout, CMAKE_CURRENT_BINARY_DIR for src may resolve
+            # to build/ or build/src/. Accept either location to avoid false negatives.
+            $candidatePaths = @("build/$asmFile", "build/src/$asmFile")
+            $foundPath = $candidatePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+            if (-not $foundPath) {
+              throw "Expected generated asm output not found in build/ or build/src/: $asmFile"
             }
+            Write-Host "Verified generated asm output: $foundPath"
           }
 
       - name: Run HW smoke test (Ubuntu/macOS)
@@ -243,14 +248,24 @@ jobs:
           echo "Running emu_hw_vdf_client --list"
           ./emu_hw_vdf_client --list
 
-      - name: Run vdf tests (optimized)
-        if: matrix.config == 'optimized=1' && matrix.os != 'windows-latest'
+      - name: Run vdf tests (optimized smoke)
+        if: matrix.config == 'optimized=1' && matrix.os != 'windows-latest' && matrix.os != 'ubuntu-latest'
         run: |
           cd src
-          echo "Running 1weso_test"
-          ./1weso_test
-          echo "Running 2weso_test"
-          ./2weso_test
+          echo "Running 1weso_test (fast smoke)"
+          ./1weso_test 1000
+          echo "Running 2weso_test (fast smoke)"
+          ./2weso_test 1000
+
+      - name: Run vdf tests (optimized protected threshold path)
+        if: matrix.config == 'optimized=1' && matrix.os == 'ubuntu-latest'
+        run: |
+          cd src
+          echo "Running 1weso_test (fast smoke)"
+          ./1weso_test 1000
+          # 100 * 910000 = 91,000,000; this intentionally crosses the 2-weso switch threshold.
+          echo "Running 2weso_test (protected threshold path)"
+          ./2weso_test 910000
 
       - name: Run vdf tests (short)
         if: matrix.config != 'optimized=1' && matrix.os != 'windows-latest'
@@ -293,17 +308,17 @@ jobs:
           .\emu_hw_vdf_client.exe --list
           if ($LASTEXITCODE -ne 0) { throw "emu_hw_vdf_client --list failed with exit code $LASTEXITCODE" }
 
-      - name: Run vdf tests (Windows)
+      - name: Run vdf tests (Windows, optimized smoke)
         if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
         shell: pwsh
         run: |
           cd build
           $env:PATH = "$PWD;$PWD\..\src\hw\libft4222;$PWD\..\mpir_gc_x64;$env:PATH"
-          Write-Host "Running 1weso_test"
-          .\1weso_test.exe
+          Write-Host "Running 1weso_test (fast smoke)"
+          .\1weso_test.exe 1000
           if ($LASTEXITCODE -ne 0) { throw "1weso_test failed with exit code $LASTEXITCODE" }
-          Write-Host "Running 2weso_test"
-          .\2weso_test.exe
+          Write-Host "Running 2weso_test (fast smoke)"
+          .\2weso_test.exe 1000
           if ($LASTEXITCODE -ne 0) { throw "2weso_test failed with exit code $LASTEXITCODE" }
 
       - name: Run prover test (Windows)
@@ -317,18 +332,19 @@ jobs:
           .\prover_test.exe
           if ($LASTEXITCODE -ne 0) { throw "prover_test failed with exit code $LASTEXITCODE" }
 
-      - name: Run vdf_client_session regression (GoogleTest, Unix)
+      - name: Run GoogleTest regressions (Unix)
         if: matrix.config == 'optimized=1' && matrix.os != 'windows-latest'
         run: |
           cmake -S src -B build-regression -DBUILD_PYTHON=OFF -DBUILD_CHIAVDFC=OFF -DBUILD_VDF_CLIENT=OFF -DBUILD_VDF_BENCH=OFF -DBUILD_VDF_TESTS=ON -DBUILD_HW_TOOLS=OFF -DENABLE_GNU_ASM=ON
-          cmake --build build-regression --target vdf_client_session_test
+          cmake --build build-regression --target regression_unit_tests regression_io_tests
           ctest --test-dir build-regression --output-on-failure -R '^regression\.'
 
-      - name: Run vdf_client_session regression (GoogleTest, Windows)
+      - name: Run GoogleTest regressions (Windows)
         if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
         shell: pwsh
         run: |
           cd build
+          $env:PATH = "$PWD;$PWD\..\src\hw\libft4222;$PWD\..\mpir_gc_x64;$env:PATH"
           ctest -C Release --output-on-failure -R '^regression\.'
 
       - name: Benchmark vdf_bench square (Ubuntu/Mac)

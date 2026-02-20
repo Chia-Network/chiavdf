@@ -8,6 +8,7 @@
 #include <cstring>
 #include <thread>
 #include <mutex>
+#include <atomic>
 
 #ifndef _WIN32
 #include <arpa/inet.h>
@@ -57,10 +58,10 @@ struct job_state {
     uint64_t target_iter;
     integer d, l;
     form qf;
-    bool init_done;
-    bool stopping;
-    bool running;
-    bool error;
+    std::atomic<bool> init_done{false};
+    std::atomic<bool> stopping{true};
+    std::atomic<bool> running{false};
+    std::atomic<bool> error{false};
     ChiaDriver *drv;
     std::mutex mtx;
 };
@@ -81,15 +82,15 @@ void init_state(struct job_state *st, struct job_reg_set *r)
     st->drv->read_bytes(sizeof(r->l), 0, (uint8_t *)r->l, st->l.impl, st->drv->NUM_1X_COEFFS);
 
     st->qf = form::from_abd(a, f, st->d);
-    st->init_done = true;
-    st->stopping = false;
+    st->init_done.store(true, std::memory_order_release);
+    st->stopping.store(false, std::memory_order_release);
 }
 
 void clear_state(struct job_state *st)
 {
-    if (st->init_done) {
+    if (st->init_done.load(std::memory_order_acquire)) {
         delete st->drv;
-        st->init_done = false;
+        st->init_done.store(false, std::memory_order_release);
     }
 }
 
@@ -101,9 +102,9 @@ void run_job(int i)
 
     LOG_INFO("Emu %d: Starting run for %lu iters", i, st->target_iter);
 
-    st->error = false;
-    st->running = true;
-    while (!st->stopping && st->cur_iter < st->target_iter) {
+    st->error.store(false, std::memory_order_release);
+    st->running.store(true, std::memory_order_release);
+    while (!st->stopping.load(std::memory_order_acquire) && st->cur_iter < st->target_iter) {
         nudupl_form(qf2, st->qf, st->d, st->l);
         reducer.reduce(qf2);
 
@@ -116,7 +117,7 @@ void run_job(int i)
         st->qf = qf2;
         st->mtx.unlock();
     }
-    st->running = false;
+    st->running.store(false, std::memory_order_release);
     LOG_INFO("Emu %d: job ended", i);
 }
 
@@ -127,8 +128,8 @@ void job_thread(int i)
 
 static void start_job(int i)
 {
-    while (states[i]->running) {
-        states[i]->stopping = true;
+    while (states[i]->running.load(std::memory_order_acquire)) {
+        states[i]->stopping.store(true, std::memory_order_release);
         LOG_INFO("Emu %d: Waiting for the old thread to finish", i);
         vdf_usleep(1000);
     }
@@ -142,9 +143,11 @@ static void start_job(int i)
 
 static void disable_engine(int i)
 {
-    if (states[i] && states[i]->init_done && !states[i]->stopping) {
+    if (states[i] &&
+        states[i]->init_done.load(std::memory_order_acquire) &&
+        !states[i]->stopping.load(std::memory_order_acquire)) {
         LOG_INFO("Emu %d: Disabling engine", i);
-        states[i]->stopping = true;
+        states[i]->stopping.store(true, std::memory_order_release);
     }
 }
 
@@ -152,17 +155,14 @@ static void enable_engine(int i)
 {
     if (!states[i]) {
         states[i] = new job_state;
-        states[i]->init_done = false;
-        states[i]->stopping = true;
-        states[i]->running = false;
         #ifdef _WIN32
         srand(1);
         #else
         srand48(1);
         #endif
     }
-    if (states[i]->stopping) {
-        states[i]->stopping = false;
+    if (states[i]->stopping.load(std::memory_order_acquire)) {
+        states[i]->stopping.store(false, std::memory_order_release);
         LOG_INFO("Emu %d: Enabling engine", i);
     }
 }
@@ -191,16 +191,17 @@ void inject_error(struct job_status *stat, struct job_state *st)
     #else
     const uint32_t rand_val = static_cast<uint32_t>(mrand48());
     #endif
-    if (p != 0 && (st->error || (rand_val % static_cast<uint32_t>(p) == 0))) {
+    if (p != 0 && (st->error.load(std::memory_order_acquire) ||
+            (rand_val % static_cast<uint32_t>(p) == 0))) {
         // Inject error by messing up 'a' register
         stat->a[10] = ~stat->a[10];
-        st->error = true;
+        st->error.store(true, std::memory_order_release);
     }
 }
 
 void update_status(struct job_status *stat, struct job_state *st)
 {
-    if (!st->stopping) {
+    if (!st->stopping.load(std::memory_order_acquire)) {
         st->mtx.lock();
         st->drv->write_bytes(sizeof(stat->iters), 0, (uint8_t *)stat->iters, st->cur_iter);
         st->drv->write_bytes(sizeof(stat->a), 0, (uint8_t *)stat->a, st->qf.a.impl, st->drv->NUM_2X_COEFFS);
@@ -248,7 +249,7 @@ void read_regs(uint32_t addr, uint8_t *buf, uint32_t size)
         uint32_t job_id_addr2 = job_status_base +
             CHIA_VDF_JOB_CSR_MULT * i;
 
-        if (!states[i] || !states[i]->init_done) {
+        if (!states[i] || !states[i]->init_done.load(std::memory_order_acquire)) {
             continue;
         }
 

@@ -382,20 +382,44 @@ if(BUILD_VDF_TESTS)
   target_link_libraries(prover_test PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
   vdf_add_windows_clang_opts(prover_test)
 
-  add_executable(vdf_client_session_test
+  # Keep regression coverage in a small, fixed number of binaries to limit CI build churn.
+  # Use a single translation unit to avoid duplicate symbol collisions from header-defined functions.
+  add_executable(regression_unit_tests
+    ${CMAKE_CURRENT_SOURCE_DIR}/regression_unit_tests.cpp
+  )
+  target_sources(regression_unit_tests PRIVATE ${VDF_COMMON_SOURCES} ${VDF_ASM_SOURCES})
+  target_compile_definitions(regression_unit_tests PRIVATE ${VDF_COMMON_DEFINITIONS})
+  vdf_add_boost_includes(regression_unit_tests)
+  target_link_libraries(
+    regression_unit_tests
+    PRIVATE
+    GTest::gtest_main
+    Threads::Threads
+    ${GMP_LIBRARIES}
+    ${GMPXX_LIBRARIES}
+  )
+  if(UNIX AND NOT APPLE)
+    # Generated asm objects use absolute relocations; disable PIE for this target.
+    target_link_options(regression_unit_tests PRIVATE -no-pie)
+  endif()
+  vdf_add_windows_clang_opts(regression_unit_tests)
+  gtest_discover_tests(
+    regression_unit_tests
+    TEST_PREFIX "regression.unit."
+    DISCOVERY_MODE PRE_TEST
+  )
+
+  add_executable(regression_io_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/vdf_client_session_test.cpp
   )
-  vdf_add_boost_includes(vdf_client_session_test)
-  target_link_libraries(vdf_client_session_test PRIVATE GTest::gtest_main Threads::Threads)
-  vdf_add_windows_clang_opts(vdf_client_session_test)
-  gtest_discover_tests(vdf_client_session_test TEST_PREFIX "regression.")
-
-  add_executable(checked_cast_test
-    ${CMAKE_CURRENT_SOURCE_DIR}/checked_cast_test.cpp
+  vdf_add_boost_includes(regression_io_tests)
+  target_link_libraries(regression_io_tests PRIVATE GTest::gtest_main Threads::Threads)
+  vdf_add_windows_clang_opts(regression_io_tests)
+  gtest_discover_tests(
+    regression_io_tests
+    TEST_PREFIX "regression.io."
+    DISCOVERY_MODE PRE_TEST
   )
-  target_link_libraries(checked_cast_test PRIVATE GTest::gtest_main Threads::Threads)
-  vdf_add_windows_clang_opts(checked_cast_test)
-  gtest_discover_tests(checked_cast_test TEST_PREFIX "regression.")
 
 endif()
 

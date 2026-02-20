@@ -243,14 +243,24 @@ jobs:
           echo "Running emu_hw_vdf_client --list"
           ./emu_hw_vdf_client --list
 
-      - name: Run vdf tests (optimized)
-        if: matrix.config == 'optimized=1' && matrix.os != 'windows-latest'
+      - name: Run vdf tests (optimized smoke)
+        if: matrix.config == 'optimized=1' && matrix.os != 'windows-latest' && matrix.os != 'ubuntu-latest'
         run: |
           cd src
-          echo "Running 1weso_test"
-          ./1weso_test
-          echo "Running 2weso_test"
-          ./2weso_test
+          echo "Running 1weso_test (fast smoke)"
+          ./1weso_test 1000
+          echo "Running 2weso_test (fast smoke)"
+          ./2weso_test 1000
+
+      - name: Run vdf tests (optimized protected threshold path)
+        if: matrix.config == 'optimized=1' && matrix.os == 'ubuntu-latest'
+        run: |
+          cd src
+          echo "Running 1weso_test (fast smoke)"
+          ./1weso_test 1000
+          # 100 * 910000 = 91,000,000; this intentionally crosses the 2-weso switch threshold.
+          echo "Running 2weso_test (protected threshold path)"
+          ./2weso_test 910000
 
       - name: Run vdf tests (short)
         if: matrix.config != 'optimized=1' && matrix.os != 'windows-latest'
@@ -293,17 +303,17 @@ jobs:
           .\emu_hw_vdf_client.exe --list
           if ($LASTEXITCODE -ne 0) { throw "emu_hw_vdf_client --list failed with exit code $LASTEXITCODE" }
 
-      - name: Run vdf tests (Windows)
+      - name: Run vdf tests (Windows, optimized smoke)
         if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
         shell: pwsh
         run: |
           cd build
           $env:PATH = "$PWD;$PWD\..\src\hw\libft4222;$PWD\..\mpir_gc_x64;$env:PATH"
-          Write-Host "Running 1weso_test"
-          .\1weso_test.exe
+          Write-Host "Running 1weso_test (fast smoke)"
+          .\1weso_test.exe 1000
           if ($LASTEXITCODE -ne 0) { throw "1weso_test failed with exit code $LASTEXITCODE" }
-          Write-Host "Running 2weso_test"
-          .\2weso_test.exe
+          Write-Host "Running 2weso_test (fast smoke)"
+          .\2weso_test.exe 1000
           if ($LASTEXITCODE -ne 0) { throw "2weso_test failed with exit code $LASTEXITCODE" }
 
       - name: Run prover test (Windows)

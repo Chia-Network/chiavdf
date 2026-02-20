@@ -381,6 +381,13 @@ if(BUILD_VDF_TESTS)
   vdf_add_windows_clang_opts(vdf_client_session_test)
   gtest_discover_tests(vdf_client_session_test TEST_PREFIX "regression.")
 
+  add_executable(checked_cast_test
+    ${CMAKE_CURRENT_SOURCE_DIR}/checked_cast_test.cpp
+  )
+  target_link_libraries(checked_cast_test PRIVATE GTest::gtest_main Threads::Threads)
+  vdf_add_windows_clang_opts(checked_cast_test)
+  gtest_discover_tests(checked_cast_test TEST_PREFIX "regression.")
+
 endif()
 
 if(BUILD_HW_TOOLS)

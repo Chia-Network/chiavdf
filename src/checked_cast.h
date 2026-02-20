@@ -22,7 +22,8 @@ inline To checked_cast(From value) {
         }
     } else {
         using to_unsigned_t = std::make_unsigned_t<To>;
-        if (value > static_cast<From>(std::numeric_limits<to_unsigned_t>::max())) {
+        using compare_t = std::conditional_t<(sizeof(From) > sizeof(to_unsigned_t)), From, to_unsigned_t>;
+        if (static_cast<compare_t>(value) > static_cast<compare_t>(std::numeric_limits<To>::max())) {
             throw std::overflow_error("checked_cast: value out of range");
         }
     }

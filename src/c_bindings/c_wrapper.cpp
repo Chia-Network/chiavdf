@@ -44,10 +44,10 @@ extern "C" {
                 -discriminant,
                 x_s,
                 proof_blob,
-                checked_cast<int32_t>(proof_blob_size),
+                proof_blob_size,
                 num_iterations,
                 discriminant_size * 8,
-                checked_cast<int32_t>(recursion)
+                recursion
             );
         } catch (...) {
             return false;

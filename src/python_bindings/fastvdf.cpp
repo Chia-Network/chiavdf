@@ -1,6 +1,4 @@
 #include <pybind11/pybind11.h>
-#include <limits>
-#include "../checked_cast.h"
 #include "../verifier.h"
 #include "../prover_slow.h"
 #include "../alloc.hpp"
@@ -54,15 +52,10 @@ PYBIND11_MODULE(chiavdf, m) {
         std::string x_s_copy(x_s);
         std::string proof_blob_copy(proof_blob);
         uint8_t *proof_blob_ptr = reinterpret_cast<uint8_t *>(proof_blob_copy.data());
-        if (proof_blob_copy.size() > static_cast<size_t>(std::numeric_limits<int32_t>::max()) ||
-            recursion > static_cast<uint64_t>(std::numeric_limits<int32_t>::max())) {
-            return false;
-        }
-        int32_t proof_blob_size = checked_cast<int32_t>(proof_blob_copy.size());
         bool is_valid = false;
         {
             py::gil_scoped_release release;
-            is_valid=CheckProofOfTimeNWesolowski(integer(discriminant_copy), (const uint8_t *)x_s_copy.data(), proof_blob_ptr, proof_blob_size, num_iterations, disc_size_bits, checked_cast<int32_t>(recursion));
+            is_valid=CheckProofOfTimeNWesolowski(integer(discriminant_copy), (const uint8_t *)x_s_copy.data(), proof_blob_ptr, proof_blob_copy.size(), num_iterations, disc_size_bits, recursion);
         }
         return is_valid;
     });
@@ -80,12 +73,8 @@ PYBIND11_MODULE(chiavdf, m) {
         std::string proof_blob_copy(proof_blob);
         bool is_valid = false;
         {
-            if (proof_blob_copy.size() > static_cast<size_t>(std::numeric_limits<int32_t>::max()) ||
-                recursion > static_cast<uint64_t>(std::numeric_limits<int32_t>::max())) {
-                return false;
-            }
             py::gil_scoped_release release;
-            is_valid=CreateDiscriminantAndCheckProofOfTimeNWesolowski(challenge_hash_bits, discriminant_size_bits,(const uint8_t *)x_s_copy.data(), (const uint8_t *)proof_blob_copy.data(), checked_cast<int32_t>(proof_blob_copy.size()), num_iterations, checked_cast<int32_t>(recursion));
+            is_valid=CreateDiscriminantAndCheckProofOfTimeNWesolowski(challenge_hash_bits, discriminant_size_bits,(const uint8_t *)x_s_copy.data(), (const uint8_t *)proof_blob_copy.data(), proof_blob_copy.size(), num_iterations, recursion);
         }
         return is_valid;
     });
@@ -121,14 +110,9 @@ PYBIND11_MODULE(chiavdf, m) {
         std::string proof_blob_copy(proof_blob);
         std::pair<bool, std::vector<uint8_t>> result;
         {
-            if (proof_blob_copy.size() > static_cast<size_t>(std::numeric_limits<int32_t>::max()) ||
-                recursion > static_cast<uint64_t>(std::numeric_limits<int32_t>::max())) {
-                return py::tuple(py::make_tuple(false, py::bytes()));
-            }
             py::gil_scoped_release release;
             uint8_t *proof_blob_ptr = reinterpret_cast<uint8_t *>(proof_blob_copy.data());
-            int32_t proof_blob_size = checked_cast<int32_t>(proof_blob_copy.size());
-            result = CheckProofOfTimeNWesolowskiWithB(integer(discriminant_copy), integer(B_copy), (const uint8_t *)x_s_copy.data(), proof_blob_ptr, proof_blob_size, num_iterations, checked_cast<int32_t>(recursion));
+            result = CheckProofOfTimeNWesolowskiWithB(integer(discriminant_copy), integer(B_copy), (const uint8_t *)x_s_copy.data(), proof_blob_ptr, proof_blob_copy.size(), num_iterations, recursion);
         }
         py::bytes res_bytes = py::bytes(reinterpret_cast<char*>(result.second.data()), result.second.size());
         return py::tuple(py::make_tuple(result.first, res_bytes));
@@ -143,14 +127,9 @@ PYBIND11_MODULE(chiavdf, m) {
         std::string proof_blob_copy(proof_blob);
         integer B;
         {
-            if (proof_blob_copy.size() > static_cast<size_t>(std::numeric_limits<int32_t>::max()) ||
-                recursion > static_cast<uint64_t>(std::numeric_limits<int32_t>::max())) {
-                return integer(0).to_string();
-            }
             py::gil_scoped_release release;
             uint8_t *proof_blob_ptr = reinterpret_cast<uint8_t *>(proof_blob_copy.data());
-            int32_t proof_blob_size = checked_cast<int32_t>(proof_blob_copy.size());
-            B = GetBFromProof(integer(discriminant_copy), (const uint8_t *)x_s_copy.data(), proof_blob_ptr, proof_blob_size, num_iterations, checked_cast<int32_t>(recursion));
+            B = GetBFromProof(integer(discriminant_copy), (const uint8_t *)x_s_copy.data(), proof_blob_ptr, proof_blob_copy.size(), num_iterations, recursion);
         }
         return B.to_string();
     });

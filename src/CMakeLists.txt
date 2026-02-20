@@ -388,6 +388,21 @@ if(BUILD_VDF_TESTS)
   vdf_add_windows_clang_opts(checked_cast_test)
   gtest_discover_tests(checked_cast_test TEST_PREFIX "regression.")
 
+  add_executable(proof_deserialization_regression_test
+    ${CMAKE_CURRENT_SOURCE_DIR}/proof_deserialization_regression_test.cpp
+  )
+  target_sources(proof_deserialization_regression_test PRIVATE ${VDF_COMMON_SOURCES})
+  target_link_libraries(
+    proof_deserialization_regression_test
+    PRIVATE
+    GTest::gtest_main
+    Threads::Threads
+    ${GMP_LIBRARIES}
+    ${GMPXX_LIBRARIES}
+  )
+  vdf_add_windows_clang_opts(proof_deserialization_regression_test)
+  gtest_discover_tests(proof_deserialization_regression_test TEST_PREFIX "regression.")
+
 endif()
 
 if(BUILD_HW_TOOLS)

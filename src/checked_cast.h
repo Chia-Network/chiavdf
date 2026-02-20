@@ -11,9 +11,11 @@ inline To checked_cast(From value) {
     static_assert(std::is_integral_v<From>, "checked_cast requires integral source type");
 
     if constexpr (std::is_signed_v<From> == std::is_signed_v<To>) {
-        if (value < static_cast<From>(std::numeric_limits<To>::min()) ||
-            value > static_cast<From>(std::numeric_limits<To>::max())) {
-            throw std::overflow_error("checked_cast: value out of range");
+        if constexpr (sizeof(To) < sizeof(From)) {
+            if (value < static_cast<From>(std::numeric_limits<To>::min()) ||
+                value > static_cast<From>(std::numeric_limits<To>::max())) {
+                throw std::overflow_error("checked_cast: value out of range");
+            }
         }
     } else if constexpr (std::is_signed_v<From>) {
         if (value < 0 ||

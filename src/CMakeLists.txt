@@ -474,7 +474,7 @@ if(BUILD_HW_TOOLS)
   target_link_libraries(hw_test PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads ${HW_LIBS})
   vdf_add_windows_clang_opts(hw_test)
   if(APPLE)
-    target_link_options(hw_test PRIVATE "-Wl,-rpath,@loader_path/../libexec/chiavdf")
+    target_link_options(hw_test PRIVATE "-Wl,-rpath,@executable_path/hw/libft4222")
   endif()
 
   add_executable(hw_vdf_client
@@ -487,7 +487,7 @@ if(BUILD_HW_TOOLS)
   target_link_libraries(hw_vdf_client PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads ${HW_LIBS} ${HW_SOCKET_LIBS})
   vdf_add_windows_clang_opts(hw_vdf_client)
   if(APPLE)
-    target_link_options(hw_vdf_client PRIVATE "-Wl,-rpath,@loader_path/../libexec/chiavdf")
+    target_link_options(hw_vdf_client PRIVATE "-Wl,-rpath,@executable_path/hw/libft4222")
   endif()
 
   add_executable(emu_hw_test

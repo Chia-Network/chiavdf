@@ -390,7 +390,6 @@ jobs:
         if: matrix.os == 'macos-13-arm64' && matrix.config == 'optimized=1'
         env:
           RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}
-          IS_RELEASE: ${{ github.event_name == 'release' }}
           HAS_APPLE_SECRET: ${{ steps.check_secrets.outputs.HAS_APPLE_SECRET || '' }}
           APPLE_NOTARIZE_USERNAME: "${{ secrets.APPLE_NOTARIZE_USERNAME }}"
           APPLE_NOTARIZE_PASSWORD: "${{ secrets.APPLE_NOTARIZE_PASSWORD }}"
@@ -520,7 +519,6 @@ jobs:
       - name: Assemble Ubuntu .deb (same runner as build)
         if: matrix.os == 'ubuntu-latest' && matrix.config == 'optimized=1'
         env:
-          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
           INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
           PLATFORM: "amd64"
         run: |

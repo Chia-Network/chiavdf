@@ -59,7 +59,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Test for Apple signing secrets
-        if: matrix.os == 'macos-13-arm64' && matrix.config == 'optimized=1' && github.event_name == 'release'
+        if: matrix.os == 'macos-13-arm64' && matrix.config == 'optimized=1'
         id: check_secrets
         shell: bash
         run: |
@@ -70,11 +70,11 @@ jobs:
           APPLE_SECRET: "${{ secrets.APPLE_DEV_ID_APP }}"
 
       - name: Delete keychain if it already exists
-        if: matrix.os == 'macos-13-arm64' && matrix.config == 'optimized=1' && github.event_name == 'release' && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true'
+        if: matrix.os == 'macos-13-arm64' && matrix.config == 'optimized=1' && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true'
         run: security delete-keychain signing_temp.keychain || true
 
       - name: Import Apple app signing certificate
-        if: matrix.os == 'macos-13-arm64' && matrix.config == 'optimized=1' && github.event_name == 'release' && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true'
+        if: matrix.os == 'macos-13-arm64' && matrix.config == 'optimized=1' && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true'
         uses: Apple-Actions/import-codesign-certs@v6
         with:
           p12-file-base64: ${{ secrets.APPLE_DEV_ID_APP }}
@@ -387,14 +387,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "vdf_bench failed with exit code $LASTEXITCODE" }
 
       - name: Assemble macOS ARM64 brew bundle
-        if: matrix.os == 'macos-13-arm64' && matrix.config == 'optimized=1' && github.event_name == 'release'
+        if: matrix.os == 'macos-13-arm64' && matrix.config == 'optimized=1'
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}
+          IS_RELEASE: ${{ github.event_name == 'release' }}
           HAS_APPLE_SECRET: ${{ steps.check_secrets.outputs.HAS_APPLE_SECRET || '' }}
           APPLE_NOTARIZE_USERNAME: "${{ secrets.APPLE_NOTARIZE_USERNAME }}"
           APPLE_NOTARIZE_PASSWORD: "${{ secrets.APPLE_NOTARIZE_PASSWORD }}"
           APPLE_TEAM_ID: "${{ secrets.APPLE_TEAM_ID }}"
-          NOTARIZE: ${{ steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true' }}
+          NOTARIZE: ${{ github.event_name == 'release' && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true' }}
         run: |
           set -euo pipefail
 
@@ -441,7 +442,7 @@ jobs:
           done
 
           SIGNING_STATUS="unsigned (no Apple signing secrets available)"
-          if [ "$HAS_APPLE_SECRET" = "true" ] && [ "${NOTARIZE}" = "true" ]; then
+          if [ "$HAS_APPLE_SECRET" = "true" ]; then
             SIGNING_IDENTITY="$(security find-identity -v -p codesigning | rg 'Developer ID Application' | awk -F\" 'NR==1{print $2}')"
             if [ -z "$SIGNING_IDENTITY" ]; then
               echo "No Developer ID Application identity found after certificate import." >&2
@@ -456,8 +457,12 @@ jobs:
             done
 
             (cd dist/macos && ditto -c -k --keepParent "${BASE_NAME}" "${ASSET_NAME}")
-            xcrun notarytool submit "dist/macos/${ASSET_NAME}" --apple-id "$APPLE_NOTARIZE_USERNAME" --password "$APPLE_NOTARIZE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
-            SIGNING_STATUS="signed + notarized"
+            if [ "${NOTARIZE}" = "true" ]; then
+              xcrun notarytool submit "dist/macos/${ASSET_NAME}" --apple-id "$APPLE_NOTARIZE_USERNAME" --password "$APPLE_NOTARIZE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+              SIGNING_STATUS="signed + notarized"
+            else
+              SIGNING_STATUS="signed (notarization skipped for non-release run)"
+            fi
           else
             (cd dist/macos && ditto -c -k --keepParent "${BASE_NAME}" "${ASSET_NAME}")
           fi
@@ -466,7 +471,7 @@ jobs:
           shasum -a 256 "dist/macos/${ASSET_NAME}" | awk '{print $1}' > "dist/macos/${ASSET_NAME}.sha256"
 
       - name: Upload macOS ARM64 bundle artifact
-        if: matrix.os == 'macos-13-arm64' && matrix.config == 'optimized=1' && github.event_name == 'release'
+        if: matrix.os == 'macos-13-arm64' && matrix.config == 'optimized=1'
         uses: actions/upload-artifact@v6
         with:
           name: macos-arm64-brew-bundle

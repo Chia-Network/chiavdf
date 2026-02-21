@@ -18,7 +18,8 @@ This repository publishes a macOS ARM64 release archive intended for Homebrew/ca
 
 ## Dynamic library path policy
 
-- Hardware binaries are linked with `@loader_path/../libexec/chiavdf` rpath on macOS.
+- Hardware binaries may be built with a development-time rpath, then are rewritten during bundle assembly.
+- The bundle assembly step removes development-time rpaths and sets `@loader_path/../libexec/chiavdf` on macOS.
 - FTDI dylibs use `@rpath` install names.
 - CI verifies with `otool` that release binaries do not reference local absolute build paths.
 

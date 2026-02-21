@@ -442,7 +442,7 @@ jobs:
 
           SIGNING_STATUS="unsigned (no Apple signing secrets available)"
           if [ "$HAS_APPLE_SECRET" = "true" ]; then
-            SIGNING_IDENTITY="$(security find-identity -v -p codesigning | rg 'Developer ID Application' | awk -F\" 'NR==1{print $2}')"
+            SIGNING_IDENTITY="$(security find-identity -v -p codesigning | grep 'Developer ID Application' | awk -F\" 'NR==1{print $2}')"
             if [ -z "$SIGNING_IDENTITY" ]; then
               echo "No Developer ID Application identity found after certificate import." >&2
               exit 1

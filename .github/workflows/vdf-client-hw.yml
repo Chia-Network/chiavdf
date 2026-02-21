@@ -58,6 +58,28 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Test for Apple signing secrets
+        if: matrix.os == 'macos-13-arm64' && matrix.config == 'optimized=1' && github.event_name == 'release'
+        id: check_secrets
+        shell: bash
+        run: |
+          unset HAS_APPLE_SECRET
+          if [ -n "$APPLE_SECRET" ]; then HAS_APPLE_SECRET='true'; fi
+          echo "HAS_APPLE_SECRET=${HAS_APPLE_SECRET}" >> "$GITHUB_OUTPUT"
+        env:
+          APPLE_SECRET: "${{ secrets.APPLE_DEV_ID_APP }}"
+
+      - name: Delete keychain if it already exists
+        if: matrix.os == 'macos-13-arm64' && matrix.config == 'optimized=1' && github.event_name == 'release' && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true'
+        run: security delete-keychain signing_temp.keychain || true
+
+      - name: Import Apple app signing certificate
+        if: matrix.os == 'macos-13-arm64' && matrix.config == 'optimized=1' && github.event_name == 'release' && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true'
+        uses: Apple-Actions/import-codesign-certs@v6
+        with:
+          p12-file-base64: ${{ secrets.APPLE_DEV_ID_APP }}
+          p12-password: ${{ secrets.APPLE_DEV_ID_APP_PASS }}
+
       - name: Install macOS deps (build + runtime)
         if: startsWith(matrix.os, 'macos')
         run: |
@@ -364,6 +386,95 @@ jobs:
           .\vdf_bench.exe square_asm 2000000
           if ($LASTEXITCODE -ne 0) { throw "vdf_bench failed with exit code $LASTEXITCODE" }
 
+      - name: Assemble macOS ARM64 brew bundle
+        if: matrix.os == 'macos-13-arm64' && matrix.config == 'optimized=1' && github.event_name == 'release'
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          HAS_APPLE_SECRET: ${{ steps.check_secrets.outputs.HAS_APPLE_SECRET || '' }}
+          APPLE_NOTARIZE_USERNAME: "${{ secrets.APPLE_NOTARIZE_USERNAME }}"
+          APPLE_NOTARIZE_PASSWORD: "${{ secrets.APPLE_NOTARIZE_PASSWORD }}"
+          APPLE_TEAM_ID: "${{ secrets.APPLE_TEAM_ID }}"
+          NOTARIZE: ${{ steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true' }}
+        run: |
+          set -euo pipefail
+
+          BASE_NAME="chiavdf-${RELEASE_TAG}-macos-arm64"
+          if [ "$HAS_APPLE_SECRET" = "true" ]; then
+            ASSET_NAME="${BASE_NAME}.zip"
+          else
+            ASSET_NAME="${BASE_NAME}-unsigned.zip"
+          fi
+
+          BUNDLE_ROOT="dist/macos/${BASE_NAME}"
+          BIN_DIR="${BUNDLE_ROOT}/bin"
+          LIBEXEC_DIR="${BUNDLE_ROOT}/libexec/chiavdf"
+          mkdir -p "$BIN_DIR" "$LIBEXEC_DIR"
+
+          cp src/hw_vdf_client "$BIN_DIR/"
+          cp src/emu_hw_vdf_client "$BIN_DIR/"
+          cp src/hw_test "$BIN_DIR/"
+          cp src/emu_hw_test "$BIN_DIR/"
+          cp src/vdf_client "$BIN_DIR/"
+          cp src/vdf_bench "$BIN_DIR/"
+
+          cp src/hw/libft4222/libftd2xx.dylib "$LIBEXEC_DIR/"
+          cp src/hw/libft4222/libft4222.1.4.4.190.dylib "$LIBEXEC_DIR/"
+          ln -sf "libft4222.1.4.4.190.dylib" "$LIBEXEC_DIR/libft4222.dylib"
+
+          install_name_tool -id "@rpath/libftd2xx.dylib" "$LIBEXEC_DIR/libftd2xx.dylib"
+          install_name_tool -id "@rpath/libft4222.dylib" "$LIBEXEC_DIR/libft4222.1.4.4.190.dylib"
+          install_name_tool -change "libftd2xx.dylib" "@rpath/libftd2xx.dylib" "$LIBEXEC_DIR/libft4222.1.4.4.190.dylib"
+
+          for exe in "$BIN_DIR/"*; do
+            install_name_tool -delete_rpath "@executable_path/hw/libft4222" "$exe" || true
+            install_name_tool -delete_rpath "@loader_path/../libexec/chiavdf" "$exe" || true
+            install_name_tool -add_rpath "@loader_path/../libexec/chiavdf" "$exe"
+          done
+
+          for exe in "$BIN_DIR/"*; do
+            otool -L "$exe"
+            otool -l "$exe" | rg "@loader_path/../libexec/chiavdf"
+            if otool -L "$exe" | rg -q "${GITHUB_WORKSPACE}|/Users/|/private/var/folders"; then
+              echo "Found non-portable absolute library path in ${exe}" >&2
+              exit 1
+            fi
+          done
+
+          SIGNING_STATUS="unsigned (no Apple signing secrets available)"
+          if [ "$HAS_APPLE_SECRET" = "true" ] && [ "${NOTARIZE}" = "true" ]; then
+            SIGNING_IDENTITY="$(security find-identity -v -p codesigning | rg 'Developer ID Application' | awk -F\" 'NR==1{print $2}')"
+            if [ -z "$SIGNING_IDENTITY" ]; then
+              echo "No Developer ID Application identity found after certificate import." >&2
+              exit 1
+            fi
+
+            codesign --force --timestamp --options runtime --sign "$SIGNING_IDENTITY" "$LIBEXEC_DIR/libftd2xx.dylib"
+            codesign --force --timestamp --options runtime --sign "$SIGNING_IDENTITY" "$LIBEXEC_DIR/libft4222.1.4.4.190.dylib"
+            codesign --force --timestamp --options runtime --sign "$SIGNING_IDENTITY" "$LIBEXEC_DIR/libft4222.dylib"
+            for exe in "$BIN_DIR/"*; do
+              codesign --force --timestamp --options runtime --sign "$SIGNING_IDENTITY" "$exe"
+            done
+
+            (cd dist/macos && ditto -c -k --keepParent "${BASE_NAME}" "${ASSET_NAME}")
+            xcrun notarytool submit "dist/macos/${ASSET_NAME}" --apple-id "$APPLE_NOTARIZE_USERNAME" --password "$APPLE_NOTARIZE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+            SIGNING_STATUS="signed + notarized"
+          else
+            (cd dist/macos && ditto -c -k --keepParent "${BASE_NAME}" "${ASSET_NAME}")
+          fi
+
+          printf "macOS ARM64 release bundle status: %s\n" "$SIGNING_STATUS" > "dist/macos/${BASE_NAME}.signing-status.txt"
+          shasum -a 256 "dist/macos/${ASSET_NAME}" | awk '{print $1}' > "dist/macos/${ASSET_NAME}.sha256"
+
+      - name: Upload macOS ARM64 bundle artifact
+        if: matrix.os == 'macos-13-arm64' && matrix.config == 'optimized=1' && github.event_name == 'release'
+        uses: actions/upload-artifact@v6
+        with:
+          name: macos-arm64-brew-bundle
+          path: |
+            dist/macos/*.zip
+            dist/macos/*.sha256
+            dist/macos/*.signing-status.txt
+
       - name: Upload binaries artifact (Ubuntu/macOS)
         if: matrix.os != 'windows-latest' && matrix.config == 'optimized=1'
         uses: actions/upload-artifact@v6
@@ -433,15 +544,29 @@ jobs:
           name: installer
           path: dist/*.deb
 
-      - name: Upload release artifacts
+      - name: Upload Ubuntu release artifacts
         if: matrix.os == 'ubuntu-latest' && matrix.config == 'optimized=1' && github.event_name == 'release'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           gh release upload \
+            --clobber \
             $RELEASE_TAG \
             dist/*.deb
+
+      - name: Upload macOS ARM64 release artifacts
+        if: matrix.os == 'macos-13-arm64' && matrix.config == 'optimized=1' && github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh release upload \
+            --clobber \
+            $RELEASE_TAG \
+            dist/macos/*.zip \
+            dist/macos/*.sha256 \
+            dist/macos/*.signing-status.txt
 
       - uses: Chia-Network/actions/github/jwt@main
         if: matrix.os == 'ubuntu-latest' && matrix.config == 'optimized=1' && github.event_name == 'release'

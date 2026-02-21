@@ -114,8 +114,8 @@ endif
 endif
 
 ifeq ($(UNAME),Darwin)
-# Ensure HW client binaries can locate USB driver dylibs bundled in-tree.
-hw_test hw_vdf_client: LDFLAGS += -Wl,-rpath,@executable_path/hw/libft4222
+# Ensure HW binaries locate bundled FTDI dylibs in release layout.
+hw_test hw_vdf_client: LDFLAGS += -Wl,-rpath,@loader_path/../libexec/chiavdf
 endif
 
 hw_test: hw/hw_test.o $(HW_OBJS) $(HW_LIBS) hw/real_hw.o

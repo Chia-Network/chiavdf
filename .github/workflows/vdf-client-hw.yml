@@ -450,7 +450,6 @@ jobs:
 
             codesign --force --timestamp --options runtime --sign "$SIGNING_IDENTITY" "$LIBEXEC_DIR/libftd2xx.dylib"
             codesign --force --timestamp --options runtime --sign "$SIGNING_IDENTITY" "$LIBEXEC_DIR/libft4222.1.4.4.190.dylib"
-            codesign --force --timestamp --options runtime --sign "$SIGNING_IDENTITY" "$LIBEXEC_DIR/libft4222.dylib"
             for exe in "$BIN_DIR/"*; do
               codesign --force --timestamp --options runtime --sign "$SIGNING_IDENTITY" "$exe"
             done

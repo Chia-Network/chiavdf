@@ -434,8 +434,8 @@ jobs:
 
           for exe in "$BIN_DIR/"*; do
             otool -L "$exe"
-            otool -l "$exe" | rg "@loader_path/../libexec/chiavdf"
-            if otool -L "$exe" | rg -q "${GITHUB_WORKSPACE}|/Users/|/private/var/folders"; then
+            otool -l "$exe" | grep -F "@loader_path/../libexec/chiavdf"
+            if otool -L "$exe" | grep -Eq "${GITHUB_WORKSPACE}|/Users/|/private/var/folders"; then
               echo "Found non-portable absolute library path in ${exe}" >&2
               exit 1
             fi

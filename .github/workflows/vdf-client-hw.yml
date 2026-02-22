@@ -84,12 +84,10 @@ jobs:
         if: startsWith(matrix.os, 'macos')
         run: |
           brew ls --versions cmake >/dev/null 2>&1 || brew install cmake
+          # TODO: Make gmp a prerequisite once brew cask/tap wiring is in place.
           brew ls --versions gmp >/dev/null 2>&1 || brew install gmp
           brew ls --versions boost >/dev/null 2>&1 || brew install boost
-          # Keep dynamic GMP runtime lookup for non-arm64 jobs.
-          if [ "${{ matrix.os }}" != "macos-13-arm64" ]; then
-            echo "DYLD_FALLBACK_LIBRARY_PATH=$(brew --prefix gmp)/lib:${DYLD_FALLBACK_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
-          fi
+          echo "DYLD_FALLBACK_LIBRARY_PATH=$(brew --prefix gmp)/lib:${DYLD_FALLBACK_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
 
       # Runtime workaround for TSAN-instrumented binaries on Ubuntu runners.
       # Apply before build because make TSAN=1 runs ./compile_asm during build.
@@ -118,11 +116,6 @@ jobs:
         if: startsWith(matrix.os, 'macos')
         run: |
           BOOST_VERSION="$(brew list --versions boost | awk '{print $2}')"
-          GMP_PREFIX="$(brew --prefix gmp)"
-          make_gmp_args=()
-          if [ "${{ matrix.os }}" = "macos-13-arm64" ]; then
-            make_gmp_args+=(STATIC_GMP=1 "GMP_PREFIX=${GMP_PREFIX}")
-          fi
           BOOST_INCLUDE=""
           for cand in \
             "$(brew --prefix boost)/include" \
@@ -143,9 +136,9 @@ jobs:
           ./scripts/get-libft4222.sh install
           cd src
           if [ -n "$RELEASE_TAG" ]; then
-            make ${{ matrix.config }} "${make_gmp_args[@]}" CHIAVDF_VERSION="$RELEASE_TAG" CPPFLAGS="-I${BOOST_INCLUDE} ${CPPFLAGS:-}" -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+            make ${{ matrix.config }} CHIAVDF_VERSION="$RELEASE_TAG" CPPFLAGS="-I${BOOST_INCLUDE} ${CPPFLAGS:-}" -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
           else
-            make ${{ matrix.config }} "${make_gmp_args[@]}" CPPFLAGS="-I${BOOST_INCLUDE} ${CPPFLAGS:-}" -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+            make ${{ matrix.config }} CPPFLAGS="-I${BOOST_INCLUDE} ${CPPFLAGS:-}" -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
           fi
 
       - name: Cache Boost on Windows

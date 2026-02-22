@@ -2,7 +2,6 @@ UNAME := $(shell uname)
 ARCH := $(shell uname -m)
 GIT_DESCRIBE := $(strip $(shell git describe --tags --always 2>/dev/null))
 CHIAVDF_VERSION ?= $(if $(GIT_DESCRIBE),$(GIT_DESCRIBE),dev)
-STATIC_GMP = 0
 
 ifneq (,$(findstring clang, $(shell $(CXX) --version)))
 NOPIE = -fno-PIE
@@ -41,21 +40,6 @@ ifneq ($(wildcard /usr/local/include/boost/asio.hpp),)
 CXXFLAGS += -I/usr/local/include
 CFLAGS += -I/usr/local/include
 LDFLAGS += -L/usr/local/lib
-endif
-ifeq ($(STATIC_GMP),1)
-# On macOS ARM64 distribution/local builds, prefer static GMP for portability.
-GMP_PREFIX ?= $(shell brew --prefix gmp 2>/dev/null)
-ifeq ($(GMP_PREFIX),)
-$(error STATIC_GMP=1 requires GMP_PREFIX or a discoverable Homebrew gmp prefix)
-endif
-ifeq ($(wildcard $(GMP_PREFIX)/lib/libgmp.a),)
-$(error Static GMP archive not found at $(GMP_PREFIX)/lib/libgmp.a)
-endif
-ifeq ($(wildcard $(GMP_PREFIX)/lib/libgmpxx.a),)
-$(error Static GMPXX archive not found at $(GMP_PREFIX)/lib/libgmpxx.a)
-endif
-LDLIBS := $(filter-out -lgmpxx -lgmp,$(LDLIBS))
-LDLIBS += $(GMP_PREFIX)/lib/libgmpxx.a $(GMP_PREFIX)/lib/libgmp.a
 endif
 endif
 

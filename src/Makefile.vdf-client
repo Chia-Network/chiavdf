@@ -113,7 +113,7 @@ HW_LIB_DIR = build-x86_64
 else ifneq (,$(filter aarch64 arm64,$(ARCH)))
 HW_LIB_DIR = build-arm-v8
 else
-HW_LIB_DIR = build-x86_64
+$(error Unsupported Linux architecture for FT4222 hardware tools: $(ARCH). Expected one of: x86_64, aarch64, arm64)
 endif
 HW_LIB = hw/libft4222/$(HW_LIB_DIR)/libft4222.so
 HW_LIBS = $(HW_LIB)

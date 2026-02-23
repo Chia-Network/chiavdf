@@ -45,6 +45,7 @@ src/hw_vdf_client
 
 # external library
 /src/hw/libft4222
+/src/libft4222/
 
 # pyenv
 .python-version

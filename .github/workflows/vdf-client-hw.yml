@@ -364,8 +364,8 @@ jobs:
           .\vdf_bench.exe square_asm 2000000
           if ($LASTEXITCODE -ne 0) { throw "vdf_bench failed with exit code $LASTEXITCODE" }
 
-      - name: Upload binaries artifact (Ubuntu/macOS)
-        if: matrix.os != 'windows-latest' && matrix.config == 'optimized=1'
+      - name: Upload binaries artifact (Ubuntu)
+        if: startsWith(matrix.os, 'ubuntu') && matrix.config == 'optimized=1'
         uses: actions/upload-artifact@v6
         with:
           name: binaries-${{ matrix.config }}-${{ matrix.os }}
@@ -379,8 +379,23 @@ jobs:
             src/hw_test
             src/emu_hw_vdf_client
             src/hw_vdf_client
-            src/hw/libft4222/build-x86_64/libft4222.so
-            src/hw/libft4222/build-arm-v8/libft4222.so
+            ${{ matrix.os == 'ubuntu-24.04-arm' && 'src/hw/libft4222/build-arm-v8/libft4222.so' || 'src/hw/libft4222/build-x86_64/libft4222.so' }}
+
+      - name: Upload binaries artifact (macOS)
+        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
+        uses: actions/upload-artifact@v6
+        with:
+          name: binaries-${{ matrix.config }}-${{ matrix.os }}
+          path: |
+            src/vdf_client
+            src/vdf_bench
+            src/1weso_test
+            src/2weso_test
+            src/prover_test
+            src/emu_hw_test
+            src/hw_test
+            src/emu_hw_vdf_client
+            src/hw_vdf_client
             src/hw/libft4222/*.dylib
 
       - name: Upload binaries artifact (Windows)

@@ -461,10 +461,12 @@ if(BUILD_HW_TOOLS)
     string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" HW_ARCH_LOWER)
     if(HW_ARCH_LOWER STREQUAL "x86_64" OR HW_ARCH_LOWER STREQUAL "amd64")
       set(HW_LIB_DIR "build-x86_64")
-    elseif(HW_ARCH_LOWER STREQUAL "aarch64" OR HW_ARCH_LOWER STREQUAL "arm64")
+    elseif(HW_ARCH_LOWER STREQUAL "aarch64" OR HW_ARCH_LOWER STREQUAL "arm64" OR HW_ARCH_LOWER MATCHES "^armv8")
       set(HW_LIB_DIR "build-arm-v8")
     else()
-      set(HW_LIB_DIR "build-x86_64")
+      message(FATAL_ERROR
+        "Unsupported Linux architecture for FT4222 hardware tools: ${CMAKE_SYSTEM_PROCESSOR}. "
+        "Expected one of: x86_64, amd64, aarch64, arm64, armv8*.")
     endif()
     set(HW_LIBS
       ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222/${HW_LIB_DIR}/libft4222.so

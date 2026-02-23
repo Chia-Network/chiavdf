@@ -1,5 +1,12 @@
 UNAME := $(shell uname)
-ARCH := $(shell uname -m)
+# Allow callers/CI to override ARCH, otherwise detect from host.
+ARCH ?= $(shell uname -m)
+ARCH_CANON := $(ARCH)
+ifeq ($(ARCH_CANON),amd64)
+ARCH_CANON := x86_64
+else ifeq ($(ARCH_CANON),arm64)
+ARCH_CANON := aarch64
+endif
 GIT_DESCRIBE := $(strip $(shell git describe --tags --always 2>/dev/null))
 CHIAVDF_VERSION ?= $(if $(GIT_DESCRIBE),$(GIT_DESCRIBE),dev)
 
@@ -64,7 +71,7 @@ endif
 .PHONY: all clean
 
 # Only x86_64 builds use the x86 asm objects
-ifeq ($(ARCH),x86_64)
+ifeq ($(ARCH_CANON),x86_64)
 ASM_OBJS = asm_compiled.o avx2_asm_compiled.o avx512_asm_compiled.o
 else
 ASM_OBJS =
@@ -108,7 +115,14 @@ HW_LIB = hw/libft4222/libft4222.dylib
 HW_FTD2XX_LIB = hw/libft4222/libftd2xx.dylib
 HW_LIBS = $(HW_LIB) $(HW_FTD2XX_LIB)
 else
-HW_LIB = hw/libft4222/build-x86_64/libft4222.so
+ifeq ($(ARCH_CANON),x86_64)
+HW_LIB_DIR = build-x86_64
+else ifeq ($(ARCH_CANON),aarch64)
+HW_LIB_DIR = build-arm-v8
+else
+$(error Unsupported Linux architecture for FT4222 hardware tools: $(ARCH). Expected one of: x86_64, aarch64/arm64, amd64)
+endif
+HW_LIB = hw/libft4222/$(HW_LIB_DIR)/libft4222.so
 HW_LIBS = $(HW_LIB)
 endif
 endif

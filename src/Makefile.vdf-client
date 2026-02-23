@@ -108,7 +108,14 @@ HW_LIB = hw/libft4222/libft4222.dylib
 HW_FTD2XX_LIB = hw/libft4222/libftd2xx.dylib
 HW_LIBS = $(HW_LIB) $(HW_FTD2XX_LIB)
 else
-HW_LIB = hw/libft4222/build-x86_64/libft4222.so
+ifeq ($(ARCH),x86_64)
+HW_LIB_DIR = build-x86_64
+else ifneq (,$(filter aarch64 arm64,$(ARCH)))
+HW_LIB_DIR = build-arm-v8
+else
+HW_LIB_DIR = build-x86_64
+endif
+HW_LIB = hw/libft4222/$(HW_LIB_DIR)/libft4222.so
 HW_LIBS = $(HW_LIB)
 endif
 endif

@@ -92,10 +92,22 @@ install_linux() {
   fetch_with_retry "$LINUX_URL" "$LINUX_ARCHIVE" tgz 3
   tar -xzf "$LINUX_ARCHIVE" -C "$WORK_DIR"
 
+  local linux_arch
+  linux_arch="$(uname -m)"
+  local libft4222_dir
+  case "$linux_arch" in
+    x86_64) libft4222_dir="build-x86_64" ;;
+    aarch64|arm64) libft4222_dir="build-arm-v8" ;;
+    *)
+      echo "Unsupported Linux architecture for libft4222: $linux_arch" >&2
+      exit 1
+      ;;
+  esac
+
   rm -rf "$HW_DIR"
   ln -s "$WORK_DIR" "$HW_DIR"
-  ln -sf "$WORK_DIR/build-x86_64/libft4222.so.1.4.4.170" \
-    "$WORK_DIR/build-x86_64/libft4222.so"
+  ln -sf "$WORK_DIR/$libft4222_dir/libft4222.so.1.4.4.170" \
+    "$WORK_DIR/$libft4222_dir/libft4222.so"
 }
 
 install_macos() {

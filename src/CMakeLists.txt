@@ -458,8 +458,16 @@ if(BUILD_HW_TOOLS)
     )
     set(HW_SOCKET_LIBS)
   else()
+    string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" HW_ARCH_LOWER)
+    if(HW_ARCH_LOWER STREQUAL "x86_64" OR HW_ARCH_LOWER STREQUAL "amd64")
+      set(HW_LIB_DIR "build-x86_64")
+    elseif(HW_ARCH_LOWER STREQUAL "aarch64" OR HW_ARCH_LOWER STREQUAL "arm64")
+      set(HW_LIB_DIR "build-arm-v8")
+    else()
+      set(HW_LIB_DIR "build-x86_64")
+    endif()
     set(HW_LIBS
-      ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222/build-x86_64/libft4222.so
+      ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222/${HW_LIB_DIR}/libft4222.so
     )
     set(HW_SOCKET_LIBS)
   endif()

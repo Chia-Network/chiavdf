@@ -36,7 +36,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-13-intel, macos-13-arm64, windows-latest]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-13-intel, macos-13-arm64, windows-latest]
         config: [optimized=1, TSAN=1, ASAN=1]
         exclude:
           - os: windows-latest
@@ -93,12 +93,12 @@ jobs:
       # Apply before build because make TSAN=1 runs ./compile_asm during build.
       # See: https://github.com/google/sanitizers/issues/1716
       - name: Adjust mmap_rnd_bits before Ubuntu TSAN build/test execution
-        if: matrix.os == 'ubuntu-latest' && matrix.config == 'TSAN=1'
+        if: startsWith(matrix.os, 'ubuntu') && matrix.config == 'TSAN=1'
         run: |
           sudo sysctl vm.mmap_rnd_bits=28
 
       - name: Build on Ubuntu
-        if: matrix.os == 'ubuntu-latest'
+        if: startsWith(matrix.os, 'ubuntu')
         run: |
           # Keep mmap_rnd_bits workaround step above this build for TSAN=1:
           # make TSAN=1 executes thread-sanitized ./compile_asm during build.
@@ -260,7 +260,7 @@ jobs:
           }
 
       - name: Run HW smoke test (Ubuntu/macOS)
-        if: matrix.os != 'windows-latest' && (matrix.config != 'TSAN=1' || matrix.os == 'ubuntu-latest')
+        if: matrix.os != 'windows-latest' && (matrix.config != 'TSAN=1' || startsWith(matrix.os, 'ubuntu'))
         run: |
           cd src
           # CI runners do not have FT4222 hardware attached; only validate binaries exist.
@@ -272,7 +272,7 @@ jobs:
           ./emu_hw_vdf_client --list
 
       - name: Run vdf tests (optimized smoke)
-        if: matrix.config == 'optimized=1' && matrix.os != 'windows-latest' && matrix.os != 'ubuntu-latest'
+        if: matrix.config == 'optimized=1' && matrix.os != 'windows-latest' && !startsWith(matrix.os, 'ubuntu')
         run: |
           cd src
           echo "Running 1weso_test (fast smoke)"
@@ -281,7 +281,7 @@ jobs:
           ./2weso_test 1000
 
       - name: Run vdf tests (optimized protected threshold path)
-        if: matrix.config == 'optimized=1' && matrix.os == 'ubuntu-latest'
+        if: matrix.config == 'optimized=1' && startsWith(matrix.os, 'ubuntu')
         run: |
           cd src
           echo "Running 1weso_test (fast smoke)"
@@ -303,7 +303,7 @@ jobs:
       # it prints to std::cout from multiple threads. Which is allowed by the
       # standard
       - name: Run prover test (Ubuntu/macOS)
-        if: matrix.os != 'windows-latest' && (matrix.config != 'TSAN=1' || matrix.os == 'ubuntu-latest')
+        if: matrix.os != 'windows-latest' && (matrix.config != 'TSAN=1' || startsWith(matrix.os, 'ubuntu'))
         run: |
           cd src
           echo "Running prover_test"
@@ -479,8 +479,8 @@ jobs:
             dist/macos/*.sha256
             dist/macos/*.signing-status.txt
 
-      - name: Upload binaries artifact (Ubuntu/macOS)
-        if: matrix.os != 'windows-latest' && matrix.config == 'optimized=1'
+      - name: Upload binaries artifact (Ubuntu)
+        if: startsWith(matrix.os, 'ubuntu') && matrix.config == 'optimized=1'
         uses: actions/upload-artifact@v6
         with:
           name: binaries-${{ matrix.config }}-${{ matrix.os }}
@@ -494,7 +494,23 @@ jobs:
             src/hw_test
             src/emu_hw_vdf_client
             src/hw_vdf_client
-            src/hw/libft4222/build-x86_64/libft4222.so
+            ${{ matrix.os == 'ubuntu-24.04-arm' && 'src/hw/libft4222/build-arm-v8/libft4222.so' || 'src/hw/libft4222/build-x86_64/libft4222.so' }}
+
+      - name: Upload binaries artifact (macOS)
+        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
+        uses: actions/upload-artifact@v6
+        with:
+          name: binaries-${{ matrix.config }}-${{ matrix.os }}
+          path: |
+            src/vdf_client
+            src/vdf_bench
+            src/1weso_test
+            src/2weso_test
+            src/prover_test
+            src/emu_hw_test
+            src/hw_test
+            src/emu_hw_vdf_client
+            src/hw_vdf_client
             src/hw/libft4222/*.dylib
 
       - name: Upload binaries artifact (Windows)
@@ -517,10 +533,11 @@ jobs:
             mpir_gc_x64/*.dll
 
       - name: Assemble Ubuntu .deb (same runner as build)
-        if: matrix.os == 'ubuntu-latest' && matrix.config == 'optimized=1'
+        if: startsWith(matrix.os, 'ubuntu') && matrix.config == 'optimized=1'
         env:
           INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
-          PLATFORM: "amd64"
+          PLATFORM: ${{ matrix.os == 'ubuntu-24.04-arm' && 'arm64' || 'amd64' }}
+          LIBFT4222_DIR: ${{ matrix.os == 'ubuntu-24.04-arm' && 'build-arm-v8' || 'build-x86_64' }}
         run: |
           pip install jinjanator
           CLI_DEB_BASE="chiavdf_$INSTALLER_VERSION-1_$PLATFORM"
@@ -536,19 +553,19 @@ jobs:
           cp src/hw_test dist/$CLI_DEB_BASE/usr/bin/
           cp src/hw_vdf_client dist/$CLI_DEB_BASE/usr/bin/
           cp src/emu_hw_vdf_client dist/$CLI_DEB_BASE/usr/bin/
-          cp src/hw/libft4222/build-x86_64/libft4222.so dist/$CLI_DEB_BASE/usr/lib/
+          cp "src/hw/libft4222/$LIBFT4222_DIR/libft4222.so" dist/$CLI_DEB_BASE/usr/lib/
           echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="601c", MODE="0666"' > dist/$CLI_DEB_BASE/etc/udev/rules.d/99-chiavdf.rules
           dpkg-deb --build --root-owner-group "dist/$CLI_DEB_BASE"
 
       - name: Upload Ubuntu installer
-        if: matrix.os == 'ubuntu-latest' && matrix.config == 'optimized=1'
+        if: startsWith(matrix.os, 'ubuntu') && matrix.config == 'optimized=1'
         uses: actions/upload-artifact@v6
         with:
-          name: installer
+          name: installer-${{ matrix.os }}
           path: dist/*.deb
 
-      - name: Upload Ubuntu release artifacts
-        if: matrix.os == 'ubuntu-latest' && matrix.config == 'optimized=1' && github.event_name == 'release'
+      - name: Upload release artifacts
+        if: startsWith(matrix.os, 'ubuntu') && matrix.config == 'optimized=1' && github.event_name == 'release'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}

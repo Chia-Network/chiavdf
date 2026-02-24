@@ -751,7 +751,7 @@ jobs:
       - name: Trigger repo update
         uses: Chia-Network/actions/github/glue@main
         with:
-          json_data: ${{ steps.brew_metadata.outputs.json_data }}
+          json_data: '{"release_version":"${{ github.event.release.tag_name }}"}'
           glue_url: ${{ secrets.GLUE_API_URL }}
           glue_project: "chiavdf"
           glue_path: "trigger"

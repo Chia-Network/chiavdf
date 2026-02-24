@@ -72,6 +72,14 @@ uint64_t saturating_add_u64(uint64_t lhs, uint64_t rhs) {
     return lhs + rhs;
 }
 
+bool try_pow2_u64_shift(uint32_t shift, uint64_t& out) {
+    if (shift >= 64) {
+        return false;
+    }
+    out = 1ULL << shift;
+    return true;
+}
+
 void free_byte_array_batch_internal(ChiavdfByteArray* arrays, size_t count) {
     if (arrays == nullptr) {
         return;
@@ -289,7 +297,19 @@ class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
           use_getblock_opt(use_getblock_opt),
           stats_enabled(streaming_stats_enabled.load(std::memory_order_relaxed)) {
         form id = form::identity(D);
-        buckets.resize(static_cast<size_t>(l) * (1ULL << k), id);
+        uint64_t bucket_span_u64 = 0;
+        if (!try_pow2_u64_shift(k, bucket_span_u64)) {
+            getblock_ok = false;
+            return;
+        }
+
+        bucket_span = static_cast<size_t>(bucket_span_u64);
+        if (bucket_span != 0 && static_cast<size_t>(l) > std::numeric_limits<size_t>::max() / bucket_span) {
+            getblock_ok = false;
+            return;
+        }
+
+        buckets.resize(static_cast<size_t>(l) * bucket_span, id);
 
         if (use_getblock_opt) {
             getblock_ok = init_getblock_opt_state();
@@ -423,29 +443,35 @@ class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
 
         uint64_t k1 = k / 2;
         uint64_t k0 = k - k1;
+        uint64_t span_k0 = 0;
+        uint64_t span_k1 = 0;
+        if (!try_pow2_u64_shift(static_cast<uint32_t>(k0), span_k0) ||
+            !try_pow2_u64_shift(static_cast<uint32_t>(k1), span_k1)) {
+            return form::identity(D);
+        }
         form x = id;
 
         for (int64_t j = static_cast<int64_t>(l) - 1; j >= 0; j--) {
-            x = FastPowFormNucomp(x, D, integer(static_cast<uint64_t>(1) << k), L, reducer);
+            x = FastPowFormNucomp(x, D, integer(static_cast<uint64_t>(bucket_span)), L, reducer);
 
-            for (uint64_t b1 = 0; b1 < (1ULL << k1); b1++) {
+            for (uint64_t b1 = 0; b1 < span_k1; b1++) {
                 form z = id;
-                for (uint64_t b0 = 0; b0 < (1ULL << k0); b0++) {
-                    nucomp_form(z, z, bucket(static_cast<uint32_t>(j), b1 * (1ULL << k0) + b0), D, L);
+                for (uint64_t b0 = 0; b0 < span_k0; b0++) {
+                    nucomp_form(z, z, bucket(static_cast<uint32_t>(j), b1 * span_k0 + b0), D, L);
                 }
                 z = FastPowFormNucomp(
                     z,
                     D,
-                    integer(static_cast<uint64_t>(b1 * (1ULL << k0))),
+                    integer(static_cast<uint64_t>(b1 * span_k0)),
                     L,
                     reducer);
                 nucomp_form(x, x, z, D, L);
             }
 
-            for (uint64_t b0 = 0; b0 < (1ULL << k0); b0++) {
+            for (uint64_t b0 = 0; b0 < span_k0; b0++) {
                 form z = id;
-                for (uint64_t b1 = 0; b1 < (1ULL << k1); b1++) {
-                    nucomp_form(z, z, bucket(static_cast<uint32_t>(j), b1 * (1ULL << k0) + b0), D, L);
+                for (uint64_t b1 = 0; b1 < span_k1; b1++) {
+                    nucomp_form(z, z, bucket(static_cast<uint32_t>(j), b1 * span_k0 + b0), D, L);
                 }
                 z = FastPowFormNucomp(z, D, integer(b0), L, reducer);
                 nucomp_form(x, x, z, D, L);
@@ -478,12 +504,12 @@ class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
 
   private:
     form& bucket(uint32_t j, uint64_t b) {
-        size_t idx = static_cast<size_t>(j) * (1ULL << k) + static_cast<size_t>(b);
+        size_t idx = static_cast<size_t>(j) * bucket_span + static_cast<size_t>(b);
         return buckets[idx];
     }
 
     const form& bucket(uint32_t j, uint64_t b) const {
-        size_t idx = static_cast<size_t>(j) * (1ULL << k) + static_cast<size_t>(b);
+        size_t idx = static_cast<size_t>(j) * bucket_span + static_cast<size_t>(b);
         return buckets[idx];
     }
 
@@ -497,6 +523,7 @@ class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
     ChiavdfProgressCallback progress_cb;
     void* progress_user_data;
     uint64_t next_progress;
+    size_t bucket_span = 0;
 
     std::vector<form> buckets;
     form result;
@@ -619,6 +646,10 @@ ChiavdfByteArray chiavdf_prove_one_weso_fast_streaming_impl(
     }
     if (l == 0) {
         l = 1;
+    }
+    uint64_t ignored_bucket_span = 0;
+    if (!try_pow2_u64_shift(k, ignored_bucket_span)) {
+        return empty_result();
     }
 
     last_streaming_parameters.k = k;

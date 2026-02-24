@@ -606,11 +606,19 @@ jobs:
             dist/macos/*.sha256 \
             dist/macos/*.signing-status.txt
 
+  trigger-repo-update:
+    name: Trigger repo update
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.event_name == 'release'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
       - uses: Chia-Network/actions/github/jwt@main
-        if: matrix.os == 'ubuntu-latest' && matrix.config == 'optimized=1' && github.event_name == 'release'
 
       - name: Trigger repo update
-        if: matrix.os == 'ubuntu-latest' && matrix.config == 'optimized=1' && github.event_name == 'release'
         uses: Chia-Network/actions/github/glue@main
         with:
           json_data: '{"release_version":"${{ github.event.release.tag_name }}"}'

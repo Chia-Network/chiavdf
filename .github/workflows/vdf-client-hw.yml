@@ -64,10 +64,18 @@ jobs:
         shell: bash
         run: |
           unset HAS_APPLE_SECRET
+          unset HAS_NOTARIZE_SECRETS
           if [ -n "$APPLE_SECRET" ]; then HAS_APPLE_SECRET='true'; fi
+          if [ -n "$APPLE_NOTARIZE_USERNAME" ] && [ -n "$APPLE_NOTARIZE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            HAS_NOTARIZE_SECRETS='true'
+          fi
           echo "HAS_APPLE_SECRET=${HAS_APPLE_SECRET}" >> "$GITHUB_OUTPUT"
+          echo "HAS_NOTARIZE_SECRETS=${HAS_NOTARIZE_SECRETS}" >> "$GITHUB_OUTPUT"
         env:
           APPLE_SECRET: "${{ secrets.APPLE_DEV_ID_APP }}"
+          APPLE_NOTARIZE_USERNAME: "${{ secrets.APPLE_NOTARIZE_USERNAME }}"
+          APPLE_NOTARIZE_PASSWORD: "${{ secrets.APPLE_NOTARIZE_PASSWORD }}"
+          APPLE_TEAM_ID: "${{ secrets.APPLE_TEAM_ID }}"
 
       - name: Delete keychain if it already exists
         if: matrix.os == 'macos-13-arm64' && matrix.config == 'optimized=1' && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true'
@@ -395,7 +403,7 @@ jobs:
           APPLE_NOTARIZE_USERNAME: "${{ secrets.APPLE_NOTARIZE_USERNAME }}"
           APPLE_NOTARIZE_PASSWORD: "${{ secrets.APPLE_NOTARIZE_PASSWORD }}"
           APPLE_TEAM_ID: "${{ secrets.APPLE_TEAM_ID }}"
-          NOTARIZE: ${{ github.event_name == 'release' && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true' }}
+          NOTARIZE: ${{ github.event_name == 'release' && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true' && steps.check_secrets.outputs.HAS_NOTARIZE_SECRETS == 'true' }}
         run: |
           set -euo pipefail
 
@@ -422,14 +430,19 @@ jobs:
           cp src/hw/libft4222/libft4222.1.4.4.190.dylib "$LIBEXEC_DIR/"
           ln -sf "libft4222.1.4.4.190.dylib" "$LIBEXEC_DIR/libft4222.dylib"
 
-          install_name_tool -id "@rpath/libftd2xx.dylib" "$LIBEXEC_DIR/libftd2xx.dylib"
-          install_name_tool -id "@rpath/libft4222.dylib" "$LIBEXEC_DIR/libft4222.1.4.4.190.dylib"
-          install_name_tool -change "libftd2xx.dylib" "@rpath/libftd2xx.dylib" "$LIBEXEC_DIR/libft4222.1.4.4.190.dylib"
+          # Keep vendor libft4222 dylibs byte-identical so existing signatures remain intact.
 
           for exe in "$BIN_DIR/"*; do
-            install_name_tool -delete_rpath "@executable_path/hw/libft4222" "$exe" || true
-            install_name_tool -delete_rpath "@loader_path/../libexec/chiavdf" "$exe" || true
-            install_name_tool -add_rpath "@loader_path/../libexec/chiavdf" "$exe"
+            EXE_RPATHS="$(otool -l "$exe" | awk '
+              $1 == "cmd" && $2 == "LC_RPATH" { in_rpath = 1; next }
+              in_rpath && $1 == "path" { print $2; in_rpath = 0 }
+            ')"
+            if printf '%s\n' "$EXE_RPATHS" | grep -Fxq "@executable_path/hw/libft4222"; then
+              install_name_tool -delete_rpath "@executable_path/hw/libft4222" "$exe"
+            fi
+            if ! printf '%s\n' "$EXE_RPATHS" | grep -Fxq "@loader_path/../libexec/chiavdf"; then
+              install_name_tool -add_rpath "@loader_path/../libexec/chiavdf" "$exe"
+            fi
           done
 
           for exe in "$BIN_DIR/"*; do
@@ -437,6 +450,13 @@ jobs:
             otool -l "$exe" | grep -F "@loader_path/../libexec/chiavdf"
             if otool -L "$exe" | grep -Eq "${GITHUB_WORKSPACE}|/Users/|/private/var/folders"; then
               echo "Found non-portable absolute library path in ${exe}" >&2
+              exit 1
+            fi
+            if otool -l "$exe" | awk '
+              $1 == "cmd" && $2 == "LC_RPATH" { in_rpath = 1; next }
+              in_rpath && $1 == "path" { print $2; in_rpath = 0 }
+            ' | grep -Eq "^(${GITHUB_WORKSPACE}|/Users/|/private/var/folders)"; then
+              echo "Found non-portable absolute rpath in ${exe}" >&2
               exit 1
             fi
           done
@@ -449,8 +469,6 @@ jobs:
               exit 1
             fi
 
-            codesign --force --timestamp --options runtime --sign "$SIGNING_IDENTITY" "$LIBEXEC_DIR/libftd2xx.dylib"
-            codesign --force --timestamp --options runtime --sign "$SIGNING_IDENTITY" "$LIBEXEC_DIR/libft4222.1.4.4.190.dylib"
             for exe in "$BIN_DIR/"*; do
               codesign --force --timestamp --options runtime --sign "$SIGNING_IDENTITY" "$exe"
             done

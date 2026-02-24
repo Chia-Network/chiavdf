@@ -918,13 +918,13 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
-          JSON_DATA="$(jq -nc --arg release_version "$RELEASE_TAG" '{release_version:$release_version}')"
+          JSON_DATA="$(jq -nc --arg release_version "$RELEASE_TAG" --arg windows_amd64 "chiavdf-win64.zip" '{release_version:$release_version,windows_amd64:$windows_amd64}')"
           echo "json_data=${JSON_DATA}" >> "$GITHUB_OUTPUT"
 
       - name: Trigger repo update
         uses: Chia-Network/actions/github/glue@main
         with:
-          json_data: '{"release_version":"${{ github.event.release.tag_name }}","windows_amd64":"chiavdf-win64.zip"}'
+          json_data: ${{ steps.brew_metadata.outputs.json_data }}
           glue_url: ${{ secrets.GLUE_API_URL }}
           glue_project: "chiavdf"
           glue_path: "trigger"

@@ -430,7 +430,17 @@ jobs:
           cp src/hw/libft4222/libft4222.1.4.4.190.dylib "$LIBEXEC_DIR/"
           ln -sf "libft4222.1.4.4.190.dylib" "$LIBEXEC_DIR/libft4222.dylib"
 
-          # Keep vendor libft4222 dylibs byte-identical so existing signatures remain intact.
+          dylib_files=(
+            "$LIBEXEC_DIR/libftd2xx.dylib"
+            "$LIBEXEC_DIR/libft4222.1.4.4.190.dylib"
+          )
+          sign_targets=()
+          for exe in "$BIN_DIR/"*; do
+            sign_targets+=("$exe")
+          done
+          for dylib in "${dylib_files[@]}"; do
+            sign_targets+=("$dylib")
+          done
 
           for exe in "$BIN_DIR/"*; do
             EXE_RPATHS="$(otool -l "$exe" | awk '
@@ -462,6 +472,7 @@ jobs:
           done
 
           SIGNING_STATUS="unsigned (no Apple signing secrets available)"
+          CODESIGN_SUMMARY_PATH="dist/macos/${BASE_NAME}.codesign-summary.txt"
           if [ "$HAS_APPLE_SECRET" = "true" ]; then
             SIGNING_IDENTITY="$(security find-identity -v -p codesigning | grep 'Developer ID Application' | awk -F\" 'NR==1{print $2}')"
             if [ -z "$SIGNING_IDENTITY" ]; then
@@ -469,8 +480,49 @@ jobs:
               exit 1
             fi
 
-            for exe in "$BIN_DIR/"*; do
-              codesign --force --timestamp --options runtime --sign "$SIGNING_IDENTITY" "$exe"
+            is_valid_dev_id_signature() {
+              local path="$1"
+              if ! codesign --verify --strict --verbose=2 "$path" >/dev/null 2>&1; then
+                return 1
+              fi
+              if ! codesign -dv "$path" 2>&1 | grep -Fq "Authority=Developer ID Application"; then
+                return 1
+              fi
+              return 0
+            }
+
+            echo "Checking FTDI dylib signatures before signing..."
+            for dylib in "${dylib_files[@]}"; do
+              if is_valid_dev_id_signature "$dylib"; then
+                echo "FTDI dylib already has a valid Developer ID signature: $dylib"
+              else
+                echo "FTDI dylib needs signing: $dylib"
+              fi
+            done
+
+            for target in "${sign_targets[@]}"; do
+              if is_valid_dev_id_signature "$target"; then
+                echo "Already signed with Developer ID: $target"
+                continue
+              fi
+              codesign --force --timestamp --options runtime --sign "$SIGNING_IDENTITY" "$target"
+            done
+
+            echo "Verifying all bundled Mach-O binaries are signed..."
+            for target in "${sign_targets[@]}"; do
+              if ! is_valid_dev_id_signature "$target"; then
+                echo "Unsigned or invalid Developer ID signature: $target" >&2
+                codesign -dv "$target" 2>&1 || true
+                exit 1
+              fi
+            done
+            : > "$CODESIGN_SUMMARY_PATH"
+            printf "codesign -dv summary for %s\n\n" "$BASE_NAME" >> "$CODESIGN_SUMMARY_PATH"
+            echo "codesign -dv summary (post-sign verification):"
+            for target in "${sign_targets[@]}"; do
+              printf "==== %s ====\n" "$target" | tee -a "$CODESIGN_SUMMARY_PATH"
+              codesign -dv "$target" 2>&1 | grep -E '^(Identifier=|Format=|CodeDirectory v=|Authority=|TeamIdentifier=|Timestamp=)' | tee -a "$CODESIGN_SUMMARY_PATH"
+              echo | tee -a "$CODESIGN_SUMMARY_PATH"
             done
 
             (cd dist/macos && ditto -c -k --keepParent "${BASE_NAME}" "${ASSET_NAME}")
@@ -496,6 +548,7 @@ jobs:
             dist/macos/*.zip
             dist/macos/*.sha256
             dist/macos/*.signing-status.txt
+            dist/macos/*.codesign-summary.txt
 
       - name: Upload binaries artifact (Ubuntu)
         if: startsWith(matrix.os, 'ubuntu') && matrix.config == 'optimized=1'
@@ -604,7 +657,8 @@ jobs:
             $RELEASE_TAG \
             dist/macos/*.zip \
             dist/macos/*.sha256 \
-            dist/macos/*.signing-status.txt
+            dist/macos/*.signing-status.txt \
+            dist/macos/*.codesign-summary.txt
 
   trigger-repo-update:
     name: Trigger repo update

@@ -93,11 +93,16 @@ bool quiet_mode = false;
 // The upstream chiavdf binaries run one VDF per process and hardcode `pairindex=0`.
 // In embedded/multi-worker setups (like WesoForge), multiple VDF computations can
 // run concurrently in the same process; they must not share a pairindex.
+#if (defined(ARCH_X86) || defined(ARCH_X64)) && !defined(CHIA_DISABLE_ASM)
+// Keep slot allocation state as one program-wide entity for all TUs that include
+// this header, so concurrent callers cannot recycle the same slot sequence.
+inline std::atomic<unsigned int> vdf_fast_next_slot{0};
+#endif
+
 inline int vdf_fast_pairindex() {
 #if (defined(ARCH_X86) || defined(ARCH_X64)) && !defined(CHIA_DISABLE_ASM)
     constexpr unsigned int kSlots = unsigned(sizeof(master_counter) / sizeof(master_counter[0]));
-    static std::atomic<unsigned int> next_slot{0};
-    thread_local int slot = int(next_slot.fetch_add(1u, std::memory_order_relaxed) % kSlots);
+    thread_local int slot = int(vdf_fast_next_slot.fetch_add(1u, std::memory_order_relaxed) % kSlots);
     return slot;
 #else
     return 0;

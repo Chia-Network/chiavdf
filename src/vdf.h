@@ -94,10 +94,14 @@ bool quiet_mode = false;
 // In embedded/multi-worker setups (like WesoForge), multiple VDF computations can
 // run concurrently in the same process; they must not share a pairindex.
 inline int vdf_fast_pairindex() {
+#if (defined(ARCH_X86) || defined(ARCH_X64)) && !defined(CHIA_DISABLE_ASM)
     constexpr int kSlots = int(sizeof(master_counter) / sizeof(master_counter[0]));
     static std::atomic<int> next_slot{0};
     thread_local int slot = next_slot.fetch_add(1, std::memory_order_relaxed) % kSlots;
     return slot;
+#else
+    return 0;
+#endif
 }
 
 //always works

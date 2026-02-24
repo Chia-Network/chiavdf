@@ -98,7 +98,8 @@ jobs:
         if: startsWith(matrix.os, 'macos')
         run: |
           brew ls --versions cmake >/dev/null 2>&1 || brew install cmake
-          # TODO: Make gmp a prerequisite once brew cask/tap wiring is in place.
+          # Keep gmp installed for CI builds/tests; Homebrew formulas must also
+          # declare gmp as a runtime dependency for end-user installs.
           brew ls --versions gmp >/dev/null 2>&1 || brew install gmp
           brew ls --versions boost >/dev/null 2>&1 || brew install boost
           echo "DYLD_FALLBACK_LIBRARY_PATH=$(brew --prefix gmp)/lib:${DYLD_FALLBACK_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
@@ -579,6 +580,16 @@ jobs:
 
           printf "macOS %s release bundle status: %s\n" "$MACOS_ARCH" "$SIGNING_STATUS" > "dist/macos/${BASE_NAME}.signing-status.txt"
           shasum -a 256 "dist/macos/${ASSET_NAME}" | awk '{print $1}' > "dist/macos/${ASSET_NAME}.sha256"
+          if [ "$IS_RELEASE" = "true" ]; then
+            if [ "$MACOS_ARCH" = "arm64" ]; then
+              BREW_ARCH="arm64"
+            else
+              BREW_ARCH="amd64"
+            fi
+            BREW_ASSET_NAME="chiavdf-darwin-${BREW_ARCH}.zip"
+            cp "dist/macos/${ASSET_NAME}" "dist/macos/${BREW_ASSET_NAME}"
+            cp "dist/macos/${ASSET_NAME}.sha256" "dist/macos/${BREW_ASSET_NAME}.sha256"
+          fi
 
       - name: Upload macOS brew bundle artifact
         if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
@@ -721,10 +732,35 @@ jobs:
 
       - uses: Chia-Network/actions/github/jwt@main
 
+      - name: Build Homebrew release metadata
+        id: brew_metadata
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          BREW_TMP_DIR="${RUNNER_TEMP}/brew-release-assets"
+          mkdir -p "$BREW_TMP_DIR"
+          gh release download "$RELEASE_TAG" --dir "$BREW_TMP_DIR" --pattern "chiavdf-darwin-amd64.zip.sha256" --pattern "chiavdf-darwin-arm64.zip.sha256"
+          AMD64_SHA256="$(awk '{print $1}' "$BREW_TMP_DIR/chiavdf-darwin-amd64.zip.sha256")"
+          ARM64_SHA256="$(awk '{print $1}' "$BREW_TMP_DIR/chiavdf-darwin-arm64.zip.sha256")"
+          if ! [[ "$AMD64_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "Invalid amd64 sha256 in release metadata: $AMD64_SHA256" >&2
+            exit 1
+          fi
+          if ! [[ "$ARM64_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "Invalid arm64 sha256 in release metadata: $ARM64_SHA256" >&2
+            exit 1
+          fi
+          AMD64_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/chiavdf-darwin-amd64.zip"
+          ARM64_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/chiavdf-darwin-arm64.zip"
+          JSON_DATA="$(printf '{"release_version":"%s","runtime_dependencies":["gmp"],"homebrew":{"formula":"chiavdf","runtime_dependencies":["gmp"],"assets":{"darwin-amd64":{"url":"%s","sha256":"%s"},"darwin-arm64":{"url":"%s","sha256":"%s"}}}}' "$RELEASE_TAG" "$AMD64_URL" "$AMD64_SHA256" "$ARM64_URL" "$ARM64_SHA256")"
+          echo "json_data=${JSON_DATA}" >> "$GITHUB_OUTPUT"
+
       - name: Trigger repo update
         uses: Chia-Network/actions/github/glue@main
         with:
-          json_data: '{"release_version":"${{ github.event.release.tag_name }}"}'
+          json_data: ${{ steps.brew_metadata.outputs.json_data }}
           glue_url: ${{ secrets.GLUE_API_URL }}
           glue_project: "chiavdf"
           glue_path: "trigger"

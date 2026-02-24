@@ -87,6 +87,18 @@ std::mutex new_event_mutex, cout_lock;
 bool debug_mode = false;
 bool fast_algorithm = false;
 bool two_weso = false;
+bool quiet_mode = false;
+
+// vdf_fast uses shared master/slave counters keyed by `square_state.pairindex`.
+// The upstream chiavdf binaries run one VDF per process and hardcode `pairindex=0`.
+// In embedded/multi-worker setups (like WesoForge), multiple VDF computations can
+// run concurrently in the same process; they must not share a pairindex.
+inline int vdf_fast_pairindex() {
+    constexpr int kSlots = int(sizeof(master_counter) / sizeof(master_counter[0]));
+    static std::atomic<int> next_slot{0};
+    thread_local int slot = next_slot.fetch_add(1, std::memory_order_relaxed) % kSlots;
+    return slot;
+}
 
 //always works
 void repeated_square_original(vdf_original &vdfo, form& f, const integer&, const integer&, uint64 base, uint64 iterations, INUDUPLListener *nuduplListener) {
@@ -195,7 +207,7 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
 #if (defined(ARCH_X86) || defined(ARCH_X64)) && !defined(CHIA_DISABLE_ASM)
         // x86/x64: use the phased pipeline.
         square_state_type square_state;
-        square_state.pairindex = 0;
+        square_state.pairindex = vdf_fast_pairindex();
         actual_iterations = repeated_square_fast(square_state, f, D, L, num_iterations, batch_size, weso);
 #else
         // Non-x86: use the C++ NUDUPL path (faster and lower maintenance than the phased pipeline).
@@ -298,10 +310,12 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
             }
         #endif
     }
-    {
-        // this shouldn't be needed but avoids some false positive in TSAN
-        std::lock_guard<std::mutex> lk(cout_lock);
-        std::cout << "VDF loop finished. Total iters: " << num_iterations << "\n" << std::flush;
+    if (!quiet_mode) {
+        {
+            // this shouldn't be needed but avoids some false positive in TSAN
+            std::lock_guard<std::mutex> lk(cout_lock);
+            std::cout << "VDF loop finished. Total iters: " << num_iterations << "\n" << std::flush;
+        }
     }
 
     #ifdef VDF_TEST
@@ -337,11 +351,6 @@ Proof ProveOneWesolowski(uint64_t iters, integer& D, form f, OneWesolowskiCallba
     proof_serialized = SerializeForm(proof_form, d_bits);
     Proof proof(y_serialized, proof_serialized);
     proof.witness_type = 0;
-    {
-        // this shouldn't be needed but avoids some false positive in TSAN
-        std::lock_guard<std::mutex> lk(cout_lock);
-        std::cout << "Got simple weso proof: " << proof.hex() << "\n";
-    }
     return proof;
 }
 

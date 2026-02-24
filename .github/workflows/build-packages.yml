@@ -754,7 +754,7 @@ jobs:
           fi
           AMD64_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/chiavdf-darwin-amd64.zip"
           ARM64_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/chiavdf-darwin-arm64.zip"
-          JSON_DATA="$(printf '{"release_version":"%s","formula":"chiavdf","runtime_dependency":"gmp","mac_amd64_url":"%s","mac_amd64_sha256":"%s","mac_arm64_url":"%s","mac_arm64_sha256":"%s"}' "$RELEASE_TAG" "$AMD64_URL" "$AMD64_SHA256" "$ARM64_URL" "$ARM64_SHA256")"
+          JSON_DATA="$(printf '{"release_version":"%s"}' "$RELEASE_TAG")"
           echo "json_data=${JSON_DATA}" >> "$GITHUB_OUTPUT"
 
       - name: Trigger repo update

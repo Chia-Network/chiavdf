@@ -114,7 +114,6 @@ install_macos() {
   need_cmd unzip
   need_cmd hdiutil
   need_cmd install_name_tool
-  need_cmd codesign
 
   mkdir -p "$WORK_DIR"
   fetch_with_retry "$MAC_URL" "$MAC_ARCHIVE" zip 3
@@ -151,14 +150,19 @@ install_macos() {
   install_name_tool -change "libftd2xx.dylib" "@rpath/libftd2xx.dylib" \
     "${WORK_DIR}/libft4222.1.4.4.190.dylib"
 
-  # Clear provenance attributes and ad-hoc sign dylibs to avoid execution kills.
+  # Clear download metadata that can trigger loader trust checks on macOS.
   if command -v xattr >/dev/null 2>&1; then
     xattr -dr com.apple.provenance "$WORK_DIR" || true
+    xattr -dr com.apple.quarantine "$WORK_DIR" || true
   fi
-  codesign --force --sign - \
-    "${WORK_DIR}/libftd2xx.dylib" \
-    "${WORK_DIR}/libft4222.1.4.4.190.dylib" \
-    "${WORK_DIR}/libft4222.dylib"
+  # Optional escape hatch for local troubleshooting only.
+  if [ "${CHIAVDF_ADHOC_SIGN_FTDI:-0}" = "1" ]; then
+    need_cmd codesign
+    codesign --force --sign - \
+      "${WORK_DIR}/libftd2xx.dylib" \
+      "${WORK_DIR}/libft4222.1.4.4.190.dylib" \
+      "${WORK_DIR}/libft4222.dylib"
+  fi
 
   rm -rf "$HW_DIR"
   ln -s "$WORK_DIR" "$HW_DIR"

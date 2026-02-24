@@ -10,6 +10,12 @@ on:
     branches:
       - '**'
   workflow_dispatch:
+    inputs:
+      macos_notarize:
+        description: "Notarize macOS bundles (requires Apple signing + notarization secrets)"
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   # SHA is added to the end if on `main` to let all main workflows run
@@ -58,10 +64,42 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Test for Apple signing secrets
+        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
+        id: check_secrets
+        shell: bash
+        run: |
+          unset HAS_APPLE_SECRET
+          unset HAS_NOTARIZE_SECRETS
+          if [ -n "$APPLE_SECRET" ]; then HAS_APPLE_SECRET='true'; fi
+          if [ -n "$APPLE_NOTARIZE_USERNAME" ] && [ -n "$APPLE_NOTARIZE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            HAS_NOTARIZE_SECRETS='true'
+          fi
+          echo "HAS_APPLE_SECRET=${HAS_APPLE_SECRET}" >> "$GITHUB_OUTPUT"
+          echo "HAS_NOTARIZE_SECRETS=${HAS_NOTARIZE_SECRETS}" >> "$GITHUB_OUTPUT"
+        env:
+          APPLE_SECRET: "${{ secrets.APPLE_DEV_ID_APP }}"
+          APPLE_NOTARIZE_USERNAME: "${{ secrets.APPLE_NOTARIZE_USERNAME }}"
+          APPLE_NOTARIZE_PASSWORD: "${{ secrets.APPLE_NOTARIZE_PASSWORD }}"
+          APPLE_TEAM_ID: "${{ secrets.APPLE_TEAM_ID }}"
+
+      - name: Delete keychain if it already exists
+        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1' && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true'
+        run: security delete-keychain signing_temp.keychain || true
+
+      - name: Import Apple app signing certificate
+        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1' && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true'
+        uses: Apple-Actions/import-codesign-certs@v6
+        with:
+          p12-file-base64: ${{ secrets.APPLE_DEV_ID_APP }}
+          p12-password: ${{ secrets.APPLE_DEV_ID_APP_PASS }}
+
       - name: Install macOS deps (build + runtime)
         if: startsWith(matrix.os, 'macos')
         run: |
           brew ls --versions cmake >/dev/null 2>&1 || brew install cmake
+          # Keep gmp installed for CI builds/tests; Homebrew formulas must also
+          # declare gmp as a runtime dependency for end-user installs.
           brew ls --versions gmp >/dev/null 2>&1 || brew install gmp
           brew ls --versions boost >/dev/null 2>&1 || brew install boost
           echo "DYLD_FALLBACK_LIBRARY_PATH=$(brew --prefix gmp)/lib:${DYLD_FALLBACK_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
@@ -364,6 +402,212 @@ jobs:
           .\vdf_bench.exe square_asm 2000000
           if ($LASTEXITCODE -ne 0) { throw "vdf_bench failed with exit code $LASTEXITCODE" }
 
+      - name: Assemble macOS brew bundle
+        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}
+          IS_RELEASE: ${{ github.event_name == 'release' && 'true' || 'false' }}
+          REQUEST_NOTARIZE: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.macos_notarize == 'true') }}
+          HAS_APPLE_SECRET: ${{ steps.check_secrets.outputs.HAS_APPLE_SECRET || '' }}
+          HAS_NOTARIZE_SECRETS: ${{ steps.check_secrets.outputs.HAS_NOTARIZE_SECRETS || '' }}
+          APPLE_NOTARIZE_USERNAME: "${{ secrets.APPLE_NOTARIZE_USERNAME }}"
+          APPLE_NOTARIZE_PASSWORD: "${{ secrets.APPLE_NOTARIZE_PASSWORD }}"
+          APPLE_TEAM_ID: "${{ secrets.APPLE_TEAM_ID }}"
+          NOTARIZE: ${{ (github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.macos_notarize == 'true')) && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true' && steps.check_secrets.outputs.HAS_NOTARIZE_SECRETS == 'true' }}
+        run: |
+          set -euo pipefail
+
+          if [ "${{ matrix.os }}" = "macos-13-arm64" ]; then
+            MACOS_ARCH="arm64"
+          else
+            MACOS_ARCH="intel"
+          fi
+          BASE_NAME="chiavdf-${RELEASE_TAG}-macos-${MACOS_ARCH}"
+          if [ "$IS_RELEASE" = "true" ]; then
+            if [ "$HAS_APPLE_SECRET" != "true" ]; then
+              echo "Release builds require Apple signing certificate secrets (APPLE_DEV_ID_APP/APPLE_DEV_ID_APP_PASS)." >&2
+              exit 1
+            fi
+            if [ "$HAS_NOTARIZE_SECRETS" != "true" ]; then
+              echo "Release builds require notarization secrets (APPLE_NOTARIZE_USERNAME/APPLE_NOTARIZE_PASSWORD/APPLE_TEAM_ID)." >&2
+              exit 1
+            fi
+          fi
+          if [ "$REQUEST_NOTARIZE" = "true" ] && [ "$HAS_APPLE_SECRET" != "true" ]; then
+            echo "Notarization requires Apple signing certificate secrets (APPLE_DEV_ID_APP/APPLE_DEV_ID_APP_PASS)." >&2
+            exit 1
+          fi
+          if [ "$REQUEST_NOTARIZE" = "true" ] && [ "$HAS_NOTARIZE_SECRETS" != "true" ]; then
+            echo "Notarization requires secrets (APPLE_NOTARIZE_USERNAME/APPLE_NOTARIZE_PASSWORD/APPLE_TEAM_ID)." >&2
+            exit 1
+          fi
+          if [ "$HAS_APPLE_SECRET" = "true" ] || [ "$IS_RELEASE" = "true" ]; then
+            ASSET_NAME="${BASE_NAME}.zip"
+          else
+            ASSET_NAME="${BASE_NAME}-unsigned.zip"
+          fi
+
+          BUNDLE_ROOT="dist/macos/${BASE_NAME}"
+          BIN_DIR="${BUNDLE_ROOT}/bin"
+          LIBEXEC_DIR="${BUNDLE_ROOT}/libexec/chiavdf"
+          mkdir -p "$BIN_DIR" "$LIBEXEC_DIR"
+
+          cp src/hw_vdf_client "$BIN_DIR/"
+          cp src/emu_hw_vdf_client "$BIN_DIR/"
+          cp src/hw_test "$BIN_DIR/"
+          cp src/emu_hw_test "$BIN_DIR/"
+          cp src/vdf_client "$BIN_DIR/"
+          cp src/vdf_bench "$BIN_DIR/"
+
+          cp src/hw/libft4222/libftd2xx.dylib "$LIBEXEC_DIR/"
+          cp src/hw/libft4222/libft4222.1.4.4.190.dylib "$LIBEXEC_DIR/"
+          ln -sf "libft4222.1.4.4.190.dylib" "$LIBEXEC_DIR/libft4222.dylib"
+
+          dylib_files=(
+            "$LIBEXEC_DIR/libftd2xx.dylib"
+            "$LIBEXEC_DIR/libft4222.1.4.4.190.dylib"
+          )
+          sign_targets=()
+          for exe in "$BIN_DIR/"*; do
+            sign_targets+=("$exe")
+          done
+          for dylib in "${dylib_files[@]}"; do
+            sign_targets+=("$dylib")
+          done
+
+          for exe in "$BIN_DIR/"*; do
+            EXE_RPATHS="$(otool -l "$exe" | awk '
+              $1 == "cmd" && $2 == "LC_RPATH" { in_rpath = 1; next }
+              in_rpath && $1 == "path" { print $2; in_rpath = 0 }
+            ')"
+            if printf '%s\n' "$EXE_RPATHS" | grep -Fxq "@executable_path/hw/libft4222"; then
+              install_name_tool -delete_rpath "@executable_path/hw/libft4222" "$exe"
+            fi
+            if ! printf '%s\n' "$EXE_RPATHS" | grep -Fxq "@loader_path/../libexec/chiavdf"; then
+              install_name_tool -add_rpath "@loader_path/../libexec/chiavdf" "$exe"
+            fi
+          done
+
+          for exe in "$BIN_DIR/"*; do
+            otool -L "$exe"
+            otool -l "$exe" | grep -F "@loader_path/../libexec/chiavdf"
+            if otool -L "$exe" | grep -Eq "${GITHUB_WORKSPACE}|/Users/|/private/var/folders"; then
+              echo "Found non-portable absolute library path in ${exe}" >&2
+              exit 1
+            fi
+            if otool -l "$exe" | awk '
+              $1 == "cmd" && $2 == "LC_RPATH" { in_rpath = 1; next }
+              in_rpath && $1 == "path" { print $2; in_rpath = 0 }
+            ' | grep -Eq "^(${GITHUB_WORKSPACE}|/Users/|/private/var/folders)"; then
+              echo "Found non-portable absolute rpath in ${exe}" >&2
+              exit 1
+            fi
+          done
+
+          SIGNING_STATUS="unsigned (no Apple signing secrets available)"
+          CODESIGN_SUMMARY_PATH="dist/macos/${BASE_NAME}.codesign-summary.txt"
+          if [ "$HAS_APPLE_SECRET" = "true" ]; then
+            SIGNING_IDENTITY="$(security find-identity -v -p codesigning | grep 'Developer ID Application' | awk -F\" 'NR==1{print $2}')"
+            if [ -z "$SIGNING_IDENTITY" ]; then
+              echo "No Developer ID Application identity found after certificate import." >&2
+              exit 1
+            fi
+
+            is_valid_dev_id_signature() {
+              local path="$1"
+              local details
+              if ! codesign --verify --strict --verbose=2 "$path" >/dev/null 2>&1; then
+                return 1
+              fi
+              details="$(codesign -dv "$path" 2>&1 || true)"
+              if printf '%s\n' "$details" | grep -Fq "Authority=Developer ID Application"; then
+                return 0
+              fi
+              # Some runners may omit Authority lines in codesign -dv output.
+              # Treat a strict-valid signature with a populated TeamIdentifier
+              # as acceptable for Developer ID verification.
+              if printf '%s\n' "$details" | grep -Eq '^TeamIdentifier=[^[:space:]]+' && ! printf '%s\n' "$details" | grep -Fq 'TeamIdentifier=not set'; then
+                return 0
+              fi
+              return 1
+            }
+
+            echo "Checking FTDI dylib signatures before signing..."
+            for dylib in "${dylib_files[@]}"; do
+              if is_valid_dev_id_signature "$dylib"; then
+                echo "FTDI dylib already has a valid Developer ID signature: $dylib"
+              else
+                echo "FTDI dylib needs signing: $dylib"
+              fi
+            done
+
+            for target in "${sign_targets[@]}"; do
+              if is_valid_dev_id_signature "$target"; then
+                echo "Already signed with Developer ID: $target"
+                continue
+              fi
+              codesign --force --timestamp --options runtime --sign "$SIGNING_IDENTITY" "$target"
+            done
+
+            echo "Verifying all bundled Mach-O binaries are signed..."
+            for target in "${sign_targets[@]}"; do
+              if ! is_valid_dev_id_signature "$target"; then
+                echo "Unsigned or invalid Developer ID signature: $target" >&2
+                codesign -dv "$target" 2>&1 || true
+                exit 1
+              fi
+            done
+            : > "$CODESIGN_SUMMARY_PATH"
+            printf "codesign -dv summary for %s\n\n" "$BASE_NAME" >> "$CODESIGN_SUMMARY_PATH"
+            echo "codesign -dv summary (post-sign verification):"
+            for target in "${sign_targets[@]}"; do
+              printf "==== %s ====\n" "$target" | tee -a "$CODESIGN_SUMMARY_PATH"
+              codesign -dv "$target" 2>&1 | grep -E '^(Identifier=|Format=|CodeDirectory v=|Authority=|TeamIdentifier=|Timestamp=)' | tee -a "$CODESIGN_SUMMARY_PATH"
+              echo | tee -a "$CODESIGN_SUMMARY_PATH"
+            done
+
+            (cd dist/macos && ditto -c -k --keepParent "${BASE_NAME}" "${ASSET_NAME}")
+            if [ "${NOTARIZE}" = "true" ]; then
+              if ! xcrun notarytool submit "dist/macos/${ASSET_NAME}" --apple-id "$APPLE_NOTARIZE_USERNAME" --password "$APPLE_NOTARIZE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait; then
+                echo "Notarization failed for dist/macos/${ASSET_NAME}" >&2
+                exit 1
+              fi
+              SIGNING_STATUS="signed + notarized"
+            else
+              if [ "$REQUEST_NOTARIZE" = "true" ]; then
+                echo "Build reached unexpected state: notarization was requested but not enabled." >&2
+                exit 1
+              fi
+              SIGNING_STATUS="signed (notarization skipped for non-release run)"
+            fi
+          else
+            (cd dist/macos && ditto -c -k --keepParent "${BASE_NAME}" "${ASSET_NAME}")
+          fi
+
+          printf "macOS %s release bundle status: %s\n" "$MACOS_ARCH" "$SIGNING_STATUS" > "dist/macos/${BASE_NAME}.signing-status.txt"
+          shasum -a 256 "dist/macos/${ASSET_NAME}" | awk '{print $1}' > "dist/macos/${ASSET_NAME}.sha256"
+          if [ "$IS_RELEASE" = "true" ]; then
+            if [ "$MACOS_ARCH" = "arm64" ]; then
+              BREW_ARCH="arm64"
+            else
+              BREW_ARCH="amd64"
+            fi
+            BREW_ASSET_NAME="chiavdf-darwin-${BREW_ARCH}.zip"
+            cp "dist/macos/${ASSET_NAME}" "dist/macos/${BREW_ASSET_NAME}"
+            cp "dist/macos/${ASSET_NAME}.sha256" "dist/macos/${BREW_ASSET_NAME}.sha256"
+          fi
+
+      - name: Upload macOS brew bundle artifact
+        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.os == 'macos-13-arm64' && 'macos-arm64-brew-bundle' || 'macos-intel-brew-bundle' }}
+          path: |
+            dist/macos/*.zip
+            dist/macos/*.sha256
+            dist/macos/*.signing-status.txt
+            dist/macos/*.codesign-summary.txt
+
       - name: Upload binaries artifact (Ubuntu)
         if: startsWith(matrix.os, 'ubuntu') && matrix.config == 'optimized=1'
         uses: actions/upload-artifact@v6
@@ -420,7 +664,6 @@ jobs:
       - name: Assemble Ubuntu .deb (same runner as build)
         if: startsWith(matrix.os, 'ubuntu') && matrix.config == 'optimized=1'
         env:
-          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
           INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
           PLATFORM: ${{ matrix.os == 'ubuntu-24.04-arm' && 'arm64' || 'amd64' }}
           LIBFT4222_DIR: ${{ matrix.os == 'ubuntu-24.04-arm' && 'build-arm-v8' || 'build-x86_64' }}
@@ -457,8 +700,31 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           gh release upload \
+            --clobber \
             $RELEASE_TAG \
             dist/*.deb
+
+      - name: Upload macOS release artifacts
+        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1' && github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          shopt -s nullglob
+          release_files=(
+            dist/macos/*.zip
+            dist/macos/*.sha256
+            dist/macos/*.signing-status.txt
+            dist/macos/*.codesign-summary.txt
+          )
+          if [ "${#release_files[@]}" -eq 0 ]; then
+            echo "No macOS release artifacts found to upload" >&2
+            exit 1
+          fi
+          gh release upload \
+            --clobber \
+            "$RELEASE_TAG" \
+            "${release_files[@]}"
 
   trigger-repo-update:
     name: Trigger repo update
@@ -471,6 +737,16 @@ jobs:
           fetch-depth: 1
 
       - uses: Chia-Network/actions/github/jwt@main
+
+      - name: Build Homebrew release metadata
+        id: brew_metadata
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          JSON_DATA="$(jq -nc --arg release_version "$RELEASE_TAG" '{release_version:$release_version}')"
+          echo "json_data=${JSON_DATA}" >> "$GITHUB_OUTPUT"
 
       - name: Trigger repo update
         uses: Chia-Network/actions/github/glue@main

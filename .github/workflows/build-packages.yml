@@ -59,7 +59,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Test for Apple signing secrets
-        if: matrix.os == 'macos-13-arm64' && matrix.config == 'optimized=1'
+        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
         id: check_secrets
         shell: bash
         run: |
@@ -78,11 +78,11 @@ jobs:
           APPLE_TEAM_ID: "${{ secrets.APPLE_TEAM_ID }}"
 
       - name: Delete keychain if it already exists
-        if: matrix.os == 'macos-13-arm64' && matrix.config == 'optimized=1' && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true'
+        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1' && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true'
         run: security delete-keychain signing_temp.keychain || true
 
       - name: Import Apple app signing certificate
-        if: matrix.os == 'macos-13-arm64' && matrix.config == 'optimized=1' && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true'
+        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1' && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true'
         uses: Apple-Actions/import-codesign-certs@v6
         with:
           p12-file-base64: ${{ secrets.APPLE_DEV_ID_APP }}
@@ -395,8 +395,8 @@ jobs:
           .\vdf_bench.exe square_asm 2000000
           if ($LASTEXITCODE -ne 0) { throw "vdf_bench failed with exit code $LASTEXITCODE" }
 
-      - name: Assemble macOS ARM64 brew bundle
-        if: matrix.os == 'macos-13-arm64' && matrix.config == 'optimized=1'
+      - name: Assemble macOS brew bundle
+        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
         env:
           RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}
           HAS_APPLE_SECRET: ${{ steps.check_secrets.outputs.HAS_APPLE_SECRET || '' }}
@@ -407,7 +407,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          BASE_NAME="chiavdf-${RELEASE_TAG}-macos-arm64"
+          if [ "${{ matrix.os }}" = "macos-13-arm64" ]; then
+            MACOS_ARCH="arm64"
+          else
+            MACOS_ARCH="intel"
+          fi
+          BASE_NAME="chiavdf-${RELEASE_TAG}-macos-${MACOS_ARCH}"
           if [ "$HAS_APPLE_SECRET" = "true" ]; then
             ASSET_NAME="${BASE_NAME}.zip"
           else
@@ -544,14 +549,14 @@ jobs:
             (cd dist/macos && ditto -c -k --keepParent "${BASE_NAME}" "${ASSET_NAME}")
           fi
 
-          printf "macOS ARM64 release bundle status: %s\n" "$SIGNING_STATUS" > "dist/macos/${BASE_NAME}.signing-status.txt"
+          printf "macOS %s release bundle status: %s\n" "$MACOS_ARCH" "$SIGNING_STATUS" > "dist/macos/${BASE_NAME}.signing-status.txt"
           shasum -a 256 "dist/macos/${ASSET_NAME}" | awk '{print $1}' > "dist/macos/${ASSET_NAME}.sha256"
 
-      - name: Upload macOS ARM64 bundle artifact
-        if: matrix.os == 'macos-13-arm64' && matrix.config == 'optimized=1'
+      - name: Upload macOS brew bundle artifact
+        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
         uses: actions/upload-artifact@v6
         with:
-          name: macos-arm64-brew-bundle
+          name: ${{ matrix.os == 'macos-13-arm64' && 'macos-arm64-brew-bundle' || 'macos-intel-brew-bundle' }}
           path: |
             dist/macos/*.zip
             dist/macos/*.sha256
@@ -654,8 +659,8 @@ jobs:
             $RELEASE_TAG \
             dist/*.deb
 
-      - name: Upload macOS ARM64 release artifacts
-        if: matrix.os == 'macos-13-arm64' && matrix.config == 'optimized=1' && github.event_name == 'release'
+      - name: Upload macOS release artifacts
+        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1' && github.event_name == 'release'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}

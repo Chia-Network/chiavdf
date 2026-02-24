@@ -268,6 +268,8 @@ class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
             batch_end_iteration = 0;
             return;
         }
+        // `base_iteration` is the number of completed iterations before this batch.
+        // `OnIteration` normalizes to 1-based (`iteration++`), so this batch is [base+1, base+size].
         batch_start_iteration = base_iteration + 1;
         if (std::numeric_limits<uint64_t>::max() - base_iteration < batch_size) {
             batch_end_iteration = std::numeric_limits<uint64_t>::max();

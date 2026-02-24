@@ -399,7 +399,9 @@ jobs:
         if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
         env:
           RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}
+          IS_RELEASE: ${{ github.event_name == 'release' && 'true' || 'false' }}
           HAS_APPLE_SECRET: ${{ steps.check_secrets.outputs.HAS_APPLE_SECRET || '' }}
+          HAS_NOTARIZE_SECRETS: ${{ steps.check_secrets.outputs.HAS_NOTARIZE_SECRETS || '' }}
           APPLE_NOTARIZE_USERNAME: "${{ secrets.APPLE_NOTARIZE_USERNAME }}"
           APPLE_NOTARIZE_PASSWORD: "${{ secrets.APPLE_NOTARIZE_PASSWORD }}"
           APPLE_TEAM_ID: "${{ secrets.APPLE_TEAM_ID }}"
@@ -413,7 +415,15 @@ jobs:
             MACOS_ARCH="intel"
           fi
           BASE_NAME="chiavdf-${RELEASE_TAG}-macos-${MACOS_ARCH}"
-          if [ "$HAS_APPLE_SECRET" = "true" ]; then
+          if [ "$IS_RELEASE" = "true" ] && [ "$HAS_APPLE_SECRET" != "true" ]; then
+            echo "Release build requires Apple signing certificate secrets (APPLE_DEV_ID_APP/APPLE_DEV_ID_APP_PASS)." >&2
+            exit 1
+          fi
+          if [ "$IS_RELEASE" = "true" ] && [ "$HAS_NOTARIZE_SECRETS" != "true" ]; then
+            echo "Release build requires notarization secrets (APPLE_NOTARIZE_USERNAME/APPLE_NOTARIZE_PASSWORD/APPLE_TEAM_ID)." >&2
+            exit 1
+          fi
+          if [ "$HAS_APPLE_SECRET" = "true" ] || [ "$IS_RELEASE" = "true" ]; then
             ASSET_NAME="${BASE_NAME}.zip"
           else
             ASSET_NAME="${BASE_NAME}-unsigned.zip"
@@ -540,12 +550,23 @@ jobs:
 
             (cd dist/macos && ditto -c -k --keepParent "${BASE_NAME}" "${ASSET_NAME}")
             if [ "${NOTARIZE}" = "true" ]; then
-              xcrun notarytool submit "dist/macos/${ASSET_NAME}" --apple-id "$APPLE_NOTARIZE_USERNAME" --password "$APPLE_NOTARIZE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+              if ! xcrun notarytool submit "dist/macos/${ASSET_NAME}" --apple-id "$APPLE_NOTARIZE_USERNAME" --password "$APPLE_NOTARIZE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait; then
+                echo "Notarization failed for dist/macos/${ASSET_NAME}" >&2
+                exit 1
+              fi
               SIGNING_STATUS="signed + notarized"
             else
+              if [ "$IS_RELEASE" = "true" ]; then
+                echo "Release build reached unexpected state: notarization was not enabled." >&2
+                exit 1
+              fi
               SIGNING_STATUS="signed (notarization skipped for non-release run)"
             fi
           else
+            if [ "$IS_RELEASE" = "true" ]; then
+              echo "Release build reached unexpected state: bundle was not signed." >&2
+              exit 1
+            fi
             (cd dist/macos && ditto -c -k --keepParent "${BASE_NAME}" "${ASSET_NAME}")
           fi
 

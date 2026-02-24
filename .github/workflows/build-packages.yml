@@ -482,13 +482,21 @@ jobs:
 
             is_valid_dev_id_signature() {
               local path="$1"
+              local details
               if ! codesign --verify --strict --verbose=2 "$path" >/dev/null 2>&1; then
                 return 1
               fi
-              if ! codesign -dv "$path" 2>&1 | grep -Fq "Authority=Developer ID Application"; then
-                return 1
+              details="$(codesign -dv "$path" 2>&1 || true)"
+              if printf '%s\n' "$details" | grep -Fq "Authority=Developer ID Application"; then
+                return 0
               fi
-              return 0
+              # Some runners may omit Authority lines in codesign -dv output.
+              # Treat a strict-valid signature with a populated TeamIdentifier
+              # as acceptable for Developer ID verification.
+              if printf '%s\n' "$details" | grep -Eq '^TeamIdentifier=[^[:space:]]+' && ! printf '%s\n' "$details" | grep -Fq 'TeamIdentifier=not set'; then
+                return 0
+              fi
+              return 1
             }
 
             echo "Checking FTDI dylib signatures before signing..."

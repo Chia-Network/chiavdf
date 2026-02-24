@@ -493,7 +493,6 @@ jobs:
         if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1' && steps.check_windows_signing_secrets.outputs.HAS_WINDOWS_SIGNING_SECRET == 'true' && (github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.windows_sign == 'true'))
         uses: chia-network/actions/digicert/windows-sign@main
         with:
-          sm_host: ${{ secrets.SM_HOST }}
           sm_certkey_alias: ${{ secrets.SM_CERTKEY_ALIAS }}
           sm_api_key: ${{ secrets.SM_API_KEY }}
           sm_client_cert_file_b64: ${{ secrets.SM_CLIENT_CERT_FILE_B64 }}

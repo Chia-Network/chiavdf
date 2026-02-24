@@ -13,6 +13,12 @@ typedef struct {
     size_t length;
 } ChiavdfByteArray;
 
+typedef struct {
+    const uint8_t* y_ref_s;
+    size_t y_ref_s_size;
+    uint64_t num_iterations;
+} ChiavdfBatchJob;
+
 typedef void (*ChiavdfProgressCallback)(uint64_t iters_done, void* user_data);
 
 // Configure the per-process memory budget used by the parameter tuner when
@@ -137,6 +143,32 @@ ChiavdfByteArray chiavdf_prove_one_weso_fast_streaming_getblock_opt_with_progres
     uint64_t progress_interval,
     ChiavdfProgressCallback progress_cb,
     void* progress_user_data);
+
+// Batch variant: computes one proof per `jobs[i]` using a shared API surface.
+// Returns an array of `job_count` results on success; caller owns/frees it.
+ChiavdfByteArray* chiavdf_prove_one_weso_fast_streaming_getblock_opt_batch(
+    const uint8_t* challenge_hash,
+    size_t challenge_size,
+    const uint8_t* x_s,
+    size_t x_s_size,
+    size_t discriminant_size_bits,
+    const ChiavdfBatchJob* jobs,
+    size_t job_count);
+
+// Same as batch API above, with optional aggregate progress callback.
+ChiavdfByteArray* chiavdf_prove_one_weso_fast_streaming_getblock_opt_batch_with_progress(
+    const uint8_t* challenge_hash,
+    size_t challenge_size,
+    const uint8_t* x_s,
+    size_t x_s_size,
+    size_t discriminant_size_bits,
+    const ChiavdfBatchJob* jobs,
+    size_t job_count,
+    uint64_t progress_interval,
+    ChiavdfProgressCallback progress_cb,
+    void* progress_user_data);
+
+void chiavdf_free_byte_array_batch(ChiavdfByteArray* arrays, size_t count);
 
 void chiavdf_free_byte_array(ChiavdfByteArray array);
 

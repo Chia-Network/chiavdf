@@ -423,6 +423,16 @@ jobs:
             MACOS_ARCH="intel"
           fi
           BASE_NAME="chiavdf-${RELEASE_TAG}-macos-${MACOS_ARCH}"
+          if [ "$IS_RELEASE" = "true" ]; then
+            if [ "$HAS_APPLE_SECRET" != "true" ]; then
+              echo "Release builds require Apple signing certificate secrets (APPLE_DEV_ID_APP/APPLE_DEV_ID_APP_PASS)." >&2
+              exit 1
+            fi
+            if [ "$HAS_NOTARIZE_SECRETS" != "true" ]; then
+              echo "Release builds require notarization secrets (APPLE_NOTARIZE_USERNAME/APPLE_NOTARIZE_PASSWORD/APPLE_TEAM_ID)." >&2
+              exit 1
+            fi
+          fi
           if [ "$REQUEST_NOTARIZE" = "true" ] && [ "$HAS_APPLE_SECRET" != "true" ]; then
             echo "Notarization requires Apple signing certificate secrets (APPLE_DEV_ID_APP/APPLE_DEV_ID_APP_PASS)." >&2
             exit 1
@@ -571,10 +581,6 @@ jobs:
               SIGNING_STATUS="signed (notarization skipped for non-release run)"
             fi
           else
-            if [ "$IS_RELEASE" = "true" ]; then
-              echo "Release build reached unexpected state: bundle was not signed." >&2
-              exit 1
-            fi
             (cd dist/macos && ditto -c -k --keepParent "${BASE_NAME}" "${ASSET_NAME}")
           fi
 
@@ -739,22 +745,7 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
-          BREW_TMP_DIR="${RUNNER_TEMP}/brew-release-assets"
-          mkdir -p "$BREW_TMP_DIR"
-          gh release download "$RELEASE_TAG" --dir "$BREW_TMP_DIR" --pattern "chiavdf-darwin-amd64.zip.sha256" --pattern "chiavdf-darwin-arm64.zip.sha256"
-          AMD64_SHA256="$(awk '{print $1}' "$BREW_TMP_DIR/chiavdf-darwin-amd64.zip.sha256")"
-          ARM64_SHA256="$(awk '{print $1}' "$BREW_TMP_DIR/chiavdf-darwin-arm64.zip.sha256")"
-          if ! [[ "$AMD64_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
-            echo "Invalid amd64 sha256 in release metadata: $AMD64_SHA256" >&2
-            exit 1
-          fi
-          if ! [[ "$ARM64_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
-            echo "Invalid arm64 sha256 in release metadata: $ARM64_SHA256" >&2
-            exit 1
-          fi
-          AMD64_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/chiavdf-darwin-amd64.zip"
-          ARM64_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/chiavdf-darwin-arm64.zip"
-          JSON_DATA="$(printf '{"release_version":"%s"}' "$RELEASE_TAG")"
+          JSON_DATA="$(jq -nc --arg release_version "$RELEASE_TAG" '{release_version:$release_version}')"
           echo "json_data=${JSON_DATA}" >> "$GITHUB_OUTPUT"
 
       - name: Trigger repo update

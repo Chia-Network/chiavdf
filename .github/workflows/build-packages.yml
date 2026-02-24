@@ -10,6 +10,12 @@ on:
     branches:
       - '**'
   workflow_dispatch:
+    inputs:
+      macos_notarize:
+        description: "Notarize macOS bundles (requires Apple signing + notarization secrets)"
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   # SHA is added to the end if on `main` to let all main workflows run
@@ -400,12 +406,13 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}
           IS_RELEASE: ${{ github.event_name == 'release' && 'true' || 'false' }}
+          REQUEST_NOTARIZE: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.macos_notarize == 'true') }}
           HAS_APPLE_SECRET: ${{ steps.check_secrets.outputs.HAS_APPLE_SECRET || '' }}
           HAS_NOTARIZE_SECRETS: ${{ steps.check_secrets.outputs.HAS_NOTARIZE_SECRETS || '' }}
           APPLE_NOTARIZE_USERNAME: "${{ secrets.APPLE_NOTARIZE_USERNAME }}"
           APPLE_NOTARIZE_PASSWORD: "${{ secrets.APPLE_NOTARIZE_PASSWORD }}"
           APPLE_TEAM_ID: "${{ secrets.APPLE_TEAM_ID }}"
-          NOTARIZE: ${{ github.event_name == 'release' && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true' && steps.check_secrets.outputs.HAS_NOTARIZE_SECRETS == 'true' }}
+          NOTARIZE: ${{ (github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.macos_notarize == 'true')) && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true' && steps.check_secrets.outputs.HAS_NOTARIZE_SECRETS == 'true' }}
         run: |
           set -euo pipefail
 
@@ -415,12 +422,12 @@ jobs:
             MACOS_ARCH="intel"
           fi
           BASE_NAME="chiavdf-${RELEASE_TAG}-macos-${MACOS_ARCH}"
-          if [ "$IS_RELEASE" = "true" ] && [ "$HAS_APPLE_SECRET" != "true" ]; then
-            echo "Release build requires Apple signing certificate secrets (APPLE_DEV_ID_APP/APPLE_DEV_ID_APP_PASS)." >&2
+          if [ "$REQUEST_NOTARIZE" = "true" ] && [ "$HAS_APPLE_SECRET" != "true" ]; then
+            echo "Notarization requires Apple signing certificate secrets (APPLE_DEV_ID_APP/APPLE_DEV_ID_APP_PASS)." >&2
             exit 1
           fi
-          if [ "$IS_RELEASE" = "true" ] && [ "$HAS_NOTARIZE_SECRETS" != "true" ]; then
-            echo "Release build requires notarization secrets (APPLE_NOTARIZE_USERNAME/APPLE_NOTARIZE_PASSWORD/APPLE_TEAM_ID)." >&2
+          if [ "$REQUEST_NOTARIZE" = "true" ] && [ "$HAS_NOTARIZE_SECRETS" != "true" ]; then
+            echo "Notarization requires secrets (APPLE_NOTARIZE_USERNAME/APPLE_NOTARIZE_PASSWORD/APPLE_TEAM_ID)." >&2
             exit 1
           fi
           if [ "$HAS_APPLE_SECRET" = "true" ] || [ "$IS_RELEASE" = "true" ]; then
@@ -556,8 +563,8 @@ jobs:
               fi
               SIGNING_STATUS="signed + notarized"
             else
-              if [ "$IS_RELEASE" = "true" ]; then
-                echo "Release build reached unexpected state: notarization was not enabled." >&2
+              if [ "$REQUEST_NOTARIZE" = "true" ]; then
+                echo "Build reached unexpected state: notarization was requested but not enabled." >&2
                 exit 1
               fi
               SIGNING_STATUS="signed (notarization skipped for non-release run)"

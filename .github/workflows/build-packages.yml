@@ -331,6 +331,13 @@ jobs:
           echo "Running emu_hw_vdf_client --list"
           ./emu_hw_vdf_client --list
 
+      - name: Run GoogleTest regressions (Ubuntu/macOS)
+        if: matrix.config == 'optimized=1' && matrix.os != 'windows-latest'
+        run: |
+          cmake -S src -B build-regression -DBUILD_PYTHON=OFF -DBUILD_CHIAVDFC=OFF -DBUILD_VDF_CLIENT=OFF -DBUILD_VDF_BENCH=OFF -DBUILD_VDF_TESTS=ON -DBUILD_HW_TOOLS=OFF -DENABLE_GNU_ASM=ON
+          cmake --build build-regression --target regression_unit_tests regression_io_tests
+          ctest --test-dir build-regression --output-on-failure -R '^regression\.'
+
       - name: Run vdf tests (optimized smoke)
         if: matrix.config == 'optimized=1' && matrix.os != 'windows-latest' && !startsWith(matrix.os, 'ubuntu')
         run: |
@@ -391,6 +398,14 @@ jobs:
           .\emu_hw_vdf_client.exe --list
           if ($LASTEXITCODE -ne 0) { throw "emu_hw_vdf_client --list failed with exit code $LASTEXITCODE" }
 
+      - name: Run GoogleTest regressions (Windows)
+        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
+        shell: pwsh
+        run: |
+          cd build
+          $env:PATH = "$PWD;$PWD\..\src\hw\libft4222;$PWD\..\mpir_gc_x64;$env:PATH"
+          ctest -C Release --output-on-failure -R '^regression\.'
+
       - name: Run vdf tests (Windows, optimized smoke)
         if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
         shell: pwsh
@@ -414,21 +429,6 @@ jobs:
           $env:CHIAVDF_PROVER_TEST_FAST = "1"
           .\prover_test.exe
           if ($LASTEXITCODE -ne 0) { throw "prover_test failed with exit code $LASTEXITCODE" }
-
-      - name: Run GoogleTest regressions (Unix)
-        if: matrix.config == 'optimized=1' && matrix.os != 'windows-latest'
-        run: |
-          cmake -S src -B build-regression -DBUILD_PYTHON=OFF -DBUILD_CHIAVDFC=OFF -DBUILD_VDF_CLIENT=OFF -DBUILD_VDF_BENCH=OFF -DBUILD_VDF_TESTS=ON -DBUILD_HW_TOOLS=OFF -DENABLE_GNU_ASM=ON
-          cmake --build build-regression --target regression_unit_tests regression_io_tests
-          ctest --test-dir build-regression --output-on-failure -R '^regression\.'
-
-      - name: Run GoogleTest regressions (Windows)
-        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
-        shell: pwsh
-        run: |
-          cd build
-          $env:PATH = "$PWD;$PWD\..\src\hw\libft4222;$PWD\..\mpir_gc_x64;$env:PATH"
-          ctest -C Release --output-on-failure -R '^regression\.'
 
       - name: Benchmark vdf_bench square (Ubuntu/Mac)
         if: matrix.config == 'optimized=1' && matrix.os != 'windows-latest'

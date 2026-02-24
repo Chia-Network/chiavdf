@@ -652,13 +652,21 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
+          shopt -s nullglob
+          release_files=(
+            dist/macos/*.zip
+            dist/macos/*.sha256
+            dist/macos/*.signing-status.txt
+            dist/macos/*.codesign-summary.txt
+          )
+          if [ "${#release_files[@]}" -eq 0 ]; then
+            echo "No macOS release artifacts found to upload" >&2
+            exit 1
+          fi
           gh release upload \
             --clobber \
-            $RELEASE_TAG \
-            dist/macos/*.zip \
-            dist/macos/*.sha256 \
-            dist/macos/*.signing-status.txt \
-            dist/macos/*.codesign-summary.txt
+            "$RELEASE_TAG" \
+            "${release_files[@]}"
 
   trigger-repo-update:
     name: Trigger repo update

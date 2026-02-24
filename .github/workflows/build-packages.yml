@@ -44,6 +44,14 @@ jobs:
       CHIA_ENABLE_AVX512_IFMA: "1"
       # On release workflows, pin embedded CLI version to the tag.
       RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
+      # Keep Windows bundle/sign targets in one place.
+      WINDOWS_BUNDLE_EXE_FILES: |-
+        vdf_client.exe
+        vdf_bench.exe
+        hw_vdf_client.exe
+        emu_hw_vdf_client.exe
+        hw_test.exe
+        emu_hw_test.exe
     strategy:
       fail-fast: false
       matrix:
@@ -457,14 +465,10 @@ jobs:
             throw "Windows signing was requested but signing secrets (SM_*) are not configured."
           }
 
-          $exeFiles = @(
-            "vdf_client.exe",
-            "vdf_bench.exe",
-            "hw_vdf_client.exe",
-            "emu_hw_vdf_client.exe",
-            "hw_test.exe",
-            "emu_hw_test.exe"
-          )
+          $exeFiles = @($env:WINDOWS_BUNDLE_EXE_FILES -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+          if (-not $exeFiles -or $exeFiles.Count -eq 0) {
+            throw "WINDOWS_BUNDLE_EXE_FILES is empty; expected one or more executable names."
+          }
           foreach ($exe in $exeFiles) {
             $source = "build/$exe"
             if (-not (Test-Path $source)) {
@@ -505,14 +509,10 @@ jobs:
           SM_CODE_SIGNING_CERT_SHA1_HASH: "${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }}"
         run: |
           $binDir = "dist/windows/chiavdf-$env:INSTALLER_VERSION-windows-amd64/bin"
-          $exeFiles = @(
-            "vdf_client.exe",
-            "vdf_bench.exe",
-            "hw_vdf_client.exe",
-            "emu_hw_vdf_client.exe",
-            "hw_test.exe",
-            "emu_hw_test.exe"
-          )
+          $exeFiles = @($env:WINDOWS_BUNDLE_EXE_FILES -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+          if (-not $exeFiles -or $exeFiles.Count -eq 0) {
+            throw "WINDOWS_BUNDLE_EXE_FILES is empty; expected one or more executable names."
+          }
           foreach ($exe in $exeFiles) {
             $file = Join-Path $binDir $exe
             if (-not (Test-Path $file)) {

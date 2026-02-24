@@ -243,6 +243,9 @@ class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
                 }
                 SetForm(type, data, &checkpoint);
                 process_checkpoint(pos, checkpoint, /*record_stats=*/true);
+                if (iteration >= batch_start_iteration && iteration <= batch_end_iteration) {
+                    current_batch_checkpoints.push_back(BatchCheckpoint{pos, checkpoint});
+                }
                 if (stats_enabled) {
                     checkpoint_event_total_ns += static_cast<uint64_t>(
                         std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -258,7 +261,44 @@ class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
         }
     }
 
+    void OnBatchStart(uint64_t base_iteration, uint64_t batch_size) override {
+        current_batch_checkpoints.clear();
+        if (batch_size == 0) {
+            batch_start_iteration = 1;
+            batch_end_iteration = 0;
+            return;
+        }
+        batch_start_iteration = base_iteration + 1;
+        if (std::numeric_limits<uint64_t>::max() - base_iteration < batch_size) {
+            batch_end_iteration = std::numeric_limits<uint64_t>::max();
+        } else {
+            batch_end_iteration = base_iteration + batch_size;
+        }
+    }
+
+    void OnBatchReplay(uint64_t base_iteration, uint64_t batch_size) override {
+        for (const BatchCheckpoint& entry : current_batch_checkpoints) {
+            rollback_checkpoint(entry.index, entry.checkpoint);
+        }
+        OnBatchStart(base_iteration, batch_size);
+    }
+
     void process_checkpoint(uint64_t i, const form& checkpoint, bool record_stats) {
+        apply_checkpoint(i, checkpoint, record_stats);
+    }
+
+  private:
+    struct BatchCheckpoint {
+        uint64_t index;
+        form checkpoint;
+    };
+
+    void rollback_checkpoint(uint64_t i, const form& checkpoint) {
+        form inverse_checkpoint = checkpoint.inverse();
+        apply_checkpoint(i, inverse_checkpoint, /*record_stats=*/false);
+    }
+
+    void apply_checkpoint(uint64_t i, const form& checkpoint, bool record_stats) {
         const bool do_stats = stats_enabled && record_stats;
         auto started_at = std::chrono::steady_clock::time_point{};
         if (do_stats) {
@@ -359,7 +399,6 @@ class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
         return out;
     }
 
-  private:
     form& bucket(uint32_t j, uint64_t b) {
         size_t idx = static_cast<size_t>(j) * (1ULL << k) + static_cast<size_t>(b);
         return buckets[idx];
@@ -391,6 +430,9 @@ class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
     integer getblock_inv_2k;
     integer getblock_r;
     integer getblock_tmp;
+    uint64_t batch_start_iteration = 1;
+    uint64_t batch_end_iteration = 0;
+    std::vector<BatchCheckpoint> current_batch_checkpoints;
 
     bool stats_enabled;
     uint64_t checkpoint_total_ns = 0;

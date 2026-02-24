@@ -95,9 +95,9 @@ bool quiet_mode = false;
 // run concurrently in the same process; they must not share a pairindex.
 inline int vdf_fast_pairindex() {
 #if (defined(ARCH_X86) || defined(ARCH_X64)) && !defined(CHIA_DISABLE_ASM)
-    constexpr int kSlots = int(sizeof(master_counter) / sizeof(master_counter[0]));
-    static std::atomic<int> next_slot{0};
-    thread_local int slot = next_slot.fetch_add(1, std::memory_order_relaxed) % kSlots;
+    constexpr unsigned int kSlots = unsigned(sizeof(master_counter) / sizeof(master_counter[0]));
+    static std::atomic<unsigned int> next_slot{0};
+    thread_local int slot = int(next_slot.fetch_add(1u, std::memory_order_relaxed) % kSlots);
     return slot;
 #else
     return 0;
@@ -201,6 +201,9 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
         #endif
 
         uint64 batch_size=c_checkpoint_interval;
+        if (weso != NULL) {
+            weso->OnBatchStart(num_iterations, batch_size);
+        }
 
         #ifdef ENABLE_TRACK_CYCLES
             print( "track cycles enabled; results will be wrong" );
@@ -231,6 +234,9 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
 
         if (actual_iterations==~uint64(0)) {
             //corruption; f is unchanged. do the entire batch with the slow algorithm
+            if (weso != NULL) {
+                weso->OnBatchReplay(num_iterations, batch_size);
+            }
             repeated_square_original(*weso->vdfo, f, D, L, num_iterations, batch_size, weso);
             actual_iterations=batch_size;
 

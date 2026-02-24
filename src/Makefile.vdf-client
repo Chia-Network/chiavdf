@@ -26,15 +26,26 @@ ifeq ($(UNAME),Darwin)
 NOPIE =
 endif
 
-CFLAGS += $(LTO_FLAGS) $(NOPIE)
-LDFLAGS += $(LTO_FLAGS) $(NOPIE) -g
+# Optional: set `PIC=1` to build position-independent objects.
+PIC ?= 0
+ifeq ($(PIC),1)
+PICFLAGS = -fPIC
+PIEFLAGS =
+else
+PICFLAGS =
+PIEFLAGS = $(NOPIE)
+endif
+
+CFLAGS += $(LTO_FLAGS) $(PIEFLAGS) $(PICFLAGS)
+LDFLAGS += $(LTO_FLAGS) $(PIEFLAGS) -g
 ifeq ($(OS),Windows_NT)
 LDLIBS += -lmpirxx -lmpir -lws2_32
-CXXFLAGS += $(LTO_FLAGS) -std=c++1z -D VDF_MODE=0 -D FAST_MACHINE=1 $(NOPIE) -fvisibility=hidden
+CXXFLAGS += $(LTO_FLAGS) -std=c++1z -D VDF_MODE=0 -D FAST_MACHINE=1 $(PIEFLAGS) $(PICFLAGS) -fvisibility=hidden
 else
 LDLIBS += -lgmpxx -lgmp -pthread
-CXXFLAGS += $(LTO_FLAGS) -std=c++1z -D VDF_MODE=0 -D FAST_MACHINE=1 -pthread $(NOPIE) -fvisibility=hidden
+CXXFLAGS += $(LTO_FLAGS) -std=c++1z -D VDF_MODE=0 -D FAST_MACHINE=1 -pthread $(PIEFLAGS) $(PICFLAGS) -fvisibility=hidden
 endif
+ASFLAGS += $(PICFLAGS)
 ifeq ($(UNAME),Darwin)
 CXXFLAGS += -D CHIAOSX=1
 # Homebrew (common on macOS) installs boost/gmp to /opt/homebrew or /usr/local
@@ -81,7 +92,7 @@ BINS = vdf_client prover_test 1weso_test 2weso_test vdf_bench
 all: $(BINS)
 
 clean:
-	rm -f *.o hw/*.o $(BINS) compile_asm emu_hw_test hw_test hw_vdf_client emu_hw_vdf_client
+	rm -f *.o hw/*.o c_bindings/*.o $(BINS) compile_asm emu_hw_test hw_test hw_vdf_client emu_hw_vdf_client libchiavdf_fastc.a
 
 $(BINS) avx512_test: %: %.o lzcnt.o $(ASM_OBJS)
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
@@ -90,6 +101,9 @@ $(addsuffix .o,$(BINS)) avx512_test.o: CXXFLAGS += $(OPT_CFLAGS)
 
 lzcnt.o: refcode/lzcnt.c
 	$(CC) $(CFLAGS) -c refcode/lzcnt.c
+
+%.o: %.s
+	$(CC) -c $< -o $@ $(ASFLAGS)
 
 asm_compiled.s: compile_asm
 	./compile_asm
@@ -104,6 +118,21 @@ compile_asm: compile_asm.o
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 HW_OBJS = $(addprefix hw/,hw_util.o hw_proof.o hw_interface.o chia_driver.o ftdi_driver.o vdf_driver.o pll_freqs.o) vdf_base_hw.o vdf_hw_symbol_anchors.o prover_runtime.o lzcnt.o
+# ---------------------------------------------------------------------------
+# Static library: fast one-wesolowski proof (BBR integration)
+# ---------------------------------------------------------------------------
+
+FASTLIB = libchiavdf_fastc.a
+FASTLIB_OBJS = c_bindings/fast_wrapper.o lzcnt.o $(ASM_OBJS)
+
+.PHONY: fastlib
+
+fastlib: $(FASTLIB)
+
+$(FASTLIB): $(FASTLIB_OBJS)
+	$(AR) rcs $@ $^
+
+c_bindings/fast_wrapper.o: CXXFLAGS += $(OPT_CFLAGS)
 EMU_OBJS = hw/emu_funcs.o hw/emu_runner.o
 ifeq ($(OS),Windows_NT)
 HW_LIB = hw/libft4222/libft4222.lib

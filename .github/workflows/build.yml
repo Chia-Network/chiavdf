@@ -102,6 +102,17 @@ jobs:
       with:
         python-version: ${{ matrix.python.major-dot-minor }}
 
+    - name: Ensure cmake available (macOS)
+      if: matrix.os.matrix == 'macos'
+      shell: bash
+      run: |
+        brew ls --versions cmake >/dev/null 2>&1 || brew install cmake
+        CMAKE_BIN="$(brew --prefix cmake)/bin"
+        if [ -d "$CMAKE_BIN" ]; then
+          echo "$CMAKE_BIN" >> "$GITHUB_PATH"
+        fi
+        cmake --version
+
     - name: Install pipx
       run: |
         pip install pipx

@@ -37,6 +37,7 @@ CXXFLAGS += $(LTO_FLAGS) -std=c++1z -D VDF_MODE=0 -D FAST_MACHINE=1 -pthread $(N
 endif
 ifeq ($(UNAME),Darwin)
 CXXFLAGS += -D CHIAOSX=1
+LDFLAGS += -Wl,-headerpad_max_install_names
 # Homebrew (common on macOS) installs boost/gmp to /opt/homebrew or /usr/local
 ifneq ($(wildcard /opt/homebrew/include/boost/asio.hpp),)
 CXXFLAGS += -I/opt/homebrew/include

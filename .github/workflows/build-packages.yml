@@ -55,7 +55,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-13-intel, macos-13-arm64, windows-latest]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-15-intel, macos-15, windows-latest]
         config: [optimized=1, TSAN=1, ASAN=1]
         exclude:
           - os: windows-latest
@@ -567,7 +567,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ "${{ matrix.os }}" = "macos-13-arm64" ]; then
+          if [ "${{ matrix.os }}" = "macos-15" ]; then
             MACOS_ARCH="arm64"
           else
             MACOS_ARCH="intel"
@@ -751,7 +751,7 @@ jobs:
         if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ matrix.os == 'macos-13-arm64' && 'macos-arm64-brew-bundle' || 'macos-intel-brew-bundle' }}
+          name: ${{ matrix.os == 'macos-15' && 'macos-arm64-brew-bundle' || 'macos-intel-brew-bundle' }}
           path: |
             dist/macos/*.zip
             dist/macos/*.sha256

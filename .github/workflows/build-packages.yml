@@ -749,7 +749,7 @@ jobs:
 
       - name: Upload macOS brew bundle artifact
         if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.os == 'macos-15' && 'macos-arm64-brew-bundle' || 'macos-intel-brew-bundle' }}
           path: |
@@ -760,7 +760,7 @@ jobs:
 
       - name: Upload binaries artifact (Ubuntu)
         if: startsWith(matrix.os, 'ubuntu') && matrix.config == 'optimized=1'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: binaries-${{ matrix.config }}-${{ matrix.os }}
           path: |
@@ -777,7 +777,7 @@ jobs:
 
       - name: Upload binaries artifact (macOS)
         if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: binaries-${{ matrix.config }}-${{ matrix.os }}
           path: |
@@ -794,7 +794,7 @@ jobs:
 
       - name: Upload binaries artifact (Windows)
         if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: binaries-${{ matrix.config }}-${{ matrix.os }}
           path: |
@@ -813,7 +813,7 @@ jobs:
 
       - name: Upload Windows bundle artifact
         if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: windows-amd64-bundle
           path: |
@@ -847,7 +847,7 @@ jobs:
 
       - name: Upload Ubuntu installer
         if: startsWith(matrix.os, 'ubuntu') && matrix.config == 'optimized=1'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: installer-${{ matrix.os }}
           path: dist/*.deb

@@ -126,7 +126,10 @@ uint64_t ReadIteration(tcp::socket& sock) {
     }
 
     int size = (size_buf[0] - '0') * 10 + (size_buf[1] - '0');
-    if (size <= 0 || size > kMaxIterationDigits) {
+    if (size == 0) {
+        return 0;
+    }
+    if (size > kMaxIterationDigits) {
         throw std::runtime_error("Invalid iteration size");
     }
 

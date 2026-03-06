@@ -204,21 +204,33 @@ void qfb_nucomp(qfb_t r, const qfb_t f, const qfb_t g, mpz_t const& D, mpz_t con
 void nucomp_form(form &a, form const& b, form const& c, integer const& D, integer const& L) {
     qfb fr, fr2, fr3;
 
-    *fr.a = *a.a.impl;
-    *fr.b = *a.b.impl;
-    *fr.c = *a.c.impl;
-    *fr2.a = *b.a.impl;
-    *fr2.b = *b.b.impl;
-    *fr2.c = *b.c.impl;
-    *fr3.a = *c.a.impl;
-    *fr3.b = *c.b.impl;
-    *fr3.c = *c.c.impl;
+    mpz_init_set(fr.a,a.a.impl);
+    mpz_init_set(fr.b,a.b.impl);
+    mpz_init_set(fr.c,a.c.impl);
+    
+    mpz_init_set(fr2.a,b.a.impl);
+    mpz_init_set(fr2.b,b.b.impl);
+    mpz_init_set(fr2.c,b.c.impl);
+
+    mpz_init_set(fr3.a,c.a.impl);
+    mpz_init_set(fr3.b,c.b.impl);
+    mpz_init_set(fr3.c,c.c.impl);
 
     qfb_nucomp(&fr, &fr2, &fr3, D.impl, L.impl);
 
-    *a.a.impl = *fr.a;
-    *a.b.impl = *fr.b;
-    *a.c.impl = *fr.c;
+    mpz_set(a.a.impl,fr.a);
+    mpz_set(a.b.impl,fr.b);
+    mpz_set(a.c.impl,fr.c);
+
+    mpz_clear(fr.a);
+    mpz_clear(fr.b);
+    mpz_clear(fr.c);
+    mpz_clear(fr2.a);
+    mpz_clear(fr2.b);
+    mpz_clear(fr2.c);
+    mpz_clear(fr3.a);
+    mpz_clear(fr3.b);
+    mpz_clear(fr3.c);
 }
 
 void qfb_nudupl(qfb_t r, qfb_t f, mpz_t const& D, mpz_t const& L)
@@ -417,18 +429,26 @@ void nudupl_form(form &a, form &b, const integer &D, const integer &L)
 {
     qfb fr, fr2;
 
-    *fr.a = *a.a.impl;
-    *fr.b = *a.b.impl;
-    *fr.c = *a.c.impl;
-    *fr2.a = *b.a.impl;
-    *fr2.b = *b.b.impl;
-    *fr2.c = *b.c.impl;
+    mpz_init_set(fr.a,a.a.impl);
+    mpz_init_set(fr.b,a.b.impl);
+    mpz_init_set(fr.c,a.c.impl);
+
+    mpz_init_set(fr2.a,b.a.impl);
+    mpz_init_set(fr2.b,b.b.impl);
+    mpz_init_set(fr2.c,b.c.impl);
 
     qfb_nudupl(&fr, &fr2, D.impl, L.impl);
 
-    *a.a.impl = *fr.a;
-    *a.b.impl = *fr.b;
-    *a.c.impl = *fr.c;
+    mpz_set(a.a.impl,fr.a);
+    mpz_set(a.b.impl,fr.b);
+    mpz_set(a.c.impl,fr.c);
+
+    mpz_clear(fr.a);
+    mpz_clear(fr.b);
+    mpz_clear(fr.c);
+    mpz_clear(fr2.a);
+    mpz_clear(fr2.b);
+    mpz_clear(fr2.c);
 }
 
 #endif // NUCOMP_H

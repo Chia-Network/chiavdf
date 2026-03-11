@@ -11,6 +11,17 @@
 
 const uint8_t DEFAULT_ELEMENT[] = { 0x08 };
 
+inline bool IsDiscSizeBitsInRange(const uint64_t disc_size_bits)
+{
+    return disc_size_bits > 0 && disc_size_bits <= static_cast<uint64_t>(BQFC_MAX_D_BITS);
+}
+
+inline bool IsDiscriminantInRange(const integer& D)
+{
+    const int d_bits = D.num_bits();
+    return d_bits > 0 && static_cast<uint64_t>(d_bits) <= static_cast<uint64_t>(BQFC_MAX_D_BITS);
+}
+
 int VerifyWesoSegment(integer &D, form x, form proof, integer &B, uint64_t iters, form &out_y)
 {
     PulmarkReducer reducer;
@@ -43,7 +54,8 @@ void VerifyWesolowskiProof(integer &D, form x, form y, form proof, uint64_t iter
 
 bool CheckProofOfTimeNWesolowski(integer D, const uint8_t* x_s, const uint8_t* proof_blob, size_t proof_blob_len, uint64_t iterations, uint64 disc_size_bits, uint64_t depth)
 {
-    (void)disc_size_bits;
+    if (!IsDiscSizeBitsInRange(disc_size_bits) || !IsDiscriminantInRange(D))
+        return false;
     const size_t form_size = BQFC_FORM_SIZE;
     const size_t segment_len = 8 + B_bytes + form_size;
     const size_t base_len = 2 * form_size;
@@ -125,6 +137,7 @@ bool CheckProofOfTimeNWesolowskiCommon(integer& D, form& x, const uint8_t* proof
 }
 
 std::pair<bool, std::vector<uint8_t>> CheckProofOfTimeNWesolowskiWithB(integer D, integer B, const uint8_t* x_s, const uint8_t* proof_blob, size_t proof_blob_len, uint64_t iterations, uint64_t depth) {
+    if (!IsDiscriminantInRange(D)) return {false, {}};
     const size_t form_size = BQFC_FORM_SIZE;
     const size_t segment_len = 8 + B_bytes + form_size;
     const uint64_t max_depth = static_cast<uint64_t>((std::numeric_limits<size_t>::max() - form_size) / segment_len);
@@ -150,6 +163,7 @@ std::pair<bool, std::vector<uint8_t>> CheckProofOfTimeNWesolowskiWithB(integer D
 }
 
 integer GetBFromProof(integer D, const uint8_t* x_s, const uint8_t* proof_blob, size_t proof_blob_len, uint64_t iterations, uint64_t depth) {
+    if (!IsDiscriminantInRange(D)) throw std::runtime_error("Invalid proof.");
     const size_t form_size = BQFC_FORM_SIZE;
     const size_t segment_len = 8 + B_bytes + form_size;
     const size_t base_len = 2 * form_size;
@@ -170,10 +184,14 @@ integer GetBFromProof(integer D, const uint8_t* x_s, const uint8_t* proof_blob, 
 
 bool CreateDiscriminantAndCheckProofOfTimeNWesolowski(std::vector<uint8_t> seed, uint32 disc_size_bits, const uint8_t* x_s, const uint8_t* proof_blob, size_t proof_blob_len, uint64_t iterations, uint64_t depth)
 {
+    if (!IsDiscSizeBitsInRange(disc_size_bits))
+        return false;
     integer D = CreateDiscriminant(
             seed,
             disc_size_bits
         );
+    if (!IsDiscriminantInRange(D))
+        return false;
 
     return CheckProofOfTimeNWesolowski(D, x_s, proof_blob, proof_blob_len, iterations, disc_size_bits, depth);
 } 

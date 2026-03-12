@@ -21,12 +21,14 @@ struct qfb_c {
 
 int bqfc_compr(struct qfb_c *out_c, mpz_t a, mpz_t b);
 
-int bqfc_decompr(mpz_t out_a, mpz_t out_b, const mpz_t D, const struct qfb_c *c);
+int bqfc_decompr(mpz_t out_a, mpz_t out_b, const mpz_t D, const struct qfb_c *c,
+                 bool strict);
 
 int bqfc_serialize_only(uint8_t *out_str, const struct qfb_c *c, size_t d_bits);
 int bqfc_deserialize_only(struct qfb_c *out_c, const uint8_t *str, size_t d_bits);
 
 int bqfc_serialize(uint8_t *out_str, mpz_t a, mpz_t b, size_t d_bits);
-int bqfc_deserialize(mpz_t out_a, mpz_t out_b, const mpz_t D, const uint8_t *str, size_t size, size_t d_bits);
+int bqfc_deserialize(mpz_t out_a, mpz_t out_b, const mpz_t D, const uint8_t *str,
+                     size_t size, size_t d_bits, bool strict);
 
 #endif // BQFC_H

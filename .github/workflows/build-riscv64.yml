@@ -50,7 +50,7 @@ jobs:
 
       - name: Set up QEMU on x86_64
         id: qemu
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
         with:
           platforms: riscv64
 

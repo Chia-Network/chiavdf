@@ -115,6 +115,19 @@ int bqfc_decompr(mpz_t out_a, mpz_t out_b, const mpz_t D, const struct qfb_c *c)
         mpz_neg(out_b, out_b);
     }
 
+    /*
+     * Reject if |b| > a. For a reduced form, |b| <= a must hold.  If b0 is
+     * inflated (e.g. b0 = canonical_b0 + 4k for k != 0) the decoded b lands
+     * outside this range even though bqfc_verify_canon would otherwise pass
+     * (the self-consistency check encode(decode(X))==X is satisfied for any
+     * b0 ≡ canonical_b0 mod (a/gcd(a,t))).  Rejecting here makes the
+     * canonical-check a proper uniqueness gate.
+     */
+    if (mpz_cmpabs(out_b, out_a) > 0) {
+        ret = -1;
+        goto out;
+    }
+
 out:
     mpz_clears(tmp, t, t_inv, d, NULL);
     return ret;

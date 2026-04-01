@@ -302,6 +302,7 @@ jobs:
             resolved_range="${from_ref}..${to_ref}"
             if ! git -C .upstream-dependency diff --name-only "$resolved_range" > "$touched_file" 2>>"$errors_file"; then
               resolution_strategy="tag_range_failed"
+              resolved_range=""
               : > "$touched_file"
             else
               resolution_strategy="tag_range"
@@ -865,6 +866,11 @@ jobs:
               return {"result": raw}
 
           def extract_text(payload):
+            if not isinstance(payload, dict):
+              try:
+                return json.dumps(payload, indent=2)
+              except Exception:
+                return str(payload)
             for key in ("result", "output", "text", "message"):
               val = payload.get(key)
               if isinstance(val, str) and val.strip():

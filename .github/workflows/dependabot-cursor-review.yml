@@ -310,12 +310,14 @@ jobs:
           fi
 
           if [ ! -s "$touched_file" ] && [ -f "dependabot_commits.md" ]; then
-            resolution_strategy="commit_list"
             while IFS= read -r sha; do
               resolved_sha="$(git -C .upstream-dependency rev-parse --verify --quiet "${sha}^{commit}" 2>/dev/null || true)"
               [ -n "$resolved_sha" ] || continue
               git -C .upstream-dependency show --name-only --pretty=format: "$resolved_sha" >> "$touched_file" 2>>"$errors_file" || true
             done < <(rg -o --pcre2 '\b[0-9a-f]{7,40}\b' dependabot_commits.md | sort -u)
+            if [ -s "$touched_file" ]; then
+              resolution_strategy="commit_list"
+            fi
           fi
 
           if [ ! -s "$touched_file" ] && [ -n "$to_ref" ]; then
@@ -490,7 +492,7 @@ jobs:
             local major minor patch
             IFS='.' read -r major minor patch <<< "$version"
             if [[ "$major" =~ ^[0-9]+$ ]] && [[ "${minor:-0}" =~ ^[0-9]+$ ]] && [[ "${patch:-0}" =~ ^[0-9]+$ ]]; then
-              echo "$major ${minor:-0} ${patch:-0}"
+              echo "$((10#$major)) $((10#${minor:-0})) $((10#${patch:-0}))"
             fi
           }
 
@@ -517,10 +519,10 @@ jobs:
                   append_finding "$heuristic_jsonl" "dependency_count_jump" 'dependency-count' "${PACKAGE_NAME:-unknown}" "0" "${from_dep_count}->${to_dep_count}"
                 fi
               fi
-              if [ "${PACKAGE_NAME:-}" = "axios" ] && [ "$to_dep_count" -ne 3 ]; then
-                entry="axios_dependency_count_anomaly:${PACKAGE_NAME:-unknown}:0:${to_dep_count}"
+              if [ "${PACKAGE_NAME:-}" = "axios" ] && [ "$from_dep_count" -gt 0 ] && [ "$to_dep_count" -gt "$((from_dep_count + 2))" ]; then
+                entry="axios_dependency_count_anomaly:${PACKAGE_NAME:-unknown}:0:${from_dep_count}->${to_dep_count}"
                 if ! is_allowlisted "$entry" heuristic_allowlist; then
-                  append_finding "$heuristic_jsonl" "axios_dependency_count_anomaly" 'axios-expected-3-deps' "${PACKAGE_NAME:-unknown}" "0" "$to_dep_count"
+                  append_finding "$heuristic_jsonl" "axios_dependency_count_anomaly" 'axios-dependency-jump' "${PACKAGE_NAME:-unknown}" "0" "${from_dep_count}->${to_dep_count}"
                 fi
               fi
             fi

@@ -357,8 +357,12 @@ jobs:
             local line="$5"
             local match="$6"
             local line_num=0
+            local max_match_len=500
             if [[ "$line" =~ ^[0-9]+$ ]]; then
               line_num="$line"
+            fi
+            if [ "${#match}" -gt "$max_match_len" ]; then
+              match="${match:0:$max_match_len}...[truncated]"
             fi
             jq -nc \
               --arg kind "$kind" \

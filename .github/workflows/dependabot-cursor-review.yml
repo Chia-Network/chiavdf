@@ -955,28 +955,25 @@ jobs:
 
             let trimmedAnalysis = analysisText.slice(0, analysisMaxLen);
             let trimmedMalware = malwareSummary.slice(0, malwareMaxLen);
-            let body = `${marker}
-            ## 🤖 Cursor Dependency Analysis
-
-            ${trimmedAnalysis}
-
-            ---
-
-            ${trimmedMalware}`;
+            const renderBody = (analysisPart, malwarePart) =>
+              [
+                marker,
+                '## 🤖 Cursor Dependency Analysis',
+                '',
+                analysisPart,
+                '',
+                '---',
+                '',
+                malwarePart,
+              ].join('\n');
+            let body = renderBody(trimmedAnalysis, trimmedMalware);
             if (body.length > githubCommentLimit) {
               const allowedAnalysis = Math.max(
                 0,
                 analysisMaxLen - (body.length - githubCommentLimit) - 256
               );
               trimmedAnalysis = analysisText.slice(0, allowedAnalysis);
-              body = `${marker}
-              ## 🤖 Cursor Dependency Analysis
-
-              ${trimmedAnalysis}
-
-              ---
-
-              ${trimmedMalware}`;
+              body = renderBody(trimmedAnalysis, trimmedMalware);
             }
 
             const { owner, repo } = context.repo;

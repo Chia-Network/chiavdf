@@ -729,7 +729,7 @@ jobs:
             except FileNotFoundError:
               return ""
 
-          common_context = f"""
+          base_context = f"""
           This is a Dependabot PR review request.
 
           PR title:
@@ -752,12 +752,6 @@ jobs:
           Dependabot Commits:
           {read_file("dependabot_commits.md")}
 
-          Malware scan summary:
-          {read_file("malware_scan_summary.md")}
-
-          Malware scan report JSON:
-          {read_file("malware_scan_report.json")[:16000]}
-
           Local usage hints (non-authoritative rg hits):
           {read_file("package_usage.txt")[:12000]}
 
@@ -766,8 +760,18 @@ jobs:
           - Upstream dependency repository: .upstream-dependency (full git history is available)
           """.strip()
 
+          malware_context = f"""
+          {base_context}
+
+          Malware scan summary:
+          {read_file("malware_scan_summary.md")}
+
+          Malware scan report JSON:
+          {read_file("malware_scan_report.json")[:16000]}
+          """.strip()
+
           malware_prompt = f"""
-          {common_context}
+          {malware_context}
 
           Task 1: Supply-chain malware review.
           Review the dependency update for signs of compromise. Use this checklist and explicitly consider each category:
@@ -822,7 +826,7 @@ jobs:
           """.strip()
 
           compatibility_prompt = f"""
-          {common_context}
+          {base_context}
 
           Task 2: Compatibility and adoption analysis.
           1) Where in this repo the dependency appears to be used (treat rg hints as directional, not exhaustive).

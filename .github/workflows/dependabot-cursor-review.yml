@@ -925,6 +925,9 @@ jobs:
             const analysisMaxLen = 48000;
             const malwareMaxLen = 10000;
             const githubCommentLimit = 65536;
+            const malwareScanStatus = ${{ toJSON(steps.malware_scan.outputs.status) }} || '';
+            const malwareScanChangedCount = ${{ toJSON(steps.malware_scan.outputs.changed_files_count) }} || '';
+            const malwareScanSummaryOutput = ${{ toJSON(steps.malware_scan.outputs.summary) }} || '';
 
             function readText(path, fallback = '') {
               try {
@@ -952,10 +955,16 @@ jobs:
               typeof analysis === 'string'
                 ? analysis
                 : JSON.stringify(analysis, null, 2) || String(analysis);
-            const malwareSummary = readText(
-              'malware_scan_summary.md',
-              '## Malware Scan Summary\n\n- Status: **unknown**\n- Scanner output file missing.'
-            );
+            const malwareSummaryFallback =
+              (typeof malwareScanSummaryOutput === 'string' && malwareScanSummaryOutput.trim()) ||
+              [
+                '## Malware Scan Summary',
+                '',
+                `- Status: **${malwareScanStatus || 'unknown'}**`,
+                `- Changed upstream files scanned: \`${malwareScanChangedCount || 'unknown'}\``,
+                '- Scanner output file missing.',
+              ].join('\n');
+            const malwareSummary = readText('malware_scan_summary.md', malwareSummaryFallback);
 
             let trimmedAnalysis = analysisText.slice(0, analysisMaxLen);
             let trimmedMalware = malwareSummary.slice(0, malwareMaxLen);

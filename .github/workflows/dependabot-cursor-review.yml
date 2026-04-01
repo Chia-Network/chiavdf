@@ -604,8 +604,10 @@ jobs:
             fi
           fi
 
-          changed_files_json="$(jq -Rs 'split("\n") | map(select(length > 0))' "$changed_files_txt")"
-          errors_json="$(jq -Rs 'split("\n") | map(select(length > 0))' "$errors_file")"
+          changed_files_json_file="$work_dir/changed_files.json"
+          errors_json_file="$work_dir/errors.json"
+          jq -Rs 'split("\n") | map(select(length > 0))' "$changed_files_txt" > "$changed_files_json_file"
+          jq -Rs 'split("\n") | map(select(length > 0))' "$errors_file" > "$errors_json_file"
           warn_only_json=false
           if [ "$warn_only" = true ]; then warn_only_json=true; fi
 
@@ -617,8 +619,8 @@ jobs:
             --arg resolved_from "$from_ref" \
             --arg resolved_to "$to_ref" \
             --argjson changed_files_count "$changed_count" \
-            --argjson changed_files "$changed_files_json" \
-            --argjson errors "$errors_json" \
+            --slurpfile changed_files "$changed_files_json_file" \
+            --slurpfile errors "$errors_json_file" \
             --slurpfile unicode "$unicode_json" \
             --slurpfile confusable "$confusable_json" \
             --slurpfile ioc "$ioc_json" \
@@ -631,8 +633,8 @@ jobs:
               resolved_from: $resolved_from,
               resolved_to: $resolved_to,
               changed_files_count: $changed_files_count,
-              changed_files: $changed_files,
-              errors: $errors,
+              changed_files: $changed_files[0],
+              errors: $errors[0],
               findings: {
                 unicode: $unicode[0],
                 confusable: $confusable[0],

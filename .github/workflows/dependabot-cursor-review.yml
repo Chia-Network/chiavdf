@@ -218,12 +218,18 @@ jobs:
           PACKAGE_NAME: ${{ steps.dependabot_context.outputs.package_name }}
           FROM_VERSION: ${{ steps.dependabot_context.outputs.from_version }}
           TO_VERSION: ${{ steps.dependabot_context.outputs.to_version }}
-          MALWARE_WARN_ONLY: '1'
-          MALWARE_IOC_PATTERNS: '["axios@1\\.14\\.1", "axios@0\\.30\\.4", "plain-crypto-js", "sfrclak\\.com", "@shadanai/openclaw", "@shadanai/[a-z0-9._-]+", "2026\\.3\\.28-2", "2026\\.3\\.28-3", "2026\\.3\\.31-1", "2026\\.3\\.31-2"]'
-          MALWARE_IOC_ALLOWLIST: '[]'
-          MALWARE_UNICODE_ALLOWLIST: '[]'
-          MALWARE_CONFUSABLE_ALLOWLIST: '[]'
-          MALWARE_HEURISTIC_ALLOWLIST: '[]'
+          MALWARE_WARN_ONLY: >-
+            1
+          MALWARE_IOC_PATTERNS: >-
+            ["axios@1\\.14\\.1", "axios@0\\.30\\.4", "plain-crypto-js", "sfrclak\\.com", "@shadanai/openclaw", "@shadanai/[a-z0-9._-]+", "2026\\.3\\.28-2", "2026\\.3\\.28-3", "2026\\.3\\.31-1", "2026\\.3\\.31-2"]
+          MALWARE_IOC_ALLOWLIST: >-
+            []
+          MALWARE_UNICODE_ALLOWLIST: >-
+            []
+          MALWARE_CONFUSABLE_ALLOWLIST: >-
+            []
+          MALWARE_HEURISTIC_ALLOWLIST: >-
+            []
         run: |
           sudo apt-get update
           sudo apt-get install -y ripgrep jq
@@ -341,9 +347,9 @@ jobs:
 
           is_allowlisted() {
             local entry="$1"
-            local -n patterns_ref="$2"
+            shift
             local pattern
-            for pattern in "${patterns_ref[@]}"; do
+            for pattern in "$@"; do
               [ -n "$pattern" ] || continue
               if [[ "$entry" =~ $pattern ]]; then
                 return 0
@@ -379,10 +385,10 @@ jobs:
           scan_with_rg() {
             local kind="$1"
             local regex="$2"
-            local allowlist_name="$3"
-            local out_file="$4"
-            local case_flag="${5:-}"
-            local -n allow_ref="$allowlist_name"
+            local out_file="$3"
+            local case_flag="$4"
+            shift 4
+            local allowlist=("$@")
             local hit file rest line text rel entry
 
             if [ ! -s "$file_list0" ]; then
@@ -402,7 +408,7 @@ jobs:
               text="${rest#*:}"
               rel="${file#.upstream-dependency/}"
               entry="${kind}:${rel}:${line}:${text}"
-              if is_allowlisted "$entry" allow_ref; then
+              if is_allowlisted "$entry" "${allowlist[@]}"; then
                 continue
               fi
               append_finding "$out_file" "$kind" "$regex" "$rel" "$line" "$text"
@@ -415,12 +421,12 @@ jobs:
           # Confusable glyph scan to catch visually similar operator/identifier swaps.
           confusable_regex='[\x{FF0F}\x{2215}\x{2044}\x{2217}\x{066D}\x{01C3}\x{FF01}\x{FE57}\x{A789}\x{FF02}\x{FF07}\x{FF40}\x{FE68}\x{FF3C}]'
 
-          scan_with_rg "unicode" "$unicode_regex" unicode_allowlist "$unicode_jsonl"
-          scan_with_rg "confusable" "$confusable_regex" confusable_allowlist "$confusable_jsonl"
+          scan_with_rg "unicode" "$unicode_regex" "$unicode_jsonl" "" "${unicode_allowlist[@]}"
+          scan_with_rg "confusable" "$confusable_regex" "$confusable_jsonl" "" "${confusable_allowlist[@]}"
 
           for ioc_pattern in "${ioc_patterns[@]}"; do
             [ -n "$ioc_pattern" ] || continue
-            scan_with_rg "ioc_match" "$ioc_pattern" ioc_allowlist "$ioc_jsonl" "i"
+            scan_with_rg "ioc_match" "$ioc_pattern" "$ioc_jsonl" "i" "${ioc_allowlist[@]}"
           done
 
           heuristic_specs=(
@@ -437,7 +443,7 @@ jobs:
           for spec in "${heuristic_specs[@]}"; do
             kind="${spec%%::*}"
             regex="${spec#*::}"
-            scan_with_rg "$kind" "$regex" heuristic_allowlist "$heuristic_jsonl" "i"
+            scan_with_rg "$kind" "$regex" "$heuristic_jsonl" "i" "${heuristic_allowlist[@]}"
           done
 
           if [ -s "$changed_files_txt" ]; then
@@ -445,13 +451,13 @@ jobs:
               [ -n "$rel" ] || continue
               if [[ "$rel" == .github/workflows/* ]]; then
                 entry="workflow_path_touch:${rel}:0:path"
-                if ! is_allowlisted "$entry" heuristic_allowlist; then
+                if ! is_allowlisted "$entry" "${heuristic_allowlist[@]}"; then
                   append_finding "$heuristic_jsonl" "workflow_path_touch" '\.github/workflows/' "$rel" "0" "path-touch"
                 fi
               fi
               if [[ "$rel" =~ \.(png|jpg|jpeg|gif|bmp|webp|svg|ico|mp3|mp4|mov|avi|wav)$ ]]; then
                 entry="steganography_media_change:${rel}:0:media-file-changed"
-                if ! is_allowlisted "$entry" heuristic_allowlist; then
+                if ! is_allowlisted "$entry" "${heuristic_allowlist[@]}"; then
                   append_finding "$heuristic_jsonl" "steganography_media_change" 'media-file-change' "$rel" "0" "media-file-changed"
                 fi
               fi
@@ -459,20 +465,22 @@ jobs:
           fi
 
           # Minified/bundled payload heuristic: very long lines outside common build output dirs.
-          while IFS= read -r hit; do
-            file="${hit%%:*}"
-            rest="${hit#*:}"
-            line="${rest%%:*}"
-            text="${rest#*:}"
-            rel="${file#.upstream-dependency/}"
-            if [[ "$rel" =~ ^(dist/|build/|coverage/|vendor/) ]]; then
-              continue
-            fi
-            entry="minified_payload_indicator:${rel}:${line}:${text}"
-            if ! is_allowlisted "$entry" heuristic_allowlist; then
-              append_finding "$heuristic_jsonl" "minified_payload_indicator" '.{1200,}' "$rel" "$line" "$text"
-            fi
-          done < <( [ -s "$file_list0" ] && xargs -0 rg --pcre2 --hidden -nH --no-heading --color=never '.{1200,}' < "$file_list0" || true )
+          if [ -s "$file_list0" ]; then
+            while IFS= read -r hit; do
+              file="${hit%%:*}"
+              rest="${hit#*:}"
+              line="${rest%%:*}"
+              text="${rest#*:}"
+              rel="${file#.upstream-dependency/}"
+              if [[ "$rel" =~ ^(dist/|build/|coverage/|vendor/) ]]; then
+                continue
+              fi
+              entry="minified_payload_indicator:${rel}:${line}:${text}"
+              if ! is_allowlisted "$entry" "${heuristic_allowlist[@]}"; then
+                append_finding "$heuristic_jsonl" "minified_payload_indicator" '.{1200,}' "$rel" "$line" "$text"
+              fi
+            done < <(xargs -0 rg --pcre2 --hidden -nH --no-heading --color=never '.{1200,}' < "$file_list0" || true)
+          fi
 
           # Dependency integrity and Dependabot-context checks.
           node_vendor_count="$( (rg -n '^(node_modules/|vendor/)' "$changed_files_txt" || true) | wc -l | tr -d ' ' )"
@@ -480,7 +488,7 @@ jobs:
 
           if [ -n "${TO_VERSION:-}" ] && [ -z "$to_ref" ]; then
             entry="ghost_version_or_missing_tag:${TO_VERSION}:0:missing-tag"
-            if ! is_allowlisted "$entry" heuristic_allowlist; then
+            if ! is_allowlisted "$entry" "${heuristic_allowlist[@]}"; then
               append_finding "$heuristic_jsonl" "ghost_version_or_missing_tag" 'missing-tag' "${PACKAGE_NAME:-unknown}" "0" "${TO_VERSION}"
             fi
           fi
@@ -499,11 +507,11 @@ jobs:
           from_semver="$(parse_semver_num "${FROM_VERSION:-}" || true)"
           to_semver="$(parse_semver_num "${TO_VERSION:-}" || true)"
           if [ -n "$from_semver" ] && [ -n "$to_semver" ]; then
-            read -r fmaj fmin fpat <<< "$from_semver"
-            read -r tmaj tmin tpat <<< "$to_semver"
+            read -r fmaj fmin _ <<< "$from_semver"
+            read -r tmaj tmin _ <<< "$to_semver"
             if [ "$tmaj" -gt "$fmaj" ] || { [ "$tmaj" -eq "$fmaj" ] && [ "$((tmin - fmin))" -gt 5 ]; }; then
               entry="version_jump_anomaly:${PACKAGE_NAME:-unknown}:0:${FROM_VERSION:-}->${TO_VERSION:-}"
-              if ! is_allowlisted "$entry" heuristic_allowlist; then
+              if ! is_allowlisted "$entry" "${heuristic_allowlist[@]}"; then
                 append_finding "$heuristic_jsonl" "version_jump_anomaly" 'semver-jump' "${PACKAGE_NAME:-unknown}" "0" "${FROM_VERSION:-}->${TO_VERSION:-}"
               fi
             fi
@@ -515,13 +523,13 @@ jobs:
             if [[ "$from_dep_count" =~ ^[0-9]+$ ]] && [[ "$to_dep_count" =~ ^[0-9]+$ ]]; then
               if [ "$to_dep_count" -gt "$((from_dep_count + 8))" ]; then
                 entry="dependency_count_jump:${PACKAGE_NAME:-unknown}:0:${from_dep_count}->${to_dep_count}"
-                if ! is_allowlisted "$entry" heuristic_allowlist; then
+                if ! is_allowlisted "$entry" "${heuristic_allowlist[@]}"; then
                   append_finding "$heuristic_jsonl" "dependency_count_jump" 'dependency-count' "${PACKAGE_NAME:-unknown}" "0" "${from_dep_count}->${to_dep_count}"
                 fi
               fi
               if [ "${PACKAGE_NAME:-}" = "axios" ] && [ "$from_dep_count" -gt 0 ] && [ "$to_dep_count" -gt "$((from_dep_count + 2))" ]; then
                 entry="axios_dependency_count_anomaly:${PACKAGE_NAME:-unknown}:0:${from_dep_count}->${to_dep_count}"
-                if ! is_allowlisted "$entry" heuristic_allowlist; then
+                if ! is_allowlisted "$entry" "${heuristic_allowlist[@]}"; then
                   append_finding "$heuristic_jsonl" "axios_dependency_count_anomaly" 'axios-dependency-jump' "${PACKAGE_NAME:-unknown}" "0" "${from_dep_count}->${to_dep_count}"
                 fi
               fi
@@ -541,7 +549,7 @@ jobs:
               fi
               if [ "${added_count:-0}" -gt 0 ]; then
                 entry="transitive_dependencies_added:${rel}:0:${added_count}"
-                if ! is_allowlisted "$entry" heuristic_allowlist; then
+                if ! is_allowlisted "$entry" "${heuristic_allowlist[@]}"; then
                   append_finding "$heuristic_jsonl" "transitive_dependencies_added" 'transitive-diff' "$rel" "0" "$added_count"
                 fi
               fi
@@ -549,30 +557,34 @@ jobs:
           fi
 
           # Lock checksum/integrity anomaly checks (structure-level, not registry verification).
-          while IFS= read -r hit; do
-            file="${hit%%:*}"
-            rest="${hit#*:}"
-            line="${rest%%:*}"
-            text="${rest#*:}"
-            rel="${file#.upstream-dependency/}"
-            entry="lock_hash_anomaly:${rel}:${line}:${text}"
-            if ! is_allowlisted "$entry" heuristic_allowlist; then
-              append_finding "$heuristic_jsonl" "lock_hash_anomaly" 'integrity-format' "$rel" "$line" "$text"
-            fi
-          done < <( [ -s "$file_list0" ] && xargs -0 rg --pcre2 --hidden -nH --no-heading --color=never '"integrity"\s*:\s*"(?!sha(?:1|256|384|512)-)[^"]+"' < "$file_list0" || true )
+          if [ -s "$file_list0" ]; then
+            while IFS= read -r hit; do
+              file="${hit%%:*}"
+              rest="${hit#*:}"
+              line="${rest%%:*}"
+              text="${rest#*:}"
+              rel="${file#.upstream-dependency/}"
+              entry="lock_hash_anomaly:${rel}:${line}:${text}"
+              if ! is_allowlisted "$entry" "${heuristic_allowlist[@]}"; then
+                append_finding "$heuristic_jsonl" "lock_hash_anomaly" 'integrity-format' "$rel" "$line" "$text"
+              fi
+            done < <(xargs -0 rg --pcre2 --hidden -nH --no-heading --color=never '"integrity"\s*:\s*"(?!sha(?:1|256|384|512)-)[^"]+"' < "$file_list0" || true)
+          fi
 
           # Typosquatting indicators from changed dependency metadata.
-          while IFS= read -r hit; do
-            file="${hit%%:*}"
-            rest="${hit#*:}"
-            line="${rest%%:*}"
-            text="${rest#*:}"
-            rel="${file#.upstream-dependency/}"
-            entry="typosquatting_indicator:${rel}:${line}:${text}"
-            if ! is_allowlisted "$entry" heuristic_allowlist; then
-              append_finding "$heuristic_jsonl" "typosquatting_indicator" '(xn--|[-._]{2,}|[^[:ascii:]])' "$rel" "$line" "$text"
-            fi
-          done < <( [ -s "$file_list0" ] && xargs -0 rg --pcre2 --hidden -nH --no-heading --color=never '(?i)(xn--[a-z0-9-]+|@[a-z0-9._-]*[._-]{2,}[a-z0-9._-]*|\"[^"]*[^[:ascii:]][^"]*\"\s*:)' < "$file_list0" || true )
+          if [ -s "$file_list0" ]; then
+            while IFS= read -r hit; do
+              file="${hit%%:*}"
+              rest="${hit#*:}"
+              line="${rest%%:*}"
+              text="${rest#*:}"
+              rel="${file#.upstream-dependency/}"
+              entry="typosquatting_indicator:${rel}:${line}:${text}"
+              if ! is_allowlisted "$entry" "${heuristic_allowlist[@]}"; then
+                append_finding "$heuristic_jsonl" "typosquatting_indicator" '(xn--|[-._]{2,}|[^[:ascii:]])' "$rel" "$line" "$text"
+              fi
+            done < <(xargs -0 rg --pcre2 --hidden -nH --no-heading --color=never '(?i)(xn--[a-z0-9-]+|@[a-z0-9._-]*[._-]{2,}[a-z0-9._-]*|\"[^"]*[^[:ascii:]][^"]*\"\s*:)' < "$file_list0" || true)
+          fi
 
           # Maintainer drift check for npm packages when npm is available.
           if command -v npm >/dev/null 2>&1 && [ -n "${PACKAGE_NAME:-}" ] && [ -n "${FROM_VERSION:-}" ] && [ -n "${TO_VERSION:-}" ]; then
@@ -580,7 +592,7 @@ jobs:
             to_maint="$(npm view "${PACKAGE_NAME}@${TO_VERSION}" maintainers --json 2>/dev/null | jq -cS '. // []' 2>/dev/null || true)"
             if [ -n "$from_maint" ] && [ -n "$to_maint" ] && [ "$from_maint" != "$to_maint" ]; then
               entry="maintainer_drift:${PACKAGE_NAME}:0:${FROM_VERSION}->${TO_VERSION}"
-              if ! is_allowlisted "$entry" heuristic_allowlist; then
+              if ! is_allowlisted "$entry" "${heuristic_allowlist[@]}"; then
                 append_finding "$heuristic_jsonl" "maintainer_drift" 'npm-maintainers' "${PACKAGE_NAME}" "0" "${FROM_VERSION}->${TO_VERSION}"
               fi
             fi

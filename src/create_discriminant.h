@@ -15,7 +15,7 @@ integer CreateDiscriminant(std::vector<uint8_t>& seed, int length = 1024) {
     }
     
     // Check 2: Validate upper bound (optional but recommended)
-    const int MAX_DISCRIMINANT_SIZE_BITS = 16384;
+    const int MAX_DISCRIMINANT_SIZE_BITS = BQFC_MAX_D_BITS;
     if (length > MAX_DISCRIMINANT_SIZE_BITS) {
         throw std::invalid_argument(
             "discriminant_size_bits exceeds maximum allowed value"

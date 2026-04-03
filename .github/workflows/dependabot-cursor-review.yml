@@ -29,7 +29,7 @@ permissions:
 
 jobs:
   dependabot-review:
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]')
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && (github.event.pull_request.user.login == 'dependabot[bot]' || github.event.pull_request.user.login == 'renovate[bot]'))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -60,8 +60,9 @@ jobs:
               core.setFailed('Could not resolve target pull request context.');
               return;
             }
-            if (pr.user?.login !== 'dependabot[bot]') {
-              core.setFailed(`Target PR #${pr.number} is not opened by dependabot[bot].`);
+            const allowedBots = ['dependabot[bot]', 'renovate[bot]'];
+            if (context.eventName !== 'workflow_dispatch' && !allowedBots.includes(pr.user?.login)) {
+              core.setFailed(`Target PR #${pr.number} is not opened by an allowed bot. Author: ${pr.user?.login}`);
               return;
             }
 

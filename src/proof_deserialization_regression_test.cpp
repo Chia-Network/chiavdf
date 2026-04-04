@@ -54,3 +54,40 @@ TEST(ProofDeserializationRegressionTest, RejectsNonCanonicalEncoding) {
     canonical[BQFC_FORM_SIZE - 1] ^= 0x01;
     EXPECT_THROW((void)DeserializeForm(d, canonical.data(), canonical.size()), std::runtime_error);
 }
+
+// Regression test for b0 malleability: for a form with g=2 (g_size=0), the
+// b0 field at byte 99 admits multiple self-consistent encodings b0, b0+4,
+// b0+8, … that decode to class-equivalent (but not equal) forms.  All values
+// other than the canonical b0 must be rejected.
+//
+// Vector: Chia mainnet block height 309155, CC infusion-point VDF,
+// 1024-bit discriminant.  Original b0 = 0x01; XOR 0x04 gives b0 = 0x05
+// (same mod-4 residue → would previously pass bqfc_verify_canon).
+TEST(ProofDeserializationRegressionTest, RejectsInflatedB0Field) {
+    // discriminant for mainnet block 309155 CC-IP VDF (1024 bits)
+    integer d("-146212091130374364448271598629912687111631974722846603227183769906935970876483871782840562162445571052154480975719448767769767557905129461524079902394315542354994269060181795718055043487735056120915916768273200138311940357886024014124174476991145983171370265799623472241486347111977874193600694306566545523111");
+
+    // canonical y-form bytes (g=2, g_size=0, b0=0x01 at byte 99)
+    auto canonical = hex_to_bytes(
+        "0300d8262c430e78e7c06cf60c9b2049968f604f3b506a85bfe4fff319f8176760"
+        "e06cab8ab45524458bf558101f9b4ce8c23cc1e053263272b808b76c6f26493a11"
+        "3b62ded5707b28d9eedc0503ac2efcd32be670726725be0fa7ea01f0ef3f602502"
+        "01");
+    ASSERT_EQ(canonical.size(), static_cast<size_t>(BQFC_FORM_SIZE));
+
+    // canonical encoding must be accepted
+    EXPECT_NO_THROW((void)DeserializeForm(d, canonical.data(), canonical.size()));
+
+    // b0 ^= 0x04  →  b0 = 0x05 (same mod-4 residue, inflated by 4)
+    // decodes to a class-equivalent but non-reduced form; must be rejected
+    std::vector<uint8_t> mutated = canonical;
+    mutated[99] ^= 0x04;
+    EXPECT_THROW((void)DeserializeForm(d, mutated.data(), mutated.size()),
+                 std::runtime_error);
+
+    // b0 ^= 0x08  →  b0 = 0x09 (inflated by 8); also must be rejected
+    mutated = canonical;
+    mutated[99] ^= 0x08;
+    EXPECT_THROW((void)DeserializeForm(d, mutated.data(), mutated.size()),
+                 std::runtime_error);
+}

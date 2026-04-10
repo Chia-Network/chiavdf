@@ -30,17 +30,17 @@ jobs:
           - name: macOS
             matrix: macos
             runs-on:
-              arm: [macos-15]
-              intel: [macos-15-intel]
+              arm: macos-15
+              intel: macos-15-intel
           - name: Ubuntu
             matrix: ubuntu
             runs-on:
               arm: ubuntu-24.04-arm
-              intel: [ubuntu-latest]
+              intel: ubuntu-latest
           - name: Windows
             matrix: windows
             runs-on:
-              intel: [windows-latest]
+              intel: windows-latest
         arch:
           - name: ARM
             matrix: arm
@@ -55,7 +55,7 @@ jobs:
               name: Windows
               matrix: windows
               runs-on:
-                intel: [windows-latest]
+                intel: windows-latest
             arch:
               name: ARM
               matrix: arm

@@ -30,7 +30,7 @@ jobs:
           - name: Linux
             matrix: linux
             emoji: 🐧
-            runs-on: [ubuntu-latest]
+            runs-on: ubuntu-latest
         python:
           - major-dot-minor: '3.10'
             matrix: '3.10'

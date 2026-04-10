@@ -94,7 +94,7 @@ jobs:
           - name: Ubuntu
             matrix: ubuntu
             runs-on:
-              arm: [Linux, ARM64]
+              arm: ubuntu-24.04-arm
               intel: [ubuntu-latest]
           - name: Windows
             matrix: windows

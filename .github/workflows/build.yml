@@ -30,20 +30,20 @@ jobs:
           - name: macOS
             matrix: macos
             runs-on:
-              arm: [macos-15]
-              intel: [macos-15-intel]
+              arm: macos-15
+              intel: macos-15-intel
             cibw-archs-macos:
               arm: arm64
               intel: x86_64
           - name: Ubuntu
             matrix: ubuntu
             runs-on:
-              arm: [Linux, ARM64]
-              intel: [ubuntu-latest]
+              arm: ubuntu-24.04-arm
+              intel: ubuntu-latest
           - name: Windows
             matrix: windows
             runs-on:
-              intel: [windows-latest]
+              intel: windows-latest
         python:
           - major-dot-minor: '3.10'
             cibw-build: 'cp310-*'
@@ -84,7 +84,7 @@ jobs:
               name: Windows
               matrix: windows
               runs-on:
-                intel: [windows-latest]
+                intel: windows-latest
             arch:
               name: ARM
               matrix: arm
@@ -153,23 +153,8 @@ jobs:
         path: ./dist
 
   build-sdist:
-    name: sdist - ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }} ${{ matrix.arch.name }}
-    runs-on: ${{ matrix.os.runs-on[matrix.arch.matrix] }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - name: Ubuntu
-            matrix: ubuntu
-            runs-on:
-              arm: [Linux, ARM64]
-              intel: [ubuntu-latest]
-        python:
-          - major-dot-minor: '3.12'
-            matrix: '3.12'
-        arch:
-          - name: Intel
-            matrix: intel
+    name: sdist - Ubuntu 3.12 Intel
+    runs-on: ubuntu-latest
 
     steps:
     - name: Clean workspace
@@ -182,7 +167,7 @@ jobs:
 
     - uses: Chia-Network/actions/setup-python@main
       with:
-        python-version: ${{ matrix.python.major-dot-minor }}
+        python-version: '3.12'
 
     - name: Build source distribution
       run: |
@@ -192,27 +177,12 @@ jobs:
     - name: Upload artifacts
       uses: actions/upload-artifact@v7
       with:
-        name: packages-sdist-${{ matrix.os.name }}-${{ matrix.python.major-dot-minor }}-${{ matrix.arch.name }}
+        name: packages-sdist-Ubuntu-3.12-Intel
         path: ./dist
 
   check:
-    name: Check - ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }} ${{ matrix.arch.name }}
-    runs-on: ${{ matrix.os.runs-on[matrix.arch.matrix] }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - name: Ubuntu
-            matrix: ubuntu
-            runs-on:
-              arm: [Linux, ARM64]
-              intel: [ubuntu-latest]
-        python:
-          - major-dot-minor: '3.12'
-            matrix: '3.12'
-        arch:
-          - name: Intel
-            matrix: intel
+    name: Check - Ubuntu 3.12 Intel
+    runs-on: ubuntu-latest
 
     steps:
     - name: Clean workspace
@@ -225,7 +195,7 @@ jobs:
 
     - uses: Chia-Network/actions/setup-python@main
       with:
-        python-version: ${{ matrix.python.major-dot-minor }}
+        python-version: '3.12'
 
     - name: flake8
       run: |
@@ -238,27 +208,12 @@ jobs:
         mypy --config-file mypi.ini setup.py tests
 
   upload:
-    name: Upload to PyPI - ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }} ${{ matrix.arch.name }}
-    runs-on: ${{ matrix.os.runs-on[matrix.arch.matrix] }}
+    name: Upload to PyPI - Ubuntu 3.12 Intel
+    runs-on: ubuntu-latest
     needs:
       - build-wheels
       - build-sdist
       - check
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - name: Ubuntu
-            matrix: ubuntu
-            runs-on:
-              arm: [Linux, ARM64]
-              intel: [ubuntu-latest]
-        python:
-          - major-dot-minor: '3.12'
-            matrix: '3.12'
-        arch:
-          - name: Intel
-            matrix: intel
 
     steps:
     - name: Clean workspace
@@ -276,7 +231,7 @@ jobs:
 
     - uses: Chia-Network/actions/setup-python@main
       with:
-        python-version: ${{ matrix.python.major-dot-minor }}
+        python-version: '3.12'
 
     - name: Download artifacts
       uses: actions/download-artifact@v8

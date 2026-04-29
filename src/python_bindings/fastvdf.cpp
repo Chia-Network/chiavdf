@@ -118,6 +118,19 @@ PYBIND11_MODULE(chiavdf, m) {
         return py::tuple(py::make_tuple(result.first, res_bytes));
     });
 
+    // Low-level BQFC form deserialization with strict flag.
+    // Returns (a_str, b_str) as decimal strings, or raises on error.
+    m.def("bqfc_deserialize", [] (const string& discriminant,
+                                   const string& data,
+                                   bool strict) -> py::tuple {
+        integer D(discriminant);
+        if (data.size() != BQFC_FORM_SIZE) {
+            throw std::runtime_error("expected 100-byte form");
+        }
+        form f = DeserializeForm(D, (const uint8_t *)data.data(), data.size(), strict);
+        return py::tuple(py::make_tuple(f.a.to_string(), f.b.to_string()));
+    }, py::arg("discriminant"), py::arg("data"), py::arg("strict") = true);
+
     m.def("get_b_from_n_wesolowski", [] (const string& discriminant,
                                    const string& x_s,
                                    const string& proof_blob,

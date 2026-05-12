@@ -50,7 +50,9 @@ jobs:
       - name: Install cargo-fuzz
         run: |
           if ! command -v cargo-fuzz >/dev/null 2>&1; then
-            cargo +nightly install cargo-fuzz --locked
+            # cargo-fuzz's lockfile can lag nightly compatibility; fall back to
+            # unlocked dependency resolution when --locked fails.
+            cargo +nightly install cargo-fuzz --locked || cargo +nightly install cargo-fuzz
           fi
 
       - name: Cargo fuzz (${{ matrix.target }})

@@ -84,18 +84,6 @@ bool try_pow2_u64_shift(uint32_t shift, uint64_t& out) {
     return true;
 }
 
-void free_byte_array_batch_internal(ChiavdfByteArray* arrays, size_t count) {
-    if (arrays == nullptr) {
-        return;
-    }
-    for (size_t idx = 0; idx < count; ++idx) {
-        delete[] arrays[idx].data;
-        arrays[idx].data = nullptr;
-        arrays[idx].length = 0;
-    }
-    delete[] arrays;
-}
-
 struct BatchProgressContext {
     uint64_t completed_before = 0;
     ChiavdfProgressCallback progress_cb = nullptr;
@@ -1361,6 +1349,9 @@ extern "C" ChiavdfByteArray* chiavdf_prove_one_weso_fast_streaming_getblock_opt_
     uint64_t progress_interval,
     ChiavdfProgressCallback progress_cb,
     void* progress_user_data) {
+    ChiavdfByteArray* out_arrays = nullptr;
+    std::unique_ptr<BatchOneWesolowskiCallback> weso;
+    bool finalizers_joined = false;
     try {
         std::call_once(init_once, init_chiavdf_fast);
 
@@ -1384,7 +1375,7 @@ extern "C" ChiavdfByteArray* chiavdf_prove_one_weso_fast_streaming_getblock_opt_
 
         int d_bits = D.num_bits();
 
-        auto* out_arrays = new ChiavdfByteArray[job_count]();
+        out_arrays = new ChiavdfByteArray[job_count]();
 
         uint64_t t_max = 0;
         std::vector<BatchJobState> job_states;
@@ -1461,7 +1452,7 @@ extern "C" ChiavdfByteArray* chiavdf_prove_one_weso_fast_streaming_getblock_opt_
         }
 
         std::atomic<bool> stopped(false);
-        BatchOneWesolowskiCallback weso(
+        weso = std::make_unique<BatchOneWesolowskiCallback>(
             D,
             D,
             L,
@@ -1473,20 +1464,28 @@ extern "C" ChiavdfByteArray* chiavdf_prove_one_weso_fast_streaming_getblock_opt_
             progress_interval,
             progress_cb,
             progress_user_data);
-        weso.initialize(x0);
+        weso->initialize(x0);
 
         FastStorage* fast_storage = nullptr;
-        repeated_square(t_max, x0, D, L, &weso, fast_storage, stopped);
+        repeated_square(t_max, x0, D, L, weso.get(), fast_storage, stopped);
 
-        weso.join_finalizers();
+        weso->join_finalizers();
+        finalizers_joined = true;
 
-        if (!weso.ok()) {
+        if (!weso->ok()) {
             chiavdf_free_byte_array_batch(out_arrays, job_count);
             return nullptr;
         }
 
         return out_arrays;
     } catch (...) {
+        if (weso != nullptr && !finalizers_joined) {
+            try {
+                weso->join_finalizers();
+            } catch (...) {
+            }
+        }
+        chiavdf_free_byte_array_batch(out_arrays, job_count);
         return nullptr;
     }
 }

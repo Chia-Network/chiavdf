@@ -96,7 +96,7 @@ TEST(DiscriminantBoundsRegressionTest, BqfcDeserializationRejectsOversizedDiscri
     mpz_init(out_b);
 
     EXPECT_EQ(
-        bqfc_deserialize(out_a, out_b, D, serialized, BQFC_FORM_SIZE, static_cast<size_t>(BQFC_MAX_D_BITS) + 1),
+        bqfc_deserialize(out_a, out_b, D, serialized, BQFC_FORM_SIZE, static_cast<size_t>(BQFC_MAX_D_BITS) + 1, true),
         -1);
 
     mpz_clear(D);

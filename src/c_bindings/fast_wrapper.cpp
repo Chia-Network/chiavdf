@@ -344,12 +344,16 @@ class StreamingWesolowskiBuckets {
 	    bool init_ok() const { return getblock_ok; }
 
 	    form finalize_proof() const {
+        PulmarkReducer reducer;
+        return finalize_proof_with_reducer(reducer);
+    }
+
+    form finalize_proof_with_reducer(PulmarkReducer& reducer) const {
 	        auto started_at = std::chrono::steady_clock::time_point{};
 	        if (stats_enabled) {
 	            started_at = std::chrono::steady_clock::now();
 	        }
 
-	        PulmarkReducer reducer;
 	        form id = form::identity(D);
 
         uint64_t k1 = k / 2;
@@ -456,9 +460,6 @@ class StreamingWesolowskiBuckets {
     integer getblock_inv_2k;
     integer getblock_r;
     integer getblock_tmp;
-    uint64_t batch_start_iteration = 1;
-    uint64_t batch_end_iteration = 0;
-    std::vector<BatchCheckpoint> current_batch_checkpoints;
 
 	    bool stats_enabled;
 	    uint64_t checkpoint_total_ns = 0;

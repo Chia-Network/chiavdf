@@ -545,7 +545,16 @@ class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
 
     bool init_ok() const { return buckets.init_ok(); }
 
+    void OnBatchReplay(uint64_t base_iteration, uint64_t batch_size) override {
+        (void)base_iteration;
+        (void)batch_size;
+        replayed_after_corruption = true;
+    }
+
     void OnIteration(int type, void* data, uint64_t iteration) override {
+        if (replayed_after_corruption) {
+            return;
+        }
         iteration++;
         if (iteration > buckets.wanted_iterations()) {
             return;
@@ -587,7 +596,7 @@ class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
 	        buckets.process_checkpoint(i, checkpoint, record_stats);
 	    }
 
-    bool ok() const { return has_result; }
+    bool ok() const { return has_result && !replayed_after_corruption; }
 
 	    const form& y() const { return result; }
 
@@ -606,6 +615,7 @@ class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
 
     form result;
     bool has_result = false;
+    bool replayed_after_corruption = false;
 };
 
 struct BatchJobState {
@@ -838,7 +848,18 @@ class BatchOneWesolowskiCallback final : public WesolowskiCallback {
 	        refresh_next_event();
 	    }
 
+    void OnBatchReplay(uint64_t base_iteration, uint64_t batch_size) override {
+        (void)base_iteration;
+        (void)batch_size;
+        // Streaming bucket updates are irreversible, so fail closed if replay is needed.
+        fatal_error = true;
+        stopped.store(true);
+    }
+
     void OnIteration(int type, void* data, uint64_t iteration) override {
+        if (fatal_error) {
+            return;
+        }
         iteration++;
         if (progress_cb != nullptr && progress_interval != 0 && iteration >= next_progress) {
             progress_cb(next_progress, progress_user_data);

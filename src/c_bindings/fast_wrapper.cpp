@@ -69,33 +69,12 @@ void init_chiavdf_fast() {
 
 ChiavdfByteArray empty_result() { return ChiavdfByteArray{nullptr, 0}; }
 
-uint64_t saturating_add_u64(uint64_t lhs, uint64_t rhs) {
-    if (lhs > std::numeric_limits<uint64_t>::max() - rhs) {
-        return std::numeric_limits<uint64_t>::max();
-    }
-    return lhs + rhs;
-}
-
 bool try_pow2_u64_shift(uint32_t shift, uint64_t& out) {
     if (shift >= 64) {
         return false;
     }
     out = 1ULL << shift;
     return true;
-}
-
-struct BatchProgressContext {
-    uint64_t completed_before = 0;
-    ChiavdfProgressCallback progress_cb = nullptr;
-    void* progress_user_data = nullptr;
-};
-
-void batch_progress_trampoline(uint64_t iters_done, void* user_data) {
-    auto* ctx = static_cast<BatchProgressContext*>(user_data);
-    if (ctx == nullptr || ctx->progress_cb == nullptr) {
-        return;
-    }
-    ctx->progress_cb(saturating_add_u64(ctx->completed_before, iters_done), ctx->progress_user_data);
 }
 
 uint64_t estimate_bucket_form_bytes(size_t discriminant_size_bits) {

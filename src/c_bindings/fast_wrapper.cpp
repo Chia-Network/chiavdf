@@ -169,11 +169,12 @@ bool tune_streaming_parameters(
                 continue;
             }
 
-            unsigned __int128 updates = static_cast<unsigned __int128>(
-                (num_iterations + static_cast<uint64_t>(k) - 1) / static_cast<uint64_t>(k));
             uint64_t kl = static_cast<uint64_t>(k) * static_cast<uint64_t>(l);
             unsigned __int128 checkpoints = static_cast<unsigned __int128>(
                 (num_iterations + kl - 1) / kl);
+            // Each checkpoint can trigger up to `l` bucket updates (one per sub-block).
+            // Model update work as checkpoint-count scaled by `l`.
+            unsigned __int128 updates = checkpoints * static_cast<unsigned __int128>(l);
             unsigned __int128 fold = static_cast<unsigned __int128>(l) << (k + 1);
             unsigned __int128 cost =
                 updates * update_weight + checkpoints * checkpoint_weight + fold * fold_weight;

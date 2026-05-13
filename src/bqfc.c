@@ -53,7 +53,8 @@ int bqfc_compr(struct qfb_c *out_c, mpz_t a, mpz_t b)
     return 0;
 }
 
-int bqfc_decompr(mpz_t out_a, mpz_t out_b, const mpz_t D, const struct qfb_c *c)
+int bqfc_decompr(mpz_t out_a, mpz_t out_b, const mpz_t D, const struct qfb_c *c,
+                 bool strict)
 {
     int ret = 0;
     mpz_t tmp, t, t_inv, d;
@@ -112,6 +113,22 @@ int bqfc_decompr(mpz_t out_a, mpz_t out_b, const mpz_t D, const struct qfb_c *c)
 
     if (c->b_sign) {
         mpz_neg(out_b, out_b);
+    }
+
+    /*
+     * Reject if |b| > a.  For a reduced form, |b| <= a must hold.  If b0 is
+     * inflated (e.g. b0 = canonical_b0 + 4k for k != 0) the decoded b lands
+     * outside this range even though bqfc_verify_canon would otherwise pass
+     * (the self-consistency check encode(decode(X))==X is satisfied for any
+     * b0 ≡ canonical_b0 mod (a/gcd(a,t))).
+     *
+     * When strict == true this makes the canonical-check a proper uniqueness
+     * gate.  When false we preserve the historical (pre-2026) behaviour for
+     * consensus compatibility.
+     */
+    if (strict && mpz_cmpabs(out_b, out_a) > 0) {
+        ret = -1;
+        goto out;
     }
 
 out:
@@ -290,7 +307,8 @@ static int bqfc_verify_canon(mpz_t a, mpz_t b, const uint8_t *str, size_t d_bits
     return memcmp(canon_str, str, BQFC_FORM_SIZE);
 }
 
-int bqfc_deserialize(mpz_t out_a, mpz_t out_b, const mpz_t D, const uint8_t *str, size_t size, size_t d_bits)
+int bqfc_deserialize(mpz_t out_a, mpz_t out_b, const mpz_t D, const uint8_t *str,
+                     size_t size, size_t d_bits, bool strict)
 {
     struct qfb_c f_c;
     int ret;
@@ -313,7 +331,7 @@ int bqfc_deserialize(mpz_t out_a, mpz_t out_b, const mpz_t D, const uint8_t *str
     if (ret)
         goto out;
 
-    ret = bqfc_decompr(out_a, out_b, D, &f_c);
+    ret = bqfc_decompr(out_a, out_b, D, &f_c, strict);
     if (ret)
         goto out;
 

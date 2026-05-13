@@ -5,6 +5,26 @@
 
 namespace py = pybind11;
 
+static py::bytes to_signed_bytes_be(const integer& value) {
+    std::string out;
+    out.push_back(mpz_sgn(value.impl) < 0 ? '\x01' : '\x00');
+
+    mpz_t magnitude;
+    mpz_init(magnitude);
+    mpz_abs(magnitude, value.impl);
+
+    if (mpz_sgn(magnitude) != 0) {
+        size_t count = 0;
+        std::string mag_bytes((mpz_sizeinbase(magnitude, 2) + 7) / 8, '\0');
+        mpz_export(mag_bytes.data(), &count, 1, 1, 1, 0, magnitude);
+        mag_bytes.resize(count);
+        out += mag_bytes;
+    }
+
+    mpz_clear(magnitude);
+    return py::bytes(out);
+}
+
 PYBIND11_MODULE(chiavdf, m) {
     m.doc() = "Chia proof of time";
 
@@ -117,6 +137,20 @@ PYBIND11_MODULE(chiavdf, m) {
         py::bytes res_bytes = py::bytes(reinterpret_cast<char*>(result.second.data()), result.second.size());
         return py::tuple(py::make_tuple(result.first, res_bytes));
     });
+
+    // Low-level BQFC form deserialization with strict flag.
+    // Returns (a_bytes, b_bytes) using chia-vdf-verify's signed big-endian
+    // format: sign byte (0 = non-negative, 1 = negative), then magnitude.
+    m.def("bqfc_deserialize", [] (const string& discriminant,
+                                   const string& data,
+                                   bool strict) -> py::tuple {
+        integer D(discriminant);
+        if (data.size() != BQFC_FORM_SIZE) {
+            throw std::runtime_error("expected 100-byte form");
+        }
+        form f = DeserializeForm(D, (const uint8_t *)data.data(), data.size(), strict);
+        return py::tuple(py::make_tuple(to_signed_bytes_be(f.a), to_signed_bytes_be(f.b)));
+    }, py::arg("discriminant"), py::arg("data"), py::arg("strict") = true);
 
     m.def("get_b_from_n_wesolowski", [] (const string& discriminant,
                                    const string& x_s,

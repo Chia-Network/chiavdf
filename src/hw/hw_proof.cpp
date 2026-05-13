@@ -821,7 +821,7 @@ void init_vdf_state(struct vdf_state *vdf, struct vdf_proof_opts *opts, const ch
     init_vdf_value(&vdf->last_val);
     // TODO: verify validity of initial form
     bqfc_deserialize(vdf->last_val.a, vdf->last_val.b, vdf->D.impl, init_form,
-            BQFC_FORM_SIZE, BQFC_MAX_D_BITS);
+            BQFC_FORM_SIZE, BQFC_MAX_D_BITS, false);
     hw_proof_get_form(hw_proof_value_at(vdf, 0), vdf, &vdf->last_val);
     vdf->valid_values[0] = 1 << 0;
     //vdf->raw_values.push_back(initial);

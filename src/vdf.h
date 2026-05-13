@@ -94,8 +94,6 @@ bool quiet_mode = false;
 // In embedded/multi-worker setups (like WesoForge), multiple VDF computations can
 // run concurrently in the same process; they must not share a pairindex.
 #if (defined(ARCH_X86) || defined(ARCH_X64)) && !defined(CHIA_DISABLE_ASM)
-// Keep slot allocation state as one program-wide entity for all TUs that include
-// this header, so concurrent callers cannot recycle the same slot sequence.
 inline std::atomic<unsigned int> vdf_fast_next_slot{0};
 #endif
 
@@ -103,8 +101,45 @@ inline int vdf_fast_pairindex() {
 #if (defined(ARCH_X86) || defined(ARCH_X64)) && !defined(CHIA_DISABLE_ASM)
     constexpr unsigned int kSlots = unsigned(sizeof(master_counter) / sizeof(master_counter[0]));
     static_assert(kSlots > 0, "CHIA_VDF_FAST_COUNTER_SLOTS must be > 0");
-    thread_local int slot = int(vdf_fast_next_slot.fetch_add(1u, std::memory_order_relaxed) % kSlots);
-    return slot;
+    static std::array<std::atomic<bool>, kSlots> vdf_fast_slot_in_use{};
+    struct SlotLease {
+        std::array<std::atomic<bool>, kSlots>* slots = nullptr;
+        int slot = -1;
+        bool owns_slot = false;
+        ~SlotLease() {
+            if (owns_slot && slots != nullptr && slot >= 0) {
+                (*slots)[static_cast<size_t>(slot)].store(false, std::memory_order_release);
+            }
+        }
+    };
+
+    thread_local SlotLease lease;
+    if (lease.slot >= 0) {
+        return lease.slot;
+    }
+
+    lease.slots = &vdf_fast_slot_in_use;
+
+    const unsigned int start = vdf_fast_next_slot.fetch_add(1u, std::memory_order_relaxed);
+    for (unsigned int i = 0; i < kSlots; i++) {
+        const unsigned int candidate = (start + i) % kSlots;
+        bool expected = false;
+        if (vdf_fast_slot_in_use[candidate].compare_exchange_strong(
+                expected,
+                true,
+                std::memory_order_acq_rel,
+                std::memory_order_relaxed)) {
+            lease.slot = static_cast<int>(candidate);
+            lease.owns_slot = true;
+            return lease.slot;
+        }
+    }
+
+    // All slots are currently active. Reuse one as a best-effort fallback; the
+    // fast path has corruption detection and can fall back to slow squaring.
+    lease.slot = static_cast<int>(start % kSlots);
+    lease.owns_slot = false;
+    return lease.slot;
 #else
     return 0;
 #endif
@@ -367,6 +402,12 @@ Proof ProveOneWesolowski(uint64_t iters, integer& D, form f, OneWesolowskiCallba
     proof_serialized = SerializeForm(proof_form, d_bits);
     Proof proof(y_serialized, proof_serialized);
     proof.witness_type = 0;
+    if (!quiet_mode) {
+        // Keep proof diagnostics available for vdf_client while quiet_mode
+        // suppresses output in embedded library-mode call paths.
+        std::lock_guard<std::mutex> lk(cout_lock);
+        std::cout << "Got simple weso proof: " << proof.hex() << "\n";
+    }
     return proof;
 }
 

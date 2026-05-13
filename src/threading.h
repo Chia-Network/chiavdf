@@ -570,6 +570,8 @@ struct alignas(64) thread_counter {
 #define CHIA_VDF_FAST_COUNTER_SLOTS 100
 #endif
 
+static_assert(CHIA_VDF_FAST_COUNTER_SLOTS > 0, "CHIA_VDF_FAST_COUNTER_SLOTS must be > 0");
+
 thread_counter master_counter[CHIA_VDF_FAST_COUNTER_SLOTS];
 thread_counter slave_counter[CHIA_VDF_FAST_COUNTER_SLOTS];
 

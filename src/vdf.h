@@ -102,6 +102,7 @@ inline std::atomic<unsigned int> vdf_fast_next_slot{0};
 inline int vdf_fast_pairindex() {
 #if (defined(ARCH_X86) || defined(ARCH_X64)) && !defined(CHIA_DISABLE_ASM)
     constexpr unsigned int kSlots = unsigned(sizeof(master_counter) / sizeof(master_counter[0]));
+    static_assert(kSlots > 0, "CHIA_VDF_FAST_COUNTER_SLOTS must be > 0");
     thread_local int slot = int(vdf_fast_next_slot.fetch_add(1u, std::memory_order_relaxed) % kSlots);
     return slot;
 #else

@@ -90,6 +90,7 @@ jobs:
         CMAKE_BIN="$(brew --prefix cmake)/bin"
         if [ -d "$CMAKE_BIN" ]; then
           echo "$CMAKE_BIN" >> "$GITHUB_PATH"
+          export PATH="$CMAKE_BIN:$PATH"
         fi
         cmake --version
 

@@ -295,6 +295,7 @@ class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
           progress_cb(progress_cb),
           progress_user_data(progress_user_data),
           next_progress(progress_interval),
+          next_checkpoint_t((limit <= 1 || kl == 0) ? std::numeric_limits<uint64_t>::max() : kl),
           use_getblock_opt(use_getblock_opt),
           stats_enabled(streaming_stats_enabled.load(std::memory_order_relaxed)) {
         form id = form::identity(D);
@@ -328,7 +329,7 @@ class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
             next_progress += progress_interval;
         }
 
-        if (iteration % kl == 0) {
+        if (iteration == next_checkpoint_t) {
             uint64_t pos = iteration / kl;
             if (pos < limit) {
                 form checkpoint;
@@ -348,6 +349,14 @@ class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
                             .count());
                 }
             }
+
+            const uint64_t next_pos = pos + 1;
+            if (next_pos < limit && kl != 0 &&
+                next_pos <= std::numeric_limits<uint64_t>::max() / kl) {
+                next_checkpoint_t = next_pos * kl;
+            } else {
+                next_checkpoint_t = std::numeric_limits<uint64_t>::max();
+            }
         }
 
         if (iteration == wanted_iter) {
@@ -361,6 +370,7 @@ class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
         if (batch_size == 0) {
             batch_start_iteration = 1;
             batch_end_iteration = 0;
+            next_checkpoint_t = std::numeric_limits<uint64_t>::max();
             return;
         }
         // `base_iteration` is the number of completed iterations before this batch.
@@ -370,6 +380,24 @@ class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
             batch_end_iteration = std::numeric_limits<uint64_t>::max();
         } else {
             batch_end_iteration = base_iteration + batch_size;
+        }
+
+        if (kl == 0 || limit <= 1) {
+            next_checkpoint_t = std::numeric_limits<uint64_t>::max();
+            return;
+        }
+
+        const uint64_t first_iteration = saturating_add_u64(base_iteration, 1);
+        const uint64_t numerator = saturating_add_u64(first_iteration, kl - 1);
+        uint64_t first_pos = numerator / kl;
+        if (first_pos == 0) {
+            first_pos = 1;
+        }
+
+        if (first_pos < limit && first_pos <= std::numeric_limits<uint64_t>::max() / kl) {
+            next_checkpoint_t = first_pos * kl;
+        } else {
+            next_checkpoint_t = std::numeric_limits<uint64_t>::max();
         }
     }
 
@@ -524,6 +552,7 @@ class StreamingOneWesolowskiCallback final : public WesolowskiCallback {
     ChiavdfProgressCallback progress_cb;
     void* progress_user_data;
     uint64_t next_progress;
+    uint64_t next_checkpoint_t = std::numeric_limits<uint64_t>::max();
     size_t bucket_span = 0;
 
     std::vector<form> buckets;

@@ -1373,6 +1373,9 @@ extern "C" ChiavdfByteArray* chiavdf_prove_one_weso_fast_streaming_getblock_opt_
     ChiavdfByteArray* out_arrays = nullptr;
     std::unique_ptr<BatchOneWesolowskiCallback> weso;
     bool finalizers_joined = false;
+    integer D;
+    integer L;
+    std::atomic<bool> stopped(false);
     try {
         std::call_once(init_once, init_chiavdf_fast);
 
@@ -1389,8 +1392,8 @@ extern "C" ChiavdfByteArray* chiavdf_prove_one_weso_fast_streaming_getblock_opt_
         }
 
         std::vector<uint8_t> challenge_hash_bytes(challenge_hash, challenge_hash + challenge_size);
-        integer D = CreateDiscriminant(challenge_hash_bytes, static_cast<int>(discriminant_size_bits));
-        integer L = root(-D, 4);
+        D = CreateDiscriminant(challenge_hash_bytes, static_cast<int>(discriminant_size_bits));
+        L = root(-D, 4);
 
         form x0 = DeserializeForm(D, x_s, x_s_size);
 
@@ -1472,7 +1475,6 @@ extern "C" ChiavdfByteArray* chiavdf_prove_one_weso_fast_streaming_getblock_opt_
                 std::move(buckets));
         }
 
-        std::atomic<bool> stopped(false);
         weso = std::make_unique<BatchOneWesolowskiCallback>(
             D,
             D,

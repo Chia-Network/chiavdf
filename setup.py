@@ -2,13 +2,14 @@ import os
 import platform
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from setuptools import Command, Extension, setup
 from setuptools.command.build import build
 from setuptools.command.build_ext import build_ext
 
-BUILD_HOOKS = []
+BUILD_HOOKS: list[Callable[..., None]] = []
 
 
 def add_build_hook(hook):

@@ -197,15 +197,28 @@ jobs:
       with:
         python-version: '3.12'
 
+    - name: Install build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake libgmp-dev libgmpxx4ldbl
+
     - name: flake8
       run: |
         pip install flake8
-        flake8 tests setup.py
+        flake8 tests setup.py chiavdf
 
     - name: mypy
       run: |
         pip install mypy
-        mypy --config-file mypi.ini setup.py tests
+        mypy --config-file mypi.ini setup.py tests chiavdf
+
+    - name: stubtest
+      env:
+        BUILD_VDF_CLIENT: N
+      run: |
+        pip install mypy
+        pip install .
+        stubtest --concise chiavdf
 
   upload:
     name: Upload to PyPI - Ubuntu 3.12 Intel

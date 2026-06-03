@@ -246,19 +246,19 @@ if(BUILD_PYTHON)
     FetchContent_MakeAvailable(pybind11-src)
   endif()
 
-  pybind11_add_module(chiavdf
+  pybind11_add_module(_chiavdf
     ${CMAKE_CURRENT_SOURCE_DIR}/python_bindings/fastvdf.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
   )
 
-  target_link_libraries(chiavdf PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES})
+  target_link_libraries(_chiavdf PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES})
   if(UNIX)
-    target_link_libraries(chiavdf PRIVATE -pthread)
+    target_link_libraries(_chiavdf PRIVATE -pthread)
   endif()
   if (WIN32)
     # workaround for constexpr mutex constructor change in MSVC 2022
     # https://stackoverflow.com/questions/78598141/first-stdmutexlock-crashes-in-application-built-with-latest-visual-studio
-    target_compile_definitions(chiavdf PUBLIC _DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
+    target_compile_definitions(_chiavdf PUBLIC _DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
   endif()
 endif()
 

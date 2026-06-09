@@ -117,7 +117,9 @@ setup(
     long_description=_long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/Chia-Network/chiavdf",
-    ext_modules=[CMakeExtension("chiavdf", "src")],
+    packages=["chiavdf"],
+    package_data={"chiavdf": ["py.typed", "__init__.pyi"]},
+    ext_modules=[CMakeExtension("chiavdf._chiavdf", "src")],
     cmdclass=dict(build_ext=CMakeBuild, build_hook=build_hook),
     zip_safe=False,
 )

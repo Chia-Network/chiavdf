@@ -25,7 +25,7 @@ static py::bytes to_signed_bytes_be(const integer& value) {
     return py::bytes(out);
 }
 
-PYBIND11_MODULE(chiavdf, m) {
+PYBIND11_MODULE(_chiavdf, m) {
     m.doc() = "Chia proof of time";
 
     // Creates discriminant.

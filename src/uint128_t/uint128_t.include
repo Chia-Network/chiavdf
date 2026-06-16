@@ -44,13 +44,6 @@ to do a general rewrite of this class.
 
 class UINT128_T_EXTERN uint128_t;
 
-// Give uint128_t type traits
-namespace std {  // This is probably not a good idea
-    template <> struct is_arithmetic <uint128_t> : std::true_type {};
-    template <> struct is_integral   <uint128_t> : std::true_type {};
-    template <> struct is_unsigned   <uint128_t> : std::true_type {};
-}
-
 class uint128_t{
     private:
         uint64_t UPPER, LOWER;

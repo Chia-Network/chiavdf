@@ -71,6 +71,29 @@ endif()
 
 if(WIN32)
   add_compile_definitions(CHIA_WINDOWS NOMINMAX WIN32_LEAN_AND_MEAN _WIN32_WINNT=0x0601)
+
+  # Single source of truth for Windows 128-bit integer backend (see include.h).
+  set(CHIAVDF_USE_UINT128_T_FALLBACK 1)
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    include(CheckCXXSourceCompiles)
+    check_cxx_source_compiles("
+      int main() {
+        unsigned __int128 x = 0;
+        (void)x;
+        return 0;
+      }
+    " CHIAVDF_WINDOWS_NATIVE_UINT128)
+    if(CHIAVDF_WINDOWS_NATIVE_UINT128)
+      set(CHIAVDF_USE_UINT128_T_FALLBACK 0)
+    endif()
+  endif()
+  add_compile_definitions(CHIAVDF_USE_UINT128_T_FALLBACK=${CHIAVDF_USE_UINT128_T_FALLBACK})
+  if(CHIAVDF_USE_UINT128_T_FALLBACK)
+    message(STATUS "Windows 128-bit integers: uint128_t fallback")
+  else()
+    message(STATUS "Windows 128-bit integers: native unsigned __int128")
+  endif()
+
   set(MPIR_LIBRARY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../mpir_gc_x64")
   set(MPIR_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../mpir_gc_x64")
   include_directories(
@@ -129,9 +152,11 @@ set(VDF_COMMON_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
 )
 if(WIN32)
-  list(APPEND VDF_COMMON_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/uint128_t/uint128_t.cpp
-  )
+  if(CHIAVDF_USE_UINT128_T_FALLBACK)
+    list(APPEND VDF_COMMON_SOURCES
+      ${CMAKE_CURRENT_SOURCE_DIR}/uint128_t/uint128_t.cpp
+    )
+  endif()
 endif()
 
 set(VDF_ASM_SOURCES)

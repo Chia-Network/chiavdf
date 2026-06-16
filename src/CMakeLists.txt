@@ -74,6 +74,7 @@ if(WIN32)
 
   # Single source of truth for Windows 128-bit integer backend (see include.h).
   set(CHIAVDF_USE_UINT128_T_FALLBACK 1)
+
   if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     include(CheckCXXSourceCompiles)
     check_cxx_source_compiles("
@@ -87,7 +88,9 @@ if(WIN32)
       set(CHIAVDF_USE_UINT128_T_FALLBACK 0)
     endif()
   endif()
+
   add_compile_definitions(CHIAVDF_USE_UINT128_T_FALLBACK=${CHIAVDF_USE_UINT128_T_FALLBACK})
+
   if(CHIAVDF_USE_UINT128_T_FALLBACK)
     message(STATUS "Windows 128-bit integers: uint128_t fallback")
   else()

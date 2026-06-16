@@ -36,6 +36,7 @@ typedef __int128 int128;
 #endif
 #if CHIAVDF_USE_UINT128_T_FALLBACK
 #  include "uint128_t/uint128_t.h"
+typedef uint128_t uint128;
 #else
 typedef unsigned __int128 uint128;
 typedef __int128 int128;

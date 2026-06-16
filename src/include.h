@@ -26,11 +26,20 @@ typedef unsigned __int128 uint128;
 typedef __int128 int128;
 #define USED __attribute__((used))
 #else
-#if defined(__clang__) && defined(__SIZEOF_INT128__)
+// CHIAVDF_USE_UINT128_T_FALLBACK is set by CMake on Windows; Makefile builds infer a default below.
+#if !defined(CHIAVDF_USE_UINT128_T_FALLBACK)
+#  if defined(__clang__) && defined(__SIZEOF_INT128__)
+#    define CHIAVDF_USE_UINT128_T_FALLBACK 0
+#  else
+#    define CHIAVDF_USE_UINT128_T_FALLBACK 1
+#  endif
+#endif
+#if CHIAVDF_USE_UINT128_T_FALLBACK
+#  include "uint128_t/uint128_t.h"
+typedef uint128_t uint128;
+#else
 typedef unsigned __int128 uint128;
 typedef __int128 int128;
-#else
-#include "uint128_t/uint128_t.h"
 #endif
 #define USED
 #endif

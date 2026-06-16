@@ -29,6 +29,7 @@ endif
 CFLAGS += $(LTO_FLAGS) $(NOPIE)
 LDFLAGS += $(LTO_FLAGS) $(NOPIE) -g
 ifeq ($(OS),Windows_NT)
+# 128-bit integer backend: CMake sets CHIAVDF_USE_UINT128_T_FALLBACK on Windows CI builds.
 LDLIBS += -lmpirxx -lmpir -lws2_32
 CXXFLAGS += $(LTO_FLAGS) -std=c++1z -D VDF_MODE=0 -D FAST_MACHINE=1 $(NOPIE) -fvisibility=hidden
 else

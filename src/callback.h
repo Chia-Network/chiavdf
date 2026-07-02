@@ -73,6 +73,14 @@ public:
     }
 
     virtual void OnIteration(int type, void *data, uint64_t iteration) = 0;
+    virtual void OnBatchStart(uint64_t base_iteration, uint64_t batch_size) {
+        (void)base_iteration;
+        (void)batch_size;
+    }
+    virtual void OnBatchReplay(uint64_t base_iteration, uint64_t batch_size) {
+        (void)base_iteration;
+        (void)batch_size;
+    }
 
     std::unique_ptr<form[]> forms;
     size_t forms_capacity = 0;

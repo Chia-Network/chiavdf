@@ -113,7 +113,7 @@ setup(
     author_email="florin@chia.net",
     description="Chia vdf verification (wraps C++)",
     license="Apache-2.0",
-    python_requires=">=3.9",
+    python_requires=">=3.10, <4",
     long_description=_long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/Chia-Network/chiavdf",

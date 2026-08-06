@@ -19,9 +19,6 @@
 #include "vdf_new.h"
 #include "picosha2.h"
 
-#include "gpu_integer.h"
-#include "gpu_integer_divide.h"
-
 #include "nucomp.h"
 
 #include "nudupl_listener.h"
@@ -32,7 +29,6 @@
 #include "gcd_base_continued_fractions.h"
 //#include "gcd_base_divide_table.h"
 #include "gcd_128.h"
-#include "gcd_unsigned.h"
 
 #include "asm_types.h"
 
@@ -41,11 +37,18 @@
 #include "vdf_fast.h"
 #endif
 
+// Reference / correctness-test integer path (fixed_integer). Not used by the
+// production ASM squaring pipeline; keep it out of VDF_MODE=0 builds.
+#ifdef VDF_TEST
+#include "gpu_integer.h"
+#include "gpu_integer_divide.h"
+#include "gcd_unsigned.h"
 #include "gpu_integer_gcd.h"
-
 #if (defined(ARCH_X86) || defined(ARCH_X64)) && !defined(CHIA_DISABLE_ASM)
 #include "vdf_test.h"
 #endif
+#endif
+
 #include <map>
 #include <algorithm>
 #include <chrono>

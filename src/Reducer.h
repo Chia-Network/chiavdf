@@ -63,6 +63,26 @@ public:
 
   ~Reducer() {}
 
+  inline void mpz_mul_si64(mpz_t rop, const mpz_t op1, int64_t val) {
+#if defined(_WIN32)
+    if (val == 0) {
+      mpz_set_ui(rop, 0);
+      return;
+    }
+    if (val > 0) {
+      uint64_t uval = static_cast<uint64_t>(val);
+      mpz_import(ctx.mu, 1, -1, sizeof(uval), 0, 0, &uval);
+    } else {
+      uint64_t uval = 0ULL - static_cast<uint64_t>(val);
+      mpz_import(ctx.mu, 1, -1, sizeof(uval), 0, 0, &uval);
+      mpz_neg(ctx.mu, ctx.mu);
+    }
+    mpz_mul(rop, op1, ctx.mu);
+#else
+    mpz_mul_si(rop, op1, val);
+#endif
+  }
+
   /**
    * @brief run - runs reduction algorithm for cg context params
    */
@@ -91,17 +111,17 @@ public:
         int_fast64_t u, v, w, x;
         calc_uvwx(u, v, w, x, a, b, c);
 
-        mpz_mul_si(ctx.faa, ctx.a, u * u);
-        mpz_mul_si(ctx.fab, ctx.b, u * w);
-        mpz_mul_si(ctx.fac, ctx.c, w * w);
+        mpz_mul_si64(ctx.faa, ctx.a, u * u);
+        mpz_mul_si64(ctx.fab, ctx.b, u * w);
+        mpz_mul_si64(ctx.fac, ctx.c, w * w);
 
-        mpz_mul_si(ctx.fba, ctx.a, uint_fast64_t(u * v) << 1);
-        mpz_mul_si(ctx.fbb, ctx.b, u * x + v * w);
-        mpz_mul_si(ctx.fbc, ctx.c, uint_fast64_t(w * x) << 1);
+        mpz_mul_si64(ctx.fba, ctx.a, static_cast<int64_t>(uint_fast64_t(u * v) << 1));
+        mpz_mul_si64(ctx.fbb, ctx.b, u * x + v * w);
+        mpz_mul_si64(ctx.fbc, ctx.c, static_cast<int64_t>(uint_fast64_t(w * x) << 1));
 
-        mpz_mul_si(ctx.fca, ctx.a, v * v);
-        mpz_mul_si(ctx.fcb, ctx.b, v * x);
-        mpz_mul_si(ctx.fcc, ctx.c, x * x);
+        mpz_mul_si64(ctx.fca, ctx.a, v * v);
+        mpz_mul_si64(ctx.fcb, ctx.b, v * x);
+        mpz_mul_si64(ctx.fcc, ctx.c, x * x);
 
         mpz_add(ctx.a, ctx.faa, ctx.fab);
         mpz_add(ctx.a, ctx.a, ctx.fac);

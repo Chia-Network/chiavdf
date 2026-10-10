@@ -26,9 +26,7 @@ def _paired_chicken_egg_import_disk_exec(script_dir: Path) -> types.ModuleType:
         path = script_dir / f"{_DISK_EXEC_MODULE}.py"
         spec = importlib.util.spec_from_file_location(_DISK_EXEC_MODULE, path)
         if spec is None or spec.loader is None:
-            raise RuntimeError(
-                f"{_DISK_EXEC_MODULE}.py must be co-located with path_scrub under {script_dir}"
-            )
+            raise RuntimeError(f"{_DISK_EXEC_MODULE}.py must be co-located with path_scrub under {script_dir}")
         module = importlib.util.module_from_spec(spec)
         sys.modules[_DISK_EXEC_MODULE] = module
         spec.loader.exec_module(module)
@@ -96,9 +94,7 @@ def exec_scripts_dir_module(
     def _run(module: types.ModuleType, loader: Loader) -> None:
         loader.exec_module(module)
 
-    return _exec_with_path_filter(
-        script_dir, path, module_name, register=register, exec_module=_run
-    )
+    return _exec_with_path_filter(script_dir, path, module_name, register=register, exec_module=_run)
 
 
 def bootstrap_module_from_scripts_dir(
@@ -107,6 +103,4 @@ def bootstrap_module_from_scripts_dir(
     module_name: str,
 ) -> types.ModuleType:
     """Canonical scripts-dir bootstrap (path-filtered exec)."""
-    return exec_scripts_dir_module(
-        script_dir, script_dir / filename, module_name, register=True
-    )
+    return exec_scripts_dir_module(script_dir, script_dir / filename, module_name, register=True)

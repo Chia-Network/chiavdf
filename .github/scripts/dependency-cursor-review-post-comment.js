@@ -49,11 +49,53 @@ function successfulAnalysisText(filePath) {
   return '';
 }
 
-/** Stamp the upgrade marker only after both agent files are real analyses. */
+const MALWARE_REVIEW_HEADING = '## Supply-Chain Malware Review';
+const COMPATIBILITY_REVIEW_HEADING = '## Compatibility Analysis';
+const FAILED_COMBINED_PREFIXES = [
+  'Missing output file:',
+  'Error: agent exited',
+  'No Cursor output generated',
+  'CURSOR_API_KEY is not set',
+];
+
+function isReviewObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Text of cursor_output.json only when combine finished a real review. */
+function combinedReviewText(filePath) {
+  let raw;
+  try {
+    raw = fs.readFileSync(filePath, 'utf8');
+  } catch (_) {
+    return '';
+  }
+  if (!String(raw).trim()) return '';
+  let payload;
+  try {
+    payload = JSON.parse(raw);
+  } catch (_) {
+    return '';
+  }
+  if (!isReviewObject(payload) || payload.error || payload.is_error === true || payload.complete !== true) {
+    return '';
+  }
+  if (!isReviewObject(payload.malware_review) || !isReviewObject(payload.compatibility_review)) return '';
+  const value = payload.result;
+  if (typeof value !== 'string' || !value.trim()) return '';
+  if (FAILED_COMBINED_PREFIXES.some((prefix) => value.startsWith(prefix))) return '';
+  const malwareAt = value.indexOf(MALWARE_REVIEW_HEADING);
+  const compatibilityAt = value.indexOf(COMPATIBILITY_REVIEW_HEADING);
+  if (malwareAt === -1 || compatibilityAt === -1 || malwareAt > compatibilityAt) return '';
+  return value.trim();
+}
+
+/** Stamp the upgrade marker only after combine wrote a real review and both agent files succeeded. */
 function selectPostedMarker(marker) {
   const malware = successfulAnalysisText('cursor_output_malware.json');
   const compatibility = successfulAnalysisText('cursor_output_compatibility.json');
-  if (!marker || !malware || !compatibility) return LEGACY_REVIEW_MARKER;
+  const combined = combinedReviewText('cursor_output.json');
+  if (!marker || !malware || !compatibility || !combined) return LEGACY_REVIEW_MARKER;
   return marker;
 }
 

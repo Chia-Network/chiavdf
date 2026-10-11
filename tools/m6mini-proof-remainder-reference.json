@@ -1,0 +1,10 @@
+{
+  "method": "Independent Python reference: stateless modular power versus per-row streaming quotient/remainder; full and split descending-j traversals, incomplete last rows and tiny requests.",
+  "cases": 378,
+  "blocks_compared": 209022,
+  "passed": true,
+  "production_changes": "none; candidate for stage6 after PGO",
+  "stateless_formula": "For index=i*l+j: r=2^(T-k*(index+1)) mod B; bucket=floor((r*2^k)/B).",
+  "recurrence": "For descending j, the next exponent increases by k. Compute (bucket,next_remainder)=divmod(remainder*2^k,B) and reuse next_remainder for the same i row at j-1.",
+  "planned_layout": "Private per-worker row remainders, initialized with FastPow at the first eligible j in each row. Two worker halves initialize independently; partial last rows may become eligible later. O(ceil(T/(k*l))) remainder storage; retain stateless GetBlock as independent reference. Quotient/remainder must be distinct mpz values; remainder may alias dividend if GMP permits."
+}

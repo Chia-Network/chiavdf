@@ -51,3 +51,52 @@ medians and geometric means.
 These measurements are not `chia_timelord_estimated_ips` observations from
 mainnet and do not establish 24-hour stability. Use alternating repeated pairs,
 then a different request scenario, before retaining a performance change.
+
+## Retained proof-construction changes
+
+The measured changes are thread-local NUCOMP scratch storage, opt-in native
+GMP with two-limb division method 1, publication wakeups for proof readiness,
+the configurable checkpoint threshold, and per-worker modular remainder reuse.
+The latter preserves the stateless bucket calculation as a reference and avoids
+repeating modular exponentiation for consecutive buckets. Its three alternating
+pairs improved regular delivery by 4.94% at 1M iterations and 0.86% at 20M;
+the irregular holdout improved every target by 0.77–4.10%. All 252 comparison
+proofs, 27 boundary proofs and three cancellation receipts verified. The serial
+100K proof smoke test and all 28 regressions passed. See
+`m6mini-remainder-cache-results.json` for individual samples.
+
+Worker pools, deadline priority, fixed partition sizes, changed value spacing,
+smaller helper counts, explicit Apple M6 compiler targeting, PGO, bucket-vector
+reuse and allocation-free bucket extraction did not provide consistent useful
+proof-delivery improvements and were removed. Their experiment results remain
+as evidence; they are not production build options. The older stashed ARM work
+was reviewed without applying it. It targets the software VDF fixed-limb path,
+and contains a borrow-overflow issue that needs fixing before any reuse.
+
+## Final combined comparison
+
+The retained stack was compared with the preserved original client in three
+alternating pairs on each workload, using one ASIC with all three engines.
+The table reports medians across nine receipts per version and target; it is
+per-engine proof delivery, not the sum of three engines.
+
+| Iterations | Original IPS | Final IPS | Median change |
+| --- | ---: | ---: | ---: |
+| 1M | 545,509 | 772,322 | +41.58% |
+| 2M | 668,697 | 853,392 | +27.62% |
+| 4M | 810,407 | 915,740 | +13.00% |
+| 8M | 882,660 | 950,495 | +7.69% |
+| 12M | 921,426 | 968,131 | +5.07% |
+| 16M | 939,147 | 974,830 | +3.80% |
+| 20M | 950,267 | 980,523 | +3.18% |
+
+Every irregular holdout target also improved. All 252 final comparison proofs
+verified, all runs shut down cleanly and restored the board, and the maximum
+observed temperature was 48.21 C. Per-engine medians at 20M were 980523,
+980076 and 980815 IPS. These results remain below 1M proof-delivery IPS at
+1540 MHz and do not establish a mainnet or 24-hour average. See
+`m6mini-final-proof-results.json` for samples and verification metadata.
+
+Each retained performance change has its own commit: `95ed39f`, `295d4b5`,
+`a5c23fe`, `293d7d5`, `f92efa0`, and `21ada1a`. The independent benchmark
+infrastructure is in `3966303`.

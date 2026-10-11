@@ -120,7 +120,7 @@ form *hw_proof_last_good_form(struct vdf_state *vdf, size_t *out_pos)
 {
     size_t pos = vdf->cur_iters / vdf->interval;
 
-    while (!(vdf->valid_values[pos / 8] & (1 << (pos % 8)))) {
+    while (!(vdf->valid_values[pos / 8].load(std::memory_order_acquire) & (1 << (pos % 8)))) {
         pos--;
     }
     *out_pos = pos;
@@ -133,8 +133,9 @@ void hw_proof_add_intermediate(struct vdf_state *vdf, struct vdf_value *val, siz
         hw_proof_get_form(hw_proof_value_at(vdf, pos), vdf, val);
     }
     vdf->valid_values_mtx.lock();
-    vdf->valid_values[pos / 8] |= 1 << (pos % 8);
+    vdf->valid_values[pos / 8].fetch_or(1 << (pos % 8), std::memory_order_release);
     vdf->valid_values_mtx.unlock();
+    vdf->valid_values_cv.notify_all();
     vdf->done_values++;
 }
 
@@ -493,13 +494,16 @@ void hw_proof_wait_values(struct vdf_state *vdf, bool finish_work)
 
 int hw_proof_wait_value(struct vdf_state *vdf, size_t pos)
 {
-    while (!(vdf->valid_values[pos / 8] & (1 << (pos % 8)))) {
-        vdf_usleep(100000);
-        if (vdf->stopping) {
-            return -1;
-        }
-    }
-    return 0;
+    const uint8_t bit = 1 << (pos % 8);
+    // Most values are already published by the time a proof consumes them.
+    // Acquire pairs with producer publication without locking on that path.
+    if (vdf->valid_values[pos / 8].load(std::memory_order_acquire) & bit)
+        return vdf->stopping ? -1 : 0;
+    std::unique_lock<std::mutex> lock(vdf->valid_values_mtx);
+    vdf->valid_values_cv.wait(lock, [=] {
+        return vdf->stopping || (vdf->valid_values[pos / 8].load(std::memory_order_acquire) & bit);
+    });
+    return vdf->stopping ? -1 : 0;
 }
 
 void hw_proof_handle_value(struct vdf_state *vdf, struct vdf_value *val)
@@ -560,7 +564,11 @@ void hw_proof_handle_value(struct vdf_state *vdf, struct vdf_value *val)
 
 void hw_stop_proof(struct vdf_state *vdf)
 {
-    vdf->stopping = true;
+    {
+        std::lock_guard<std::mutex> lock(vdf->valid_values_mtx);
+        vdf->stopping = true;
+    }
+    vdf->valid_values_cv.notify_all();
     hw_proof_print_stats(vdf, vdf_get_elapsed_us(vdf->start_time), true);
     hw_proof_wait_values(vdf, false);
 }
@@ -813,7 +821,10 @@ void init_vdf_state(struct vdf_state *vdf, struct vdf_proof_opts *opts, const ch
 
     num_values = vdf->target_iters / vdf->interval + 1;
     vdf->values.reserve((num_values + g_values_mult - 1) / g_values_mult);
-    vdf->valid_values.resize((num_values + 7) / 8, 0);
+    size_t bitmap_bytes = (num_values + 7) / 8;
+    vdf->valid_values = std::make_unique<std::atomic<uint8_t>[]>(bitmap_bytes);
+    for (size_t i = 0; i < bitmap_bytes; ++i)
+        vdf->valid_values[i].store(0, std::memory_order_relaxed);
 
     //mpz_init_set_ui(initial.a, 2);
     //mpz_init_set_ui(initial.b, 1);
@@ -823,7 +834,7 @@ void init_vdf_state(struct vdf_state *vdf, struct vdf_proof_opts *opts, const ch
     bqfc_deserialize(vdf->last_val.a, vdf->last_val.b, vdf->D.impl, init_form,
             BQFC_FORM_SIZE, BQFC_MAX_D_BITS, false);
     hw_proof_get_form(hw_proof_value_at(vdf, 0), vdf, &vdf->last_val);
-    vdf->valid_values[0] = 1 << 0;
+    vdf->valid_values[0].store(1, std::memory_order_relaxed);
     //vdf->raw_values.push_back(initial);
     vdf->init_done = true;
 }
@@ -839,7 +850,7 @@ void clear_vdf_state(struct vdf_state *vdf)
         delete[] vdf->values[i];
     }
     vdf->values.clear();
-    vdf->valid_values.clear();
+    vdf->valid_values.reset();
     mpz_clears(vdf->last_val.a, vdf->last_val.b, NULL);
     vdf->init_done = false;
 }

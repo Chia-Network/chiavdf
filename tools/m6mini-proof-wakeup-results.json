@@ -1,0 +1,727 @@
+{
+  "experiment": "Event-driven intermediate-value publication with acquire/release readiness fast path",
+  "machine": "m6mini",
+  "balanced": {
+    "1000000": {
+      "baseline": {
+        "median_ips": 611444.2489010409,
+        "geomean_ips": 610877.9912378242,
+        "minimum_ips": 607027.3276151472,
+        "samples": [
+          614033.2072695323,
+          607027.3276151472,
+          611527.2894052898,
+          611682.9140322501,
+          607846.9544265086,
+          608314.2259300326,
+          611438.7034255927,
+          611444.2489010409,
+          614633.1867881251
+        ]
+      },
+      "candidate": {
+        "median_ips": 646835.307191916,
+        "geomean_ips": 648134.1144089248,
+        "minimum_ips": 643986.9659639796,
+        "samples": [
+          643986.9659639796,
+          652506.6026131733,
+          644006.233980345,
+          653596.9246941813,
+          649660.3631167586,
+          649037.5624810208,
+          646819.0771848396,
+          646828.4736036377,
+          646835.307191916
+        ]
+      },
+      "change_percent": 5.788108785794299,
+      "geomean_change_percent": 6.098783014855136
+    },
+    "2000000": {
+      "baseline": {
+        "median_ips": 748071.1567782885,
+        "geomean_ips": 748087.0989853379,
+        "minimum_ips": 732675.8452938467,
+        "samples": [
+          769160.8670036825,
+          732675.8452938467,
+          743744.9192925201,
+          751581.1505890071,
+          748071.1567782885,
+          754710.1460213191,
+          749444.0997453333,
+          740141.0209190683,
+          743812.9291887766
+        ]
+      },
+      "candidate": {
+        "median_ips": 780539.5236553367,
+        "geomean_ips": 775282.733885833,
+        "minimum_ips": 751838.7624754419,
+        "samples": [
+          751838.7624754419,
+          766100.1818673951,
+          766268.3683507601,
+          791912.893040841,
+          777114.7604743197,
+          781557.5218194184,
+          780539.5236553367,
+          781791.2988582915,
+          781161.051388094
+        ]
+      },
+      "change_percent": 4.34027787100888,
+      "geomean_change_percent": 3.6353567569046064
+    },
+    "4000000": {
+      "baseline": {
+        "median_ips": 851892.8923125403,
+        "geomean_ips": 852119.273048256,
+        "minimum_ips": 848844.8604641783,
+        "samples": [
+          857336.3625527587,
+          852545.6795205951,
+          852850.1803789431,
+          851057.3260795785,
+          848930.3504113889,
+          851892.8923125403,
+          850891.6902343616,
+          854758.3865153317,
+          848844.8604641783
+        ]
+      },
+      "candidate": {
+        "median_ips": 868930.0248207146,
+        "geomean_ips": 868506.9567276866,
+        "minimum_ips": 858646.0780372691,
+        "samples": [
+          872838.6547475571,
+          865742.8685242839,
+          868930.0248207146,
+          866294.1721419435,
+          858646.0780372691,
+          865120.3948679746,
+          874032.735967466,
+          871039.0485988887,
+          874038.4893774278
+        ]
+      },
+      "change_percent": 1.999914855719176,
+      "geomean_change_percent": 1.9231678237727756
+    },
+    "8000000": {
+      "baseline": {
+        "median_ips": 922823.4173083702,
+        "geomean_ips": 922123.5522490664,
+        "minimum_ips": 919089.7966528184,
+        "samples": [
+          922823.4173083702,
+          921587.8585975268,
+          923399.9576467833,
+          919089.7966528184,
+          924035.0318650483,
+          919489.7327771952,
+          922222.727541357,
+          923202.5628854632,
+          923274.2907118376
+        ]
+      },
+      "candidate": {
+        "median_ips": 934985.8058197811,
+        "geomean_ips": 934925.7455955865,
+        "minimum_ips": 931610.2941799546,
+        "samples": [
+          934985.8058197811,
+          935508.7640411552,
+          938388.5962310827,
+          936553.947822029,
+          935050.6831681444,
+          931610.2941799546,
+          934615.5472942073,
+          933239.7332765847,
+          934393.9612869137
+        ]
+      },
+      "change_percent": 1.3179540401006884,
+      "geomean_change_percent": 1.3883381804201234
+    },
+    "12000000": {
+      "baseline": {
+        "median_ips": 949130.4880229485,
+        "geomean_ips": 949368.579556327,
+        "minimum_ips": 947849.5576196307,
+        "samples": [
+          948542.0952458981,
+          947868.0222821725,
+          949130.4880229485,
+          948501.121716199,
+          949607.0822645803,
+          947849.5576196307,
+          952394.784781398,
+          949155.0336313593,
+          951279.0070113722
+        ]
+      },
+      "candidate": {
+        "median_ips": 955137.0312127635,
+        "geomean_ips": 955632.2658312767,
+        "minimum_ips": 953585.2795040404,
+        "samples": [
+          955136.0936109782,
+          953585.2795040404,
+          955137.0312127635,
+          954825.9984279784,
+          954027.710211857,
+          958749.5731888586,
+          957561.7828010967,
+          955468.3125507765,
+          956209.959853889
+        ]
+      },
+      "change_percent": 0.6328469336525755,
+      "geomean_change_percent": 0.6597739181422035
+    },
+    "16000000": {
+      "baseline": {
+        "median_ips": 962226.8912782652,
+        "geomean_ips": 962173.7176056076,
+        "minimum_ips": 960499.3011542155,
+        "samples": [
+          962022.7538523639,
+          960499.3011542155,
+          962245.021056219,
+          963925.5167824967,
+          962226.8912782652,
+          962215.3589371875,
+          962384.5289997911,
+          962323.0791693685,
+          961724.2152184674
+        ]
+      },
+      "candidate": {
+        "median_ips": 967977.2237567948,
+        "geomean_ips": 967160.3894824364,
+        "minimum_ips": 964736.2472092564,
+        "samples": [
+          969057.2304153572,
+          965877.3467326972,
+          966203.8426968514,
+          968204.8462062812,
+          968084.6662250048,
+          968613.8319553528,
+          965698.0433629807,
+          967977.2237567948,
+          964736.2472092564
+        ]
+      },
+      "change_percent": 0.5976067111251426,
+      "geomean_change_percent": 0.5182714706901681
+    },
+    "20000000": {
+      "baseline": {
+        "median_ips": 969357.6299026618,
+        "geomean_ips": 968929.6706702625,
+        "minimum_ips": 967206.5164609367,
+        "samples": [
+          967699.2377372285,
+          968383.8998187488,
+          969837.0533371329,
+          969357.6299026618,
+          970082.5000487592,
+          969762.7744840207,
+          969515.8151615835,
+          967206.5164609367,
+          968525.9025114834
+        ]
+      },
+      "candidate": {
+        "median_ips": 974745.3234156246,
+        "geomean_ips": 974425.2608725376,
+        "minimum_ips": 970115.761827625,
+        "samples": [
+          973243.6820183207,
+          973412.5483058008,
+          970115.761827625,
+          976398.5173970057,
+          974745.3234156246,
+          973853.7256244185,
+          976255.5828821718,
+          976654.1547481741,
+          975165.6117822169
+        ]
+      },
+      "change_percent": 0.5558003926274147,
+      "geomean_change_percent": 0.5671815373837763
+    }
+  },
+  "staggered_screen": {
+    "1000000": {
+      "baseline": {
+        "median_ips": 620842.2766211992,
+        "geomean_ips": 620842.2103644704,
+        "minimum_ips": 620555.4492288954,
+        "samples": [
+          620555.4492288954,
+          621129.104013503
+        ]
+      },
+      "candidate": {
+        "median_ips": 660230.1961099007,
+        "geomean_ips": 660227.4653743451,
+        "minimum_ips": 658331.2962478308,
+        "samples": [
+          662129.0959719707,
+          658331.2962478308
+        ]
+      },
+      "change_percent": 6.344271479555452,
+      "geomean_change_percent": 6.3438429849596245
+    },
+    "2000000": {
+      "baseline": {
+        "median_ips": 832270.1148559512,
+        "geomean_ips": 832270.1042899127,
+        "minimum_ips": 832137.496621579,
+        "samples": [
+          832137.496621579,
+          832402.7330903234
+        ]
+      },
+      "candidate": {
+        "median_ips": 868235.1037446547,
+        "geomean_ips": 868234.4242243002,
+        "minimum_ips": 867148.8411666772,
+        "samples": [
+          869321.3663226321,
+          867148.8411666772
+        ]
+      },
+      "change_percent": 4.321312065245597,
+      "geomean_change_percent": 4.321231743037557
+    },
+    "4000000": {
+      "baseline": {
+        "median_ips": 867757.7895922383,
+        "geomean_ips": 876679.6600021878,
+        "minimum_ips": 866928.1224932645,
+        "samples": [
+          867757.7895922383,
+          895655.8757425022,
+          866928.1224932645
+        ]
+      },
+      "candidate": {
+        "median_ips": 893003.443531564,
+        "geomean_ips": 898745.7220214636,
+        "minimum_ips": 887795.0923880045,
+        "samples": [
+          887795.0923880045,
+          915681.9111108895,
+          893003.443531564
+        ]
+      },
+      "change_percent": 2.9092972995596655,
+      "geomean_change_percent": 2.517003989715083
+    },
+    "8000000": {
+      "baseline": {
+        "median_ips": 941654.1523527264,
+        "geomean_ips": 946365.923005283,
+        "minimum_ips": 940339.7248826252,
+        "samples": [
+          957196.4338629835,
+          940339.7248826252,
+          941654.1523527264
+        ]
+      },
+      "candidate": {
+        "median_ips": 953813.6836364917,
+        "geomean_ips": 954823.990787665,
+        "minimum_ips": 942368.7425498809,
+        "samples": [
+          968468.604149502,
+          953813.6836364917,
+          942368.7425498809
+        ]
+      },
+      "change_percent": 1.2912948191631246,
+      "geomean_change_percent": 0.8937417944554271
+    },
+    "12000000": {
+      "baseline": {
+        "median_ips": 972535.2105613189,
+        "geomean_ips": 970261.0567371802,
+        "minimum_ips": 962437.1217772493,
+        "samples": [
+          975861.3147380106,
+          962437.1217772493,
+          972535.2105613189
+        ]
+      },
+      "candidate": {
+        "median_ips": 980612.1870899536,
+        "geomean_ips": 975365.8756568908,
+        "minimum_ips": 964506.7672062585,
+        "samples": [
+          981070.2495352179,
+          964506.7672062585,
+          980612.1870899536
+        ]
+      },
+      "change_percent": 0.830507362707511,
+      "geomean_change_percent": 0.5261283944423267
+    },
+    "16000000": {
+      "baseline": {
+        "median_ips": 975128.1230744552,
+        "geomean_ips": 975128.1230744545,
+        "minimum_ips": 975128.1230744552,
+        "samples": [
+          975128.1230744552
+        ]
+      },
+      "candidate": {
+        "median_ips": 982093.436661123,
+        "geomean_ips": 982093.4366611231,
+        "minimum_ips": 982093.436661123,
+        "samples": [
+          982093.436661123
+        ]
+      },
+      "change_percent": 0.7142972725170837,
+      "geomean_change_percent": 0.7142972725171504
+    },
+    "20000000": {
+      "baseline": {
+        "median_ips": 983737.6928530028,
+        "geomean_ips": 983737.692853002,
+        "minimum_ips": 983737.6928530028,
+        "samples": [
+          983737.6928530028
+        ]
+      },
+      "candidate": {
+        "median_ips": 989004.1814398059,
+        "geomean_ips": 989004.1814398068,
+        "minimum_ips": 989004.1814398059,
+        "samples": [
+          989004.1814398059
+        ]
+      },
+      "change_percent": 0.5353549655629619,
+      "geomean_change_percent": 0.5353549655631396
+    }
+  },
+  "initial_locked_screen": {
+    "1000000": {
+      "baseline": {
+        "median_ips": 611383.346529024,
+        "geomean_ips": 609729.3585565754,
+        "minimum_ips": 603545.8619958092,
+        "samples": [
+          603545.8619958092,
+          614309.7936411954,
+          611383.346529024
+        ]
+      },
+      "candidate": {
+        "median_ips": 646054.8955312662,
+        "geomean_ips": 649509.0949338217,
+        "minimum_ips": 644614.5810517401,
+        "samples": [
+          657939.807883221,
+          644614.5810517401,
+          646054.8955312662
+        ]
+      },
+      "change_percent": 5.670999905228258,
+      "geomean_change_percent": 6.524162863244398
+    },
+    "2000000": {
+      "baseline": {
+        "median_ips": 742264.5364323211,
+        "geomean_ips": 743514.4890096779,
+        "minimum_ips": 742244.4386291654,
+        "samples": [
+          742244.4386291654,
+          746040.9124173614,
+          742264.5364323211
+        ]
+      },
+      "candidate": {
+        "median_ips": 767108.5219040365,
+        "geomean_ips": 765544.8363969517,
+        "minimum_ips": 760072.5527255205,
+        "samples": [
+          767108.5219040365,
+          769484.7856290874,
+          760072.5527255205
+        ]
+      },
+      "change_percent": 3.347052735555378,
+      "geomean_change_percent": 2.963001758932382
+    },
+    "4000000": {
+      "baseline": {
+        "median_ips": 850397.1876904088,
+        "geomean_ips": 850332.1942329812,
+        "minimum_ips": 848184.6413960112,
+        "samples": [
+          852420.0315082915,
+          848184.6413960112,
+          850397.1876904088
+        ]
+      },
+      "candidate": {
+        "median_ips": 869085.960505179,
+        "geomean_ips": 869325.0289034536,
+        "minimum_ips": 867651.7546090535,
+        "samples": [
+          867651.7546090535,
+          871241.1254562173,
+          869085.960505179
+        ]
+      },
+      "change_percent": 2.1976522365422024,
+      "geomean_change_percent": 2.2335782179345065
+    },
+    "8000000": {
+      "baseline": {
+        "median_ips": 926113.864120338,
+        "geomean_ips": 925294.6767365624,
+        "minimum_ips": 923320.4132880919,
+        "samples": [
+          926113.864120338,
+          926452.948765296,
+          923320.4132880919
+        ]
+      },
+      "candidate": {
+        "median_ips": 933458.8660484632,
+        "geomean_ips": 933861.264968746,
+        "minimum_ips": 933100.7035520985,
+        "samples": [
+          933458.8660484632,
+          935025.3468324847,
+          933100.7035520985
+        ]
+      },
+      "change_percent": 0.793099230309191,
+      "geomean_change_percent": 0.9258227078963843
+    },
+    "12000000": {
+      "baseline": {
+        "median_ips": 950743.6673548757,
+        "geomean_ips": 949370.8383612977,
+        "minimum_ips": 946630.8274864911,
+        "samples": [
+          950743.6673548757,
+          946630.8274864911,
+          950743.9655711049
+        ]
+      },
+      "candidate": {
+        "median_ips": 954728.3338427206,
+        "geomean_ips": 955387.1763038656,
+        "minimum_ips": 954630.9804014562,
+        "samples": [
+          956803.7905843757,
+          954630.9804014562,
+          954728.3338427206
+        ]
+      },
+      "change_percent": 0.4191104947278701,
+      "geomean_change_percent": 0.633718426927099
+    },
+    "16000000": {
+      "baseline": {
+        "median_ips": 960715.8413823618,
+        "geomean_ips": 960575.7142480207,
+        "minimum_ips": 960255.423122068,
+        "samples": [
+          960715.8413823618,
+          960755.958778285,
+          960255.423122068
+        ]
+      },
+      "candidate": {
+        "median_ips": 967527.616451877,
+        "geomean_ips": 966966.7356692668,
+        "minimum_ips": 965080.8563590694,
+        "samples": [
+          965080.8563590694,
+          967527.616451877,
+          968294.6491776791
+        ]
+      },
+      "change_percent": 0.7090312011212241,
+      "geomean_change_percent": 0.6653323966502089
+    },
+    "20000000": {
+      "baseline": {
+        "median_ips": 970387.4130681456,
+        "geomean_ips": 969800.7085953205,
+        "minimum_ips": 968172.7665090839,
+        "samples": [
+          968172.7665090839,
+          970387.4130681456,
+          970844.0523292737
+        ]
+      },
+      "candidate": {
+        "median_ips": 973348.9987365687,
+        "geomean_ips": 973160.6969270114,
+        "minimum_ips": 972390.8183742806,
+        "samples": [
+          973742.7705837325,
+          973348.9987365687,
+          972390.8183742806
+        ]
+      },
+      "change_percent": 0.30519621632965066,
+      "geomean_change_percent": 0.34646173197352415
+    }
+  },
+  "decision": "Retain atomic readiness and condition-variable wakeups; all pool/deadline code rejected and removed.",
+  "validation": {
+    "local_regressions": "27 passed",
+    "direct_wait_test": "Published fast path, producer visibility, and stop wakeup passed\n2026-10-11T16:50:15.045 \n2026-10-11T16:50:15.046 VDF 0: 0 HW iters done in 0s, HW speed: 0 ips\n2026-10-11T16:50:15.046 VDF 0: 0 SW iters done in 0s, SW speed: 0 ips\n2026-10-11T16:50:15.046 VDF 0: Avg iters per intermediate: 0\n2026-10-11T16:50:15.046 \n",
+    "active_cancellation": {
+      "machine": "m6mini",
+      "device_location": 12305,
+      "engines": 3,
+      "frequency_mhz": 1540,
+      "client_binary": "./results/optimization-sweep/wakeups/candidate",
+      "voltage_requested_v": 1.0,
+      "threads_per_engine": 4,
+      "proof_threads_per_engine": 3,
+      "targets": [
+        1000000,
+        2000000,
+        4000000,
+        8000000,
+        12000000,
+        16000000,
+        20000000
+      ],
+      "scenario": "balanced",
+      "chain_targets": [
+        [
+          1000000,
+          2000000,
+          4000000,
+          8000000,
+          12000000,
+          16000000,
+          20000000
+        ],
+        [
+          1000000,
+          2000000,
+          4000000,
+          8000000,
+          12000000,
+          16000000,
+          20000000
+        ],
+        [
+          1000000,
+          2000000,
+          4000000,
+          8000000,
+          12000000,
+          16000000,
+          20000000
+        ]
+      ],
+      "challenge_delays_seconds": [
+        0,
+        0,
+        0
+      ],
+      "stop_after": 1,
+      "methodology": "Synthetic fixed test discriminants and proof requests over loopback using the real hardware client. Estimated IPS is iterations divided by elapsed time from challenge send to receipt of the complete proof. Client proof verification remains enabled; the test server does not independently verify serialized proofs. This is not a mainnet metric or a 24-hour stability result.",
+      "records": [
+        {
+          "chain": 0,
+          "iterations": 1000000,
+          "elapsed_seconds": 1.550466209,
+          "estimated_ips": 644967.2970589712,
+          "proof_bytes": 217
+        },
+        {
+          "chain": 1,
+          "iterations": 1000000,
+          "elapsed_seconds": 1.533924208,
+          "estimated_ips": 651922.6926497532,
+          "proof_bytes": 217
+        },
+        {
+          "chain": 2,
+          "iterations": 1000000,
+          "elapsed_seconds": 1.533817833,
+          "estimated_ips": 651967.9055002877,
+          "proof_bytes": 217
+        }
+      ],
+      "errors": [],
+      "max_temperature_c": null,
+      "client_exit_status": 0,
+      "restore_proof_verified": true,
+      "raw_log": "2026-10-11T16:46:15.219 Setting frequency to 1540.000000 MHz\n2026-10-11T16:46:15.353 Frequency is 1540.000000 MHz\n2026-10-11T16:46:15.355 Board voltage is 0.875 V\n2026-10-11T16:46:15.355 Setting voltage to 1.000 V\n2026-10-11T16:46:15.356 Board voltage is now 1.000 V\n2026-10-11T16:46:15.369 Board current is 0.510 A\n2026-10-11T16:46:15.386 Board power is 0.510 W\n2026-10-11T16:46:15.389 Connecting to 127.0.0.1:49472\n2026-10-11T16:46:15.389 VDF 0: Connected to timelord, waiting for challenge\n2026-10-11T16:46:15.389 Connecting to 127.0.0.1:49472\n2026-10-11T16:46:15.389 VDF 1: Connected to timelord, waiting for challenge\n2026-10-11T16:46:15.389 Connecting to 127.0.0.1:49472\n2026-10-11T16:46:15.390 VDF 2: Connected to timelord, waiting for challenge\n2026-10-11T16:46:15.391 VDF 1: Allocating intermediate values, total 2 * 4096\n2026-10-11T16:46:15.391 VDF 1: Received challenge, running\n2026-10-11T16:46:15.392 VDF 2: Allocating intermediate values, total 2 * 4096\n2026-10-11T16:46:15.392 VDF 2: Received challenge, running\n2026-10-11T16:46:15.393 VDF 0: Allocating intermediate values, total 2 * 4096\n2026-10-11T16:46:15.394 VDF 0: Received challenge, running\n2026-10-11T16:46:15.394 VDF 1: Queued proofs for iters: [1000000, 2000000, 4000000, 8000000, 12000000, 16000000, 20000000]\n2026-10-11T16:46:15.394 VDF 2: Queued proofs for iters: [1000000, 2000000, 4000000, 8000000, 12000000, 16000000, 20000000]\n2026-10-11T16:46:15.394 VDF 0: Queued proofs for iters: [1000000, 2000000, 4000000, 8000000, 12000000, 16000000, 20000000]\n2026-10-11T16:46:16.391 VDF 1: Starting proof thread 0 for iters=1000000, length=1000000\n2026-10-11T16:46:16.392 VDF 2: Starting proof thread 0 for iters=1000000, length=1000000\n2026-10-11T16:46:16.394 VDF 0: Starting proof thread 0 for iters=1000000, length=1000000\n2026-10-11T16:46:16.891 VDF 1: Starting proof thread 1 for iters=1500000, length=1500000 [checkpoint]\n2026-10-11T16:46:16.891 VDF 2: Starting proof thread 1 for iters=1500000, length=1500000 [checkpoint]\n2026-10-11T16:46:16.893 VDF 0: Starting proof thread 1 for iters=1500000, length=1500000 [checkpoint]\n2026-10-11T16:46:16.911 VDF 2: Proof done for iters=1000000, length=1000000 in 0.520s\n2026-10-11T16:46:16.920 VDF 1: Proof done for iters=1000000, length=1000000 in 0.529s\n2026-10-11T16:46:16.922 VDF 1: Proof retrieved for iters=1000000\n2026-10-11T16:46:16.923 VDF 2: Proof retrieved for iters=1000000\n2026-10-11T16:46:16.934 VDF 0: Proof done for iters=1000000, length=1000000 in 0.540s\n2026-10-11T16:46:16.938 VDF 0: Proof retrieved for iters=1000000\n2026-10-11T16:46:16.941 Interrupted\n2026-10-11T16:46:16.954 VDF 0: Global stop requested\n2026-10-11T16:46:16.954 \n2026-10-11T16:46:16.954 VDF 0: 1545795 HW iters done in 1s, HW speed: 990069 ips\n2026-10-11T16:46:16.954 VDF 0: 134970 SW iters done in 0s, SW speed: 283754 ips\n2026-10-11T16:46:16.954 VDF 0: Avg iters per intermediate: 354\n2026-10-11T16:46:16.954 \n2026-10-11T16:46:16.954 VDF 0: Proof stopped\n2026-10-11T16:46:16.969 VDF 0: Stopped at iters=1545795\n2026-10-11T16:46:16.969 VDF 0: Connection closed\n2026-10-11T16:46:16.969 VDF 1: Global stop requested\n2026-10-11T16:46:16.970 \n2026-10-11T16:46:16.970 VDF 1: 1551481 HW iters done in 1s, HW speed: 982591 ips\n2026-10-11T16:46:16.970 VDF 1: 192351 SW iters done in 0s, SW speed: 299161 ips\n2026-10-11T16:46:16.970 VDF 1: Avg iters per intermediate: 499\n2026-10-11T16:46:16.970 \n2026-10-11T16:46:16.970 VDF 1: Proof stopped\n2026-10-11T16:46:16.985 VDF 1: Stopped at iters=1551481\n2026-10-11T16:46:16.985 VDF 1: Connection closed\n2026-10-11T16:46:16.985 VDF 2: Global stop requested\n2026-10-11T16:46:16.985 \n2026-10-11T16:46:16.985 VDF 2: 1561639 HW iters done in 1s, HW speed: 980145 ips\n2026-10-11T16:46:16.985 VDF 2: 199282 SW iters done in 0s, SW speed: 293168 ips\n2026-10-11T16:46:16.985 VDF 2: Avg iters per intermediate: 512\n2026-10-11T16:46:16.985 \n2026-10-11T16:46:16.985 VDF 2: Proof stopped\n2026-10-11T16:46:16.985 Interrupted\n2026-10-11T16:46:17.000 VDF 2: Stopped at iters=1561639\n2026-10-11T16:46:17.000 VDF 2: Connection closed\n2026-10-11T16:46:17.000 All VDFs stopped, exiting\n",
+      "restore_log": "2026-10-11T16:46:17.269 Setting frequency to 1100.000000 MHz\n2026-10-11T16:46:17.402 Frequency is 1100.000000 MHz\n2026-10-11T16:46:17.404 Board voltage is 1.000 V\n2026-10-11T16:46:17.404 Setting voltage to 0.879 V\n2026-10-11T16:46:17.405 Board voltage is now 0.875 V\n2026-10-11T16:46:17.421 Board current is 0.483 A\n2026-10-11T16:46:17.436 Board power is 0.422 W\n2026-10-11T16:46:17.440 VDF 0: Allocating intermediate values, total 2 * 4096\n2026-10-11T16:46:17.441 ASIC Temp = 41.90 C; Frequency = 1100.0 MHz; freq_idx = 7634\n2026-10-11T16:46:17.816 ASIC Temp = 42.57 C; Frequency = 1100.0 MHz; freq_idx = 7634\n2026-10-11T16:46:18.181 ASIC Temp = 41.90 C; Frequency = 1100.0 MHz; freq_idx = 7634\n2026-10-11T16:46:18.546 ASIC Temp = 41.90 C; Frequency = 1100.0 MHz; freq_idx = 7634\n2026-10-11T16:46:18.839 \n2026-10-11T16:46:18.839 VDF 0: 1000000 HW iters done in 1s, HW speed: 714402 ips\n2026-10-11T16:46:18.839 VDF 0: 15466 SW iters done in 0s, SW speed: 279437 ips\n2026-10-11T16:46:18.839 \n2026-10-11T16:46:19.363 VDF 0: Proof done for iters=1000000, length=1000000 in 0.523s\n"
+    }
+  },
+  "proof_server_independently_verifies_serialized_proofs": false,
+  "balanced_runs": [
+    {
+      "file": "baseline-0.json",
+      "proofs": 21,
+      "errors": [],
+      "client_exit_status": 0,
+      "restore_verified": true,
+      "max_temperature_c": 46.05
+    },
+    {
+      "file": "baseline-1.json",
+      "proofs": 21,
+      "errors": [],
+      "client_exit_status": 0,
+      "restore_verified": true,
+      "max_temperature_c": 46.92
+    },
+    {
+      "file": "baseline-2.json",
+      "proofs": 21,
+      "errors": [],
+      "client_exit_status": 0,
+      "restore_verified": true,
+      "max_temperature_c": 46.92
+    },
+    {
+      "file": "candidate-0.json",
+      "proofs": 21,
+      "errors": [],
+      "client_exit_status": 0,
+      "restore_verified": true,
+      "max_temperature_c": 46.49
+    },
+    {
+      "file": "candidate-1.json",
+      "proofs": 21,
+      "errors": [],
+      "client_exit_status": 0,
+      "restore_verified": true,
+      "max_temperature_c": 46.7
+    },
+    {
+      "file": "candidate-2.json",
+      "proofs": 21,
+      "errors": [],
+      "client_exit_status": 0,
+      "restore_verified": true,
+      "max_temperature_c": 47.13
+    }
+  ]
+}

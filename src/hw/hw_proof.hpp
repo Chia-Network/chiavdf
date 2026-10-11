@@ -2,12 +2,15 @@
 #define HW_PROOF_H
 
 #include "vdf_base.hpp"
+
 #include "hw_interface.hpp"
 #include "hw_util.hpp"
 #include "bqfc.h"
 
 #include <atomic>
+#include <condition_variable>
 #include <deque>
+#include <memory>
 #include <mutex>
 #include <thread>
 
@@ -64,8 +67,9 @@ struct vdf_state {
     //std::vector<struct vdf_value> raw_values;
     struct vdf_value last_val;
     std::vector<form *> values;
-    std::vector<uint8_t> valid_values;
+    std::unique_ptr<std::atomic<uint8_t>[]> valid_values;
     std::mutex valid_values_mtx;
+    std::condition_variable valid_values_cv;
     std::deque<struct vdf_proof_req> req_proofs;
     std::vector<struct vdf_proof> proofs;
     std::mutex proofs_resize_mtx;
@@ -86,7 +90,7 @@ struct vdf_state {
     uint8_t max_aux_threads;
     uint8_t max_proof_threads;
     bool completed;
-    bool stopping;
+    std::atomic<bool> stopping;
     bool init_done;
 };
 

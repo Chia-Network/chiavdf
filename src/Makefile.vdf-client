@@ -83,7 +83,7 @@ BINS = vdf_client prover_test 1weso_test 2weso_test vdf_bench
 all: $(BINS)
 
 clean:
-	rm -f *.o hw/*.o $(BINS) compile_asm emu_hw_test hw_test hw_vdf_client emu_hw_vdf_client
+	rm -f *.o hw/*.o $(BINS) compile_asm emu_hw_test hw_test hw_vdf_client emu_hw_vdf_client hw_proof_wait_test
 
 $(BINS) avx512_test: %: %.o lzcnt.o $(ASM_OBJS)
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
@@ -146,4 +146,8 @@ hw_vdf_client: hw/hw_vdf_client.o $(HW_OBJS) $(HW_LIBS) hw/real_hw.o
 emu_hw_vdf_client: hw/hw_vdf_client.o $(HW_OBJS) $(EMU_OBJS)
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-hw/hw_test.o hw/hw_vdf_client.o $(HW_OBJS) $(EMU_OBJS): CXXFLAGS += -I. -Ihw -Ihw/libft4222 $(OPT_CFLAGS) -Wall
+# No physical board or FTDI shared library is needed for these wait tests.
+hw_proof_wait_test: hw/hw_proof_wait_test.o $(HW_OBJS) $(EMU_OBJS)
+	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+
+hw/hw_test.o hw/hw_vdf_client.o hw/hw_proof_wait_test.o $(HW_OBJS) $(EMU_OBJS): CXXFLAGS += -I. -Ihw -Ihw/libft4222 $(OPT_CFLAGS) -Wall

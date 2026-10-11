@@ -177,21 +177,24 @@ jobs:
           path: C:\local\boost_*
           key: windows-boost-msvc-14.3-v1
 
+      - name: Read mpir pin
+        if: matrix.os == 'windows-latest'
+        id: mpir-pin
+        shell: bash
+        run: echo "sha=$(tr -d '[:space:]' < scripts/mpir_gc_x64.commit)" >> "$GITHUB_OUTPUT"
+
       - name: Cache mpir checkout on Windows
         if: matrix.os == 'windows-latest'
         id: cache-mpir
         uses: actions/cache@v6.1.0
         with:
           path: mpir_gc_x64
-          key: windows-mpir-gc-x64-v1
+          key: windows-mpir-gc-x64-${{ steps.mpir-pin.outputs.sha }}
 
       - name: Checkout mpir for Windows
         if: matrix.os == 'windows-latest' && steps.cache-mpir.outputs.cache-hit != 'true'
-        uses: actions/checkout@v7
-        with:
-          repository: Chia-Network/mpir_gc_x64
-          fetch-depth: 1
-          path: mpir_gc_x64
+        shell: bash
+        run: bash scripts/get-mpir-gc-x64.sh
 
       - name: Install LLVM, Ninja and Boost on Windows
         if: matrix.os == 'windows-latest'

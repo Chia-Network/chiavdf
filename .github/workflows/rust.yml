@@ -146,7 +146,8 @@ jobs:
       - name: Install MPIR on Windows
         if: matrix.os.name == 'Windows'
         run: |
-          git clone https://github.com/Chia-Network/mpir_gc_x64.git
+          bash scripts/get-mpir-gc-x64.sh
+          if ($LASTEXITCODE -ne 0) { throw "get-mpir-gc-x64.sh failed with exit code $LASTEXITCODE" }
           "$(Get-Location)/mpir_gc_x64" | Out-File -Append -FilePath $env:GITHUB_PATH
 
       - name: Install libclang-dev on Linux
@@ -180,9 +181,9 @@ jobs:
 
       - name: Prepare for publish
         run: |
-          cd rust_bindings
-          cp -r ../src cpp
-          git clone https://github.com/Chia-Network/mpir_gc_x64.git
+          cp -r src rust_bindings/cpp
+          bash scripts/get-mpir-gc-x64.sh
+          mv mpir_gc_x64 rust_bindings/mpir_gc_x64
 
       - name: Publish to crates.io (dry run)
         # We use `--allow-dirty` because the `cpp` folder is copied into the working directory.

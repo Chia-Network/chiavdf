@@ -14,7 +14,7 @@ p = argparse.ArgumentParser()
 p.add_argument('--threads', type=int, default=4)
 p.add_argument('--client', default='./src/hw_vdf_client')
 p.add_argument('--output', required=True)
-p.add_argument('--scenario', choices=['balanced', 'staggered', 'irregular'], default='balanced')
+p.add_argument('--scenario', choices=['balanced', 'staggered', 'irregular', 'boundaries'], default='balanced')
 p.add_argument('--stop-after', type=int, default=0,
                help='Stop each chain after this many deliveries, with later requests still queued')
 p.add_argument('--verifier', default='./src/verify_delivery')
@@ -27,6 +27,8 @@ if a.scenario == 'staggered':
                      [1000000, 2000000, 4000000, 8000000, 12000000],
                      [1000000, 2000000, 4000000, 8000000, 12000000]]
     challenge_delays = [0, 3, 7]
+elif a.scenario == 'boundaries':
+    chain_targets = [[3999, 4000, 4001, 7999, 8000, 8001, 16003, 32007, 100003]] * 3
 elif a.scenario == 'irregular':
     chain_targets = [[100003, 250007, 1000123, 2000333, 4000777, 8000111, 20009999]] * 3
 targets = sorted(set(n for chain in chain_targets for n in chain))

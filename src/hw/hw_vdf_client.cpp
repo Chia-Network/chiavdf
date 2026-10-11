@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cerrno>
 #include <signal.h>
 
 #ifdef _WIN32
@@ -504,6 +505,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     opts->max_freq = pll_entries[VALID_PLL_FREQS - 1].freq;
     opts->vpo.max_aux_threads = HW_VDF_DEFAULT_MAX_AUX_THREADS;
     opts->vpo.max_proof_threads = 0;
+    opts->vpo.checkpoint_threshold = HW_VDF_CHKP_INTERVAL;
     opts->vdfs_mask = 0;
 
     while (argi < argc) {
@@ -586,6 +588,17 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
             opts->vdfs_mask = strtoul(value, NULL, 0);
         } else if (!strcmp(name, "vdf-threads")) {
             opts->vpo.max_aux_threads = strtoul(value, NULL, 0);
+        } else if (!strcmp(name, "checkpoint-threshold")) {
+            char *end = nullptr;
+            errno = 0;
+            unsigned long threshold = strtoul(value, &end, 0);
+            if (value[0] < '0' || value[0] > '9' || *end || errno == ERANGE ||
+                    threshold < HW_VDF_MIN_CHKP_THRESHOLD || threshold > UINT32_MAX) {
+                LOG_SIMPLE("Checkpoint threshold must be between %u and %u iterations",
+                        HW_VDF_MIN_CHKP_THRESHOLD, UINT32_MAX);
+                return -1;
+            }
+            opts->vpo.checkpoint_threshold = static_cast<uint32_t>(threshold);
         } else if (!strcmp(name, "proof-threads")) {
             opts->vpo.max_proof_threads = strtoul(value, NULL, 0);
         } else if (!strcmp(name, "auto-freq-period")) {
@@ -704,6 +717,7 @@ int hw_vdf_client_main(int argc, char **argv)
                 "  --vdfs-mask N - mask for enabling VDF engines [7, 1 - 7]\n"
                 "  --vdf-threads N - number of software threads per VDF engine [4, 2 - 64]\n"
                 "  --proof-threads N - number of proof threads per VDF engine\n"
+                "  --checkpoint-threshold N - split proofs above N iterations [1000000, 8000 - 4294967295]\n"
                 "  --auto-freq-period N - auto-adjust frequency every N seconds [0, 10 - inf]\n"
                 "  --version - print version and exit\n"
                 "  --list - list available devices and exit",

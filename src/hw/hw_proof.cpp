@@ -4,8 +4,8 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <stdexcept>
 
-static const uint32_t g_chkp_thres = 1000000;
 static const uint32_t g_skip_thres = 10;
 
 void report_bad_vdf_value(struct vdf_state *vdf, struct vdf_value *val)
@@ -348,10 +348,10 @@ void hw_proof_process_req(struct vdf_state *vdf)
 
     iters = req_iters - base_iters;
 
-    if (iters > g_chkp_thres) {
+    if (iters > vdf->checkpoint_threshold) {
         // Split iters as [75%, 25%]
         chkp_iters = iters * chkp_mul / chkp_div;
-        if (iters - chkp_iters > g_chkp_thres) {
+        if (iters - chkp_iters > vdf->checkpoint_threshold) {
             // Split iters as [69%, 23%, 8%]
             uint32_t chkp2_mul[] = { 69, 69 + 23 };
             uint64_t chkp2_iters;
@@ -684,7 +684,7 @@ void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof 
         Segment seg(start_iters, proof_iters - start_iters, x, y);
         HwProver prover(seg, vdf->D, vdf);
 
-        if (!is_chkp && seg.length > g_chkp_thres) {
+        if (!is_chkp && seg.length > vdf->checkpoint_threshold) {
             LOG_INFO("VDF %d: Warning: too long final proof segment length=%lu",
                     vdf->idx, seg.length);
         }
@@ -793,6 +793,10 @@ void init_vdf_state(struct vdf_state *vdf, struct vdf_proof_opts *opts, const ch
     vdf->start_time = vdf_get_cur_time();
     vdf->interval = HW_VDF_VALUE_INTERVAL;
     vdf->chkp_interval = HW_VDF_CHKP_INTERVAL;
+    vdf->checkpoint_threshold = opts ? opts->checkpoint_threshold : HW_VDF_CHKP_INTERVAL;
+    if (vdf->checkpoint_threshold < HW_VDF_MIN_CHKP_THRESHOLD) {
+        throw std::invalid_argument("Checkpoint threshold must be at least twice the value interval");
+    }
     vdf->target_iters = (n_iters + vdf->interval - 1) / vdf->interval * vdf->interval;
     vdf->idx = idx;
     vdf->completed = false;

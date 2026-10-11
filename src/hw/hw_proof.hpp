@@ -17,6 +17,8 @@
 #define HW_VDF_VALUE_INTERVAL 4000
 #define HW_VDF_VALUE_INTERVAL_DIVISORS { 2, 4, 5, 8, 10, 16, 20 }
 #define HW_VDF_CHKP_INTERVAL 1000000
+// A 75% checkpoint must contain at least one whole value interval.
+#define HW_VDF_MIN_CHKP_THRESHOLD (2 * HW_VDF_VALUE_INTERVAL)
 #define HW_VDF_MAX_AUX_THREADS 64
 #define HW_VDF_DEFAULT_MAX_AUX_THREADS 4
 #define HW_VDF_WQ_WARN_MULT 2
@@ -54,6 +56,7 @@ struct vdf_proof {
 struct vdf_proof_opts {
     uint8_t max_aux_threads;
     uint8_t max_proof_threads;
+    uint32_t checkpoint_threshold = HW_VDF_CHKP_INTERVAL;
 };
 
 struct vdf_state {
@@ -81,6 +84,7 @@ struct vdf_state {
     //std::mutex wq_mtx;
     uint32_t interval;
     uint32_t chkp_interval;
+    uint32_t checkpoint_threshold;
     uint32_t n_bad;
     uint32_t n_skipped;
     uint32_t log_cnt;

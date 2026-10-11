@@ -25,9 +25,18 @@ The comparison preflights both executables with `--version` before touching the
 board. `--baseline-threads` and `--candidate-threads` default to four auxiliary
 threads and set proof threads to one fewer per engine.
 
+The client option `--checkpoint-threshold 500000` improved regular 1M/2M/4M
+delivery in the repeated M6 tests. Irregular requests were mostly unchanged,
+with a small loss at 100K, so the client default remains 1000000. The option
+accepts 8000 through 4294967295 iterations; its minimum prevents checkpoints
+rounding to zero. See `m6mini-proof-parameters-results.json` for both workloads,
+rejected parameter screens, correctness checks and individual samples.
+
 `balanced` requests 1, 2, 4, 8, 12, 16 and 20 million iterations simultaneously
 on all three chains. `irregular` includes short requests and iterations not
 aligned to ASIC value spacing. `staggered` starts challenges at different times.
+`boundaries` checks requests around the 4000-iteration value spacing and the
+minimum configurable checkpoint threshold. It is a correctness workload.
 `m6mini_proof_delivery.py --stop-after 1 --output results/cancel.json` exercises
 cancellation while later requests remain queued.
 

@@ -27,9 +27,7 @@ def _require_util(script_dir: Path):
         existing_file = getattr(util, "__file__", None)
         if existing_file and Path(existing_file).resolve() == path:
             return util
-    raise RuntimeError(
-        "Formatter bundle not resolved; call trusted_formatter_loader_cold_start.resolve_loader_* first"
-    )
+    raise RuntimeError("Formatter bundle not resolved; call trusted_formatter_loader_cold_start.resolve_loader_* first")
 
 
 def _require_loader_module(script_dir: Path) -> types.ModuleType:

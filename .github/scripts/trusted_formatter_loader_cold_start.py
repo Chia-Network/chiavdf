@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+import types
 from pathlib import Path
 
 DEFAULT_SCRIPT_CANDIDATES: tuple[Path, ...] = (
@@ -64,8 +65,8 @@ def resolve_loader_for_dir(script_dir: Path) -> types.ModuleType:
 def resolve_loader_bundle(
     candidate_script_dirs: tuple[Path, ...] = DEFAULT_SCRIPT_CANDIDATES,
 ) -> tuple[types.ModuleType, Path]:
-    for script_dir in candidate_script_dirs:
-        script_dir = script_dir.resolve()
+    for candidate in candidate_script_dirs:
+        script_dir = candidate.resolve()
         if not all((script_dir / name).is_file() for name in LOADER_RESOLVE_MARKER_FILENAMES):
             continue
         return resolve_loader_for_dir(script_dir), script_dir

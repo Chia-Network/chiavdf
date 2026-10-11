@@ -25,9 +25,7 @@ def _require_scripts_dir_path_scrub(script_dir: Path) -> types.ModuleType:
         )
     existing_file = getattr(scrub, "__file__", None)
     if not existing_file or Path(existing_file).resolve() != scrub_path.resolve():
-        raise RuntimeError(
-            f"scripts_dir_path_scrub in sys.modules is not the trusted copy from {scrub_path}"
-        )
+        raise RuntimeError(f"scripts_dir_path_scrub in sys.modules is not the trusted copy from {scrub_path}")
     return scrub
 
 
@@ -79,9 +77,7 @@ def resolve_trusted_formatter_loader_for_dir(script_dir: Path) -> types.ModuleTy
     script_dir = script_dir.resolve()
     util = sys.modules.get("isolated_module_exec")
     if util is None:
-        raise RuntimeError(
-            "isolated_module_exec must be registered before resolve_trusted_formatter_loader_for_dir"
-        )
+        raise RuntimeError("isolated_module_exec must be registered before resolve_trusted_formatter_loader_for_dir")
     util.load_module_isolated(
         script_dir / "formatter_runtime_bundle.py",
         "formatter_runtime_bundle",

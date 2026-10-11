@@ -4,6 +4,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <thread>
+#include "proof_block_cache.hpp"
 
 inline Prover::Prover(Segment segm, integer D) {
     this->segm = segm;
@@ -49,6 +50,7 @@ inline void Prover::GenerateProof() {
     uint64_t k0 = k - k1;
     form x = id;
 
+    ProofBlockCache blocks(num_iterations, k, l, B);
     for (int64_t j = l - 1; j >= 0; j--) {
         x = FastPowFormNucomp(x, D, integer(1 << k), L, reducer);
 
@@ -61,7 +63,7 @@ inline void Prover::GenerateProof() {
             limit++;
         for (uint64_t i = 0; i < limit; i++) {
             if (num_iterations >= k * (i * l + j + 1)) {
-                uint64_t b = GetBlock(i * l + j, k, num_iterations, B);
+                uint64_t b = blocks.Get(i, j);
                 if (b >= (1UL << k)) {
                     throw std::runtime_error("GenerateProof block index out of bounds");
                 }
@@ -119,6 +121,7 @@ inline void ParallelProver::ProvePart(uint8_t thr_idx, uint32_t start, uint32_t 
     int64_t end = start - len;
     int64_t j;
 
+    ProofBlockCache blocks(num_iterations, k, l, B);
     for (j = start - 1; j >= end; j--) {
         x = FastPowFormNucomp(x, D, integer(1 << k), L, reducer);
 
@@ -131,7 +134,7 @@ inline void ParallelProver::ProvePart(uint8_t thr_idx, uint32_t start, uint32_t 
             limit++;
         for (uint64_t i = 0; i < limit; i++) {
             if (num_iterations >= k * (i * l + j + 1)) {
-                uint64_t b = GetBlock(i * l + j, k, num_iterations, B);
+                uint64_t b = blocks.Get(i, j);
                 if (!PerformExtraStep()) return;
                 form tmp = GetForm(i);
                 nucomp_form(ys[b], ys[b], tmp, D, L);

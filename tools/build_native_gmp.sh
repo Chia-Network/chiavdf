@@ -20,7 +20,7 @@ echo 'a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898  gmp-6.3.
 tar -xf gmp-6.3.0.tar.xz
 cd gmp-6.3.0
 ./configure --prefix="$gmp_prefix" --enable-cxx CC=clang CXX=clang++ \
-    CFLAGS='-O3 -mcpu=native' CXXFLAGS='-O3 -mcpu=native'
+    CFLAGS='-O3 -mcpu=native -DHGCD2_DIV2_METHOD=1' CXXFLAGS='-O3 -mcpu=native'
 make -j "${GMP_BUILD_JOBS:-4}"
 make -j "${GMP_BUILD_JOBS:-4}" check
 make install

@@ -62,19 +62,45 @@ typedef qfb qfb_t[1];
 // From Antic using Flint (works!)
 void qfb_nucomp(qfb_t r, const qfb_t f, const qfb_t g, mpz_t const& D, mpz_t const& L)
 {
-   mpz_t a1, a2, c2, ca, cb, cc, k, s, sp, ss, m, t, u2, v1, v2;
-
    if (mpz_cmp(f->a, g->a) > 0)
    {
       qfb_nucomp(r, g, f, D, L);
       return;
    }
 
-   mpz_init(a1); mpz_init(a2); mpz_init(c2);
-   mpz_init(ca); mpz_init(cb); mpz_init(cc);
-   mpz_init(k); mpz_init(m);
-   mpz_init(s); mpz_init(sp); mpz_init(ss);
-   mpz_init(t); mpz_init(u2); mpz_init(v1); mpz_init(v2);
+   // Each scratch value is assigned before use. Keep its limb allocation
+   // across compositions, as NUDUPL does, without sharing between workers.
+   // The operand-order recursion above returns before touching this context.
+   struct qfb_nucomp_ctx {
+      mpz_t a1, a2, c2, ca, cb, cc, k, s, sp, ss, m, t, u2, v1, v2;
+      mpz_t m1, m2, r1, r2, co1, co2, temp;
+      qfb_nucomp_ctx() {
+         mpz_inits(a1, a2, c2, ca, cb, cc, k, s, sp, ss, m, t, u2, v1, v2,
+                   m1, m2, r1, r2, co1, co2, temp, nullptr);
+      }
+      ~qfb_nucomp_ctx() {
+         mpz_clears(a1, a2, c2, ca, cb, cc, k, s, sp, ss, m, t, u2, v1, v2,
+                    m1, m2, r1, r2, co1, co2, temp, nullptr);
+      }
+      qfb_nucomp_ctx(const qfb_nucomp_ctx&) = delete;
+      qfb_nucomp_ctx& operator=(const qfb_nucomp_ctx&) = delete;
+   };
+   static thread_local qfb_nucomp_ctx ctx;
+   mpz_t& a1 = ctx.a1;
+   mpz_t& a2 = ctx.a2;
+   mpz_t& c2 = ctx.c2;
+   mpz_t& ca = ctx.ca;
+   mpz_t& cb = ctx.cb;
+   mpz_t& cc = ctx.cc;
+   mpz_t& k = ctx.k;
+   mpz_t& s = ctx.s;
+   mpz_t& sp = ctx.sp;
+   mpz_t& ss = ctx.ss;
+   mpz_t& m = ctx.m;
+   mpz_t& t = ctx.t;
+   mpz_t& u2 = ctx.u2;
+   mpz_t& v1 = ctx.v1;
+   mpz_t& v2 = ctx.v2;
 
    /* nucomp calculation */
 
@@ -134,10 +160,13 @@ void qfb_nucomp(qfb_t r, const qfb_t f, const qfb_t g, mpz_t const& D, mpz_t con
       mpz_divexact(cc, cc, a1);
    } else
    {
-      mpz_t m1, m2, r1, r2, co1, co2, temp;
-
-      mpz_init(m1); mpz_init(m2); mpz_init(r1); mpz_init(r2);
-      mpz_init(co1); mpz_init(co2); mpz_init(temp);
+      mpz_t& m1 = ctx.m1;
+      mpz_t& m2 = ctx.m2;
+      mpz_t& r1 = ctx.r1;
+      mpz_t& r2 = ctx.r2;
+      mpz_t& co1 = ctx.co1;
+      mpz_t& co2 = ctx.co2;
+      mpz_t& temp = ctx.temp;
 
       mpz_set(r2, a1);
       mpz_set(r1, k);
@@ -185,19 +214,12 @@ void qfb_nucomp(qfb_t r, const qfb_t f, const qfb_t g, mpz_t const& D, mpz_t con
          mpz_neg(cc, cc);
       }
 
-      mpz_clear(m1); mpz_clear(m2); mpz_clear(r1); mpz_clear(r2);
-      mpz_clear(co1); mpz_clear(co2); mpz_clear(temp);
    }
 
    mpz_set(r->a, ca);
    mpz_set(r->b, cb);
    mpz_set(r->c, cc);
 
-   mpz_clear(ca); mpz_clear(cb); mpz_clear(cc);
-   mpz_clear(k); mpz_clear(m);
-   mpz_clear(s); mpz_clear(sp); mpz_clear(ss);
-   mpz_clear(t); mpz_clear(u2); mpz_clear(v1); mpz_clear(v2);
-   mpz_clear(a1); mpz_clear(a2); mpz_clear(c2);
 }
 
 // a = b * c

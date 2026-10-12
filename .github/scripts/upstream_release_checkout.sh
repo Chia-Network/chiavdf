@@ -4,7 +4,10 @@
 # agent cannot review the default branch; the not_scanned comment still posts.
 set -euo pipefail
 
-resolved_to="$(jq -r '.resolved_to // empty' malware_scan_report.json)"
+resolved_to="${RESOLVED_TO:-}"
+if [ -z "$resolved_to" ] && [ -f malware_scan_report.json ]; then
+  resolved_to="$(jq -r '.resolved_to // empty' malware_scan_report.json)"
+fi
 if [ -z "$resolved_to" ]; then
   rm -rf .upstream-dependency .malware-scan
   exit 0

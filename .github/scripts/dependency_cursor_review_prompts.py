@@ -42,7 +42,7 @@ Local usage hints (non-authoritative rg hits):
 
 Repository layout:
 - Current repository root: .
-- Upstream dependency repository: .upstream-dependency (full git history is available)
+- Upstream dependency repository: .upstream-dependency (the from and to commits are checked out)
 - If .upstream-dependency is absent, the release commit was not checked out (status not_scanned). \
 Do not search for another tree and do not review a default-branch checkout.
 """.strip()

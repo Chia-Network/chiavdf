@@ -8,6 +8,7 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -38,8 +39,11 @@ def main():
     parser.add_argument('--device-loc', type=int, default=12305)
     parser.add_argument('--first-job', type=int, default=1)
     parser.add_argument('--jobs', type=int, default=6)
+    parser.add_argument('--frequency-mhz', type=float, default=1540)
     add_client_options(parser)
     args = parser.parse_args()
+    if not math.isfinite(args.frequency_mhz) or not 200 <= args.frequency_mhz <= 2200:
+        parser.error('--frequency-mhz must be finite and between 200 and 2200')
     trace = json.loads(args.trace.read_text())
     jobs = [j for j in trace['jobs'] if j['job'] >= args.first_job][:args.jobs]
     if not jobs or len(jobs) != args.jobs:
@@ -142,7 +146,7 @@ def main():
     with log_path.open('w') as log:
         try:
             client = subprocess.Popen([args.client,*client_flags,'--device-loc',str(args.device_loc),
-                '--vdfs-mask','7','--freq','1540','--voltage','1.0','--vdf-threads','4',
+                '--vdfs-mask','7','--freq',str(args.frequency_mhz),'--voltage','1.0','--vdf-threads','4',
                 '--proof-threads','3','--ip','127.0.0.1',str(listener.getsockname()[1]),'3'],
                 stdout=log,stderr=subprocess.STDOUT,env=dict(client_env,CHIAVDF_HW_TELEMETRY='1'))
             def temperature_monitor():
@@ -191,6 +195,7 @@ def main():
     if not verified:errors.append({'error':'Independent wire verification/tamper rejection failed'})
     temps = list(map(float,re.findall(r'ASIC Temp = ([\d.]+) C',raw)))
     result={'client':args.client,'trace':str(args.trace),'jobs':[j['job'] for j in jobs],
+            'frequency_requested_mhz':args.frequency_mhz, 'voltage_requested_v':1.0,
             'client_configuration':client_configuration,
             'started_utc':started_utc,'finished_utc':datetime.now(timezone.utc).isoformat(),
             'methodology':__doc__+' Timing is from challenge send, not original timelord chain mapping. Future targets cancelled by recorded resets are expected.',

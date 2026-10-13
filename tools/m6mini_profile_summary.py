@@ -50,14 +50,17 @@ def summarize(raw):
                       if r['iters'] == 0}
     completed = {(r['job'], r['engine'], r['iters']) for r in segments}
     reset_workers = [w for w in workers if (w['job'], w['engine']) in natural_resets]
-    unfinished = [w for w in reset_workers if (w['job'], w['engine'], w['iters']) not in completed]
+    unfinished = [w for w in reset_workers if w.get('completed') == 0 or
+                  (w.get('completed') is None and (w['job'], w['engine'], w['iters']) not in completed)]
     total_cpu = sum(w['cpu_us'] for w in reset_workers)
     unfinished_cpu = sum(w['cpu_us'] for w in unfinished)
     result['reset_construction'] = {
         'natural_reset_jobs': len(natural_resets), 'worker_records': len(reset_workers),
         'unfinished_worker_records': len(unfinished), 'total_worker_cpu_us': total_cpu,
         'unfinished_worker_cpu_us': unfinished_cpu,
-        'unfinished_cpu_fraction': unfinished_cpu / total_cpu if total_cpu else None,
+        'cancellation_logging_complete': bool(reset_workers) and all('completed' in w for w in reset_workers),
+        'unfinished_cpu_fraction': (unfinished_cpu / total_cpu if total_cpu else None)
+                                  if all('completed' in w for w in reset_workers) else None,
         'note': 'Only jobs with a recorded natural reset request are included. Workers without a completed segment measure unfinished construction; completed but unused checkpoints and tail squaring are not counted. This is a lower bound on discarded CPU work.'}
     return result
 

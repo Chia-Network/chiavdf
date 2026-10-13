@@ -10,6 +10,7 @@ def add_client_options(parser):
                         help='Native GMP directory; pass the client executable directly')
     parser.add_argument('--checkpoint-threshold', type=int)
     parser.add_argument('--retain-asic-values', action='store_true')
+    parser.add_argument('--proof-profile', action='store_true')
 
 
 def configure_client(args):
@@ -21,6 +22,8 @@ def configure_client(args):
         flags += ['--checkpoint-threshold', str(args.checkpoint_threshold)]
     if args.retain_asic_values:
         flags += ['--retain-asic-values']
+    if args.proof_profile:
+        flags += ['--proof-profile']
     library = None
     probe_environment = dict(environment)
     if args.gmp_lib_dir is not None:

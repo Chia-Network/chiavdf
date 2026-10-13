@@ -516,3 +516,96 @@ and native GMP mappings were confirmed and live proof delivery resumed.
 The swap patch remains uncommitted in the isolated worktree. The tuning
 screens leave further kernel and bucket/deadline experiments open, but this
 round does not reach 1M delivered IPS at the existing hardware operating point.
+
+## Fifth round: live stability, reset work and checkpoint deadlines (2026-10-13)
+
+The unchanged production client logged 62 raw-value recoveries over 19.14 hours
+at 1540 MHz / 1.0 V, all on physical VDF engine 0. No invalid segment proofs
+were reported. The AMD MSP clients also reported only engine-0 bad values in
+the preceding 24 hours: 12 on host 01, 8 on host 02, and 2 on host 03. Their
+frequencies auto-adjust, so these counts are not a controlled hardware or OS
+comparison. They do establish that the symptom predates these proof changes
+and is not limited to macOS.
+
+Four clock trials used the original production binary with three engines on
+one board, rotating the synthetic discriminants between connections. At 1.0 V,
+two 120M-iteration trials at 1500 MHz had no recovery; two at 1540 MHz had one
+recovery between them. All 72 complete wire proofs and four restoration proofs
+verified. The recovering trial is preserved and excluded from timing. These
+short trials do not certify a stable clock.
+
+Engine 0 uses a combined telemetry/status burst alias; engines 1 and 2 use
+per-engine status registers. `CHIAVDF_HW_DIRECT_STATUS=1` allows a diagnostic
+comparison using the latter path for engine 0, while keeping temperature reads.
+Two rotated trials per path at 1540 MHz, with 180M iterations per engine,
+verified 36 complete wire proofs without recovery in either mode. Both paths
+also passed emulator checks. The default read path is unchanged: these results
+do not establish a causal explanation or justify changing it.
+
+Two alternating mainnet pairs used 1500 MHz / 1.0 V and a 500K checkpoint
+threshold, with 30 seconds of warmup followed by 180 seconds of measurement.
+The baseline was the original production binary; the candidate used the retained
+proof changes, endpoint cache and opt-in profiling. The local timelord reported
+187 proof completions across these measurement windows and no invalid proofs of
+time. Neither client reported a recovery or invalid segment in its full phase
+log. Maximum observed phase temperature was 46.70 C.
+
+| Window | Completion samples | Mean completion IPS | Median completion IPS |
+| --- | ---: | ---: | ---: |
+| Baseline 0 | 45 | 810,045 | 888,412 |
+| Candidate 0 | 50 | 861,117 | 921,042 |
+| Candidate 1 | 49 | 913,038 | 945,801 |
+| Baseline 1 | 43 | 903,454 | 936,865 |
+
+These windows have different proof-length distributions, and the candidate
+has profiling overhead. Completion-event means are not time-sampled Grafana
+gauge averages. This is live protocol validation, not evidence of a precise
+steady-state speed increase. For context only, Grafana's 24-hour gauge averages
+were approximately 930,971 IPS for MSP primary and 931,881 IPS for ZRH primary;
+those should not be directly compared with the table's completion means.
+
+The reset-work investigation exposed a profiling gap: worker CPU totals were
+logged only for finished constructions. The instrumentation now emits
+`completed=0` for canceled constructions and `completed=1` for finished ones.
+Legacy logs explicitly report incomplete cancellation coverage instead of a
+zero unfinished-CPU fraction. A separate 180-second mainnet capture contained
+42 natural reset jobs and 378 relevant worker records. Of 295.97 seconds of
+measured construction-worker CPU, 21.71 seconds (7.34%) belonged to unfinished
+constructions. This is a lower bound on discarded work; it excludes tail
+squaring and completed but unused checkpoints.
+
+The emulator cancellation regression also exposed a harness shutdown race:
+proof bytes already queued on a socket can precede STOP. The harness now drains
+and independently verifies them, storing them separately from timed receipts.
+The regression verified three timed and two shutdown proofs, emitted ten
+canceled-worker records, and verified its emulator restoration proof. Hardware
+worker/snapshot regressions passed again. The harness accepts an explicit
+`--restore-tool` for emulator runs and preflights its existence before launch.
+
+Checkpoint spacing was re-screened against the new captured trace at 1500 MHz.
+Three alternating pairs compared 500K and 250K on jobs 1–6: all 60 complete wire
+proofs verified and arrived before reset. Matching receipts saved a median
+6.41 ms; their geometric mean IPS ratio improved 1.188%. On the untouched jobs
+7–12 slice, all 17 delivered proofs verified. Matching receipts changed only
+0.0043%, but 250K delivered four additional proofs before reset across two pairs,
+plus one additional late proof. The third pair delivered no extra proofs.
+Thus 250K is a candidate for testing deadline coverage, not a universally faster
+or established default. The library/client default remains 1M; the existing
+M6 baseline setting remains 500K.
+
+A bounded longer mainnet comparison now runs six hours with the frozen original
+binary at 500K, then six hours with the frozen optimized binary at 250K. Both
+use three engines on board 12305 at 1500 MHz / 1.0 V, native GMP, and the existing
+55 C guard. Candidate profiling and endpoint retention are enabled. Results
+are pending; no sustained-stability or 1M delivered-IPS claim is made. The
+controller handles termination by draining its phase guard and restoring the
+original live binary at 1500 MHz. The original 1540 MHz guard source is retained
+in the experiment directory. Active-controller metadata is also written beside
+the usual live PID files so the experiment can be identified and stopped.
+
+Raw remote artifacts live under `results/round5-{stability,readpath,live,
+reset-profile,checkpoints,checkpoint-holdout,soak}` in the prepared M6 checkout.
+`m6mini-round5-results.json` retains the completed evidence and pending soak
+status; `m6mini-round5-mainnet-trace.json` records the fresh natural-reset inputs.
+The retained code and evidence are packaged in draft chiavdf PR #425. The
+user-owned optimization-ideas file remains untracked and untouched.

@@ -26,6 +26,8 @@ p.add_argument('--scenario', choices=['balanced', 'staggered', 'irregular', 'bou
 p.add_argument('--stop-after', type=int, default=0,
                help='Stop each chain after this many deliveries, with later requests still queued')
 p.add_argument('--verifier', default='./src/verify_delivery')
+p.add_argument('--restore-tool', default='./src/hw_test',
+               help='Restoration executable; use emu_hw_test for emulator trials')
 add_client_options(p)
 a = p.parse_args()
 if not math.isfinite(a.frequency_mhz) or not 200 <= a.frequency_mhz <= 2200:
@@ -56,6 +58,8 @@ challenge_delays = challenge_delays[:a.engines]
 targets = sorted(set(n for chain in chain_targets for n in chain))
 if not Path(a.verifier).is_file():
     p.error('Build the serialized-proof verifier before starting the benchmark')
+if not Path(a.restore_tool).is_file():
+    p.error('Build the restoration tool before starting the benchmark')
 expected_proofs = sum(map(len, chain_targets))
 if a.stop_after:
     if a.stop_after < 1:
@@ -67,6 +71,7 @@ discriminants = discriminants[a.challenge_rotation:] + discriminants[:a.challeng
 barrier = threading.Barrier(a.engines, timeout=20)
 stop = threading.Event()
 records = []
+shutdown_records = []
 errors = []
 out = Path(a.output)
 out.parent.mkdir(parents=True, exist_ok=True)
@@ -97,11 +102,7 @@ def chain(conn, idx):
         requests = b''.join(f'{len(str(n)):02d}{n}'.encode() for n in requested)
         conn.sendall(requests)
         received = set()
-        while len(received) < delivery_count:
-            header = read_exact(conn, 4)
-            if header == b'STOP':
-                conn.sendall(b'ACK')
-                raise RuntimeError('Client stopped before delivering all requested proofs')
+        def decode_proof(header):
             size = int.from_bytes(header, 'big')
             if size <= 0 or size > 1048576:
                 raise RuntimeError(f'Unexpected proof message length {size}')
@@ -111,17 +112,30 @@ def chain(conn, idx):
                 raise RuntimeError(f'Unexpected proof iterations {iterations}')
             elapsed = time.monotonic() - started
             received.add(iterations)
-            records.append(dict(chain=idx, iterations=iterations, elapsed_seconds=elapsed,
-                                estimated_ips=iterations/elapsed, proof_bytes=len(proof),
-                                witness_depth=proof[116] + 1, serialized_proof_hex=proof.hex()))
+            return dict(chain=idx, iterations=iterations, elapsed_seconds=elapsed,
+                        estimated_ips=iterations/elapsed, proof_bytes=len(proof),
+                        witness_depth=proof[116] + 1, serialized_proof_hex=proof.hex())
+        while len(received) < delivery_count:
+            header = read_exact(conn, 4)
+            if header == b'STOP':
+                conn.sendall(b'ACK')
+                raise RuntimeError('Client stopped before delivering all requested proofs')
+            records.append(decode_proof(header))
         # Stop globally while all sockets are still serviced. Closing a
         # synthetic server socket during reconnect can otherwise cause SIGPIPE.
         barrier.wait()
         if idx == 0:
             client.terminate()
-        if read_exact(conn, 4) != b'STOP':
-            raise RuntimeError('Missing STOP acknowledgement')
-        conn.sendall(b'ACK')
+        while True:
+            header = read_exact(conn, 4)
+            if header == b'STOP':
+                conn.sendall(b'ACK')
+                break
+            if not a.stop_after:
+                raise RuntimeError('Unexpected proof during shutdown')
+            # A proof already queued on the socket can precede STOP. Drain and
+            # verify it without including it in the timed delivery-count limit.
+            shutdown_records.append(decode_proof(header))
     except Exception as exc:
         errors.append(dict(chain=idx, error=str(exc)))
         barrier.abort()
@@ -172,16 +186,16 @@ with log_path.open('w') as log:
             except subprocess.TimeoutExpired:
                 client.kill()
                 client.wait()
-        restore = subprocess.run(['./src/hw_test', '1', '1000000', str(a.device_loc), '1100', '0.88'],
+        restore = subprocess.run([a.restore_tool, '1', '1000000', str(a.device_loc), '1100', '0.88'],
                                  capture_output=True, text=True, timeout=60, env=client_env)
 raw = log_path.read_text()
 if 'Restarting VDF' in raw or 'Proof NOT VALID' in raw:
     errors.append(dict(error='Hardware restart or invalid segment during benchmark'))
 verification = subprocess.run([a.verifier], input=''.join(
-    f"{discriminants[r['chain']]} {r['serialized_proof_hex']}\n" for r in records),
+    f"{discriminants[r['chain']]} {r['serialized_proof_hex']}\n" for r in records + shutdown_records),
     capture_output=True, text=True, timeout=60, env=client_env)
 serialized_verified = (bool(records) and verification.returncode == 0 and
-                       verification.stdout.splitlines() == ['1'] * len(records))
+                       verification.stdout.splitlines() == ['1'] * (len(records) + len(shutdown_records)))
 if not serialized_verified:
     errors.append(dict(error='Complete serialized-proof verification or tamper rejection failed',
                        verifier_stdout=verification.stdout, verifier_stderr=verification.stderr))
@@ -202,6 +216,7 @@ result = dict(machine='m6mini', device_location=a.device_loc, engines=a.engines,
               serialized_proofs_verified=serialized_verified,
               verification_log=verification.stderr,
               records=sorted(records, key=lambda r:(r['chain'],r['iterations'])), errors=errors,
+              shutdown_records=shutdown_records,
               max_temperature_c=max(temps) if temps else None,
               client_exit_status=client.returncode if client else None,
               restore_proof_verified=restore.returncode == 0 and 'Proof done for iters=1000000' in restore.stdout+restore.stderr,

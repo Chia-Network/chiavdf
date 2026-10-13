@@ -684,15 +684,15 @@ class HwProver : public ParallelProver {
         return *hw_proof_value_at(vdf, pos);
     }
 
-    void LogWorkers(uint64_t iters) const {
+    void LogWorkers(uint64_t iters, bool completed) const {
         if (!vdf->proof_profile) return;
         for (size_t i = 0; i < workers.size(); ++i) {
             const auto &worker = workers[i];
             std::ostringstream samples;
             for (size_t cpu = 0; cpu < worker.cpu_samples.size(); ++cpu)
                 if (worker.cpu_samples[cpu]) samples << cpu << ':' << worker.cpu_samples[cpu] << ',';
-            LOG_INFO("PROOF_WORKER job=%lu engine=%u iters=%lu worker=%zu wall_us=%lu cpu_us=%lu wait_us=%lu effective_qos=%u core_samples=%s",
-                     vdf->profile_job, vdf->idx, iters, i, worker.wall_us, worker.cpu_us,
+            LOG_INFO("PROOF_WORKER job=%lu engine=%u iters=%lu worker=%zu completed=%u wall_us=%lu cpu_us=%lu wait_us=%lu effective_qos=%u core_samples=%s",
+                     vdf->profile_job, vdf->idx, iters, i, unsigned(completed), worker.wall_us, worker.cpu_us,
                      worker.wait_us, worker.effective_qos, samples.str().c_str());
         }
     }
@@ -822,13 +822,13 @@ void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof 
         }
 
         prover.start();
+        timing.proof_done_us = hw_proof_profile_us(vdf);
+        prover.LogWorkers(proof_iters, prover.IsFinished());
 
         if (prover.IsFinished()) {
             size_t d_bits;
             uint64_t elapsed_us = vdf_get_elapsed_us(start_time);
             bool is_valid = false;
-            timing.proof_done_us = hw_proof_profile_us(vdf);
-            prover.LogWorkers(proof_iters);
             proof_val = prover.GetProof();
 
             LOG_INFO("VDF %d: Proof done for iters=%lu, length=%lu in %.3fs%s",

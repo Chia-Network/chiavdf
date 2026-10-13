@@ -49,6 +49,7 @@ struct vdf_client_opts {
     double freq;
     double voltage;
     uint32_t ip;
+    uint32_t device_loc;
     int port;
     int n_vdfs;
     uint32_t auto_freq_period;
@@ -264,6 +265,9 @@ void handle_iters(struct vdf_client *client, struct vdf_conn *conn)
         iters_buf[iters_size] = '\0';
         iters = strtoul(iters_buf, NULL, 10);
 
+        if (conn->vdf.proof_profile)
+            LOG_INFO("PROOF_REQUEST job=%lu engine=%u iters=%lu at_us=%lu",
+                     conn->vdf.profile_job, conn->vdf.idx, iters, hw_proof_profile_us(&conn->vdf));
         if (iters) {
             LOG_DEBUG("VDF %d: Requested proof for iters=%llu", conn->vdf.idx, (unsigned long long)iters);
             hw_request_proof(&conn->vdf, iters, false);
@@ -306,9 +310,10 @@ void tl_enc_hex(char *out_data, uint8_t *data, size_t size)
 
 void handle_proofs(struct vdf_client *client, struct vdf_conn *conn)
 {
-    struct vdf_proof *proof;
+    struct vdf_proof_delivery delivery;
     int i;
-    while ((i = hw_retrieve_proof(&conn->vdf, &proof)) >= 0) {
+    while ((i = hw_retrieve_proof(&conn->vdf, &delivery)) >= 0) {
+        const auto *proof = &delivery.final;
         uint8_t data[8 + 8 + 1 + BQFC_FORM_SIZE * 2];
         char tl_data[sizeof(data) * 2 + 5] = {0};
 
@@ -323,19 +328,20 @@ void handle_proofs(struct vdf_client *client, struct vdf_conn *conn)
         tl_enc_hex(&tl_data[4], data, sizeof(data));
         Int32ToBytes((uint8_t *)tl_data, (sizeof(data) + i * sizeof(vdf_proof_segm)) * 2);
         write_data(conn, tl_data, sizeof(tl_data) - 1);
-        while (i) {
+        for (const auto &checkpoint : delivery.checkpoints) {
             struct vdf_proof_segm *segm = (struct vdf_proof_segm *)data;
 
-            i--;
-            //proof = conn->vdf.chkp_proofs[i];
-            proof = &conn->vdf.proofs[proof->prev];
-            Int64ToBytes(segm->iters, proof->seg_iters);
-            memcpy(segm->B, proof->B, sizeof(proof->B));
-            memcpy(segm->proof, proof->proof, sizeof(proof->proof));
+            Int64ToBytes(segm->iters, checkpoint.seg_iters);
+            memcpy(segm->B, checkpoint.B, sizeof(checkpoint.B));
+            memcpy(segm->proof, checkpoint.proof, sizeof(checkpoint.proof));
 
             tl_enc_hex(tl_data, data, sizeof(*segm));
             write_data(conn, tl_data, sizeof(*segm) * 2);
         }
+        if (conn->vdf.proof_profile)
+            LOG_INFO("PROOF_PROFILE job=%lu engine=%u iters=%lu stage=sent at_us=%lu depth=%zu",
+                     conn->vdf.profile_job, conn->vdf.idx, delivery.final.iters,
+                     hw_proof_profile_us(&conn->vdf), delivery.checkpoints.size() + 1);
     }
 }
 
@@ -382,6 +388,9 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
         init_vdf_state(vdf, &client->opts.vpo, d_str, init_form, n_iters, vdf->idx);
         start_hw_vdf(client->drv, vdf->D.impl, vdf->last_val.a, vdf->last_val.b,
                 vdf->target_iters, vdf->idx);
+        if (vdf->proof_profile)
+            LOG_INFO("PROOF_PROFILE job=%lu engine=%u stage=asic_started at_us=%lu",
+                     vdf->profile_job, vdf->idx, hw_proof_profile_us(vdf));
         write_data(conn, "OK", 2);
         conn->state = RUNNING;
         conn->buf_pos = 0;
@@ -447,6 +456,7 @@ void event_loop(struct vdf_client *client)
                     size_t pos = 0;
                     form *f;
 
+                    hw_proof_reset_retained_values(vdf);
                     stop_hw_vdf(client->drv, vdf->idx);
                     f = hw_proof_last_good_form(vdf, &pos);
                     vdf->iters_offset = pos * vdf->interval;
@@ -497,6 +507,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     opts->voltage = HW_VDF_DEF_VOLTAGE;
     opts->freq = HW_VDF_DEF_FREQ;
     opts->ip = INADDR_LOOPBACK;
+    opts->device_loc = 0;
     opts->port = 0;
     opts->n_vdfs = 3;
     opts->do_list = false;
@@ -547,6 +558,13 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
             argi++;
             continue;
         }
+        if (!strcmp(name, "proof-profile") || !strcmp(name, "retain-asic-values")) {
+            if (value) return -1;
+            if (!strcmp(name, "proof-profile")) opts->vpo.proof_profile = true;
+            else opts->vpo.retain_asic_values = true;
+            argi++;
+            continue;
+        }
         if (!strcmp(name, "version")) {
             if (value) {
                 LOG_SIMPLE("Invalid option");
@@ -584,6 +602,15 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
                 opts->ip = ntohl(parsed_addr.s_addr);
             }
 #endif
+        } else if (!strcmp(name, "device-loc")) {
+            char *end = nullptr;
+            errno = 0;
+            unsigned long loc = strtoul(value, &end, 0);
+            if (!value[0] || value[0] == '-' || *end || errno == ERANGE || loc > UINT32_MAX) {
+                LOG_SIMPLE("Invalid device location");
+                return -1;
+            }
+            opts->device_loc = static_cast<uint32_t>(loc);
         } else if (!strcmp(name, "vdfs-mask")) {
             opts->vdfs_mask = strtoul(value, NULL, 0);
         } else if (!strcmp(name, "vdf-threads")) {
@@ -714,9 +741,12 @@ int hw_vdf_client_main(int argc, char **argv)
                 "  --freq N - set ASIC frequency [%d, 200 - 2200]\n"
                 "  --voltage N - set board voltage [%.2f, 0.7 - 1.0]\n"
                 "  --ip A.B.C.D - timelord IP address [localhost]\n"
+                "  --device-loc N - FTDI board location from --list [0: first available]\n"
                 "  --vdfs-mask N - mask for enabling VDF engines [7, 1 - 7]\n"
                 "  --vdf-threads N - number of software threads per VDF engine [4, 2 - 64]\n"
                 "  --proof-threads N - number of proof threads per VDF engine\n"
+                "  --retain-asic-values - use recent ASIC samples for off-grid proof endpoints\n"
+                "  --proof-profile - log monotonic proof stages and worker CPU samples\n"
                 "  --checkpoint-threshold N - split proofs above N iterations [1000000, 8000 - 4294967295]\n"
                 "  --auto-freq-period N - auto-adjust frequency every N seconds [0, 10 - inf]\n"
                 "  --version - print version and exit\n"
@@ -736,7 +766,7 @@ int hw_vdf_client_main(int argc, char **argv)
         return ret;
     }
 
-    client.drv = init_hw(client.opts.freq, client.opts.voltage);
+    client.drv = init_hw(client.opts.freq, client.opts.voltage, client.opts.device_loc);
     if (!client.drv) {
         return 1;
     }

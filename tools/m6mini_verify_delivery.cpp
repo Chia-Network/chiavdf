@@ -6,10 +6,12 @@
 #include "verifier.h"
 #include "alloc.hpp"
 #include <cfenv>
+#include <chrono>
 #include <iostream>
 #include <sstream>
 
-static bool verify(const std::string& discriminant, const std::string& hex) {
+static bool verify(const std::string& discriminant, const std::string& hex,
+                   const std::string& initial_hex) {
     if (hex.size() % 2) return false;
     std::vector<uint8_t> wire;
     for (size_t i = 0; i < hex.size(); i += 2)
@@ -24,8 +26,18 @@ static bool verify(const std::string& discriminant, const std::string& hex) {
     blob.insert(blob.end(), wire.begin() + 17 + BQFC_FORM_SIZE, wire.end());
     integer d(discriminant);
     uint8_t initial[BQFC_FORM_SIZE] = {8};
+    if (!initial_hex.empty()) {
+        if (initial_hex.size() != 2 * BQFC_FORM_SIZE) return false;
+        for (size_t i = 0; i < BQFC_FORM_SIZE; ++i)
+            initial[i] = static_cast<uint8_t>(std::stoul(initial_hex.substr(2 * i, 2), nullptr, 16));
+    }
+    auto started = std::chrono::steady_clock::now();
     if (!CheckProofOfTimeNWesolowski(d, initial, blob.data(), blob.size(), iterations, 1024, depth))
         return false;
+    auto positive_us = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - started).count();
+    std::cerr << "VERIFICATION_PROFILE iterations=" << iterations << " depth=" << unsigned(depth + 1)
+              << " positive_us=" << positive_us << '\n';
     try {
         return !CheckProofOfTimeNWesolowski(d, initial, blob.data(), blob.size(), iterations + 1, 1024, depth);
     } catch (const std::exception&) {
@@ -39,10 +51,10 @@ int main() {
     std::string line;
     while (std::getline(std::cin, line)) {
         std::istringstream record(line);
-        std::string d, hex;
-        record >> d >> hex;
+        std::string d, hex, initial_hex;
+        record >> d >> hex >> initial_hex;
         bool valid = false;
-        try { valid = verify(d, hex); } catch (const std::exception&) {}
+        try { valid = verify(d, hex, initial_hex); } catch (const std::exception&) {}
         std::cout << (valid ? "1" : "0") << '\n';
     }
 }

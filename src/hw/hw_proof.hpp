@@ -8,6 +8,8 @@
 #include "bqfc.h"
 
 #include <atomic>
+#include <array>
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <memory>
@@ -41,6 +43,13 @@ struct vdf_proof_req {
     bool is_chkp;
 };
 
+struct vdf_proof_timing {
+    uint64_t queued_us = 0, asic_seen_us = 0, started_us = 0;
+    uint64_t values_ready_us = 0, tail_ready_us = 0, b_ready_us = 0;
+    uint64_t proof_done_us = 0, verify_started_us = 0, verified_us = 0, published_us = 0;
+    uint32_t catchup_iters = 0, k = 0, l = 0;
+};
+
 struct vdf_proof {
     uint64_t iters;
     uint64_t seg_iters;
@@ -51,12 +60,27 @@ struct vdf_proof {
     uint8_t flags;
     uint16_t prev;
     uint16_t ref_cnt;
+    vdf_proof_timing timing;
+};
+
+// Owned wire-order snapshot: final first, then checkpoints from newest to oldest.
+struct vdf_proof_delivery {
+    vdf_proof final;
+    std::vector<vdf_proof> checkpoints;
 };
 
 struct vdf_proof_opts {
     uint8_t max_aux_threads;
     uint8_t max_proof_threads;
     uint32_t checkpoint_threshold = HW_VDF_CHKP_INTERVAL;
+    bool proof_profile = false;
+    bool retain_asic_values = false;
+};
+
+struct vdf_retained_value {
+    uint64_t generation;
+    uint64_t iters;
+    form value;
 };
 
 struct vdf_state {
@@ -70,6 +94,8 @@ struct vdf_state {
     //std::vector<struct vdf_value> raw_values;
     struct vdf_value last_val;
     std::vector<form *> values;
+    std::mutex values_resize_mtx;
+    std::unique_ptr<std::atomic<form *>[]> value_blocks;
     std::unique_ptr<std::atomic<uint8_t>[]> valid_values;
     std::mutex valid_values_mtx;
     std::condition_variable valid_values_cv;
@@ -89,6 +115,7 @@ struct vdf_state {
     uint32_t n_skipped;
     uint32_t log_cnt;
     std::atomic<uint64_t> aux_threads_busy;
+    std::array<std::thread, HW_VDF_MAX_AUX_THREADS> aux_threads;
     std::atomic<uint8_t> n_proof_threads;
     uint8_t idx;
     uint8_t max_aux_threads;
@@ -96,7 +123,23 @@ struct vdf_state {
     bool completed;
     std::atomic<bool> stopping;
     bool init_done;
+    bool proof_profile = false;
+    bool retain_asic_values = false;
+    std::mutex retained_values_mtx;
+    std::deque<vdf_retained_value> retained_values;
+    uint64_t retained_generation = 0;
+    uint64_t profile_epoch_us = 0;
+    uint64_t profile_job = 0;
 };
+
+inline uint64_t hw_proof_clock_us() {
+    return std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+inline uint64_t hw_proof_profile_us(const vdf_state *vdf) {
+    return vdf->proof_profile ? hw_proof_clock_us() - vdf->profile_epoch_us : 0;
+}
 
 int hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val);
 form *hw_proof_last_good_form(struct vdf_state *vdf, size_t *out_pos);
@@ -104,7 +147,11 @@ void hw_proof_handle_value(struct vdf_state *vdf, struct vdf_value *val);
 void hw_stop_proof(struct vdf_state *vdf);
 void hw_request_proof(struct vdf_state *vdf, uint64_t iters, bool is_chkp);
 void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof *out_proof, uint8_t thr_idx);
-int hw_retrieve_proof(struct vdf_state *vdf, struct vdf_proof **proof);
+int hw_retrieve_proof(struct vdf_state *vdf, struct vdf_proof_delivery *proof);
+void hw_proof_wait_values(struct vdf_state *vdf, bool finish_work);
+bool hw_proof_copy_retained_value(struct vdf_state *vdf, uint64_t target, uint64_t floor,
+                                  form *value, uint64_t *iters);
+void hw_proof_reset_retained_values(struct vdf_state *vdf);
 void init_vdf_state(struct vdf_state *vdf, struct vdf_proof_opts *params, const char *d_str, const uint8_t *init_form, uint64_t n_iters, uint8_t idx);
 void clear_vdf_state(struct vdf_state *vdf);
 

@@ -19,6 +19,7 @@
 
 #include <cfenv>
 #include <cstring>
+#include <cerrno>
 #include <thread>
 
 static const char *discrs[] = {
@@ -39,11 +40,13 @@ int hw_test_main(int argc, char **argv)
 {
     uint64_t n_iters = 1000000;
     uint8_t n_vdfs = 3;
+    uint32_t device_loc = 0;
+    bool failed = false;
     uint8_t vdfs_mask;
     uint8_t init_form[BQFC_FORM_SIZE] = { 0x08 };
     struct vdf_state vdfs[N_HW_VDFS];
     struct vdf_value values[N_HW_VDFS];
-    struct vdf_proof proofs[N_HW_VDFS];
+    struct vdf_proof proofs[N_HW_VDFS]{};
     std::thread proof_threads[N_HW_VDFS];
     //std::thread vdf_threads[N_HW_VDFS];
     ChiaDriver *drv;
@@ -53,6 +56,10 @@ int hw_test_main(int argc, char **argv)
     if (argc == 2 && !strcmp(argv[1], "--version")) {
         PrintCliVersion(argv[0]);
         return 0;
+    }
+    if (argc > 4 || (argc == 2 && !strcmp(argv[1], "--help"))) {
+        fprintf(stderr, "Usage: %s [N_VDFS [N_ITERS [DEVICE_LOC]]]\n", argv[0]);
+        return argc > 4 ? 1 : 0;
     }
 
     if (argc > 1) {
@@ -64,8 +71,19 @@ int hw_test_main(int argc, char **argv)
     if (argc > 2) {
         n_iters = strtoul(argv[2], NULL, 0);
     }
+    // Optional third argument selects a board by the location shown by --list.
+    if (argc > 3) {
+        char *end = nullptr;
+        errno = 0;
+        unsigned long loc = strtoul(argv[3], &end, 0);
+        if (!argv[3][0] || argv[3][0] == '-' || *end || errno == ERANGE || loc > UINT32_MAX) {
+            fprintf(stderr, "Invalid device location\n");
+            return 1;
+        }
+        device_loc = static_cast<uint32_t>(loc);
+    }
     init_chia();
-    drv = init_hw(HW_VDF_DEF_FREQ, HW_VDF_DEF_VOLTAGE);
+    drv = init_hw(HW_VDF_DEF_FREQ, HW_VDF_DEF_VOLTAGE, device_loc);
     if (!drv) {
         return 1;
     }
@@ -82,12 +100,16 @@ int hw_test_main(int argc, char **argv)
     }
 
     vdfs_mask = (1 << n_vdfs) - 1;
-    while (vdfs_mask) {
+    while (vdfs_mask && !failed) {
         uint8_t temp_flag = read_cnt % temp_period ? 0 : HW_VDF_TEMP_FLAG;
         read_hw_status(drv, vdfs_mask | temp_flag, values);
         for (uint8_t i = 0; i < n_vdfs; i++) {
             if (vdfs_mask & (1 << i)) {
-                hw_proof_add_value(&vdfs[i], &values[i]);
+                if (hw_proof_add_value(&vdfs[i], &values[i]) < 0) {
+                    fprintf(stderr, "Hardware test failed: invalid or stalled VDF %u\n", i);
+                    failed = true;
+                    break;
+                }
             }
 
             if (vdfs[i].completed && (vdfs_mask & (1 << i))) {
@@ -95,7 +117,13 @@ int hw_test_main(int argc, char **argv)
                 vdfs_mask &= ~(1 << i);
                 proofs[i].iters = n_iters;
                 proofs[i].seg_iters = n_iters;
-                proof_threads[i] = std::thread(hw_compute_proof, &vdfs[i], SIZE_MAX, &proofs[i], 255);
+                proof_threads[i] = std::thread([vdf = &vdfs[i], proof = &proofs[i]]() {
+                    // Polling stops for this engine now. Drain work that could
+                    // not start during polling, or the prover can wait forever
+                    // for an intermediate whose task is still queued.
+                    hw_proof_wait_values(vdf, true);
+                    hw_compute_proof(vdf, SIZE_MAX, proof, 255);
+                });
             }
         }
         //if (i == n_vdfs) {
@@ -108,13 +136,22 @@ int hw_test_main(int argc, char **argv)
         read_cnt++;
     }
 
+    if (failed) {
+        for (uint8_t i = 0; i < n_vdfs; i++) {
+            stop_hw_vdf(drv, i);
+            hw_request_stop_proof(&vdfs[i]);
+        }
+    }
     for (uint8_t i = 0; i < n_vdfs; i++) {
-        proof_threads[i].join();
+        if (proof_threads[i].joinable()) proof_threads[i].join();
+        // A completed engine's proof thread owns its auxiliary drain. Join it
+        // before the failure path drains workers that never reached completion.
+        if (failed) hw_stop_proof(&vdfs[i]);
         clear_vdf_state(&vdfs[i]);
         clear_vdf_value(&values[i]);
     }
     stop_hw(drv);
-    return 0;
+    return failed ? 1 : 0;
 }
 
 int main(int argc, char **argv)

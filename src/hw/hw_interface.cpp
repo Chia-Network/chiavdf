@@ -53,14 +53,14 @@ void prepare_job(ChiaDriver *drv, uint64_t n_iters, uint8_t *buf, mpz_t d, mpz_t
     mpz_clear(L);
 }
 
-ChiaDriver *init_hw(double freq, double set_brd_voltage)
+ChiaDriver *init_hw(double freq, double set_brd_voltage, uint32_t device_loc)
 {
     bool set_status;
     double freq_read, brd_voltage, brd_current, brd_power;
     double external_alarm_temp = 100.0, engine_alarm_temp = 100.0;
 
     ChiaDriver* drv = new ChiaDriver();
-    if (drv->ftdi.Open()) {
+    if (drv->ftdi.Open(device_loc)) {
         LOG_ERROR("Failed to open device");
         goto fail;
     }

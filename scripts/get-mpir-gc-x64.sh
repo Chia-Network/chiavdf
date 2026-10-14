@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Fetch the mpir_gc_x64 tree pinned in scripts/mpir_gc_x64.commit
 # into ./mpir_gc_x64 at the repo root.
-# The pin is an unmerged mpir_gc_x64 commit. After that PR merges, replace
-# the pin with the merge commit. The Windows CI cache key is that same pin.
+# The Windows CI cache key is that pin.
 set -euo pipefail
 
 export GIT_TERMINAL_PROMPT=0

@@ -32,6 +32,7 @@ src/2weso_test
 src/prover_test
 src/emu_hw_test
 src/hw_test
+src/hw_proof_wait_test
 src/emu_hw_vdf_client
 src/hw_vdf_client
 /verifier

@@ -114,10 +114,12 @@ int main() {
                     checkpoint.iters = i;
                     checkpoint.prev = HW_VDF_PROOF_NONE;
                     checkpoint.flags = HW_VDF_PROOF_FLAG_DONE;
+                    checkpoint.timing.published_us = i * 100 + 20;
                     checkpoint.B[0] = checkpoint.proof[0] = tag;
                     final.iters = i;
                     final.prev = static_cast<uint16_t>(vdf.proofs.size());
                     final.flags = HW_VDF_PROOF_FLAG_DONE | HW_VDF_PROOF_FLAG_IS_REQ;
+                    final.timing.published_us = i * 100 + 10;
                     final.y[0] = final.proof[0] = tag;
                     vdf.proofs.push_back(checkpoint);
                     vdf.proofs.push_back(final);
@@ -129,6 +131,8 @@ int main() {
                 int count = hw_retrieve_proof(&vdf, &delivery);
                 if (count < 0) { std::this_thread::yield(); continue; }
                 require(count == 1, "Wrong checkpoint count");
+                require(delivery.ready_us == delivery.final.iters * 100 + 20,
+                        "Delivery readiness did not include later checkpoint publication");
                 check_delivery(delivery);
                 snapshots.push_back(std::move(delivery));
             }

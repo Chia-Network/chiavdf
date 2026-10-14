@@ -313,11 +313,20 @@ void handle_proofs(struct vdf_client *client, struct vdf_conn *conn)
     struct vdf_proof_delivery delivery;
     int i;
     while ((i = hw_retrieve_proof(&conn->vdf, &delivery)) >= 0) {
+        const uint64_t retrieved_us = hw_proof_profile_us(&conn->vdf);
         const auto *proof = &delivery.final;
         uint8_t data[8 + 8 + 1 + BQFC_FORM_SIZE * 2];
         char tl_data[sizeof(data) * 2 + 5] = {0};
 
         LOG_INFO("VDF %d: Proof retrieved for iters=%llu", conn->vdf.idx, (unsigned long long)proof->iters);
+        if (conn->vdf.proof_profile) {
+            LOG_INFO("PROOF_PROFILE job=%lu engine=%u iters=%lu stage=delivery_ready at_us=%lu depth=%zu",
+                     conn->vdf.profile_job, conn->vdf.idx, proof->iters, delivery.ready_us,
+                     delivery.checkpoints.size() + 1);
+            LOG_INFO("PROOF_PROFILE job=%lu engine=%u iters=%lu stage=retrieved at_us=%lu depth=%zu",
+                     conn->vdf.profile_job, conn->vdf.idx, proof->iters, retrieved_us,
+                     delivery.checkpoints.size() + 1);
+        }
 
         Int64ToBytes(&data[0], proof->iters);
         Int64ToBytes(&data[8], BQFC_FORM_SIZE);

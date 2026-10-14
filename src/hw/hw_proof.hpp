@@ -67,6 +67,8 @@ struct vdf_proof {
 struct vdf_proof_delivery {
     vdf_proof final;
     std::vector<vdf_proof> checkpoints;
+    // Latest publication in the complete chain, relative to this job's profile epoch.
+    uint64_t ready_us = 0;
 };
 
 struct vdf_proof_opts {

@@ -894,17 +894,20 @@ int hw_retrieve_proof(struct vdf_state *vdf, struct vdf_proof_delivery *out_proo
             uint16_t j = proof->prev;
             int cnt = 0;
             bool done = true;
+            uint64_t ready_us = proof->timing.published_us;
 
             while (j != HW_VDF_PROOF_NONE) {
                 if (!(vdf->proofs[j].flags & HW_VDF_PROOF_FLAG_DONE)) {
                     done = false;
                     break;
                 }
+                ready_us = std::max(ready_us, vdf->proofs[j].timing.published_us);
                 j = vdf->proofs[j].prev;
                 cnt++;
             }
 
             if (done) {
+                out_proof->ready_us = ready_us;
                 out_proof->final = *proof;
                 out_proof->checkpoints.clear();
                 j = proof->prev;

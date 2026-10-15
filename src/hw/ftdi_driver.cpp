@@ -143,8 +143,8 @@ int FtdiDriver::List() {
   return 0;
 }
 
-int FtdiDriver::Open() {
-  return OpenClk((int)SYS_CLK_80, (int)CLK_DIV_8);
+int FtdiDriver::Open(DWORD target_id) {
+  return OpenClk((int)SYS_CLK_80, (int)CLK_DIV_8, target_id);
 }
 
 int FtdiDriver::OpenClk(unsigned sys_clk, unsigned clk_div, DWORD target_id) {

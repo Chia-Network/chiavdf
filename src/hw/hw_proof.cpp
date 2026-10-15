@@ -4,9 +4,17 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <stdexcept>
+#include <sstream>
+#include <iomanip>
+#include <ctime>
+#ifdef __APPLE__
+#include <pthread.h>
+#endif
 
-static const uint32_t g_chkp_thres = 1000000;
 static const uint32_t g_skip_thres = 10;
+
+void hw_proof_get_form(form *f, struct vdf_state *vdf, struct vdf_value *val);
 
 void report_bad_vdf_value(struct vdf_state *vdf, struct vdf_value *val)
 {
@@ -53,6 +61,13 @@ int hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val)
     if (verify_vdf_value(vdf, val)) {
         return -1;
     }
+    if (vdf->retain_asic_values) {
+        form value;
+        hw_proof_get_form(&value, vdf, val);
+        std::lock_guard<std::mutex> lock(vdf->retained_values_mtx);
+        vdf->retained_values.push_back({vdf->retained_generation, val->iters, std::move(value)});
+        if (vdf->retained_values.size() > 64) vdf->retained_values.pop_front();
+    }
     hw_proof_handle_value(vdf, val);
     return 0;
 }
@@ -68,6 +83,27 @@ void hw_proof_get_form(form *f, struct vdf_state *vdf, struct vdf_value *val)
 
     mpz_swap(a.impl, val->a);
     mpz_swap(b.impl, val->b);
+}
+
+bool hw_proof_copy_retained_value(struct vdf_state *vdf, uint64_t target, uint64_t floor,
+                                  form *value, uint64_t *iters)
+{
+    std::lock_guard<std::mutex> lock(vdf->retained_values_mtx);
+    for (auto sample = vdf->retained_values.rbegin(); sample != vdf->retained_values.rend(); ++sample) {
+        if (sample->generation == vdf->retained_generation && sample->iters <= target && sample->iters > floor) {
+            *value = sample->value;
+            *iters = sample->iters;
+            return true;
+        }
+    }
+    return false;
+}
+
+void hw_proof_reset_retained_values(struct vdf_state *vdf)
+{
+    std::lock_guard<std::mutex> lock(vdf->retained_values_mtx);
+    ++vdf->retained_generation;
+    vdf->retained_values.clear();
 }
 
 void hw_proof_print_stats(struct vdf_state *vdf, uint64_t elapsed_us, bool detail)
@@ -102,25 +138,27 @@ static const size_t g_values_mult = 1UL << 12;
 form *hw_proof_value_at(struct vdf_state *vdf, size_t pos)
 {
     size_t idx = pos / g_values_mult;
-    size_t old_size = vdf->values.size();
-
-    if (idx + 1 >= old_size) {
-        size_t new_size = idx + 2;
-        vdf->values.resize(new_size);
-        for (size_t i = old_size; i < new_size; i++) {
-            vdf->values[i] = new form[g_values_mult];
+    if (idx >= vdf->values.size()) throw std::out_of_range("Intermediate exceeds VDF target");
+    // The directory is fixed for this challenge; allocated blocks live until join.
+    form *block = vdf->value_blocks[idx].load(std::memory_order_acquire);
+    if (!block) {
+        std::lock_guard<std::mutex> lock(vdf->values_resize_mtx);
+        block = vdf->value_blocks[idx].load(std::memory_order_relaxed);
+        if (!block) {
+            block = new form[g_values_mult];
+            vdf->values[idx] = block;
+            vdf->value_blocks[idx].store(block, std::memory_order_release);
+            LOG_INFO("VDF %d: Allocating intermediate block %zu", vdf->idx, idx);
         }
-        LOG_INFO("VDF %d: Allocating intermediate values, total %zu * %zu",
-                vdf->idx, new_size, g_values_mult);
     }
-    return &vdf->values[idx][pos % g_values_mult];
+    return &block[pos % g_values_mult];
 }
 
 form *hw_proof_last_good_form(struct vdf_state *vdf, size_t *out_pos)
 {
     size_t pos = vdf->cur_iters / vdf->interval;
 
-    while (!(vdf->valid_values[pos / 8] & (1 << (pos % 8)))) {
+    while (!(vdf->valid_values[pos / 8].load(std::memory_order_acquire) & (1 << (pos % 8)))) {
         pos--;
     }
     *out_pos = pos;
@@ -133,8 +171,9 @@ void hw_proof_add_intermediate(struct vdf_state *vdf, struct vdf_value *val, siz
         hw_proof_get_form(hw_proof_value_at(vdf, pos), vdf, val);
     }
     vdf->valid_values_mtx.lock();
-    vdf->valid_values[pos / 8] |= 1 << (pos % 8);
+    vdf->valid_values[pos / 8].fetch_or(1 << (pos % 8), std::memory_order_release);
     vdf->valid_values_mtx.unlock();
+    vdf->valid_values_cv.notify_all();
     vdf->done_values++;
 }
 
@@ -208,7 +247,8 @@ private:
 uint16_t hw_queue_proof(struct vdf_state *vdf, uint64_t seg_iters, uint16_t prev, uint8_t flags)
 {
     uint16_t pos;
-    struct vdf_proof proof;
+    struct vdf_proof proof{};
+    proof.timing.queued_us = hw_proof_profile_us(vdf);
 
     proof.iters = seg_iters;
     if (prev != HW_VDF_PROOF_NONE) {
@@ -220,9 +260,7 @@ uint16_t hw_queue_proof(struct vdf_state *vdf, uint64_t seg_iters, uint16_t prev
     proof.ref_cnt = 1;
     pos = vdf->proofs.size();
 
-    vdf->proofs_resize_mtx.lock();
     vdf->proofs.push_back(proof);
-    vdf->proofs_resize_mtx.unlock();
 
     vdf->queued_proofs.push_back(pos);
 
@@ -347,10 +385,10 @@ void hw_proof_process_req(struct vdf_state *vdf)
 
     iters = req_iters - base_iters;
 
-    if (iters > g_chkp_thres) {
+    if (iters > vdf->checkpoint_threshold) {
         // Split iters as [75%, 25%]
         chkp_iters = iters * chkp_mul / chkp_div;
-        if (iters - chkp_iters > g_chkp_thres) {
+        if (iters - chkp_iters > vdf->checkpoint_threshold) {
             // Split iters as [69%, 23%, 8%]
             uint32_t chkp2_mul[] = { 69, 69 + 23 };
             uint64_t chkp2_iters;
@@ -399,6 +437,8 @@ void hw_proof_add_work(struct vdf_state *vdf, uint64_t next_iters, uint32_t n_st
 
 void hw_proof_process_work(struct vdf_state *vdf)
 {
+    // The event-loop planner and proof publishers share all proof metadata.
+    std::lock_guard<std::mutex> lock(vdf->proofs_resize_mtx);
     uint64_t busy = vdf->aux_threads_busy;
     uint32_t qlen;
 
@@ -407,6 +447,12 @@ void hw_proof_process_work(struct vdf_state *vdf)
         hw_proof_process_req(vdf);
     }
 
+    if (vdf->proof_profile) {
+        uint64_t observed = hw_proof_profile_us(vdf);
+        for (auto &proof : vdf->proofs)
+            if (!proof.timing.asic_seen_us && proof.iters <= vdf->last_val.iters)
+                proof.timing.asic_seen_us = observed;
+    }
     for (int i = 0; i < vdf->max_aux_threads; i++) {
         uint64_t iters;
         struct vdf_proof *proof;
@@ -432,7 +478,8 @@ void hw_proof_process_work(struct vdf_state *vdf)
             vdf->aux_threads_busy |= 1UL << i;
             vdf->n_proof_threads += PARALLEL_PROVER_N_THREADS;
             proof->flags |= HW_VDF_PROOF_FLAG_STARTED;
-            std::thread(hw_compute_proof, vdf, idx, proof, i).detach();
+            if (vdf->aux_threads[i].joinable()) vdf->aux_threads[i].join();
+            vdf->aux_threads[i] = std::thread(hw_compute_proof, vdf, idx, proof, i);
         }
     }
 
@@ -451,7 +498,8 @@ void hw_proof_process_work(struct vdf_state *vdf)
             //struct vdf_value *val = &vdf->raw_values[work.raw_idx];
 
             vdf->aux_threads_busy |= 1UL << i;
-            std::thread(hw_proof_calc_values, vdf, work, i).detach();
+            if (vdf->aux_threads[i].joinable()) vdf->aux_threads[i].join();
+            vdf->aux_threads[i] = std::thread(hw_proof_calc_values, vdf, work, i);
         }
     }
 
@@ -482,6 +530,10 @@ void hw_proof_wait_values(struct vdf_state *vdf, bool finish_work)
         vdf_usleep(10000);
     }
 
+    for (auto &worker : vdf->aux_threads) {
+        if (worker.joinable()) worker.join();
+    }
+
     if (!finish_work) {
         for (size_t i = 0; i < vdf->wq.size(); i++) {
             clear_vdf_value(&vdf->wq[i]->start_val);
@@ -493,13 +545,16 @@ void hw_proof_wait_values(struct vdf_state *vdf, bool finish_work)
 
 int hw_proof_wait_value(struct vdf_state *vdf, size_t pos)
 {
-    while (!(vdf->valid_values[pos / 8] & (1 << (pos % 8)))) {
-        vdf_usleep(100000);
-        if (vdf->stopping) {
-            return -1;
-        }
-    }
-    return 0;
+    const uint8_t bit = 1 << (pos % 8);
+    // Most values are already published by the time a proof consumes them.
+    // Acquire pairs with producer publication without locking on that path.
+    if (vdf->valid_values[pos / 8].load(std::memory_order_acquire) & bit)
+        return vdf->stopping ? -1 : 0;
+    std::unique_lock<std::mutex> lock(vdf->valid_values_mtx);
+    vdf->valid_values_cv.wait(lock, [=] {
+        return vdf->stopping || (vdf->valid_values[pos / 8].load(std::memory_order_acquire) & bit);
+    });
+    return vdf->stopping ? -1 : 0;
 }
 
 void hw_proof_handle_value(struct vdf_state *vdf, struct vdf_value *val)
@@ -560,43 +615,100 @@ void hw_proof_handle_value(struct vdf_state *vdf, struct vdf_value *val)
 
 void hw_stop_proof(struct vdf_state *vdf)
 {
-    vdf->stopping = true;
+    {
+        std::lock_guard<std::mutex> lock(vdf->valid_values_mtx);
+        vdf->stopping = true;
+    }
+    vdf->valid_values_cv.notify_all();
+    if (vdf->proof_profile)
+        LOG_INFO("PROOF_PROFILE job=%lu engine=%u stage=stopping at_us=%lu",
+                 vdf->profile_job, vdf->idx, hw_proof_profile_us(vdf));
     hw_proof_print_stats(vdf, vdf_get_elapsed_us(vdf->start_time), true);
     hw_proof_wait_values(vdf, false);
 }
 
+struct HwWorkerProfile {
+    uint64_t started_us = 0, wall_us = 0, cpu_started_us = 0, cpu_us = 0;
+    uint64_t wait_us = 0, form_calls = 0;
+    uint32_t effective_qos = 0;
+    std::array<uint64_t, 128> cpu_samples{};
+};
+
+static uint64_t hw_thread_cpu_us() {
+#ifndef _WIN32
+    struct timespec time{};
+    if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &time) == 0)
+        return time.tv_sec * 1000000ULL + time.tv_nsec / 1000;
+#endif
+    return 0;
+}
+
+static thread_local uint8_t hw_profile_worker = 0;
+
 class HwProver : public ParallelProver {
   public:
-    HwProver(Segment segm, integer D, struct vdf_state *vdf)
+    HwProver(Segment segm, integer D, struct vdf_state *vdf, vdf_proof_timing *timing)
         : ParallelProver(segm, D)
     {
         this->vdf = vdf;
+        this->timing = timing;
         k = FindK(segm.length);
         l = vdf->interval / k;
         pos_offset = segm.start / vdf->interval;
+        timing->k = k;
+        timing->l = l;
     }
 
-    form GetForm(uint64_t pos) {
+    form GetForm(uint64_t pos) override {
         pos += pos_offset;
-        if (hw_proof_wait_value(vdf, pos)) {
-            // Provide arbitrary value when stopping - proof won't be computed
-            return vdf->values[0][0];
+        uint64_t waiting = 0;
+        if (vdf->proof_profile) {
+            auto &worker = workers[hw_profile_worker];
+#ifdef __APPLE__
+            if ((worker.form_calls & 511) == 0) {
+                size_t cpu = 0;
+                if (pthread_cpu_number_np(&cpu) == 0 && cpu < worker.cpu_samples.size())
+                    ++worker.cpu_samples[cpu];
+            }
+#endif
+            ++worker.form_calls;
+            if (!(vdf->valid_values[pos / 8].load(std::memory_order_acquire) & (1 << (pos % 8))))
+                waiting = hw_proof_clock_us();
+        }
+        int stopped = hw_proof_wait_value(vdf, pos);
+        if (waiting) workers[hw_profile_worker].wait_us += hw_proof_clock_us() - waiting;
+        if (stopped) {
+            // Provide arbitrary value when stopping; no proof is published.
+            return *hw_proof_value_at(vdf, 0);
         }
         return *hw_proof_value_at(vdf, pos);
     }
 
-    void start() {
+    void LogWorkers(uint64_t iters, bool completed) const {
+        if (!vdf->proof_profile) return;
+        for (size_t i = 0; i < workers.size(); ++i) {
+            const auto &worker = workers[i];
+            std::ostringstream samples;
+            for (size_t cpu = 0; cpu < worker.cpu_samples.size(); ++cpu)
+                if (worker.cpu_samples[cpu]) samples << cpu << ':' << worker.cpu_samples[cpu] << ',';
+            LOG_INFO("PROOF_WORKER job=%lu engine=%u iters=%lu worker=%zu completed=%u wall_us=%lu cpu_us=%lu wait_us=%lu effective_qos=%u core_samples=%s",
+                     vdf->profile_job, vdf->idx, iters, i, unsigned(completed), worker.wall_us, worker.cpu_us,
+                     worker.wait_us, worker.effective_qos, samples.str().c_str());
+        }
+    }
+
+    void start() override {
         GenerateProof();
     }
 
-    void stop() {
+    void stop() override {
     }
 
-    bool PerformExtraStep() {
+    bool PerformExtraStep() override {
         return !vdf->stopping;
     }
 
-    void OnFinish() {
+    void OnFinish() override {
         is_finished = true;
     }
 
@@ -623,8 +735,28 @@ class HwProver : public ParallelProver {
         return divisors[i - 1];
     }
 
+  protected:
+    void OnChallengeReady() override { timing->b_ready_us = hw_proof_profile_us(vdf); }
+    void OnProofWorker(uint8_t idx, bool starting) override {
+        if (!vdf->proof_profile) return;
+        auto &worker = workers[idx];
+        if (starting) {
+            hw_profile_worker = idx;
+#ifdef __APPLE__
+            worker.effective_qos = qos_class_self();
+#endif
+            worker.started_us = hw_proof_clock_us();
+            worker.cpu_started_us = hw_thread_cpu_us();
+        } else {
+            worker.wall_us = hw_proof_clock_us() - worker.started_us;
+            worker.cpu_us = hw_thread_cpu_us() - worker.cpu_started_us;
+        }
+    }
+
   private:
     struct vdf_state *vdf;
+    vdf_proof_timing *timing;
+    std::array<HwWorkerProfile, PARALLEL_PROVER_N_THREADS> workers{};
     uint32_t pos_offset;
 };
 
@@ -635,6 +767,7 @@ void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof 
     size_t pos, start_pos;
     PulmarkReducer reducer;
     bool is_chkp;
+    vdf_proof_timing timing{};
     timepoint_t start_time = vdf_get_cur_time();
 
     vdf->proofs_resize_mtx.lock();
@@ -645,6 +778,8 @@ void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof 
     proof_iters = out_proof->iters;
     start_iters = proof_iters - out_proof->seg_iters;
     is_chkp = !(out_proof->flags & HW_VDF_PROOF_FLAG_IS_REQ);
+    timing = out_proof->timing;
+    timing.started_us = hw_proof_profile_us(vdf);
     vdf->proofs_resize_mtx.unlock();
 
     start_pos = start_iters / vdf->interval;
@@ -655,8 +790,12 @@ void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof 
         LOG_INFO("VDF %d: Proof stopped", vdf->idx);
         goto out;
     }
+    timing.values_ready_us = hw_proof_profile_us(vdf);
     x = *hw_proof_value_at(vdf, start_pos);
     y = *hw_proof_value_at(vdf, pos);
+    if (vdf->retain_asic_values)
+        hw_proof_copy_retained_value(vdf, proof_iters, iters, &y, &iters);
+    timing.catchup_iters = proof_iters - iters;
     if (!y.check_valid(vdf->D)) {
         LOG_ERROR("VDF %d: invalid form at pos=%lu", vdf->idx, pos);
         abort();
@@ -674,14 +813,17 @@ void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof 
 
     {
         Segment seg(start_iters, proof_iters - start_iters, x, y);
-        HwProver prover(seg, vdf->D, vdf);
+        timing.tail_ready_us = hw_proof_profile_us(vdf);
+        HwProver prover(seg, vdf->D, vdf, &timing);
 
-        if (!is_chkp && seg.length > g_chkp_thres) {
+        if (!is_chkp && seg.length > vdf->checkpoint_threshold) {
             LOG_INFO("VDF %d: Warning: too long final proof segment length=%lu",
                     vdf->idx, seg.length);
         }
 
         prover.start();
+        timing.proof_done_us = hw_proof_profile_us(vdf);
+        prover.LogWorkers(proof_iters, prover.IsFinished());
 
         if (prover.IsFinished()) {
             size_t d_bits;
@@ -693,12 +835,14 @@ void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof 
                     vdf->idx, proof_iters, seg.length,
                     (double)elapsed_us / 1000000, is_chkp ? " [checkpoint]" : "");
 
+            timing.verify_started_us = hw_proof_profile_us(vdf);
             VerifyWesolowskiProof(vdf->D, x, y, proof_val, seg.length, is_valid);
             if (!is_valid) {
                 LOG_ERROR("VDF %d: Proof NOT VALID", vdf->idx);
                 abort();
             }
 
+            timing.verified_us = hw_proof_profile_us(vdf);
             d_bits = mpz_sizeinbase(vdf->D.impl, 2);
 
             vdf->proofs_resize_mtx.lock();
@@ -716,8 +860,17 @@ void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof 
 
                 mpz_export(out_proof->B, NULL, 1, 1, 0, 0, B.impl);
             }
+            timing.published_us = hw_proof_profile_us(vdf);
+            out_proof->timing = timing;
             out_proof->flags |= HW_VDF_PROOF_FLAG_DONE;
             vdf->proofs_resize_mtx.unlock();
+            if (vdf->proof_profile)
+                LOG_INFO("PROOF_SEGMENT job=%lu engine=%u iters=%lu length=%lu checkpoint=%u queued_us=%lu asic_seen_us=%lu started_us=%lu values_ready_us=%lu tail_ready_us=%lu b_ready_us=%lu proof_done_us=%lu verify_started_us=%lu verified_us=%lu published_us=%lu catchup_iters=%u k=%u l=%u",
+                         vdf->profile_job, vdf->idx, proof_iters, seg.length, is_chkp,
+                         timing.queued_us, timing.asic_seen_us, timing.started_us,
+                         timing.values_ready_us, timing.tail_ready_us, timing.b_ready_us,
+                         timing.proof_done_us, timing.verify_started_us, timing.verified_us, timing.published_us,
+                         timing.catchup_iters, timing.k, timing.l);
         } else {
             LOG_INFO("VDF %d: Proof stopped", vdf->idx);
         }
@@ -725,26 +878,15 @@ void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof 
 
 out:
     if (thr_idx < vdf->max_aux_threads) {
-        vdf->aux_threads_busy &= ~(1UL << thr_idx);
         vdf->n_proof_threads -= PARALLEL_PROVER_N_THREADS;
+        // Last access to shared state; reset also joins the owned worker.
+        vdf->aux_threads_busy &= ~(1UL << thr_idx);
     }
 }
 
-int hw_retrieve_proof(struct vdf_state *vdf, struct vdf_proof **out_proof)
+int hw_retrieve_proof(struct vdf_state *vdf, struct vdf_proof_delivery *out_proof)
 {
-#if 0
-    if (!vdf->proofs.empty()) {
-        for (size_t i = 0; i < vdf->proofs.size(); i++) {
-            uint64_t iters = vdf->proofs[i]->iters;
-            size_t last_chkp = iters / vdf->chkp_interval;
-            if (iters && (!last_chkp || vdf->chkp_proofs[last_chkp - 1]->iters)) {
-                *proof = vdf->proofs[i];
-                vdf->proofs.erase(vdf->proofs.begin() + i);
-                return last_chkp;
-            }
-        }
-    }
-#endif
+    std::lock_guard<std::mutex> lock(vdf->proofs_resize_mtx);
     if (!vdf->done_proofs.empty()) {
         for (size_t i = 0; i < vdf->done_proofs.size(); i++) {
             uint16_t idx = vdf->done_proofs[i];
@@ -752,18 +894,27 @@ int hw_retrieve_proof(struct vdf_state *vdf, struct vdf_proof **out_proof)
             uint16_t j = proof->prev;
             int cnt = 0;
             bool done = true;
+            uint64_t ready_us = proof->timing.published_us;
 
             while (j != HW_VDF_PROOF_NONE) {
                 if (!(vdf->proofs[j].flags & HW_VDF_PROOF_FLAG_DONE)) {
                     done = false;
                     break;
                 }
+                ready_us = std::max(ready_us, vdf->proofs[j].timing.published_us);
                 j = vdf->proofs[j].prev;
                 cnt++;
             }
 
             if (done) {
-                *out_proof = proof;
+                out_proof->ready_us = ready_us;
+                out_proof->final = *proof;
+                out_proof->checkpoints.clear();
+                j = proof->prev;
+                while (j != HW_VDF_PROOF_NONE) {
+                    out_proof->checkpoints.push_back(vdf->proofs[j]);
+                    j = vdf->proofs[j].prev;
+                }
                 vdf->done_proofs.erase(vdf->done_proofs.begin() + i);
                 return cnt;
             }
@@ -777,6 +928,12 @@ void init_vdf_state(struct vdf_state *vdf, struct vdf_proof_opts *opts, const ch
     //int ret;
     //struct vdf_value initial;
     size_t num_values;
+    static std::atomic<uint64_t> next_job{0};
+    vdf->proof_profile = opts && opts->proof_profile;
+    vdf->retain_asic_values = opts && opts->retain_asic_values;
+    vdf->profile_epoch_us = hw_proof_clock_us();
+    vdf->profile_job = ++next_job;
+    hw_proof_reset_retained_values(vdf);
     vdf->cur_iters = 0;
     vdf->iters_offset = 0;
     vdf->done_values = 1;
@@ -785,6 +942,10 @@ void init_vdf_state(struct vdf_state *vdf, struct vdf_proof_opts *opts, const ch
     vdf->start_time = vdf_get_cur_time();
     vdf->interval = HW_VDF_VALUE_INTERVAL;
     vdf->chkp_interval = HW_VDF_CHKP_INTERVAL;
+    vdf->checkpoint_threshold = opts ? opts->checkpoint_threshold : HW_VDF_CHKP_INTERVAL;
+    if (vdf->checkpoint_threshold < HW_VDF_MIN_CHKP_THRESHOLD) {
+        throw std::invalid_argument("Checkpoint threshold must be at least twice the value interval");
+    }
     vdf->target_iters = (n_iters + vdf->interval - 1) / vdf->interval * vdf->interval;
     vdf->idx = idx;
     vdf->completed = false;
@@ -812,8 +973,15 @@ void init_vdf_state(struct vdf_state *vdf, struct vdf_proof_opts *opts, const ch
     mpz_root(vdf->L.impl, vdf->L.impl, 4);
 
     num_values = vdf->target_iters / vdf->interval + 1;
-    vdf->values.reserve((num_values + g_values_mult - 1) / g_values_mult);
-    vdf->valid_values.resize((num_values + 7) / 8, 0);
+    size_t num_blocks = (num_values + g_values_mult - 1) / g_values_mult;
+    vdf->values.resize(num_blocks, nullptr);
+    vdf->value_blocks = std::make_unique<std::atomic<form *>[]>(num_blocks);
+    for (size_t i = 0; i < num_blocks; ++i)
+        vdf->value_blocks[i].store(nullptr, std::memory_order_relaxed);
+    size_t bitmap_bytes = (num_values + 7) / 8;
+    vdf->valid_values = std::make_unique<std::atomic<uint8_t>[]>(bitmap_bytes);
+    for (size_t i = 0; i < bitmap_bytes; ++i)
+        vdf->valid_values[i].store(0, std::memory_order_relaxed);
 
     //mpz_init_set_ui(initial.a, 2);
     //mpz_init_set_ui(initial.b, 1);
@@ -823,13 +991,25 @@ void init_vdf_state(struct vdf_state *vdf, struct vdf_proof_opts *opts, const ch
     bqfc_deserialize(vdf->last_val.a, vdf->last_val.b, vdf->D.impl, init_form,
             BQFC_FORM_SIZE, BQFC_MAX_D_BITS, false);
     hw_proof_get_form(hw_proof_value_at(vdf, 0), vdf, &vdf->last_val);
-    vdf->valid_values[0] = 1 << 0;
+    vdf->valid_values[0].store(1, std::memory_order_relaxed);
     //vdf->raw_values.push_back(initial);
     vdf->init_done = true;
+    if (vdf->proof_profile) {
+        std::ostringstream encoded;
+        encoded << std::hex << std::setfill('0');
+        for (size_t i = 0; i < BQFC_FORM_SIZE; ++i)
+            encoded << std::setw(2) << unsigned(init_form[i]);
+        LOG_INFO("PROOF_CHALLENGE job=%lu engine=%u discriminant=%s initial_form=%s",
+                 vdf->profile_job, vdf->idx, d_str, encoded.str().c_str());
+    }
+    if (vdf->proof_profile)
+        LOG_INFO("PROOF_PROFILE job=%lu engine=%u stage=state_ready at_us=%lu epoch_us=%lu",
+                 vdf->profile_job, vdf->idx, hw_proof_profile_us(vdf), vdf->profile_epoch_us);
 }
 
 void clear_vdf_state(struct vdf_state *vdf)
 {
+    hw_proof_reset_retained_values(vdf);
     vdf->proofs.clear();
     vdf->req_proofs.clear();
     vdf->queued_proofs.clear();
@@ -839,7 +1019,8 @@ void clear_vdf_state(struct vdf_state *vdf)
         delete[] vdf->values[i];
     }
     vdf->values.clear();
-    vdf->valid_values.clear();
+    vdf->value_blocks.reset();
+    vdf->valid_values.reset();
     mpz_clears(vdf->last_val.a, vdf->last_val.b, NULL);
     vdf->init_done = false;
 }

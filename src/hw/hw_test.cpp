@@ -19,6 +19,8 @@
 
 #include <cfenv>
 #include <cstring>
+#include <cerrno>
+#include <cmath>
 #include <thread>
 
 static const char *discrs[] = {
@@ -39,6 +41,11 @@ int hw_test_main(int argc, char **argv)
 {
     uint64_t n_iters = 1000000;
     uint8_t n_vdfs = 3;
+    uint32_t device_loc = 0;
+    double freq = HW_VDF_DEF_FREQ;
+    double voltage = HW_VDF_DEF_VOLTAGE;
+    struct vdf_proof_opts opts = {};
+    bool failed = false;
     uint8_t vdfs_mask;
     uint8_t init_form[BQFC_FORM_SIZE] = { 0x08 };
     struct vdf_state vdfs[N_HW_VDFS];
@@ -54,6 +61,10 @@ int hw_test_main(int argc, char **argv)
         PrintCliVersion(argv[0]);
         return 0;
     }
+    if (argc > 7 || (argc == 2 && !strcmp(argv[1], "--help"))) {
+        fprintf(stderr, "Usage: %s [N_VDFS [N_ITERS [DEVICE_LOC [FREQ_MHZ [VOLTAGE [AUX_THREADS]]]]]]\n", argv[0]);
+        return argc > 7 ? 1 : 0;
+    }
 
     if (argc > 1) {
         n_vdfs = strtoul(argv[1], NULL, 0);
@@ -64,8 +75,41 @@ int hw_test_main(int argc, char **argv)
     if (argc > 2) {
         n_iters = strtoul(argv[2], NULL, 0);
     }
+    // Optional third argument selects a board by the location shown by --list.
+    if (argc > 3) {
+        char *end = nullptr;
+        errno = 0;
+        unsigned long loc = strtoul(argv[3], &end, 0);
+        if (!argv[3][0] || argv[3][0] == '-' || *end || errno == ERANGE || loc > UINT32_MAX) {
+            fprintf(stderr, "Invalid device location\n");
+            return 1;
+        }
+        device_loc = static_cast<uint32_t>(loc);
+    }
+    for (int arg = 4; arg <= 5 && arg < argc; ++arg) {
+        char *end = nullptr;
+        errno = 0;
+        double value = strtod(argv[arg], &end);
+        double min = arg == 4 ? 200.0 : 0.7;
+        double max = arg == 4 ? 2200.0 : 1.0;
+        if (!argv[arg][0] || *end || errno == ERANGE || !std::isfinite(value) || value < min || value > max) {
+            fprintf(stderr, "Invalid %s\n", arg == 4 ? "frequency" : "voltage");
+            return 1;
+        }
+        (arg == 4 ? freq : voltage) = value;
+    }
+    if (argc > 6) {
+        char *end = nullptr;
+        errno = 0;
+        unsigned long threads = strtoul(argv[6], &end, 10);
+        if (!argv[6][0] || *end || errno == ERANGE || threads < 2 || threads > HW_VDF_MAX_AUX_THREADS) {
+            fprintf(stderr, "Invalid auxiliary thread count\n");
+            return 1;
+        }
+        opts.max_aux_threads = static_cast<uint8_t>(threads);
+    }
     init_chia();
-    drv = init_hw(HW_VDF_DEF_FREQ, HW_VDF_DEF_VOLTAGE);
+    drv = init_hw(freq, voltage, device_loc);
     if (!drv) {
         return 1;
     }
@@ -73,7 +117,7 @@ int hw_test_main(int argc, char **argv)
     for (uint8_t i = 0; i < n_vdfs; i++) {
         struct vdf_state *vdf = &vdfs[i];
 
-        init_vdf_state(vdf, NULL, discrs[i], init_form, n_iters, i);
+        init_vdf_state(vdf, &opts, discrs[i], init_form, n_iters, i);
 
         //run_hw(vdf->d, n_iters, vdf);
         //vdf_threads[i] = std::thread(start_vdf_job, vdf, i);
@@ -82,12 +126,16 @@ int hw_test_main(int argc, char **argv)
     }
 
     vdfs_mask = (1 << n_vdfs) - 1;
-    while (vdfs_mask) {
+    while (vdfs_mask && !failed) {
         uint8_t temp_flag = read_cnt % temp_period ? 0 : HW_VDF_TEMP_FLAG;
         read_hw_status(drv, vdfs_mask | temp_flag, values);
         for (uint8_t i = 0; i < n_vdfs; i++) {
             if (vdfs_mask & (1 << i)) {
-                hw_proof_add_value(&vdfs[i], &values[i]);
+                if (hw_proof_add_value(&vdfs[i], &values[i]) < 0) {
+                    fprintf(stderr, "Hardware test failed: invalid or stalled VDF %u\n", i);
+                    failed = true;
+                    break;
+                }
             }
 
             if (vdfs[i].completed && (vdfs_mask & (1 << i))) {
@@ -95,7 +143,13 @@ int hw_test_main(int argc, char **argv)
                 vdfs_mask &= ~(1 << i);
                 proofs[i].iters = n_iters;
                 proofs[i].seg_iters = n_iters;
-                proof_threads[i] = std::thread(hw_compute_proof, &vdfs[i], SIZE_MAX, &proofs[i], 255);
+                proof_threads[i] = std::thread([vdf = &vdfs[i], proof = &proofs[i]]() {
+                    // Polling stops for this engine now. Drain work that could
+                    // not start during polling, or the prover can wait forever
+                    // for an intermediate whose task is still queued.
+                    hw_proof_wait_values(vdf, true);
+                    hw_compute_proof(vdf, SIZE_MAX, proof, 255);
+                });
             }
         }
         //if (i == n_vdfs) {
@@ -108,13 +162,19 @@ int hw_test_main(int argc, char **argv)
         read_cnt++;
     }
 
+    if (failed) {
+        for (uint8_t i = 0; i < n_vdfs; i++) {
+            stop_hw_vdf(drv, i);
+            hw_stop_proof(&vdfs[i]);
+        }
+    }
     for (uint8_t i = 0; i < n_vdfs; i++) {
-        proof_threads[i].join();
+        if (proof_threads[i].joinable()) proof_threads[i].join();
         clear_vdf_state(&vdfs[i]);
         clear_vdf_value(&values[i]);
     }
     stop_hw(drv);
-    return 0;
+    return failed ? 1 : 0;
 }
 
 int main(int argc, char **argv)

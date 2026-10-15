@@ -1,0 +1,1016 @@
+{
+  "methodology": "Client-observed mainnet request arrivals and natural reset requests, relative to challenge parsing. Final guard-induced cancellation is excluded. Chain mapping/network time before the client parses a challenge is not measured.",
+  "complete_jobs": 24,
+  "jobs": [
+    {
+      "job": 1,
+      "engine": 0,
+      "requests": [
+        {
+          "at_us": 60945,
+          "iterations": 168726988
+        },
+        {
+          "at_us": 4403136,
+          "iterations": 43413436
+        }
+      ],
+      "epoch_us": 81453711821,
+      "stop_us": 29594112,
+      "reset_request_us": 29594100,
+      "discriminant": "-0x8fa333df855177070ddfc03b9e147d6b632a00ed167cb080f23f13db7ec5790096856e12b2dae07c5cabf901953faed5062c8f4ff78b981606f7f9412fc80bf58dd0db6a9987d3c1041334a19337e67009faea7896b4a7f2c07aa743d9a29d06a9506118d8c7650673f56be053537cef80555cf077a111ed72b59f33db0af827",
+      "initial_form_hex": "01004ea7916f411adaa7518f29a4489d600673b280c11a28612c08fb82c868b008738ad2bedfbddb1800e69cb196e39188a325ee7c877ae0f773ef8d256b71cb7657d34d04157bc3f5a9dac026d3f79b1073772a8aad6452364f7b4a34736b0197110100",
+      "start_us": 0
+    },
+    {
+      "job": 2,
+      "engine": 1,
+      "requests": [
+        {
+          "at_us": 60384,
+          "iterations": 3576268
+        },
+        {
+          "at_us": 63050,
+          "iterations": 12751308
+        },
+        {
+          "at_us": 63052,
+          "iterations": 21926348
+        },
+        {
+          "at_us": 63053,
+          "iterations": 168726988
+        },
+        {
+          "at_us": 3999285,
+          "iterations": 31101388
+        },
+        {
+          "at_us": 3999288,
+          "iterations": 40276428
+        },
+        {
+          "at_us": 3999289,
+          "iterations": 49451468
+        },
+        {
+          "at_us": 3999291,
+          "iterations": 58626508
+        },
+        {
+          "at_us": 3999292,
+          "iterations": 67801548
+        },
+        {
+          "at_us": 3999293,
+          "iterations": 76976588
+        },
+        {
+          "at_us": 3999295,
+          "iterations": 86151628
+        },
+        {
+          "at_us": 4402571,
+          "iterations": 43413436
+        },
+        {
+          "at_us": 13299520,
+          "iterations": 95326668
+        },
+        {
+          "at_us": 22498231,
+          "iterations": 104501708
+        }
+      ],
+      "epoch_us": 81453712390,
+      "stop_us": 29594137,
+      "reset_request_us": 29594131,
+      "discriminant": "-0xe64c4248308b6f2da18e8bdc085f013ad65b392240d42ac4180eb2489fc3b297ad812c322d34762979422ba7594b07621f8d43274dd5c7ed492ade5d30e2e58dc856dddb6e0e6d2fc20c8f40775565457679c286692ff6c30d16a47c450486b416b1e2dd2ad79febd9f882148a327788a865ef6581a3cdf76270a78c5c95f50f",
+      "initial_form_hex": "0300e2b8399c601e16d64c7f46362fe59c6dd3bf041a93e26dd9480f19b9babec5a0ec7fde8857b693ede9a11754c29ff638ab0d67bd4c88f33633c0d988defb8f0b97448d8a2cada3da74a4b890e083426fb1a721da27e99a9adaf738b752db9c260100",
+      "start_us": 569
+    },
+    {
+      "job": 3,
+      "engine": 2,
+      "requests": [
+        {
+          "at_us": 59914,
+          "iterations": 3576268
+        },
+        {
+          "at_us": 62584,
+          "iterations": 12751308
+        },
+        {
+          "at_us": 62585,
+          "iterations": 21926348
+        },
+        {
+          "at_us": 62586,
+          "iterations": 168726988
+        },
+        {
+          "at_us": 3998825,
+          "iterations": 31101388
+        },
+        {
+          "at_us": 3998826,
+          "iterations": 40276428
+        },
+        {
+          "at_us": 3998827,
+          "iterations": 49451468
+        },
+        {
+          "at_us": 3998828,
+          "iterations": 58626508
+        },
+        {
+          "at_us": 3998829,
+          "iterations": 67801548
+        },
+        {
+          "at_us": 3998830,
+          "iterations": 76976588
+        },
+        {
+          "at_us": 3998831,
+          "iterations": 86151628
+        },
+        {
+          "at_us": 4402101,
+          "iterations": 43413436
+        },
+        {
+          "at_us": 13299053,
+          "iterations": 95326668
+        },
+        {
+          "at_us": 22497765,
+          "iterations": 104501708
+        }
+      ],
+      "epoch_us": 81453712863,
+      "stop_us": 29609029,
+      "reset_request_us": 29609022,
+      "discriminant": "-0xa84243cb19eeb49b13fb6dc42297430a1032079eb3769bb4051acdf626100fa070ed76910637618c3cf2a2a8962209cb08d98cc7e985afefd4dedc6004b1f2381a3152360e7188edd46d3263cbbd50df84a7dc5f23db366e2fc78f337632e390fa1954fd38d4c37af7bf2ed35a117c5afc81ba63a4d6dda83682457d84bc41c7",
+      "initial_form_hex": "08000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "start_us": 1042
+    },
+    {
+      "job": 4,
+      "engine": 0,
+      "requests": [
+        {
+          "at_us": 100849,
+          "iterations": 125313552
+        },
+        {
+          "at_us": 100852,
+          "iterations": 28435342
+        }
+      ],
+      "epoch_us": 81483585681,
+      "stop_us": 20308097,
+      "reset_request_us": 20308085,
+      "discriminant": "-0x8fa333df855177070ddfc03b9e147d6b632a00ed167cb080f23f13db7ec5790096856e12b2dae07c5cabf901953faed5062c8f4ff78b981606f7f9412fc80bf58dd0db6a9987d3c1041334a19337e67009faea7896b4a7f2c07aa743d9a29d06a9506118d8c7650673f56be053537cef80555cf077a111ed72b59f33db0af827",
+      "initial_form_hex": "03007216030d0ab4340d1167f6facc9dd7a8447da55d26764679535a7c233acd5ae0c129c798c6d42d3e649dc5cd7276e186119d90e6bf47277b4fe1fc0b2656c60b57d2fecaa3dadfa78f2926e58716b7ffc04f4fe522f48ec64457a902452a2b230200",
+      "start_us": 29873860
+    },
+    {
+      "job": 5,
+      "engine": 1,
+      "requests": [
+        {
+          "at_us": 98676,
+          "iterations": 6038032
+        },
+        {
+          "at_us": 98679,
+          "iterations": 15213072
+        },
+        {
+          "at_us": 98680,
+          "iterations": 24388112
+        },
+        {
+          "at_us": 98681,
+          "iterations": 125313552
+        },
+        {
+          "at_us": 98682,
+          "iterations": 28435342
+        },
+        {
+          "at_us": 6583400,
+          "iterations": 33563152
+        },
+        {
+          "at_us": 6583402,
+          "iterations": 42738192
+        },
+        {
+          "at_us": 6583404,
+          "iterations": 51913232
+        },
+        {
+          "at_us": 6586350,
+          "iterations": 61088272
+        },
+        {
+          "at_us": 6586352,
+          "iterations": 70263312
+        },
+        {
+          "at_us": 6586353,
+          "iterations": 79438352
+        },
+        {
+          "at_us": 6586353,
+          "iterations": 88613392
+        },
+        {
+          "at_us": 15794178,
+          "iterations": 97788432
+        }
+      ],
+      "epoch_us": 81483586129,
+      "stop_us": 20322943,
+      "reset_request_us": 20322935,
+      "discriminant": "-0xe64c4248308b6f2da18e8bdc085f013ad65b392240d42ac4180eb2489fc3b297ad812c322d34762979422ba7594b07621f8d43274dd5c7ed492ade5d30e2e58dc856dddb6e0e6d2fc20c8f40775565457679c286692ff6c30d16a47c450486b416b1e2dd2ad79febd9f882148a327788a865ef6581a3cdf76270a78c5c95f50f",
+      "initial_form_hex": "0100508fd2201d15dc0836fd4bb42e4fc4c4ae9c6c1266f44a81e72bd48fca428dfb4a14a59a37631347039fb443caa06dda4b21608438b8ddfe2b31400175eedb083dff3085af6272e4b3c6b8f9a2054f2b89977bff98d7b75ca08384b99e4256110200",
+      "start_us": 29874308
+    },
+    {
+      "job": 6,
+      "engine": 2,
+      "requests": [
+        {
+          "at_us": 98263,
+          "iterations": 6038032
+        },
+        {
+          "at_us": 98264,
+          "iterations": 15213072
+        },
+        {
+          "at_us": 98265,
+          "iterations": 24388112
+        },
+        {
+          "at_us": 98266,
+          "iterations": 125313552
+        },
+        {
+          "at_us": 99985,
+          "iterations": 28435342
+        },
+        {
+          "at_us": 6585934,
+          "iterations": 33563152
+        },
+        {
+          "at_us": 6585935,
+          "iterations": 42738192
+        },
+        {
+          "at_us": 6589129,
+          "iterations": 51913232
+        },
+        {
+          "at_us": 6589131,
+          "iterations": 61088272
+        },
+        {
+          "at_us": 6589132,
+          "iterations": 70263312
+        },
+        {
+          "at_us": 6589133,
+          "iterations": 79438352
+        },
+        {
+          "at_us": 6589134,
+          "iterations": 88613392
+        },
+        {
+          "at_us": 15793762,
+          "iterations": 97788432
+        }
+      ],
+      "epoch_us": 81483586551,
+      "stop_us": 20322795,
+      "reset_request_us": 20322788,
+      "discriminant": "-0xf83fb050c9f962d5257afd4fad1e9a7ecdcbfa1ababdd7996194f23508c898bc23ff5f8bec961a7e1a923e61e746e45c4c56bfceb4110f2dbd039fc8237b0a9eaf5334f35a2399f86f5bef59dc2120717e22a2349b6d281186e580fd8c24abb7f431c8a1317124d3ddd77fbb92da5ac374bad73ea1b359e3b67305ad1c580497",
+      "initial_form_hex": "08000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "start_us": 29874730
+    },
+    {
+      "job": 7,
+      "engine": 0,
+      "requests": [
+        {
+          "at_us": 102635,
+          "iterations": 96878210
+        },
+        {
+          "at_us": 15526025,
+          "iterations": 35560603
+        },
+        {
+          "at_us": 33161847,
+          "iterations": 56799720
+        }
+      ],
+      "epoch_us": 81504133155,
+      "stop_us": 36825543,
+      "reset_request_us": 36825533,
+      "discriminant": "-0x8fa333df855177070ddfc03b9e147d6b632a00ed167cb080f23f13db7ec5790096856e12b2dae07c5cabf901953faed5062c8f4ff78b981606f7f9412fc80bf58dd0db6a9987d3c1041334a19337e67009faea7896b4a7f2c07aa743d9a29d06a9506118d8c7650673f56be053537cef80555cf077a111ed72b59f33db0af827",
+      "initial_form_hex": "020068dc6481865f896913768d6c621694619af1d928fea10bf1be6e1dba529f8e3d6b619c0d3e42f1748807c1e3e5b687143af289c22b99062535c1db18bb7d18358f574b4f68bfeeb052fb61aab10c9fb02a3e89b23eb6f4f68d0ec2d6c1c4a8710100",
+      "start_us": 50421334
+    },
+    {
+      "job": 8,
+      "engine": 1,
+      "requests": [
+        {
+          "at_us": 97545,
+          "iterations": 5127810
+        },
+        {
+          "at_us": 97547,
+          "iterations": 14302850
+        },
+        {
+          "at_us": 97549,
+          "iterations": 23477890
+        },
+        {
+          "at_us": 97550,
+          "iterations": 96878210
+        },
+        {
+          "at_us": 5552108,
+          "iterations": 32652930
+        },
+        {
+          "at_us": 5552111,
+          "iterations": 41827970
+        },
+        {
+          "at_us": 5552113,
+          "iterations": 51003010
+        },
+        {
+          "at_us": 5552114,
+          "iterations": 60178050
+        },
+        {
+          "at_us": 5554393,
+          "iterations": 69353090
+        },
+        {
+          "at_us": 5554395,
+          "iterations": 78528130
+        },
+        {
+          "at_us": 5554396,
+          "iterations": 87703170
+        },
+        {
+          "at_us": 15525620,
+          "iterations": 35560603
+        },
+        {
+          "at_us": 33161443,
+          "iterations": 56799720
+        }
+      ],
+      "epoch_us": 81504133565,
+      "stop_us": 36840634,
+      "reset_request_us": 36840631,
+      "discriminant": "-0xe64c4248308b6f2da18e8bdc085f013ad65b392240d42ac4180eb2489fc3b297ad812c322d34762979422ba7594b07621f8d43274dd5c7ed492ade5d30e2e58dc856dddb6e0e6d2fc20c8f40775565457679c286692ff6c30d16a47c450486b416b1e2dd2ad79febd9f882148a327788a865ef6581a3cdf76270a78c5c95f50f",
+      "initial_form_hex": "03002be3f7bb6eaa54909abc350ab2a4349e696a3f2d8a7bd440f77da46ebeb407888341e2988a1c34d9f62ce339248a6f217cc02837cf0a49d4fa7c60ad0975180b2513510ecfdabd68ce1e75949142cd6e8984845b8b284dfdfd7d3d4f874a450e0201",
+      "start_us": 50421744
+    },
+    {
+      "job": 9,
+      "engine": 2,
+      "requests": [
+        {
+          "at_us": 99483,
+          "iterations": 5127810
+        },
+        {
+          "at_us": 99485,
+          "iterations": 14302850
+        },
+        {
+          "at_us": 99487,
+          "iterations": 23477890
+        },
+        {
+          "at_us": 101851,
+          "iterations": 96878210
+        },
+        {
+          "at_us": 5554020,
+          "iterations": 32652930
+        },
+        {
+          "at_us": 5554021,
+          "iterations": 41827970
+        },
+        {
+          "at_us": 5554022,
+          "iterations": 51003010
+        },
+        {
+          "at_us": 5554023,
+          "iterations": 60178050
+        },
+        {
+          "at_us": 5554024,
+          "iterations": 69353090
+        },
+        {
+          "at_us": 5554025,
+          "iterations": 78528130
+        },
+        {
+          "at_us": 5554026,
+          "iterations": 87703170
+        },
+        {
+          "at_us": 15525245,
+          "iterations": 35560603
+        },
+        {
+          "at_us": 33161068,
+          "iterations": 56799720
+        }
+      ],
+      "epoch_us": 81504133944,
+      "stop_us": 36840653,
+      "reset_request_us": 36840645,
+      "discriminant": "-0xc9d025fadd3f33cc7b9e57ddbb8122d87a097f330432452353e323dea6ff27ebc0147bd7b68d09f3dfc1f61b61f4c3365736325a68ad5e730a9b8df55f79ba30f2776993c8b6131d8b5a8a787a575517d6dbbfe2b07247617e960a6c38c9b94ca57562daa472a1835e224b2fb9953e930466b72c446ccd777d549f6692c65e57",
+      "initial_form_hex": "08000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "start_us": 50422123
+    },
+    {
+      "job": 10,
+      "engine": 0,
+      "requests": [
+        {
+          "at_us": 97226,
+          "iterations": 21239117
+        },
+        {
+          "at_us": 97228,
+          "iterations": 61317607
+        },
+        {
+          "at_us": 10037304,
+          "iterations": 31755239
+        }
+      ],
+      "epoch_us": 81541272909,
+      "stop_us": 19244495,
+      "reset_request_us": 19244483,
+      "discriminant": "-0x8fa333df855177070ddfc03b9e147d6b632a00ed167cb080f23f13db7ec5790096856e12b2dae07c5cabf901953faed5062c8f4ff78b981606f7f9412fc80bf58dd0db6a9987d3c1041334a19337e67009faea7896b4a7f2c07aa743d9a29d06a9506118d8c7650673f56be053537cef80555cf077a111ed72b59f33db0af827",
+      "initial_form_hex": "03000b535271604a216eb480ef34d5518fd231ceceab35a1ccbd6346a1fd44c32253a8e9e75277c8289bdb89dcd09a546d3d552750c6d15d64422def6bc13971021ab834c2b38c2d882892310a3555a2fbdb14cfb9b51d4d2da1560cf1e9b7aa55000100",
+      "start_us": 87561088
+    },
+    {
+      "job": 11,
+      "engine": 1,
+      "requests": [
+        {
+          "at_us": 96769,
+          "iterations": 21239117
+        },
+        {
+          "at_us": 96770,
+          "iterations": 6267367
+        },
+        {
+          "at_us": 96771,
+          "iterations": 15442407
+        },
+        {
+          "at_us": 96773,
+          "iterations": 24617447
+        },
+        {
+          "at_us": 96774,
+          "iterations": 61317607
+        },
+        {
+          "at_us": 6853201,
+          "iterations": 33792487
+        },
+        {
+          "at_us": 6853204,
+          "iterations": 42967527
+        },
+        {
+          "at_us": 6853205,
+          "iterations": 52142567
+        },
+        {
+          "at_us": 10036846,
+          "iterations": 31755239
+        }
+      ],
+      "epoch_us": 81541273371,
+      "stop_us": 19244417,
+      "reset_request_us": 19244410,
+      "discriminant": "-0xe64c4248308b6f2da18e8bdc085f013ad65b392240d42ac4180eb2489fc3b297ad812c322d34762979422ba7594b07621f8d43274dd5c7ed492ade5d30e2e58dc856dddb6e0e6d2fc20c8f40775565457679c286692ff6c30d16a47c450486b416b1e2dd2ad79febd9f882148a327788a865ef6581a3cdf76270a78c5c95f50f",
+      "initial_form_hex": "0000736c61f50770e47dab736d0bbe932697b141f6e30210eebebae748c8808920c602cbdadf19ea3afc03ab86095fbccd833534c2d5bbe018b6b92e6044c5866459ddc3f1b8ce00298bdfe3ce4ad6ad94d897dcd04f22c764e4aabcad464049f9620100",
+      "start_us": 87561550
+    },
+    {
+      "job": 12,
+      "engine": 2,
+      "requests": [
+        {
+          "at_us": 96355,
+          "iterations": 21239117
+        },
+        {
+          "at_us": 96356,
+          "iterations": 6267367
+        },
+        {
+          "at_us": 96358,
+          "iterations": 15442407
+        },
+        {
+          "at_us": 96358,
+          "iterations": 24617447
+        },
+        {
+          "at_us": 96359,
+          "iterations": 61317607
+        },
+        {
+          "at_us": 6852787,
+          "iterations": 33792487
+        },
+        {
+          "at_us": 6852788,
+          "iterations": 42967527
+        },
+        {
+          "at_us": 6852789,
+          "iterations": 52142567
+        },
+        {
+          "at_us": 10036428,
+          "iterations": 31755239
+        }
+      ],
+      "epoch_us": 81541273792,
+      "stop_us": 19259311,
+      "reset_request_us": 19259298,
+      "discriminant": "-0x9f53c5243324edf8e50ed8887d53c4349257dd069c4e4470742358a37828117a7244e02fbb4aed5760312de7574de350f709df62ec78acaf3cf8befaf47470d812f5d72d2e6be396fe1a02395425eb00322a7931f6a069971a3710f423d8b361e4cf6182caa9311434c75b3b0ac2e25f7ed0375859a5647430716bd723892e1f",
+      "initial_form_hex": "08000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "start_us": 87561971
+    },
+    {
+      "job": 13,
+      "engine": 0,
+      "requests": [
+        {
+          "at_us": 161922,
+          "iterations": 10516122
+        },
+        {
+          "at_us": 161925,
+          "iterations": 40078490
+        }
+      ],
+      "epoch_us": 81560764348,
+      "stop_us": 10504928,
+      "reset_request_us": 10504909,
+      "discriminant": "-0x8fa333df855177070ddfc03b9e147d6b632a00ed167cb080f23f13db7ec5790096856e12b2dae07c5cabf901953faed5062c8f4ff78b981606f7f9412fc80bf58dd0db6a9987d3c1041334a19337e67009faea7896b4a7f2c07aa743d9a29d06a9506118d8c7650673f56be053537cef80555cf077a111ed72b59f33db0af827",
+      "initial_form_hex": "01002f387e3f7a1584c2a092231b62a25a7eee4d42f4565c38ccb63c004a48e28186979197b8a533ed38af74b2eba1722db154a0387d991cdf451ce37219162a5f021cc8f2c704249fe3aaa0ddc57e7c59d9237d6ee3aa95a2870095c26c3f95f0021000",
+      "start_us": 107052527
+    },
+    {
+      "job": 14,
+      "engine": 1,
+      "requests": [
+        {
+          "at_us": 161509,
+          "iterations": 10516122
+        },
+        {
+          "at_us": 161510,
+          "iterations": 3378330
+        },
+        {
+          "at_us": 161511,
+          "iterations": 12553370
+        },
+        {
+          "at_us": 161512,
+          "iterations": 21728410
+        },
+        {
+          "at_us": 161513,
+          "iterations": 40078490
+        },
+        {
+          "at_us": 3848416,
+          "iterations": 30903450
+        }
+      ],
+      "epoch_us": 81560764767,
+      "stop_us": 10519822,
+      "reset_request_us": 10519815,
+      "discriminant": "-0xe64c4248308b6f2da18e8bdc085f013ad65b392240d42ac4180eb2489fc3b297ad812c322d34762979422ba7594b07621f8d43274dd5c7ed492ade5d30e2e58dc856dddb6e0e6d2fc20c8f40775565457679c286692ff6c30d16a47c450486b416b1e2dd2ad79febd9f882148a327788a865ef6581a3cdf76270a78c5c95f50f",
+      "initial_form_hex": "0300db87aca9216833fbaca6c2cf013b8549bb6304ccba71be86d5af501b1e1bbe1f3181bfd08b00d28a030c29bb8ff3f3454f99ca78caf8964552ec2c7d3176540289f5869b190b646fd543c310b4cde0392743af43fe17a4cd92cecdd640242f0f0201",
+      "start_us": 107052946
+    },
+    {
+      "job": 15,
+      "engine": 2,
+      "requests": [
+        {
+          "at_us": 161134,
+          "iterations": 10516122
+        },
+        {
+          "at_us": 161135,
+          "iterations": 3378330
+        },
+        {
+          "at_us": 161136,
+          "iterations": 12553370
+        },
+        {
+          "at_us": 161137,
+          "iterations": 21728410
+        },
+        {
+          "at_us": 161138,
+          "iterations": 40078490
+        },
+        {
+          "at_us": 3848039,
+          "iterations": 30903450
+        }
+      ],
+      "epoch_us": 81560765149,
+      "stop_us": 10534773,
+      "reset_request_us": 10534767,
+      "discriminant": "-0xe8084335716e4ddf36f8e8b03af745ecb0d47a6d000b7a7ff92e7a72337d1f01fa3c16eacf1b03ae16ce692a3eddc4455f075f9549afbefb2b62f303ba8fab842731f6d64a95318a04e50155de23af80e9be8e1443475788202674f344cfe890fc286a8ba985585cf09fc9bfb86f081aece20ee412ef7c0a4cbf1d7215328a3f",
+      "initial_form_hex": "08000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "start_us": 107053328
+    },
+    {
+      "job": 16,
+      "engine": 0,
+      "requests": [
+        {
+          "at_us": 97684,
+          "iterations": 29562368
+        }
+      ],
+      "epoch_us": 81571554137,
+      "stop_us": 30743486,
+      "reset_request_us": 30743480,
+      "discriminant": "-0x8fa333df855177070ddfc03b9e147d6b632a00ed167cb080f23f13db7ec5790096856e12b2dae07c5cabf901953faed5062c8f4ff78b981606f7f9412fc80bf58dd0db6a9987d3c1041334a19337e67009faea7896b4a7f2c07aa743d9a29d06a9506118d8c7650673f56be053537cef80555cf077a111ed72b59f33db0af827",
+      "initial_form_hex": "0300b745bc150bbf876d265e1f45a956d2c1fc17b9850e228e5962697a744bedadddb151abecdabf62a44fc2e4e56b66aec946e725e39fcec4561ac86418b744c5008f1329dce7cf01c8cc7a449035757667aad8e611c35ca2edfec81cca1c07ae010e03",
+      "start_us": 117842316
+    },
+    {
+      "job": 17,
+      "engine": 1,
+      "requests": [
+        {
+          "at_us": 97262,
+          "iterations": 2037248
+        },
+        {
+          "at_us": 97263,
+          "iterations": 11212288
+        },
+        {
+          "at_us": 97264,
+          "iterations": 20387328
+        },
+        {
+          "at_us": 97265,
+          "iterations": 29562368
+        }
+      ],
+      "epoch_us": 81571554563,
+      "stop_us": 30743461,
+      "reset_request_us": 30743453,
+      "discriminant": "-0xe64c4248308b6f2da18e8bdc085f013ad65b392240d42ac4180eb2489fc3b297ad812c322d34762979422ba7594b07621f8d43274dd5c7ed492ade5d30e2e58dc856dddb6e0e6d2fc20c8f40775565457679c286692ff6c30d16a47c450486b416b1e2dd2ad79febd9f882148a327788a865ef6581a3cdf76270a78c5c95f50f",
+      "initial_form_hex": "02005b974dda7cfc6eb254c39285f9ca842671dc9f580ea7f3b32317e5cd632eea06ca7b2bcaf0031c416e5fd1dec93701201aa819ff5353e3bddf46c1cbd14f09407f9f98878ba87b2e74e36dc12617f6662ef30f5a3430d3a5d404b4e01a63822b0100",
+      "start_us": 117842742
+    },
+    {
+      "job": 18,
+      "engine": 2,
+      "requests": [
+        {
+          "at_us": 96865,
+          "iterations": 2037248
+        },
+        {
+          "at_us": 96866,
+          "iterations": 11212288
+        },
+        {
+          "at_us": 96867,
+          "iterations": 20387328
+        },
+        {
+          "at_us": 96868,
+          "iterations": 29562368
+        }
+      ],
+      "epoch_us": 81571554966,
+      "stop_us": 30743405,
+      "reset_request_us": 30743398,
+      "discriminant": "-0xb3dec440a56c54006e3873e5197fa3b6081f86fce834d67158848b73481de0a02c445bc86cc04dcb9005f279b44437c545a1661923013f7e9636a380299be8e9f9ddf2dedd28fbeacc014008dee46034459af0f84c8daee4da4561ae2567effa4561ea916e11ee120b507c0703d0768c2476d891d5b3657b3d833ace09867267",
+      "initial_form_hex": "08000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "start_us": 117843145
+    },
+    {
+      "job": 19,
+      "engine": 0,
+      "requests": [],
+      "epoch_us": 81602446106,
+      "stop_us": 10090897,
+      "reset_request_us": 10090888,
+      "discriminant": "-0xa208f928bd508362dc0f7aa4d48ba7248e881e772e5db8d87742e83920cc098ab71da6e9b03595c5f045cb51a18af06e65528c3f66ad8cdcb5bbb01f7bdf3881fe2fc64042026002e3530ebef7c11f9d0d094ce83d49827fda2966a8c52d40e59ee528576e5104102781815da5e09cd8b81148cc4fdfd1ff03ae518d0e381f7f",
+      "initial_form_hex": "08000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "start_us": 148734285
+    },
+    {
+      "job": 20,
+      "engine": 1,
+      "requests": [
+        {
+          "at_us": 97555,
+          "iterations": 11038748
+        },
+        {
+          "at_us": 97558,
+          "iterations": 19217380
+        },
+        {
+          "at_us": 97559,
+          "iterations": 9175040
+        },
+        {
+          "at_us": 97560,
+          "iterations": 18350080
+        },
+        {
+          "at_us": 97561,
+          "iterations": 27525120
+        },
+        {
+          "at_us": 97562,
+          "iterations": 587202560
+        },
+        {
+          "at_us": 9784109,
+          "iterations": 36700160
+        },
+        {
+          "at_us": 9784113,
+          "iterations": 45875200
+        },
+        {
+          "at_us": 9784117,
+          "iterations": 55050240
+        },
+        {
+          "at_us": 9784118,
+          "iterations": 64225280
+        },
+        {
+          "at_us": 9784119,
+          "iterations": 73400320
+        },
+        {
+          "at_us": 9784120,
+          "iterations": 82575360
+        },
+        {
+          "at_us": 9784122,
+          "iterations": 91750400
+        }
+      ],
+      "epoch_us": 81602446505,
+      "stop_us": 10090829,
+      "reset_request_us": 10090823,
+      "discriminant": "-0xa208f928bd508362dc0f7aa4d48ba7248e881e772e5db8d87742e83920cc098ab71da6e9b03595c5f045cb51a18af06e65528c3f66ad8cdcb5bbb01f7bdf3881fe2fc64042026002e3530ebef7c11f9d0d094ce83d49827fda2966a8c52d40e59ee528576e5104102781815da5e09cd8b81148cc4fdfd1ff03ae518d0e381f7f",
+      "initial_form_hex": "08000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "start_us": 148734684
+    },
+    {
+      "job": 21,
+      "engine": 2,
+      "requests": [
+        {
+          "at_us": 97178,
+          "iterations": 11038748
+        },
+        {
+          "at_us": 97179,
+          "iterations": 19217380
+        },
+        {
+          "at_us": 97180,
+          "iterations": 9175040
+        },
+        {
+          "at_us": 97181,
+          "iterations": 18350080
+        },
+        {
+          "at_us": 97182,
+          "iterations": 27525120
+        },
+        {
+          "at_us": 97183,
+          "iterations": 587202560
+        },
+        {
+          "at_us": 9783738,
+          "iterations": 36700160
+        },
+        {
+          "at_us": 9783739,
+          "iterations": 45875200
+        },
+        {
+          "at_us": 9783740,
+          "iterations": 55050240
+        },
+        {
+          "at_us": 9783741,
+          "iterations": 64225280
+        },
+        {
+          "at_us": 9783742,
+          "iterations": 73400320
+        },
+        {
+          "at_us": 9783743,
+          "iterations": 82575360
+        },
+        {
+          "at_us": 9783744,
+          "iterations": 91750400
+        }
+      ],
+      "epoch_us": 81602446892,
+      "stop_us": 10090669,
+      "reset_request_us": 10090661,
+      "discriminant": "-0xca3ad28a48b63e8478a80461e80dbea2c06bf8642671bfb8db86a0f137c799e125001acc3d1a321c14eb142b7edb956b43b511282c76b79886cdf353853930f826d0127a9de1cac5be9b4ce46681528442c481133228407c708ec53db202d227cdc95e25c123847831079425c3d9d7c12ec0334f3d872667976e9225fa58eb97",
+      "initial_form_hex": "08000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "start_us": 148735071
+    },
+    {
+      "job": 22,
+      "engine": 0,
+      "requests": [],
+      "epoch_us": 81612779459,
+      "stop_us": 8367520,
+      "reset_request_us": 8367501,
+      "discriminant": "-0xa208f928bd508362dc0f7aa4d48ba7248e881e772e5db8d87742e83920cc098ab71da6e9b03595c5f045cb51a18af06e65528c3f66ad8cdcb5bbb01f7bdf3881fe2fc64042026002e3530ebef7c11f9d0d094ce83d49827fda2966a8c52d40e59ee528576e5104102781815da5e09cd8b81148cc4fdfd1ff03ae518d0e381f7f",
+      "initial_form_hex": "000097cdbb014d3ee805903ec9ab8a138be0807285e3c9060dd885e9385bc32a38ab0563aa19653d52ec68b0c83967177698c9f73c4b6015de09c15d4d4712611067ef2b2222aecd678cef75a4981a6c2c79a398b0675dcda16a8b83eb80e1eddd660100",
+      "start_us": 159067638
+    },
+    {
+      "job": 23,
+      "engine": 1,
+      "requests": [
+        {
+          "at_us": 97056,
+          "iterations": 8178632
+        },
+        {
+          "at_us": 97058,
+          "iterations": 7311332
+        },
+        {
+          "at_us": 97059,
+          "iterations": 16486372
+        },
+        {
+          "at_us": 97060,
+          "iterations": 25661412
+        },
+        {
+          "at_us": 97061,
+          "iterations": 576163812
+        },
+        {
+          "at_us": 7807635,
+          "iterations": 34836452
+        },
+        {
+          "at_us": 7807640,
+          "iterations": 44011492
+        },
+        {
+          "at_us": 7807641,
+          "iterations": 53186532
+        },
+        {
+          "at_us": 7807643,
+          "iterations": 62361572
+        },
+        {
+          "at_us": 7807644,
+          "iterations": 71536612
+        },
+        {
+          "at_us": 7807645,
+          "iterations": 80711652
+        },
+        {
+          "at_us": 7807646,
+          "iterations": 89886692
+        }
+      ],
+      "epoch_us": 81612780729,
+      "stop_us": 8366555,
+      "reset_request_us": 8366547,
+      "discriminant": "-0xa208f928bd508362dc0f7aa4d48ba7248e881e772e5db8d87742e83920cc098ab71da6e9b03595c5f045cb51a18af06e65528c3f66ad8cdcb5bbb01f7bdf3881fe2fc64042026002e3530ebef7c11f9d0d094ce83d49827fda2966a8c52d40e59ee528576e5104102781815da5e09cd8b81148cc4fdfd1ff03ae518d0e381f7f",
+      "initial_form_hex": "000097cdbb014d3ee805903ec9ab8a138be0807285e3c9060dd885e9385bc32a38ab0563aa19653d52ec68b0c83967177698c9f73c4b6015de09c15d4d4712611067ef2b2222aecd678cef75a4981a6c2c79a398b0675dcda16a8b83eb80e1eddd660100",
+      "start_us": 159068908
+    },
+    {
+      "job": 24,
+      "engine": 2,
+      "requests": [
+        {
+          "at_us": 96677,
+          "iterations": 8178632
+        },
+        {
+          "at_us": 98880,
+          "iterations": 7311332
+        },
+        {
+          "at_us": 98883,
+          "iterations": 16486372
+        },
+        {
+          "at_us": 98884,
+          "iterations": 25661412
+        },
+        {
+          "at_us": 98885,
+          "iterations": 576163812
+        },
+        {
+          "at_us": 7807263,
+          "iterations": 34836452
+        },
+        {
+          "at_us": 7807264,
+          "iterations": 44011492
+        },
+        {
+          "at_us": 7807265,
+          "iterations": 53186532
+        },
+        {
+          "at_us": 7807266,
+          "iterations": 62361572
+        },
+        {
+          "at_us": 7807267,
+          "iterations": 71536612
+        },
+        {
+          "at_us": 7807268,
+          "iterations": 80711652
+        },
+        {
+          "at_us": 7807269,
+          "iterations": 89886692
+        }
+      ],
+      "epoch_us": 81612781116,
+      "stop_us": 8378017,
+      "reset_request_us": 8378006,
+      "discriminant": "-0xfb04333bbecc3c6c761cb7fcc14cb2260456e80bc8e322817ea38ef5557fbc1d90975d455a02e7a4053e9511683a5f8f7b6a388c972eb6a665e223cb8b1dba83607a3f84170dbf3e3919fa351a0359df42e8b0a5e447987b2619f8ccc1cc6c21dd25777363234c67235573e1934aec84be943934d567770fd2a85a826c106da7",
+      "initial_form_hex": "08000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "start_us": 159069295
+    }
+  ]
+}

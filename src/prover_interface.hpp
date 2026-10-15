@@ -23,6 +23,8 @@ class Prover {
     void GenerateProof();
 
   protected:
+    virtual void OnChallengeReady() {}
+    virtual void OnProofWorker(uint8_t, bool) {}
     Segment segm;
     integer D;
     form proof;

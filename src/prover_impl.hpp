@@ -115,8 +115,6 @@ inline void ParallelProver::SquareFormN(form& f, uint64_t cnt, PulmarkReducer& r
 inline void ParallelProver::ProvePart(uint8_t thr_idx, uint32_t start, uint32_t len) {
     PulmarkReducer reducer;
 
-    uint64_t k1 = k / 2;
-    uint64_t k0 = k - k1;
     form x = id;
     int64_t end = start - len;
     int64_t j;
@@ -143,26 +141,17 @@ inline void ParallelProver::ProvePart(uint8_t thr_idx, uint32_t start, uint32_t 
             }
         }
 
-        // Zero-weight outer groups are discarded by exponentiation.
-        for (uint64_t b1 = 1; b1 < (1UL << k1); b1++) {
-            form z = id;
-            for (uint64_t b0 = 0; b0 < (1UL << k0); b0++) {
-                if (!PerformExtraStep()) return;
-                nucomp_form(z, z, ys[b1 * (1 << k0) + b0], D, L);
-            }
-            z = FastPowFormNucomp(z, D, integer(b1 * (1 << k0)), L, reducer);
-            nucomp_form(x, x, z, D, L);
+        // prod(ys[b]^b) = prod_b(prod_{c>=b} ys[c]). Bucket zero has
+        // weight zero, so a descending sweep needs no small exponentiations.
+        uint64_t last_bucket = (1UL << k) - 1;
+        form running = ys[last_bucket];
+        form weighted = running;
+        for (uint64_t b = last_bucket - 1; b > 0; --b) {
+            if (!PerformExtraStep()) return;
+            nucomp_form(running, running, ys[b], D, L);
+            nucomp_form(weighted, weighted, running, D, L);
         }
-
-        for (uint64_t b0 = 1; b0 < (1UL << k0); b0++) {
-            form z = id;
-            for (uint64_t b1 = 0; b1 < (1UL << k1); b1++) {
-                if (!PerformExtraStep()) return;
-                nucomp_form(z, z, ys[b1 * (1 << k0) + b0], D, L);
-            }
-            z = FastPowFormNucomp(z, D, integer(b0), L, reducer);
-            nucomp_form(x, x, z, D, L);
-        }
+        nucomp_form(x, x, weighted, D, L);
     }
 
     SquareFormN(x, end * k, reducer);

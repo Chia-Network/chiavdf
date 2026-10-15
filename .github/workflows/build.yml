@@ -23,6 +23,8 @@ jobs:
   build-wheels:
     name: Wheel - ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }} ${{ matrix.arch.name }}
     runs-on: ${{ matrix.os.runs-on[matrix.arch.matrix] }}
+    env:
+      CIBUILDWHEEL_VERSION: '4.3.1'
     strategy:
       fail-fast: false
       matrix:
@@ -45,34 +47,22 @@ jobs:
             runs-on:
               intel: windows-latest
         python:
-          # 3.3+ no longer applies cibuildwheel's pinned packaging==25.0 to
-          # isolated build-system.requires. setuptools-scm 10.2.3 pulls
-          # vcs-versioning, which needs packaging>=26.2.
-          - major-dot-minor: '3.10'
-            cibw-build: 'cp310-*'
-            manylinux: manylinux_2_28
-            matrix: '3.10'
-            cibuildwheel: 'cibuildwheel==3.4.1'
           - major-dot-minor: '3.11'
             cibw-build: 'cp311-*'
             manylinux: manylinux_2_28
             matrix: '3.11'
-            cibuildwheel: 'cibuildwheel==3.4.1'
           - major-dot-minor: '3.12'
             cibw-build: 'cp312-*'
             manylinux: manylinux_2_28
             matrix: '3.12'
-            cibuildwheel: 'cibuildwheel==3.4.1'
           - major-dot-minor: '3.13'
             cibw-build: 'cp313-*'
             manylinux: manylinux_2_28
             matrix: '3.13'
-            cibuildwheel: 'cibuildwheel==3.4.1'
           - major-dot-minor: '3.14'
             cibw-build: 'cp314-*'
             manylinux: manylinux_2_28
             matrix: '3.14'
-            cibuildwheel: 'cibuildwheel==3.4.1'
         arch:
           - name: ARM
             matrix: arm
@@ -104,7 +94,7 @@ jobs:
     - uses: Chia-Network/actions/setup-python@main
       with:
         # cibuildwheel v3 requires Python >= 3.11 for the build host.
-        # Keep wheel target selection via CIBW_BUILD so cp310 wheels still build.
+        # Select the wheel target independently via CIBW_BUILD.
         python-version: '3.12'
 
     - name: Install pipx
@@ -117,18 +107,16 @@ jobs:
         CIBW_BUILD: ${{ matrix.python.cibw-build }}
         CIBW_MANYLINUX_AARCH64_IMAGE: ${{ matrix.python.manylinux }}
         CIBW_MANYLINUX_X86_64_IMAGE: ${{ matrix.python.manylinux }}
-        CIBW_ENABLE: cpython-prerelease
       run:
-        pipx run --spec=${{ matrix.python.cibuildwheel }} cibuildwheel --output-dir dist 2>&1
+        pipx run --spec='cibuildwheel==${{ env.CIBUILDWHEEL_VERSION }}' cibuildwheel --output-dir dist 2>&1
 
     - name: Build and test (macOS)
       if: matrix.os.matrix == 'macos'
       env:
         CIBW_BUILD: ${{ matrix.python.cibw-build }}
         CIBW_ARCHS_MACOS: ${{ matrix.os.cibw-archs-macos[matrix.arch.matrix] }}
-        CIBW_ENABLE: cpython-prerelease
       run:
-        pipx run --spec=${{ matrix.python.cibuildwheel }} cibuildwheel --output-dir dist 2>&1
+        pipx run --spec='cibuildwheel==${{ env.CIBUILDWHEEL_VERSION }}' cibuildwheel --output-dir dist 2>&1
 
     - name: Build and test (Windows)
       if: matrix.os.matrix == 'windows'
@@ -145,9 +133,8 @@ jobs:
         # emits this warning in our Windows wheel builds.
         PYTHONWARNINGS: "ignore:Config variable 'Py_DEBUG' is unset:RuntimeWarning"
         CIBW_BUILD: ${{ matrix.python.cibw-build }}
-        CIBW_ENABLE: cpython-prerelease
       run:
-        pipx run --spec=${{ matrix.python.cibuildwheel }} cibuildwheel --output-dir dist 2>&1
+        pipx run --spec='cibuildwheel==${{ env.CIBUILDWHEEL_VERSION }}' cibuildwheel --output-dir dist 2>&1
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v7

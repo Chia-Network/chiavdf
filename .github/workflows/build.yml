@@ -48,11 +48,6 @@ jobs:
           # 3.3+ no longer applies cibuildwheel's pinned packaging==25.0 to
           # isolated build-system.requires. setuptools-scm 10.2.3 pulls
           # vcs-versioning, which needs packaging>=26.2.
-          - major-dot-minor: '3.10'
-            cibw-build: 'cp310-*'
-            manylinux: manylinux_2_28
-            matrix: '3.10'
-            cibuildwheel: 'cibuildwheel==3.4.1'
           - major-dot-minor: '3.11'
             cibw-build: 'cp311-*'
             manylinux: manylinux_2_28
@@ -104,7 +99,7 @@ jobs:
     - uses: Chia-Network/actions/setup-python@main
       with:
         # cibuildwheel v3 requires Python >= 3.11 for the build host.
-        # Keep wheel target selection via CIBW_BUILD so cp310 wheels still build.
+        # Select the wheel target independently via CIBW_BUILD.
         python-version: '3.12'
 
     - name: Install pipx

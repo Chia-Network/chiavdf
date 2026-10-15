@@ -24,9 +24,7 @@ jobs:
     name: Wheel - ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }} ${{ matrix.arch.name }}
     runs-on: ${{ matrix.os.runs-on[matrix.arch.matrix] }}
     env:
-      # 3.3+ no longer pins packaging==25.0 in isolated build-system.requires.
-      # setuptools-scm 10.2.3 pulls vcs-versioning, which needs packaging>=26.2.
-      CIBUILDWHEEL_VERSION: '3.4.1'
+      CIBUILDWHEEL_VERSION: '4.3.1'
     strategy:
       fail-fast: false
       matrix:
@@ -109,7 +107,6 @@ jobs:
         CIBW_BUILD: ${{ matrix.python.cibw-build }}
         CIBW_MANYLINUX_AARCH64_IMAGE: ${{ matrix.python.manylinux }}
         CIBW_MANYLINUX_X86_64_IMAGE: ${{ matrix.python.manylinux }}
-        CIBW_ENABLE: cpython-prerelease
       run:
         pipx run --spec='cibuildwheel==${{ env.CIBUILDWHEEL_VERSION }}' cibuildwheel --output-dir dist 2>&1
 
@@ -118,7 +115,6 @@ jobs:
       env:
         CIBW_BUILD: ${{ matrix.python.cibw-build }}
         CIBW_ARCHS_MACOS: ${{ matrix.os.cibw-archs-macos[matrix.arch.matrix] }}
-        CIBW_ENABLE: cpython-prerelease
       run:
         pipx run --spec='cibuildwheel==${{ env.CIBUILDWHEEL_VERSION }}' cibuildwheel --output-dir dist 2>&1
 
@@ -137,7 +133,6 @@ jobs:
         # emits this warning in our Windows wheel builds.
         PYTHONWARNINGS: "ignore:Config variable 'Py_DEBUG' is unset:RuntimeWarning"
         CIBW_BUILD: ${{ matrix.python.cibw-build }}
-        CIBW_ENABLE: cpython-prerelease
       run:
         pipx run --spec='cibuildwheel==${{ env.CIBUILDWHEEL_VERSION }}' cibuildwheel --output-dir dist 2>&1
 

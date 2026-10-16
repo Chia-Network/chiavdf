@@ -48,6 +48,8 @@ jobs:
       upstream_repo: ${{ steps.dependabot_context.outputs.upstream_repo }}
       resolved_from: ${{ steps.malware_scan.outputs.resolved_from }}
       resolved_to: ${{ steps.malware_scan.outputs.resolved_to }}
+      from_tag: ${{ steps.malware_scan.outputs.from_tag }}
+      to_tag: ${{ steps.malware_scan.outputs.to_tag }}
       status: ${{ steps.malware_scan.outputs.status }}
       changed_files_count: ${{ steps.malware_scan.outputs.changed_files_count }}
       report_sha256: ${{ steps.malware_scan.outputs.report_sha256 }}
@@ -213,6 +215,8 @@ jobs:
           PACKAGE_NAME: ${{ steps.dependabot_context.outputs.package_name }}
           FROM_VERSION: ${{ steps.dependabot_context.outputs.from_version }}
           TO_VERSION: ${{ steps.dependabot_context.outputs.to_version }}
+          RESOLVED_FROM: ${{ steps.malware_scan.outputs.resolved_from }}
+          RESOLVED_TO: ${{ steps.malware_scan.outputs.resolved_to }}
         run: |
           python3 -I "${RUNNER_TEMP}/trusted-dcr-scripts/.github/scripts/dependency_cursor_review_prompts.py"
           if [ ! -f upstream_changed_files.txt ]; then
@@ -267,18 +271,125 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Fetch upstream from commit
-        if: ${{ needs.dependency-review-scan.outputs.resolved_from != '' && needs.dependency-review-scan.outputs.resolved_to != '' }}
+      - name: Download scan prompts
+        uses: actions/download-artifact@v8
+        with:
+          name: dcr-scan-${{ github.run_id }}
+          path: dcr-scan-input
+
+      - name: Fetch upstream commits and version tags
+        if: ${{ needs.dependency-review-scan.outputs.resolved_to != '' }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           RESOLVED_FROM: ${{ needs.dependency-review-scan.outputs.resolved_from }}
+          RESOLVED_TO: ${{ needs.dependency-review-scan.outputs.resolved_to }}
+          FROM_TAG: ${{ needs.dependency-review-scan.outputs.from_tag }}
+          TO_TAG: ${{ needs.dependency-review-scan.outputs.to_tag }}
         run: |
           set -euo pipefail
           auth_basic="$(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 | tr -d '\n')"
-          git -C .upstream-dependency \
-            -c "http.extraheader=AUTHORIZATION: basic ${auth_basic}" \
-            fetch --no-tags --depth=1 origin "${RESOLVED_FROM}"
+          # Pin both commits, then fetch only the named version tags.
+          # Depth 1 does not include intermediate commits.
+          fetch_sha() {
+            local sha="$1"
+            local refname="$2"
+            [ -n "$sha" ] || return 0
+            case "$sha" in
+            *[!0-9a-fA-F]*)
+              echo "Refusing non-SHA ref." >&2
+              return 1
+              ;;
+            esac
+            if [ "${#sha}" -lt 7 ] || [ "${#sha}" -gt 64 ]; then
+              echo "Refusing non-SHA ref." >&2
+              return 1
+            fi
+            git -C .upstream-dependency \
+              -c "http.extraheader=AUTHORIZATION: basic ${auth_basic}" \
+              fetch --no-tags --depth=1 origin "$sha"
+            git -C .upstream-dependency update-ref "$refname" "$sha"
+          }
+          # One allowlist, next to the fetch and the peel check.
+          # Slashes stay; the refspec stores that one tag.
+          tag_name_ok() {
+            local name="$1"
+            [ -n "$name" ] || return 1
+            case "$name" in
+            *[!A-Za-z0-9._+/-]* | -* | .* | /* | *..* | *'@{'*) return 1 ;;
+            esac
+            return 0
+          }
+          fetch_tag() {
+            local name="$1"
+            local sha="$2"
+            local got want
+            [ -n "$name" ] || return 0
+            if ! tag_name_ok "$name"; then
+              echo "Refusing tag name." >&2
+              return 1
+            fi
+            [ -n "$sha" ] || return 0
+            # Tag following would also download every other tag on this commit.
+            # The refspec still stores the named tag.
+            git -C .upstream-dependency \
+              -c "http.extraheader=AUTHORIZATION: basic ${auth_basic}" \
+              fetch --no-tags --depth=1 origin "refs/tags/${name}:refs/tags/${name}" || return 1
+            got="$(git -C .upstream-dependency rev-parse --verify --end-of-options "refs/tags/${name}^{commit}")" || return 1
+            want="$(git -C .upstream-dependency rev-parse --verify --end-of-options "${sha}^{commit}")" || return 1
+            if [ "$got" != "$want" ]; then
+              # This function runs in a substitution, so errexit is off.
+              git -C .upstream-dependency update-ref -d "refs/tags/${name}" || return 1
+              return 0
+            fi
+            printf '%s\n' "$name"
+          }
+          # The compatibility prompt's last slot line is the layout placeholder.
+          slot_token() {
+            local file="dcr-scan-input/cursor_prompt_compatibility.txt"
+            local line token=""
+            local slot_re='^- (from|to) tag: \(none\) dcr-slot-([0-9a-f]{32})$'
+            [ -f "$file" ] || return 1
+            while IFS= read -r line || [ -n "$line" ]; do
+              if [[ "$line" =~ $slot_re ]]; then
+                token="${BASH_REMATCH[2]}"
+              fi
+            done <"$file"
+            [ -n "$token" ] || return 1
+            printf '%s\n' "$token"
+          }
+          note_tag() {
+            local label="$1"
+            local name="$2"
+            local token="$3"
+            local file tmp i changed
+            local slot_re="^- ${label}: \\(none\\) dcr-slot-${token}$"
+            local -a lines
+            [ -n "$name" ] || return 0
+            [[ "$token" =~ ^[0-9a-f]{32}$ ]] || return 1
+            for file in dcr-scan-input/cursor_prompt_malware.txt dcr-scan-input/cursor_prompt_compatibility.txt; do
+              [ -f "$file" ] || continue
+              mapfile -t lines <"$file"
+              changed=0
+              for i in "${!lines[@]}"; do
+                if [[ "${lines[$i]}" =~ $slot_re ]]; then
+                  lines[i]="- ${label}: ${name}"
+                  changed=1
+                fi
+              done
+              [ "$changed" -eq 1 ] || continue
+              tmp="$(mktemp)"
+              printf '%s\n' "${lines[@]}" >"$tmp"
+              mv "$tmp" "$file"
+            done
+          }
+          fetch_sha "${RESOLVED_TO}" refs/dcr/to
+          fetch_sha "${RESOLVED_FROM}" refs/dcr/from
+          verified_to="$(fetch_tag "${TO_TAG:-}" "${RESOLVED_TO}")"
+          verified_from="$(fetch_tag "${FROM_TAG:-}" "${RESOLVED_FROM}")"
+          token="$(slot_token)"
+          note_tag "from tag" "$verified_from" "$token"
+          note_tag "to tag" "$verified_to" "$token"
 
       - name: Drop agent instructions
         if: ${{ needs.dependency-review-scan.outputs.resolved_to != '' }}
@@ -287,12 +398,6 @@ jobs:
           RESOLVED_TO: ${{ needs.dependency-review-scan.outputs.resolved_to }}
         run: |
           bash .dcr-strip/.github/scripts/upstream_release_checkout.sh
-
-      - name: Download scan prompts
-        uses: actions/download-artifact@v8
-        with:
-          name: dcr-scan-${{ github.run_id }}
-          path: dcr-scan-input
 
       - name: Install Cursor CLI
         shell: bash

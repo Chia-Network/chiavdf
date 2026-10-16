@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import os
+import re
+import secrets
 from pathlib import Path
+
+_SHA_RE = re.compile(r"^[0-9a-fA-F]{7,64}\Z")
 
 
 def _read_file(path: str) -> str:
@@ -13,7 +17,49 @@ def _read_file(path: str) -> str:
         return ""
 
 
-def _base_context() -> str:
+def _shown_sha(value: str) -> str:
+    text = value.strip()
+    return text if _SHA_RE.fullmatch(text) else "(unresolved)"
+
+
+def _shown_version(value: str) -> str:
+    text = value.strip()
+    return text if text else "(none)"
+
+
+def _layout_tag_line(label: str, token: str) -> str:
+    return f"- {label}: (none) dcr-slot-{token}"
+
+
+def _upstream_layout(token: str) -> str:
+    from_sha = _shown_sha(os.getenv("RESOLVED_FROM", ""))
+    to_sha = _shown_sha(os.getenv("RESOLVED_TO", ""))
+    lines = [
+        "Repository layout:",
+        "- Current repository root: .",
+        "- Upstream dependency repository: .upstream-dependency",
+        "- HEAD and refs/dcr/to are the to commit when that commit was fetched.",
+        "- refs/dcr/from is the from commit when that commit was fetched. It is not a second worktree.",
+        "- Only those two commits and the version tags named below are fetched.",
+        "- Intermediate commits were not fetched. Compare the trees with git diff, not git log.",
+        f"- from version: {_shown_version(os.getenv('FROM_VERSION', ''))}",
+        _layout_tag_line("from tag", token),
+        f"- from commit: {from_sha}",
+        f"- to version: {_shown_version(os.getenv('TO_VERSION', ''))}",
+        _layout_tag_line("to tag", token),
+        f"- to commit: {to_sha}",
+    ]
+    if from_sha != "(unresolved)" and to_sha != "(unresolved)":
+        lines.append(f"- From-to comparison: git -C .upstream-dependency diff {from_sha} {to_sha}")
+    lines.append("- Read a named tag with git -C .upstream-dependency show <tag> when its line is not (none).")
+    lines.append(
+        "- If .upstream-dependency is absent, the release commit was not checked out "
+        "(status not_scanned). Do not search for another tree and do not review a default-branch checkout."
+    )
+    return "\n".join(lines)
+
+
+def _base_context(token: str) -> str:
     return f"""
 This is a dependency bot PR review request.
 
@@ -40,11 +86,7 @@ Commits:
 Local usage hints (non-authoritative rg hits):
 {_read_file("package_usage.txt")[:12000]}
 
-Repository layout:
-- Current repository root: .
-- Upstream dependency repository: .upstream-dependency (the from and to commits are checked out)
-- If .upstream-dependency is absent, the release commit was not checked out (status not_scanned). \
-Do not search for another tree and do not review a default-branch checkout.
+{_upstream_layout(token)}
 """.strip()
 
 
@@ -118,7 +160,7 @@ Keep it concise and actionable.
 
 
 def main() -> None:
-    base = _base_context()
+    base = _base_context(secrets.token_hex(16))
     malware_context = f"""
 {base}
 
@@ -136,8 +178,9 @@ Malware scan report JSON:
 
 Task 2: Compatibility and adoption analysis.
 1) Where in this repo the dependency appears to be used (treat rg hints as directional, not exhaustive).
-2) Whether those usage sites intersect with likely changed APIs based on release notes, commits, and direct inspection \
-of .upstream-dependency when that directory exists.
+2) Whether those usage sites intersect with likely changed APIs based on release notes and direct inspection \
+of the from and to commits named above. Use the git diff of those two SHAs. Read a version tag only when one is \
+named. Do not treat missing intermediate history as an empty change list.
 3) Risks / unknowns for runtime/build compatibility.
 4) Recommendation: merge / merge-with-caveats / hold.
 Do not include intermediate reasoning or self-talk.

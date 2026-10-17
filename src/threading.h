@@ -566,8 +566,14 @@ struct alignas(64) thread_counter {
     }
 };
 
-thread_counter master_counter[100];
-thread_counter slave_counter[100];
+#ifndef CHIA_VDF_FAST_COUNTER_SLOTS
+#define CHIA_VDF_FAST_COUNTER_SLOTS 100
+#endif
+
+static_assert(CHIA_VDF_FAST_COUNTER_SLOTS > 0, "CHIA_VDF_FAST_COUNTER_SLOTS must be > 0");
+
+thread_counter master_counter[CHIA_VDF_FAST_COUNTER_SLOTS];
+thread_counter slave_counter[CHIA_VDF_FAST_COUNTER_SLOTS];
 
 struct thread_state {
     int pairindex;

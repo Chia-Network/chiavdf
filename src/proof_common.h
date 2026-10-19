@@ -3,6 +3,8 @@
 #include "Reducer.h"
 #include "bqfc.c"
 
+#include <stdexcept>
+
 const int B_bits = 264;
 const int B_bytes = (B_bits + 7) / 8;
 
@@ -110,29 +112,80 @@ class PulmarkReducer {
     }
 };
 
-form FastPowFormNucomp(form x, integer &D, integer num_iterations, integer &L, PulmarkReducer& reducer)
+// One left-to-right walk. Width 1 does not build x^2..x^15. Width 4 does.
+// Exponent 0 is the identity. GMP reports that zero has bit length 1, so a
+// length check alone would reduce the input instead of returning the identity.
+template <int Width>
+form FastPowFormNucompWidth(form x, integer &D, integer num_iterations, integer &L, PulmarkReducer& reducer)
 {
-    if (!mpz_sgn(num_iterations.impl))
+    static_assert(Width == 1 || Width == 4, "only the one-bit and four-bit walks are used");
+    if (mpz_sgn(num_iterations.impl) < 0) {
+        throw std::invalid_argument("FastPowFormNucomp exponent must be non-negative");
+    }
+    if (!mpz_sgn(num_iterations.impl)) {
         return form::identity(D);
+    }
 
-    form res = x;
-    int max_size = -D.impl->_mp_size / 2, i;
-
-    // Do exponentiation by squaring from top bits of exponent to bottom
-    for (i = num_iterations.num_bits() - 2; i >= 0; i--) {
-        nudupl_form(res, res, D, L);
-        if (res.a.impl->_mp_size > max_size) {
-            // Reduce only when 'a' exceeds a half of the discriminant size
-            reducer.reduce(res);
+    const int max_size = -D.impl->_mp_size / 2;
+    auto reduce_if_large = [&](form& f) {
+        if (f.a.impl->_mp_size > max_size) {
+            reducer.reduce(f);
         }
+    };
 
-        if (num_iterations.get_bit(i)) {
-            nucomp_form(res, res, x, D, L);
+    constexpr int kTable = 1 << Width;
+    form table[kTable];
+    table[1] = x;
+    for (int i = 2; i < kTable; ++i) {
+        nucomp_form(table[i], table[i - 1], x, D, L);
+        reduce_if_large(table[i]);
+    }
+
+    const int nbits = num_iterations.num_bits();
+    int index = nbits - 1;
+    auto take_bits = [&](int count) {
+        unsigned digit = 0;
+        for (int i = 0; i < count; ++i) {
+            digit = (digit << 1) | static_cast<unsigned>(num_iterations.get_bit(index));
+            --index;
+        }
+        return digit;
+    };
+
+    const int first_width = (nbits % Width == 0) ? Width : (nbits % Width);
+    form res = table[take_bits(first_width)];
+
+    while (index >= 0) {
+        for (int i = 0; i < Width; ++i) {
+            nudupl_form(res, res, D, L);
+            reduce_if_large(res);
+        }
+        const unsigned digit = take_bits(Width);
+        if (digit != 0) {
+            nucomp_form(res, res, table[digit], D, L);
+            reduce_if_large(res);
         }
     }
 
     reducer.reduce(res);
     return res;
+}
+
+// Header checks use a 264-bit exponent. Proof construction stays under about 2^13.
+// A dense exponent pays back the 14-entry table at roughly 56 bits, so 64 sits
+// above every proof-builder call and on the fast side of the header check.
+form FastPowFormNucomp(form x, integer &D, integer num_iterations, integer &L, PulmarkReducer& reducer)
+{
+    if (mpz_sgn(num_iterations.impl) < 0) {
+        throw std::invalid_argument("FastPowFormNucomp exponent must be non-negative");
+    }
+    if (!mpz_sgn(num_iterations.impl)) {
+        return form::identity(D);
+    }
+    if (num_iterations.num_bits() < 64) {
+        return FastPowFormNucompWidth<1>(x, D, num_iterations, L, reducer);
+    }
+    return FastPowFormNucompWidth<4>(x, D, num_iterations, L, reducer);
 }
 
 # endif // PROOF_COMMON_H

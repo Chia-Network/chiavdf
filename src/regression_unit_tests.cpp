@@ -3,3 +3,4 @@
 #include "proof_deserialization_regression_test.cpp"
 #include "prover_slow_regression_test.cpp"
 #include "two_weso_callback_regression_test.cpp"
+#include "fastpow_nucomp_regression_test.cpp"

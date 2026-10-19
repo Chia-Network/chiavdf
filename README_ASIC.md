@@ -141,7 +141,12 @@ brew install cmake gmp boost
 ./scripts/get-libft4222.sh install
 cd src
 make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+codesign -f -s - hw/libft4222/*.dylib hw_vdf_client hw_test
 ```
+
+The `codesign` line is required for a local source build. The FT4222 and D2XX dylibs from `get-libft4222.sh` are unsigned, and macOS kills a process that loads them. `hw_vdf_client` then exits 137 (SIGKILL) before `--list` or a timelord connection. Run the command from `src/` after every rebuild of `hw_vdf_client` or `hw_test`. It ad-hoc signs those two binaries and every dylib in `hw/libft4222/`.
+
+`CHIAVDF_ADHOC_SIGN_FTDI=1 ./scripts/get-libft4222.sh install` signs the dylibs at download time and does not sign the binaries. It does not replace the `codesign` line above. Release zips are Developer ID signed and notarized, so that line is for a tree you built yourself.
 
 `Makefile.vdf-client` adds `-I` and `-L` for `/opt/homebrew` or `/usr/local` when `boost/asio.hpp` is visible there. Homebrew Boost is often keg-only. The workflow locates the header and passes it explicitly when it also builds `vdf_client`:
 
@@ -157,21 +162,16 @@ for cand in \
     break
   fi
 done
-# still in src/
+# still in src/; sign again after this rebuild
 make CPPFLAGS="-I${BOOST_INCLUDE}" -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+codesign -f -s - hw/libft4222/*.dylib hw_vdf_client hw_test
 ```
 
 The hardware link line is still `-lgmpxx -lgmp`. If that fails because the Boost header was not under the Homebrew prefix, the Makefile has not added `-L/opt/homebrew/lib`. Add `LDFLAGS="-L$(brew --prefix gmp)/lib"` for that build.
 
 `hw_vdf_client` and `hw_test` get rpath `@executable_path/hw/libft4222`. Run them from `src/` so that path hits the dylibs the script staged. Copying only the executable leaves the loader without `libft4222.dylib` and `libftd2xx.dylib`.
 
-The fetch script clears `com.apple.quarantine` and `com.apple.provenance` on the downloaded files. For a local ad-hoc signature:
-
-```bash
-CHIAVDF_ADHOC_SIGN_FTDI=1 ./scripts/get-libft4222.sh install
-```
-
-That runs `codesign --force --sign -` on the FTDI dylibs. It is a local escape hatch. Release zips are Developer ID signed and notarized instead.
+The fetch script clears `com.apple.quarantine` and `com.apple.provenance` on the downloaded files. Clearing those attributes still leaves the dylibs unsigned. The `codesign -f -s -` step above is what allows `hw_vdf_client` to start.
 
 `DYLD_LIBRARY_PATH` is stripped for SIP-protected launchers. The rpath above is how a source build finds the FTDI dylibs. This tree has no `tools/build_native_gmp.sh`; system GMP from Homebrew is what the Makefile links.
 
@@ -432,11 +432,11 @@ This repo does not ship a Windows service. Run `hw_vdf_client.exe` in a console 
 
 **`lzcnt.o: file format not recognized`.** `CC` and `CXX` are different compilers under `-flto=auto`. Use `CC=gcc CXX=g++`.
 
-**`--list` prints `FT_CreateDeviceInfoList` error 18, or `No FTDI devices connected`.** The D2XX stack sees no device. Confirm the board is plugged in and powered. On Linux, `lsusb -d 0403:601c` should show the id the udev rule matches. Re-run the udev reload and replug if the device node is root-only. On Windows, install the D2XX driver from the FT4222H downloads page so the device enumerates for D2XX. On macOS, a quarantined dylib fails in `dyld` before `--list` runs. Re-run the fetch script, or `CHIAVDF_ADHOC_SIGN_FTDI=1 ./scripts/get-libft4222.sh install`, and launch the binary from `src/` (source build) or `bin/` (release zip).
+**`--list` prints `FT_CreateDeviceInfoList` error 18, or `No FTDI devices connected`.** The D2XX stack sees no device. Confirm the board is plugged in and powered. On Linux, `lsusb -d 0403:601c` should show the id the udev rule matches. Re-run the udev reload and replug if the device node is root-only. On Windows, install the D2XX driver from the FT4222H downloads page so the device enumerates for D2XX. On macOS, an immediate exit 137 (SIGKILL) means the FT4222/D2XX dylibs are unsigned. From `src/`, run `codesign -f -s - hw/libft4222/*.dylib hw_vdf_client hw_test` and start the binary again from that directory. A release zip is already signed. Launch it from `bin/`.
 
 **`Failed to open device`.** `init_hw` prints this when `FtdiDriver::Open()` returns an error. With no board attached, that follows the error 18 line above. **`No FT4222H detected`** means the device list was readable and no interface A matched. Another `hw_vdf_client` or `hw_test` may already hold the only board. This branch has no flag to pass a location id.
 
-**Gatekeeper.** A browser-downloaded release zip can be quarantined. A notarized release opens after the normal macOS prompt. An unsigned local build needs the xattr clear the fetch script already performs, plus the ad-hoc sign above if `dyld` still refuses the dylib.
+**Gatekeeper / exit 137.** A browser-downloaded release zip can be quarantined. A notarized release opens after the normal macOS prompt. A source build that skips `codesign -f -s - hw/libft4222/*.dylib hw_vdf_client hw_test` (from `src/`) exits 137 (SIGKILL) on launch. The fetch script's quarantine clear does not sign the dylibs.
 
 **No TCP session on port 8000.** The timelord is down, `vdf_server.host` is unreachable, or the source IP is missing from `vdf_clients.ip` (`Rejected VDF client from non-whitelisted IP` in `debug.log`). Software `vdf_client` processes from `chia_timelord_launcher` compete for the three chains. Stop the launcher with `chia stop timelord-launcher-only`, or set `timelord_launcher.process_count` to 0 and restart it. Until something listens, the hardware client's stderr repeats `Connecting to ...` and `connect: Connection refused`.
 

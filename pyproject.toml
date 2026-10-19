@@ -63,7 +63,7 @@ environment = {MACOSX_DEPLOYMENT_TARGET="15", SYSTEM_VERSION_COMPAT=0, BUILD_VDF
 
 [tool.cibuildwheel.windows]
 build-verbosity = 0
-before-all = "git clone https://github.com/Chia-Network/mpir_gc_x64.git"
+before-all = "bash scripts/get-mpir-gc-x64.sh"
 environment = {BUILD_VDF_CLIENT="N"}
 before-build = "pip install delvewheel"
 repair-wheel-command = """

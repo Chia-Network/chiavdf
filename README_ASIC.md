@@ -13,12 +13,34 @@ This file is the build and operations guide for the client in this repository. T
 
 ## What you need
 
-- A Chia VDF ASIC on USB. A USB-C port on a machine such as a Mac mini is a normal way to attach it. The client talks to the FT4222H.
+- A Chia VDF ASIC board. Each ASIC has three VDF engines. Each board has two USB-C ports: one for power only, and one FT4222H data link to the host. See [Engines, ports, and cooling](#engines-ports-and-cooling).
 - A host running Linux x86_64, Linux aarch64/arm64, macOS (Apple Silicon or Intel), or 64-bit Windows. Those are the architectures the package workflow builds.
 - A synced Chia full node on the timelord machine. The timelord reads peaks from that node.
 - Proof work runs on the host CPU (`--vdf-threads`, `--proof-threads`). A board at the default clock still needs a host that can keep up with three engines.
 
 Leave the clock and voltage at the defaults (1100 MHz, 0.88 V) unless you have a reason to change them. See [Clock and voltage](#clock-and-voltage).
+
+## Engines, ports, and cooling
+
+Each Chia VDF ASIC has three internal VDF engines (`N_HW_VDFS` is 3). `--vdfs-mask` enables them: bit 0 (value 1) is engine 0, bit 1 (value 2) is engine 1, and bit 2 (value 4) is engine 2. The default mask is 7, all three engines. `hw_vdf_client` opens one TCP connection to the timelord for each enabled engine, so `hw_vdf_client 8000 3` is the match for the timelord's three chains.
+
+Three ASIC boards can supply one engine each (`hw_vdf_client 8000 1`, or a one-bit `--vdfs-mask`). Attach those boards to one, two, or three hosts. On this branch `FtdiDriver::Open()` calls `OpenClk` with location id 0, which selects the first FT4222H interface A in the D2XX list. Every process on that host opens the same device. Several boards on one host need `--device-loc` from draft PR [#425](https://github.com/Chia-Network/chiavdf/pull/425), and that flag is not on main. Until it is, run one board per host. Point each client at the same timelord with `--ip`, add each source address to `vdf_clients.ip`, and set `vdf_server.host` to `0.0.0.0`.
+
+Each board has two USB-C ports. One port is power only. The other is the data port: the FT4222H USB link to the host. FTDI DS_FT4222H (document FT_001011) describes the FT4222H as a USB 2.0 Hi-Speed device (480 Mbit/s). Any USB 2.0 or faster data port works for that link. `FtdiDriver::Open()` programs the chip as a quad-SPI master (`SPI_IO_QUAD`) with system clock `SYS_CLK_80` and divider `CLK_DIV_8` (one eighth of the system clock; `src/libft4222/libft4222.h`). The same datasheet lists 80 MHz among the system clocks `FT4222_SetClock` can select, and lists 1/8 as an SCK divider. That is the clock this client programs. This tree does not record a measured throughput for the USB-C data port.
+
+`hw_test` and `hw_vdf_client` log the ASIC rail at startup, before the job:
+
+- `Board voltage is now %1.3f V` from `GetBoardVoltage()`, `(24375 + vid * 625) / 100000`. Each VID step is 6.25 mV.
+- `Board current is %2.3f A` from `GetBoardCurrent()`, `(cs * 440 mV) / (8 * 4096)`.
+- `Board power is %2.3f W` from `GetPower()`, which multiplies those two readings (`src/hw/vdf_driver.cpp`, logged in `src/hw/hw_interface.cpp`).
+
+These lines are the ASIC rail. They are not the wattage drawn at the power-only USB-C port.
+
+On an Apple Silicon Mac mini, `hw_test` at the default request of 1100 MHz and 0.88 V (`HW_VDF_DEF_FREQ`, `HW_VDF_DEF_VOLTAGE`) reported board voltage 0.875 V, current 0.590 A, and power 0.516 W. 0.875 V is the VID step for a 0.88 V request. 0.875 × 0.590 = 0.51625, which the `%2.3f` power log prints as 0.516.
+
+**TODO:** measured wattage drawn from the power-only USB-C port. This tree, `hw_test`'s rail log, the `tools/m6mini-*` notes on PR #425, and DS_FT4222H do not give that figure.
+
+The boards are passively air cooled. The client writes 100 °C external and engine alarm thresholds into the PVT sensor and logs `ASIC Temp`.
 
 ## Install a published build
 
@@ -354,11 +376,7 @@ Environment variables `CHIAVDF_HW_DIRECT_STATUS` and `CHIAVDF_HW_TELEMETRY` are 
 
 ## More than one board
 
-Each process calls `FtdiDriver::Open()`, which opens the first FT4222H interface A in the D2XX list. `--list` prints location ids, and the driver can open a location id, but this branch has no flag that passes one in. Two processes on one host both target that first device.
-
-Several machines, one board each, is the layout that works here. Point every client at the same timelord with `--ip`, put each source address in `vdf_clients.ip`, and listen on `0.0.0.0`. Use `N_VDFS` 1 when each board should supply one of the three chains, or 3 when one board should supply all three.
-
-Draft PR [#425](https://github.com/Chia-Network/chiavdf/pull/425) (`codex/m6-asic-proof-construction`) adds `--device-loc` and other client flags. They are not in this guide. Location ids on macOS follow the USB topology, so a later `--device-loc` value has to be read again from `--list` after cables or hubs change.
+One board's three engines cover the timelord's three chains (`hw_vdf_client 8000 3`). Three boards, one engine each (`8000 1`), can be attached to one, two, or three hosts. On this branch every process opens the first FT4222H interface A, so more than one board on a single host needs `--device-loc` from draft PR [#425](https://github.com/Chia-Network/chiavdf/pull/425). Until that flag is on main, use one board per host. Location ids on macOS follow the USB topology, so a later `--device-loc` value has to be read again from `--list` after cables or hubs change. Ports, the rail log, and cooling are in [Engines, ports, and cooling](#engines-ports-and-cooling).
 
 ## Clock and voltage
 
@@ -372,7 +390,7 @@ Auto-freq is off unless you pass `--auto-freq-period`. While it is on, the clien
 ./hw_vdf_client --freq 1100 --auto-freq-period 60 --max-freq 1100 8000 3
 ```
 
-The process writes 100 °C external and engine alarm thresholds into the PVT sensor and logs `ASIC Temp = ...` with the current frequency. `TurnFanOn()` is never called. Cooling is up to the board and the room. A temperature line climbing while `HW speed` falls, or a stream of `Bad VDF value` restarts, means lower `--freq` or set `--max-freq` back to the clock you want to hold.
+The process writes 100 °C external and engine alarm thresholds into the PVT sensor and logs `ASIC Temp = ...` with the current frequency. The boards are passively air cooled. A climbing `ASIC Temp` line, or a stream of `Bad VDF value` restarts, means lower `--freq` or set `--max-freq` back to the clock you want to hold.
 
 ## Run it as a service
 
@@ -442,7 +460,7 @@ This repo does not ship a Windows service. Run `hw_vdf_client.exe` in a console 
 
 **Client connects, timelord log never shows `Estimated IPS`.** The node is behind, so the timelord has no peak to assign, or the host cannot finish proofs (`too much work for VDF aux threads`). `HW speed` on the client stderr is the ASIC iteration rate. `Estimated IPS` is the timelord's view after a proof is delivered.
 
-**Temperature, auto-freq, sleep.** `ASIC Temp` is the sensor log. `TurnFanOn()` is never called. Auto-freq steps down only after a bad value, and only when `--auto-freq-period` was set. Sleep on a Mac or laptop suspends USB. Wrap the client in `caffeinate -is`, or otherwise keep the host awake.
+**Temperature, auto-freq, sleep.** `ASIC Temp` is the sensor log. The boards are passively air cooled. Auto-freq steps down only after a bad value, and only when `--auto-freq-period` was set. Sleep on a Mac or laptop suspends USB. Wrap the client in `caffeinate -is`, or otherwise keep the host awake.
 
 ## Flags that are not on this branch
 

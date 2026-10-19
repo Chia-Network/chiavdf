@@ -705,9 +705,11 @@ int hw_vdf_client_main(int argc, char **argv)
                 "  --vdf-threads N - number of software threads per VDF engine [4, 2 - 64]\n"
                 "  --proof-threads N - number of proof threads per VDF engine\n"
                 "  --auto-freq-period N - auto-adjust frequency every N seconds [0, 10 - inf]\n"
+                "  --max-freq N - max frequency while auto-freq is on [%.0f]\n"
                 "  --version - print version and exit\n"
                 "  --list - list available devices and exit",
-                argv[0], (int)HW_VDF_DEF_FREQ, HW_VDF_DEF_VOLTAGE);
+                argv[0], (int)HW_VDF_DEF_FREQ, HW_VDF_DEF_VOLTAGE,
+                pll_entries[VALID_PLL_FREQS - 1].freq);
         return 1;
     }
 

@@ -1,80 +1,449 @@
-# ASIC timelord user guide
+# ASIC hardware timelord
 
-## Initial setup
+`hw_vdf_client` drives a Chia VDF ASIC over USB and feeds proofs to a Chia timelord. The board enumerates as an FTDI FT4222H. The client links FTDI's FT4222/D2XX libraries (`libft4222`, and on macOS and Windows also `ftd2xx`). Fetch those with `scripts/get-libft4222.sh` or `scripts/get-libft4222.ps1`.
 
-Download and unpack LibFT4222 library:
+chia-blockchain never starts `hw_vdf_client`. The timelord opens `timelord.vdf_server` (default port 8000) and accepts TCP clients listed in `timelord.vdf_clients.ip`. You start the node and timelord, then start this process yourself.
+
+Operator install notes also live in the Chia docs:
+
+- https://docs.chia.net/reference-client/install-and-setup/timelord-install/
+- https://docs.chia.net/reference-client/cli-reference/asic-hwvdf-cli/
+
+This file is the build and operations guide for the client in this repository. The website CLI table can lag the flags below.
+
+## What you need
+
+- A Chia VDF ASIC on USB. A USB-C port on a machine such as a Mac mini is a normal way to attach it. The client talks to the FT4222H.
+- A host running Linux x86_64, Linux aarch64/arm64, macOS (Apple Silicon or Intel), or 64-bit Windows. Those are the architectures the package workflow builds.
+- A synced Chia full node on the timelord machine. The timelord reads peaks from that node.
+- Proof work runs on the host CPU (`--vdf-threads`, `--proof-threads`). A board at the default clock still needs a host that can keep up with three engines.
+
+Leave the clock and voltage at the defaults (1100 MHz, 0.88 V) unless you have a reason to change them. See [Clock and voltage](#clock-and-voltage).
+
+## Install a published build
+
+### Linux (amd64 package)
+
+The apt repository `https://repo.chia.net/chiavdf-hw/debian/` publishes `chiavdf-hw` for `amd64` only (`Architectures: amd64` in the `stable` Release file). It installs:
+
+- `/usr/bin/hw_vdf_client`, `hw_test`, `emu_hw_vdf_client`, `emu_hw_test`
+- `/usr/lib/libft4222.so` (SONAME `libft4222.so`)
+- `/etc/udev/rules.d/99-chiavdf.rules`
+
 ```bash
-# in chiavdf directory
-wget https://ftdichip.com/wp-content/uploads/2022/06/libft4222-linux-1.4.4.170.tgz
-mkdir src/hw/libft4222
-tar -C src/hw/libft4222 -xf libft4222-linux-1.4.4.170.tgz
-ln -s libft4222.so.1.4.4.170 src/hw/libft4222/build-x86_64/libft4222.so
+sudo apt-get update
+sudo apt-get install ca-certificates curl gnupg
+curl -sL https://repo.chia.net/FD39E6D3.pubkey.asc | sudo gpg --dearmor -o /usr/share/keyrings/chia.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/chia.gpg] https://repo.chia.net/chiavdf-hw/debian/ stable main" | sudo tee /etc/apt/sources.list.d/chiavdf-hw.list
+sudo apt-get update
+sudo apt-get install chiavdf-hw
 ```
 
-Build binaries:
+The package depends on `libgmp-dev` and `libboost-system-dev`. arm64 and other architectures build from source.
+
+A `.deb` produced by `.github/workflows/build-packages.yml` is named `chiavdf_<version>-1_<arch>.deb` and its control template sets `Package: chiavdf`. It installs the same binary, library, and udev paths. The apt package name above is the one in the published index.
+
+### macOS release zip
+
+A release of this repo uploads `chiavdf-<tag>-macos-arm64.zip` (Apple Silicon, `macos-15`) and `chiavdf-<tag>-macos-intel.zip`. The release job signs and notarizes those archives. Layout:
+
+```text
+bin/hw_vdf_client
+bin/hw_test
+bin/emu_hw_vdf_client
+bin/emu_hw_test
+bin/vdf_client
+bin/vdf_bench
+libexec/chiavdf/libft4222.dylib
+libexec/chiavdf/libft4222.1.4.4.190.dylib
+libexec/chiavdf/libftd2xx.dylib
+```
+
+Run `bin/hw_vdf_client`. The bundle's rpath is `@loader_path/../libexec/chiavdf`, so the dylibs resolve next to `bin/` with no `DYLD_LIBRARY_PATH`. Details of signing are in `assets/macos-release-bundle.md`.
+
+### Windows release zip
+
+A release uploads `chiavdf-<version>-windows-amd64.zip` and a copy named `chiavdf-win64.zip` (the winget asset). Layout:
+
+```text
+bin\hw_vdf_client.exe
+bin\hw_test.exe
+bin\emu_hw_vdf_client.exe
+bin\emu_hw_test.exe
+bin\vdf_client.exe
+bin\vdf_bench.exe
+lib\libft4222.dll
+lib\ftd2xx.dll
+lib\<mpir dlls>
+```
+
+The loader looks in the executable's directory, then on `PATH`. From the extracted folder, add `lib` to `PATH`:
+
+```powershell
+$env:PATH = "$PWD\lib;$env:PATH"
+.\bin\hw_vdf_client.exe --list
+```
+
+Install the FTDI D2XX driver before that. `scripts/get-libft4222.ps1` only stages the user-mode DLLs used at build time. The kernel driver is the D2XX/CDM package from the FT4222H downloads page: https://ftdichip.com/products/ft4222h/
+
+## Build from source
+
+Versions pinned by the fetch scripts:
+
+| Host | Script | Library |
+| --- | --- | --- |
+| Linux x86_64 and aarch64/arm64 | `scripts/get-libft4222.sh` | libft4222 1.4.4.170 from `download.chia.net` |
+| macOS | same script | LibFT4222 1.4.4.190 plus `libftd2xx.dylib` |
+| Windows | `scripts/get-libft4222.ps1` | LibFT4222 1.4.8 |
+
+`install` downloads and stages headers and libraries. `clean` removes them. Linux and macOS place a symlink at `src/hw/libft4222`. Windows copies headers, import libraries, and DLLs into `src\hw\libft4222`.
+
+### Linux
+
+Hardware targets need `build-essential` and `libgmp-dev`. The workflow also installs CMake, Boost, and Python headers because that job builds `vdf_client` and runs CMake tests. The four hardware binaries below do not include Boost.
+
 ```bash
+sudo apt-get update
+sudo apt-get install build-essential libgmp-dev
+./scripts/get-libft4222.sh install
 cd src
 make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
 ```
 
-Note: the software regression tests in this repository use CMake + CTest +
-GoogleTest (for example `vdf_client_session_test`). The ASIC hardware checks in
-this guide (`hw_test`, `emu_hw_test`) remain standalone binaries.
+`make` compiles `lzcnt.c` with `$(CC)` and everything else with `$(CXX)`, then links with `-flto=auto`. Both must be the same compiler. `build-essential` supplies gcc and g++. If `cc` is Clang and `g++` is GCC, the link fails with `lzcnt.o: file format not recognized`. Rebuild with `CC=gcc CXX=g++`.
 
-Connect the Chia VDF ASIC device and verify that it is detected:
+The script selects the library directory from `uname -m`:
+
+| `uname -m` | Directory | Run path from `src/` |
+| --- | --- | --- |
+| `x86_64` | `build-x86_64` | `LD_LIBRARY_PATH=hw/libft4222/build-x86_64` |
+| `aarch64` or `arm64` | `build-arm-v8` | `LD_LIBRARY_PATH=hw/libft4222/build-arm-v8` |
+
+Any other architecture stops the script and the Makefile. The binary's `NEEDED` entry is the SONAME `libft4222.so`, and the link adds no `RUNPATH`. `ldd hw_vdf_client` reports `libft4222.so => not found` until `LD_LIBRARY_PATH` includes the directory that holds the `libft4222.so` symlink.
+
+The source tree ships no udev rule. The package installs this one, for the FT4222H id used by the workflow and by the published `chiavdf-hw` package (`0403:601c`):
+
 ```bash
-# in chiavdf/src/ directory
-LD_LIBRARY_PATH=hw/libft4222/build-x86_64 ./hw_vdf_client --list
+echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="601c", MODE="0666"' | sudo tee /etc/udev/rules.d/99-chiavdf.rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger
 ```
 
-If the device is shown in the list, check if it's working:
+Unplug and replug the board after that. `MODE="0666"` is what the package uses, so a non-root user can open the device.
+
+### macOS
+
+Install the Xcode command line tools (`install_name_tool` is required by the fetch script; `hdiutil` mounts the FTDI disk image) and the Homebrew packages the workflow installs:
+
 ```bash
-LD_LIBRARY_PATH=hw/libft4222/build-x86_64 ./hw_test
+xcode-select --install
+brew install cmake gmp boost
+./scripts/get-libft4222.sh install
+cd src
+make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
 ```
 
-Output should contain lines similar to the following:
-```
-VDF 0: 1000000 HW iters done in 2s, HW speed: 714720 ips
-```
+`Makefile.vdf-client` adds `-I` and `-L` for `/opt/homebrew` or `/usr/local` when `boost/asio.hpp` is visible there. Homebrew Boost is often keg-only. The workflow locates the header and passes it explicitly when it also builds `vdf_client`:
 
-## Running
-
-You should have a Chia full node running and synced.
-
-Start timelord (but not timelord-launcher) in chia-blockchain:
 ```bash
-chia start timelord-only
+BOOST_VERSION="$(brew list --versions boost | awk '{print $2}')"
+BOOST_INCLUDE=""
+for cand in \
+  "$(brew --prefix boost)/include" \
+  "$(brew --prefix)/include" \
+  "$(brew --cellar boost)/${BOOST_VERSION}/include"; do
+  if [ -f "$cand/boost/asio.hpp" ]; then
+    BOOST_INCLUDE="$cand"
+    break
+  fi
+done
+# still in src/
+make CPPFLAGS="-I${BOOST_INCLUDE}" -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
 ```
 
-Start hardware VDF client (`8000` specifies timelord's port number):
+The hardware link line is still `-lgmpxx -lgmp`. If that fails because the Boost header was not under the Homebrew prefix, the Makefile has not added `-L/opt/homebrew/lib`. Add `LDFLAGS="-L$(brew --prefix gmp)/lib"` for that build.
+
+`hw_vdf_client` and `hw_test` get rpath `@executable_path/hw/libft4222`. Run them from `src/` so that path hits the dylibs the script staged. Copying only the executable leaves the loader without `libft4222.dylib` and `libftd2xx.dylib`.
+
+The fetch script clears `com.apple.quarantine` and `com.apple.provenance` on the downloaded files. For a local ad-hoc signature:
+
 ```bash
-# in chiavdf/src/ directory
-LD_LIBRARY_PATH=hw/libft4222/build-x86_64 ./hw_vdf_client 8000
+CHIAVDF_ADHOC_SIGN_FTDI=1 ./scripts/get-libft4222.sh install
 ```
 
-The VDF client accepts a number of options:
+That runs `codesign --force --sign -` on the FTDI dylibs. It is a local escape hatch. Release zips are Developer ID signed and notarized instead.
+
+`DYLD_LIBRARY_PATH` is stripped for SIP-protected launchers. The rpath above is how a source build finds the FTDI dylibs. This tree has no `tools/build_native_gmp.sh`; system GMP from Homebrew is what the Makefile links.
+
+Keep the Mac awake while the client runs. Sleep drops the USB device.
+
+```bash
+caffeinate -is ./hw_vdf_client 8000 3
 ```
+
+`pmset` can change system sleep settings if you want the machine itself to stay up when nobody is logged in. `caffeinate -is` covers the client process.
+
+### Windows
+
+The Windows workflow job configures CMake with Ninja and `clang-cl`. Run it from a shell that already has the x64 MSVC environment (the "x64 Native Tools" prompt, or `vcvars64.bat`), LLVM's `clang-cl` (`C:\Program Files\LLVM\bin`), and Ninja. `bash` here is Git Bash or any bash that can see `scripts/`.
+
+```bat
+bash scripts/get-mpir-gc-x64.sh
+powershell -ExecutionPolicy Bypass -File scripts/get-libft4222.ps1 install
+```
+
+`get-mpir-gc-x64.sh` clones https://github.com/Chia-Network/mpir_gc_x64.git at the commit in `scripts/mpir_gc_x64.commit` into `mpir_gc_x64\`. The workflow installs the other tools with Chocolatey when they are missing: `choco install llvm ninja -y` and `choco install boost-msvc-14.3 -y` (headers under `C:\local\boost_*`).
+
+Set `BOOST_INCLUDE_DIR` to that Boost directory, then configure and build the same targets the workflow builds:
+
+```powershell
+cmake -S src -B build -G Ninja `
+  -DCMAKE_BUILD_TYPE=Release `
+  -DCMAKE_TRY_COMPILE_CONFIGURATION=Release `
+  -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL `
+  -DCMAKE_C_COMPILER=clang-cl `
+  -DCMAKE_CXX_COMPILER=clang-cl `
+  -DCMAKE_ASM_COMPILER=clang-cl `
+  -DBOOST_INCLUDE_DIR=$env:BOOST_INCLUDE_DIR `
+  -DBUILD_PYTHON=OFF `
+  -DBUILD_CHIAVDFC=OFF `
+  -DBUILD_VDF_CLIENT=ON `
+  -DBUILD_VDF_BENCH=ON `
+  -DBUILD_VDF_TESTS=ON `
+  -DBUILD_HW_TOOLS=ON `
+  -DENABLE_GNU_ASM=ON
+cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test regression_unit_tests regression_io_tests emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+```
+
+Binaries land in `build\`. The workflow's smoke test puts the build directory, `src\hw\libft4222`, and `mpir_gc_x64` on `PATH` before starting them:
+
+```powershell
+$env:PATH = "$PWD\build;$PWD\src\hw\libft4222;$PWD\mpir_gc_x64;$env:PATH"
+.\build\emu_hw_vdf_client.exe --list
+.\build\hw_vdf_client.exe --list
+```
+
+Install the FTDI D2XX driver as described under the release zip. The import libraries satisfy the link; the DLLs have to be loadable at run time.
+
+## Check the board
+
+From `src/` on Linux, prefix the hardware binaries with `LD_LIBRARY_PATH` as in the table above. On macOS the rpath covers a binary that is still in `src/`. On Windows use the `PATH` from the previous section.
+
+```bash
+./hw_vdf_client --list
+```
+
+A board prints one line per FT4222H interface whose description ends in `A`:
+
+```text
+List of available devices:
+Device 0: '<description>', loc <id>
+```
+
+`<description>` is the D2XX string for that interface. `<id>` is the location id. With no FTDI device, this Linux host printed `FT_CreateDeviceInfoList(&num_devs) failed (error 18)` and exited 1. Error 18 is `FT_OTHER_ERROR`.
+
+`hw_test` opens that first interface A at the default clock and voltage and runs a fixed job. Defaults are 3 engines and 1,000,000 iterations. Optional arguments are `hw_test [n_vdfs] [n_iters]` with `n_vdfs` from 1 to 3. A count outside that range is treated as 2. `hw_test --version` prints the version and exits.
+
+```bash
+./hw_test 1 1000000
+```
+
+A working engine logs `VDF <n>: <iters> HW iters done in <seconds>s, HW speed: <ips> ips`. The speed follows the clock. Startup logs board voltage, current, and power. The run logs `ASIC Temp` on stderr.
+
+Without hardware, the emulator binaries still run. CI uses:
+
+```bash
+./emu_hw_test 1 2000
+./emu_hw_vdf_client --list
+```
+
+On this host, `emu_hw_vdf_client --list` printed `Device 0: 'A', loc 559240` and exited 0. Keep `emu_hw_vdf_client` away from a timelord that is extending the chain. It speaks the same TCP protocol as the hardware client.
+
+## Connect to the timelord
+
+On the timelord machine, start the full node and the timelord together:
+
+```bash
+chia start node timelord-only
+```
+
+`node` is `chia_full_node`. `timelord-only` is `chia_timelord`. The group named `timelord` is those two plus `chia_timelord_launcher`. `chia start timelord` therefore starts the launcher. The launcher's `find_vdf_client()` execs the software `vdf_client` from the chiavdf package (`timelord_launcher.process_count` defaults to 3). Those processes connect to the same port and compete for the timelord's three chains. Extra clients sit in `free_clients` until a chain is free. The pool caps at 10, and further connections are closed.
+
+Default `~/.chia/mainnet/config/config.yaml` (chia-blockchain `initial-config.yaml`):
+
+```yaml
+timelord:
+  vdf_clients:
+    ip:
+      - localhost     # self_hostname is also listed; it defaults to localhost
+      - 127.0.0.1
+  vdf_server:
+    host: localhost   # self_hostname
+    port: 8000
+```
+
+`vdf_server.host` follows `self_hostname`, which defaults to `localhost`. `vdf_clients.ip` is the allowlist. A peer that is not listed is closed and logged as `Rejected VDF client from non-whitelisted IP`.
+
+For a client on another machine, set `vdf_server.host` to `0.0.0.0` (or the address that should listen) and add that machine's IPv4 address to `vdf_clients.ip`. Restart the timelord after editing the file.
+
+The client speaks IPv4. The default address is 127.0.0.1, which the usage text calls localhost.
+
+```bash
+# Linux source build, from src/
+LD_LIBRARY_PATH=hw/libft4222/build-x86_64 ./hw_vdf_client 8000 3
+
+# packaged binary, or a macOS/Windows build already on PATH
+hw_vdf_client --ip 192.0.2.10 8000 3
+```
+
+`8000` is the timelord port. `3` is how many engines to open (1–3, default 3). Each engine opens its own TCP connection. Stderr shows `Connecting to 127.0.0.1:8000`, then `VDF N: Connected to timelord, waiting for challenge`, then `VDF N: Received challenge, running` once the timelord sends work.
+
+Check the connections from the timelord host. One established connection per running engine:
+
+```bash
+ss -tnp | grep ':8000'
+```
+
+When a proof finishes, the timelord writes `Estimated IPS:` to its log (default `~/.chia/mainnet/log/debug.log`), with the chain name. The client writes `HW speed:` on its own stderr when an engine stops.
+
+Stop the client with Ctrl+C or `SIGTERM`. It handles both, tells the timelord to stop, and exits. Then:
+
+```bash
+chia stop timelord-only
+```
+
+That leaves the full node up. Stop the node separately when you want it down.
+
+## Options
+
+`--list` and `--version` take no value and do not need a port. Every other flag accepts `--name VALUE` or `--name=VALUE`.
+
+```text
 Usage: ./hw_vdf_client [OPTIONS] PORT [N_VDFS]
 List of options [default, min - max]:
   --freq N - set ASIC frequency [1100, 200 - 2200]
   --voltage N - set board voltage [0.88, 0.7 - 1.0]
   --ip A.B.C.D - timelord IP address [localhost]
-        Allows connecting to a timelord running on a remote host. Useful when running multiple machines with VDF hardware connecting to a single timelord.
   --vdfs-mask N - mask for enabling VDF engines [7, 1 - 7]
-        The ASIC has 3 VDF engines numbered 0, 1, 2. If not running all 3 engines, the mask can be specified to enable specific engines. It must be the result of bitwise OR of the engine bits (1, 2, 4 for engines 0, 1, 2).
   --vdf-threads N - number of software threads per VDF engine [4, 2 - 64]
-        Number of software threads computing intermediate values and proofs per VDF engine.
   --proof-threads N - number of proof threads per VDF engine
-        Number of software threads only computing proofs per VDF engine. Must be less than --vdf-threads.
   --auto-freq-period N - auto-adjust frequency every N seconds [0, 10 - inf]
+  --max-freq N - max frequency while auto-freq is on [3000]
+  --version - print version and exit
   --list - list available devices and exit
 ```
 
-## Shutting down
+`PORT` is required otherwise (1–65535). `N_VDFS` defaults to 3 and must be 1, 2, or 3.
 
-Stop timelord:
+| Flag | Behavior |
+| --- | --- |
+| `--freq` | MHz. Values outside 200–2200 are rejected. The programmed clock is the first PLL-table entry at or above the request. Default 1100. |
+| `--voltage` | Volts, 0.70–1.00. Default 0.88. The log line after the set is the value read back, which can differ slightly from the request. |
+| `--ip` | IPv4 of the timelord. Default 127.0.0.1. |
+| `--vdfs-mask` | Bit 0 (value 1) is engine 0, bit 1 (value 2) is engine 1, bit 2 (value 4) is engine 2. `0`, the parser default, means "the first `N_VDFS` engines", which is 7 when `N_VDFS` is 3. That is why the usage line shows 7. A non-zero mask is used as given, and `N_VDFS` does not change it. Values above 7 are rejected. |
+| `--vdf-threads` | Host threads per engine for intermediates and proofs. Default 4. Range 2–64. |
+| `--proof-threads` | How many of those threads may sit in proofs. Omitted, or set to 0, it is `vdf-threads - ceil(vdf-threads / 8)` (3 when `vdf-threads` is 4). Any other explicit value must be less than `--vdf-threads`. |
+| `--auto-freq-period` | Enables auto-freq and sets the period in seconds. Minimum 10. Omitted, auto-freq stays off. |
+| `--max-freq` | Upper bound used only while auto-freq is on. Default is the last PLL entry, 3000 MHz. The parser stores the number `strtod` returns. |
+| `--list` | Print interface-A devices and exit. |
+| `--version` | Print `<argv0> <git describe>` on stdout and exit. |
+
+`HW speed` falling behind, or `Warning: too much work for VDF aux threads`, means the host proof threads are the bottleneck. Raise `--vdf-threads` before raising the ASIC clock.
+
+Environment variables `CHIAVDF_HW_DIRECT_STATUS` and `CHIAVDF_HW_TELEMETRY` are not read on this branch.
+
+## More than one board
+
+Each process calls `FtdiDriver::Open()`, which opens the first FT4222H interface A in the D2XX list. `--list` prints location ids, and the driver can open a location id, but this branch has no flag that passes one in. Two processes on one host both target that first device.
+
+Several machines, one board each, is the layout that works here. Point every client at the same timelord with `--ip`, put each source address in `vdf_clients.ip`, and listen on `0.0.0.0`. Use `N_VDFS` 1 when each board should supply one of the three chains, or 3 when one board should supply all three.
+
+Draft PR [#425](https://github.com/Chia-Network/chiavdf/pull/425) (`codex/m6-asic-proof-construction`) adds `--device-loc` and other client flags. They are not in this guide. Location ids on macOS follow the USB topology, so a later `--device-loc` value has to be read again from `--list` after cables or hubs change.
+
+## Clock and voltage
+
+Defaults are 1100 MHz and 0.88 V (`HW_VDF_DEF_FREQ`, `HW_VDF_DEF_VOLTAGE`). `hw_test` always uses those. Stay there for a normal timelord.
+
+`--freq` rejects values outside 200–2200 MHz, and `--voltage` rejects values outside 0.70–1.00 V. Day-to-day operation stays on the defaults. Moving toward those ceilings draws more power and raises die temperature.
+
+Auto-freq is off unless you pass `--auto-freq-period`. While it is on, the client steps one PLL entry up at each period when the next entry is at or below `--max-freq`, and one entry down after a bad VDF value. The default `--max-freq` is 3000, which is above the `--freq` ceiling. Set `--max-freq` to the highest clock you are willing to run, at or below 2200, whenever you turn auto-freq on:
+
 ```bash
-chia stop timelord-only
+./hw_vdf_client --freq 1100 --auto-freq-period 60 --max-freq 1100 8000 3
 ```
 
-Stop the VDF client by pressing Control-C or killing the process with `SIGTERM`.
+The process writes 100 °C external and engine alarm thresholds into the PVT sensor and logs `ASIC Temp = ...` with the current frequency. `TurnFanOn()` is never called. Cooling is up to the board and the room. A temperature line climbing while `HW speed` falls, or a stream of `Bad VDF value` restarts, means lower `--freq` or set `--max-freq` back to the clock you want to hold.
+
+## Run it as a service
+
+Logs go to stderr. `--version` is the line that goes to stdout.
+
+Linux, packaged binary. The unit assumes the udev rule from the package is installed.
+
+```ini
+[Unit]
+Description=Chia ASIC VDF client
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/hw_vdf_client 8000 3
+Restart=on-failure
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
+A source build needs `WorkingDirectory` set to `src/` and `Environment=LD_LIBRARY_PATH=hw/libft4222/build-x86_64` (or `build-arm-v8`).
+
+macOS launchd, with `caffeinate` so the USB session survives idle sleep. Replace the executable path. A release zip uses `.../bin/hw_vdf_client`.
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>net.chia.hw-vdf-client</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/caffeinate</string>
+    <string>-is</string>
+    <string>/PATH/TO/hw_vdf_client</string>
+    <string>8000</string>
+    <string>3</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardErrorPath</key>
+  <string>/tmp/hw_vdf_client.err</string>
+</dict>
+</plist>
+```
+
+This repo does not ship a Windows service. Run `hw_vdf_client.exe` in a console that will not sleep, with `lib` on `PATH`, or register that command with Task Scheduler at logon.
+
+## Troubleshooting
+
+**`libft4222.so: cannot open shared object file`.** Linux source build with no rpath. Export `LD_LIBRARY_PATH` to `hw/libft4222/build-x86_64` or `build-arm-v8` before starting the binary. The apt package's copy lives in `/usr/lib`.
+
+**`lzcnt.o: file format not recognized`.** `CC` and `CXX` are different compilers under `-flto=auto`. Use `CC=gcc CXX=g++`.
+
+**`--list` prints `FT_CreateDeviceInfoList` error 18, or `No FTDI devices connected`.** The D2XX stack sees no device. Confirm the board is plugged in and powered. On Linux, `lsusb -d 0403:601c` should show the id the udev rule matches. Re-run the udev reload and replug if the device node is root-only. On Windows, install the D2XX driver from the FT4222H downloads page so the device enumerates for D2XX. On macOS, a quarantined dylib fails in `dyld` before `--list` runs. Re-run the fetch script, or `CHIAVDF_ADHOC_SIGN_FTDI=1 ./scripts/get-libft4222.sh install`, and launch the binary from `src/` (source build) or `bin/` (release zip).
+
+**`Failed to open device`.** `init_hw` prints this when `FtdiDriver::Open()` returns an error. With no board attached, that follows the error 18 line above. **`No FT4222H detected`** means the device list was readable and no interface A matched. Another `hw_vdf_client` or `hw_test` may already hold the only board. This branch has no flag to pass a location id.
+
+**Gatekeeper.** A browser-downloaded release zip can be quarantined. A notarized release opens after the normal macOS prompt. An unsigned local build needs the xattr clear the fetch script already performs, plus the ad-hoc sign above if `dyld` still refuses the dylib.
+
+**No TCP session on port 8000.** The timelord is down, `vdf_server.host` is unreachable, or the source IP is missing from `vdf_clients.ip` (`Rejected VDF client from non-whitelisted IP` in `debug.log`). Software `vdf_client` processes from `chia_timelord_launcher` compete for the three chains. Stop the launcher with `chia stop timelord-launcher-only`, or set `timelord_launcher.process_count` to 0 and restart it. Until something listens, the hardware client's stderr repeats `Connecting to ...` and `connect: Connection refused`.
+
+**Client connects, timelord log never shows `Estimated IPS`.** The node is behind, so the timelord has no peak to assign, or the host cannot finish proofs (`too much work for VDF aux threads`). `HW speed` on the client stderr is the ASIC iteration rate. `Estimated IPS` is the timelord's view after a proof is delivered.
+
+**Temperature, auto-freq, sleep.** `ASIC Temp` is the sensor log. `TurnFanOn()` is never called. Auto-freq steps down only after a bad value, and only when `--auto-freq-period` was set. Sleep on a Mac or laptop suspends USB. Wrap the client in `caffeinate -is`, or otherwise keep the host awake.
+
+## Flags that are not on this branch
+
+[#425](https://github.com/Chia-Network/chiavdf/pull/425) is the draft that adds `--device-loc`, `--checkpoint-threshold`, `--retain-asic-values`, `--proof-profile`, and the `CHIAVDF_HW_DIRECT_STATUS` / `CHIAVDF_HW_TELEMETRY` environment variables, plus a private native GMP build for Apple Silicon. None of that is in this tree. The checkpoint interval compiled into `hw_proof.cpp` is the constant `g_chkp_thres` (1,000,000).

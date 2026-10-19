@@ -5,3 +5,4 @@
 #include "two_weso_callback_regression_test.cpp"
 #include "nucomp_scratch_regression_test.cpp"
 #include "proof_block_cache_regression_test.cpp"
+#include "parallel_prover_witness_test.cpp"

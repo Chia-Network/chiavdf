@@ -163,13 +163,14 @@ int hw_test_main(int argc, char **argv)
     }
 
     if (failed) {
-        for (uint8_t i = 0; i < n_vdfs; i++) {
+        for (uint8_t i = 0; i < n_vdfs; i++)
             stop_hw_vdf(drv, i);
-            hw_stop_proof(&vdfs[i]);
-        }
     }
     for (uint8_t i = 0; i < n_vdfs; i++) {
         if (proof_threads[i].joinable()) proof_threads[i].join();
+    }
+    for (uint8_t i = 0; i < n_vdfs; i++) {
+        hw_stop_proof(&vdfs[i]);
         clear_vdf_state(&vdfs[i]);
         clear_vdf_value(&values[i]);
     }

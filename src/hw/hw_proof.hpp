@@ -9,7 +9,6 @@
 
 #include <atomic>
 #include <array>
-#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <memory>
@@ -19,7 +18,7 @@
 #define HW_VDF_VALUE_INTERVAL 4000
 #define HW_VDF_VALUE_INTERVAL_DIVISORS { 2, 4, 5, 8, 10, 16, 20 }
 #define HW_VDF_CHKP_INTERVAL 1000000
-// A 75% checkpoint must contain at least one whole value interval.
+// Smallest threshold that can split one request into an aligned checkpoint and a remainder.
 #define HW_VDF_MIN_CHKP_THRESHOLD (2 * HW_VDF_VALUE_INTERVAL)
 #define HW_VDF_MAX_AUX_THREADS 64
 #define HW_VDF_DEFAULT_MAX_AUX_THREADS 4
@@ -43,13 +42,6 @@ struct vdf_proof_req {
     bool is_chkp;
 };
 
-struct vdf_proof_timing {
-    uint64_t queued_us = 0, asic_seen_us = 0, started_us = 0;
-    uint64_t values_ready_us = 0, tail_ready_us = 0, b_ready_us = 0;
-    uint64_t proof_done_us = 0, verify_started_us = 0, verified_us = 0, published_us = 0;
-    uint32_t catchup_iters = 0, k = 0, l = 0;
-};
-
 struct vdf_proof {
     uint64_t iters;
     uint64_t seg_iters;
@@ -60,23 +52,24 @@ struct vdf_proof {
     uint8_t flags;
     uint16_t prev;
     uint16_t ref_cnt;
-    vdf_proof_timing timing;
 };
 
 // Owned wire-order snapshot: final first, then checkpoints from newest to oldest.
 struct vdf_proof_delivery {
     vdf_proof final;
     std::vector<vdf_proof> checkpoints;
-    // Latest publication in the complete chain, relative to this job's profile epoch.
-    uint64_t ready_us = 0;
 };
 
 struct vdf_proof_opts {
     uint8_t max_aux_threads;
     uint8_t max_proof_threads;
     uint32_t checkpoint_threshold = HW_VDF_CHKP_INTERVAL;
-    bool proof_profile = false;
     bool retain_asic_values = false;
+};
+
+struct hw_aux_job {
+    struct vdf_work *work;
+    size_t proof_idx;
 };
 
 struct vdf_retained_value {
@@ -95,9 +88,9 @@ struct vdf_state {
     timepoint_t start_time;
     //std::vector<struct vdf_value> raw_values;
     struct vdf_value last_val;
-    std::vector<form *> values;
     std::mutex values_resize_mtx;
     std::unique_ptr<std::atomic<form *>[]> value_blocks;
+    size_t value_block_count = 0;
     std::unique_ptr<std::atomic<uint8_t>[]> valid_values;
     std::mutex valid_values_mtx;
     std::condition_variable valid_values_cv;
@@ -118,30 +111,22 @@ struct vdf_state {
     uint32_t log_cnt;
     std::atomic<uint64_t> aux_threads_busy;
     std::array<std::thread, HW_VDF_MAX_AUX_THREADS> aux_threads;
+    std::mutex aux_job_mtx;
+    std::condition_variable aux_job_cv;
+    uint64_t aux_job_pending = 0;
+    std::array<hw_aux_job, HW_VDF_MAX_AUX_THREADS> aux_jobs{};
     std::atomic<uint8_t> n_proof_threads;
     uint8_t idx;
     uint8_t max_aux_threads;
     uint8_t max_proof_threads;
     bool completed;
     std::atomic<bool> stopping;
-    bool init_done;
-    bool proof_profile = false;
+    bool init_done = false;
     bool retain_asic_values = false;
     std::mutex retained_values_mtx;
     std::deque<vdf_retained_value> retained_values;
     uint64_t retained_generation = 0;
-    uint64_t profile_epoch_us = 0;
-    uint64_t profile_job = 0;
 };
-
-inline uint64_t hw_proof_clock_us() {
-    return std::chrono::duration_cast<std::chrono::microseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count();
-}
-
-inline uint64_t hw_proof_profile_us(const vdf_state *vdf) {
-    return vdf->proof_profile ? hw_proof_clock_us() - vdf->profile_epoch_us : 0;
-}
 
 int hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val);
 form *hw_proof_last_good_form(struct vdf_state *vdf, size_t *out_pos);

@@ -135,9 +135,9 @@ jobs:
           ./scripts/get-libft4222.sh install
           cd src
           if [ -n "$RELEASE_TAG" ]; then
-            make ${{ matrix.config }} CHIAVDF_VERSION="$RELEASE_TAG" -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+            make ${{ matrix.config }} CHIAVDF_VERSION="$RELEASE_TAG" -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client hw_proof_wait_test
           else
-            make ${{ matrix.config }} -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+            make ${{ matrix.config }} -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client hw_proof_wait_test
           fi
 
       - name: Build on macOS
@@ -164,9 +164,9 @@ jobs:
           ./scripts/get-libft4222.sh install
           cd src
           if [ -n "$RELEASE_TAG" ]; then
-            make ${{ matrix.config }} CHIAVDF_VERSION="$RELEASE_TAG" CPPFLAGS="-I${BOOST_INCLUDE} ${CPPFLAGS:-}" -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+            make ${{ matrix.config }} CHIAVDF_VERSION="$RELEASE_TAG" CPPFLAGS="-I${BOOST_INCLUDE} ${CPPFLAGS:-}" -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client hw_proof_wait_test
           else
-            make ${{ matrix.config }} CPPFLAGS="-I${BOOST_INCLUDE} ${CPPFLAGS:-}" -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+            make ${{ matrix.config }} CPPFLAGS="-I${BOOST_INCLUDE} ${CPPFLAGS:-}" -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client hw_proof_wait_test
           fi
 
       - name: Cache Boost on Windows
@@ -303,7 +303,7 @@ jobs:
           if (-not $gnuAsmEnabled) {
             throw "ENABLE_GNU_ASM is not ON on Windows CI build"
           }
-          cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test regression_unit_tests regression_io_tests emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+          cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test regression_unit_tests regression_io_tests emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client hw_proof_wait_test
           if ($LASTEXITCODE -ne 0) {
             throw "Windows build failed with exit code $LASTEXITCODE"
           }
@@ -328,6 +328,8 @@ jobs:
           test -x ./hw_test
           echo "Running emu_hw_test"
           ./emu_hw_test 1 2000
+          echo "Running hw_proof_wait_test"
+          ./hw_proof_wait_test
           echo "Running emu_hw_vdf_client --list"
           ./emu_hw_vdf_client --list
 
@@ -394,6 +396,9 @@ jobs:
           Write-Host "Running emu_hw_test"
           .\emu_hw_test.exe 1 2000
           if ($LASTEXITCODE -ne 0) { throw "emu_hw_test failed with exit code $LASTEXITCODE" }
+          Write-Host "Running hw_proof_wait_test"
+          .\hw_proof_wait_test.exe
+          if ($LASTEXITCODE -ne 0) { throw "hw_proof_wait_test failed with exit code $LASTEXITCODE" }
           Write-Host "Running emu_hw_vdf_client --list"
           .\emu_hw_vdf_client.exe --list
           if ($LASTEXITCODE -ne 0) { throw "emu_hw_vdf_client --list failed with exit code $LASTEXITCODE" }

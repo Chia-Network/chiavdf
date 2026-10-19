@@ -9,7 +9,6 @@
 
 #include <stdexcept>
 #include <cstring>
-#include <cstdlib>
 
 #define REG_BYTES 4
 #define CHIA_VDF_JOB_SIZE (CHIA_VDF_CMD_START_REG_OFFSET - \
@@ -178,21 +177,12 @@ int read_hw_status(ChiaDriver *drv, uint8_t idx_mask, struct vdf_value *values)
 {
     uint8_t read_status[HW_VDF_STATUS_SIZE + 20];
     uint32_t job_id;
-    // Characterization switch: compare engine zero's combined burst alias
-    // with the same per-engine status registers used by engines one and two.
-    static const bool direct_status = []() {
-        const char *value = std::getenv("CHIAVDF_HW_DIRECT_STATUS");
-        const bool enabled = value && !std::strcmp(value, "1");
-        if (enabled) LOG_INFO("ASIC status path: engine 0 uses direct status registers");
-        return enabled;
-    }();
 
     for (int i = 0; i < N_HW_VDFS; i++) {
         uint8_t *job;
         struct vdf_value *val = &values[i];
 
-        if (i == 0 && ((idx_mask & HW_VDF_TEMP_FLAG) ||
-                      (!direct_status && (idx_mask & (1 << i))))) {
+        if (i == 0 && idx_mask & (HW_VDF_TEMP_FLAG | (1 << i))) {
             drv->ftdi.Read(0x300000, read_status, HW_VDF_STATUS_SIZE + 20);
             job = read_status + 20;
 
@@ -202,24 +192,6 @@ int read_hw_status(ChiaDriver *drv, uint8_t idx_mask, struct vdf_value *values)
                 double temp = drv->ValueToTemp(temp_code);
                 LOG_INFO("ASIC Temp = %3.2f C; Frequency = %.1f MHz; freq_idx = %u",
                         temp, pll_entries[drv->freq_idx].freq, drv->freq_idx);
-                // Optional characterization reads add an ADC conversion to
-                // polling, so leave them disabled for normal operation.
-                static const bool load_telemetry = []() {
-                    const char *value = std::getenv("CHIAVDF_HW_TELEMETRY");
-                    return value && !std::strcmp(value, "1");
-                }();
-                if (load_telemetry && !chia_vdf_is_emu) {
-                    const double voltage = drv->GetBoardVoltage();
-                    const double pvt_voltage = drv->GetPvtVoltage();
-                    const double current = drv->GetBoardCurrent();
-                    LOG_INFO("ASIC load telemetry: regulator = %.4f V; PVT = %.4f V; current = %.3f A; rail power = %.3f W",
-                            voltage, pvt_voltage, current, voltage * current);
-                }
-            }
-            if (direct_status && (idx_mask & (1 << i))) {
-                drv->ftdi.Read(CHIA_VDF_STATUS_JOB_ID_REG_OFFSET,
-                              read_status, HW_VDF_STATUS_SIZE);
-                job = read_status;
             }
         } else if (idx_mask & (1 << i)) {
             drv->ftdi.Read(CHIA_VDF_STATUS_JOB_ID_REG_OFFSET + (0x10000 * i),

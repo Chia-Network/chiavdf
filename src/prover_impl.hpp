@@ -101,9 +101,7 @@ inline void Prover::GenerateProof() {
 inline ParallelProver::ParallelProver(Segment segm, integer D) : Prover(segm, D) {}
 
 inline void ParallelProver::ProofThread(ParallelProver* prover, uint8_t thr_idx, uint32_t start, uint32_t len) {
-    prover->OnProofWorker(thr_idx, true);
     prover->ProvePart(thr_idx, start, len);
-    prover->OnProofWorker(thr_idx, false);
 }
 
 inline void ParallelProver::SquareFormN(form& f, uint64_t cnt, PulmarkReducer& reducer)
@@ -175,16 +173,13 @@ inline void ParallelProver::GenerateProof() {
     PulmarkReducer reducer;
 
     this->B = GetB(D, segm.x, segm.y);
-    OnChallengeReady();
     this->L = root(-D, 4);
     this->id = form::identity(D);
 
     uint32_t l0 = l / 2;
     uint32_t l1 = l - l0;
     std::thread proof_thr(ParallelProver::ProofThread, this, 0, l, l0);
-    OnProofWorker(1, true);
     ProvePart(1, l1, l1);
-    OnProofWorker(1, false);
 
     proof_thr.join();
     if (!PerformExtraStep()) {

@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cerrno>
+#include <exception>
 #include <signal.h>
 
 #ifdef _WIN32
@@ -265,9 +266,6 @@ void handle_iters(struct vdf_client *client, struct vdf_conn *conn)
         iters_buf[iters_size] = '\0';
         iters = strtoul(iters_buf, NULL, 10);
 
-        if (conn->vdf.proof_profile)
-            LOG_INFO("PROOF_REQUEST job=%lu engine=%u iters=%lu at_us=%lu",
-                     conn->vdf.profile_job, conn->vdf.idx, iters, hw_proof_profile_us(&conn->vdf));
         if (iters) {
             LOG_DEBUG("VDF %d: Requested proof for iters=%llu", conn->vdf.idx, (unsigned long long)iters);
             hw_request_proof(&conn->vdf, iters, false);
@@ -313,20 +311,11 @@ void handle_proofs(struct vdf_client *client, struct vdf_conn *conn)
     struct vdf_proof_delivery delivery;
     int i;
     while ((i = hw_retrieve_proof(&conn->vdf, &delivery)) >= 0) {
-        const uint64_t retrieved_us = hw_proof_profile_us(&conn->vdf);
         const auto *proof = &delivery.final;
         uint8_t data[8 + 8 + 1 + BQFC_FORM_SIZE * 2];
         char tl_data[sizeof(data) * 2 + 5] = {0};
 
         LOG_INFO("VDF %d: Proof retrieved for iters=%llu", conn->vdf.idx, (unsigned long long)proof->iters);
-        if (conn->vdf.proof_profile) {
-            LOG_INFO("PROOF_PROFILE job=%lu engine=%u iters=%lu stage=delivery_ready at_us=%lu depth=%zu",
-                     conn->vdf.profile_job, conn->vdf.idx, proof->iters, delivery.ready_us,
-                     delivery.checkpoints.size() + 1);
-            LOG_INFO("PROOF_PROFILE job=%lu engine=%u iters=%lu stage=retrieved at_us=%lu depth=%zu",
-                     conn->vdf.profile_job, conn->vdf.idx, proof->iters, retrieved_us,
-                     delivery.checkpoints.size() + 1);
-        }
 
         Int64ToBytes(&data[0], proof->iters);
         Int64ToBytes(&data[8], BQFC_FORM_SIZE);
@@ -347,10 +336,6 @@ void handle_proofs(struct vdf_client *client, struct vdf_conn *conn)
             tl_enc_hex(tl_data, data, sizeof(*segm));
             write_data(conn, tl_data, sizeof(*segm) * 2);
         }
-        if (conn->vdf.proof_profile)
-            LOG_INFO("PROOF_PROFILE job=%lu engine=%u iters=%lu stage=sent at_us=%lu depth=%zu",
-                     conn->vdf.profile_job, conn->vdf.idx, delivery.final.iters,
-                     hw_proof_profile_us(&conn->vdf), delivery.checkpoints.size() + 1);
     }
 }
 
@@ -397,9 +382,6 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
         init_vdf_state(vdf, &client->opts.vpo, d_str, init_form, n_iters, vdf->idx);
         start_hw_vdf(client->drv, vdf->D.impl, vdf->last_val.a, vdf->last_val.b,
                 vdf->target_iters, vdf->idx);
-        if (vdf->proof_profile)
-            LOG_INFO("PROOF_PROFILE job=%lu engine=%u stage=asic_started at_us=%lu",
-                     vdf->profile_job, vdf->idx, hw_proof_profile_us(vdf));
         write_data(conn, "OK", 2);
         conn->state = RUNNING;
         conn->buf_pos = 0;
@@ -567,10 +549,9 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
             argi++;
             continue;
         }
-        if (!strcmp(name, "proof-profile") || !strcmp(name, "retain-asic-values")) {
+        if (!strcmp(name, "retain-asic-values")) {
             if (value) return -1;
-            if (!strcmp(name, "proof-profile")) opts->vpo.proof_profile = true;
-            else opts->vpo.retain_asic_values = true;
+            opts->vpo.retain_asic_values = true;
             argi++;
             continue;
         }
@@ -755,8 +736,7 @@ int hw_vdf_client_main(int argc, char **argv)
                 "  --vdf-threads N - number of software threads per VDF engine [4, 2 - 64]\n"
                 "  --proof-threads N - number of proof threads per VDF engine\n"
                 "  --retain-asic-values - use recent ASIC samples for off-grid proof endpoints\n"
-                "  --proof-profile - log monotonic proof stages and worker CPU samples\n"
-                "  --checkpoint-threshold N - split proofs above N iterations [1000000, 8000 - 4294967295]\n"
+                "  --checkpoint-threshold N - split proofs so every segment is at most N iterations [1000000, 8000 - 4294967295]\n"
                 "  --auto-freq-period N - auto-adjust frequency every N seconds [0, 10 - inf]\n"
                 "  --version - print version and exit\n"
                 "  --list - list available devices and exit",
@@ -782,6 +762,18 @@ int hw_vdf_client_main(int argc, char **argv)
 
     init_vdf_client(&client);
 
+    struct StopLiveProofs {
+        struct vdf_client *client;
+        ~StopLiveProofs() {
+            if (!client) return;
+            for (uint8_t i = 0; i < N_HW_VDFS; i++) {
+                if (!client->conns[i].vdf.init_done) continue;
+                hw_stop_proof(&client->conns[i].vdf);
+                clear_vdf_state(&client->conns[i].vdf);
+            }
+        }
+    } stop_live_proofs{&client};
+
 #ifdef _WIN32
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
@@ -791,11 +783,20 @@ int hw_vdf_client_main(int argc, char **argv)
     sigaction(SIGTERM, &sa, NULL);
 #endif
 
-    event_loop(&client);
+    int rc = 0;
+    try {
+        event_loop(&client);
+    } catch (const std::exception &err) {
+        LOG_ERROR("VDF client stopped: %s", err.what());
+        rc = 1;
+    } catch (...) {
+        LOG_ERROR("VDF client stopped");
+        rc = 1;
+    }
 
     stop_hw(client.drv);
     clear_vdf_client(&client);
-    return 0;
+    return rc;
 }
 
 int main(int argc, char **argv)

@@ -153,6 +153,7 @@ if(GENERATE_ASM_TRACKING_DATA)
 endif()
 set(VDF_COMMON_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/nucomp.cpp
 )
 if(WIN32)
   if(CHIAVDF_USE_UINT128_T_FALLBACK)
@@ -276,6 +277,7 @@ if(BUILD_PYTHON)
 
   pybind11_add_module(_chiavdf
     ${CMAKE_CURRENT_SOURCE_DIR}/python_bindings/fastvdf.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/nucomp.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
   )
 
@@ -545,14 +547,25 @@ if(BUILD_HW_TOOLS)
   target_include_directories(emu_hw_vdf_client PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/hw ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222)
   target_link_libraries(emu_hw_vdf_client PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads ${HW_SOCKET_LIBS})
   vdf_add_windows_clang_opts(emu_hw_vdf_client)
+
+  add_executable(hw_proof_wait_test
+    ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_proof_wait_test.cpp
+  )
+  target_sources(hw_proof_wait_test PRIVATE ${HW_COMMON_SOURCES} ${EMU_SOURCES} ${HW_VDF_ASM_SOURCES} ${VDF_COMMON_SOURCES})
+  target_compile_definitions(hw_proof_wait_test PRIVATE ${VDF_COMMON_DEFINITIONS})
+  target_include_directories(hw_proof_wait_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/hw ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222)
+  target_link_libraries(hw_proof_wait_test PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
+  vdf_add_windows_clang_opts(hw_proof_wait_test)
 endif()
 
-add_executable(verifier_test
+  add_executable(verifier_test
   ${CMAKE_CURRENT_SOURCE_DIR}/verifier_test.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/nucomp.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
 )
 add_executable(stress_test
   ${CMAKE_CURRENT_SOURCE_DIR}/stress_test.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/nucomp.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
 )
 
@@ -567,10 +580,12 @@ endif()
 if(BUILD_CHIAVDFC)
   add_library(chiavdfc_shared SHARED
           ${CMAKE_CURRENT_SOURCE_DIR}/c_bindings/c_wrapper.cpp
+          ${CMAKE_CURRENT_SOURCE_DIR}/nucomp.cpp
           ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
   )
   add_library(chiavdfc_static STATIC
           ${CMAKE_CURRENT_SOURCE_DIR}/c_bindings/c_wrapper.cpp
+          ${CMAKE_CURRENT_SOURCE_DIR}/nucomp.cpp
           ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
   )
   target_link_libraries(chiavdfc_shared ${GMP_LIBRARIES} ${GMPXX_LIBRARIES})

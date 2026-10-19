@@ -36,7 +36,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 **/
 
+#include <gmp.h>
+
+void mpz_xgcd_partial(mpz_t co2, mpz_t co1, mpz_t r2, mpz_t r1, const mpz_t L);
+
+#ifndef CHIAVDF_NUCOMP_DECLARATION_ONLY
 #include "xgcd_partial.c"
+#endif
 
 #include "chiavdf_profile.h"
 
@@ -59,168 +65,14 @@ typedef struct qfb
 
 typedef qfb qfb_t[1];
 
-// From Antic using Flint (works!)
-void qfb_nucomp(qfb_t r, const qfb_t f, const qfb_t g, mpz_t const& D, mpz_t const& L)
-{
-   if (mpz_cmp(f->a, g->a) > 0)
-   {
-      qfb_nucomp(r, g, f, D, L);
-      return;
-   }
+// Out of line in nucomp.cpp. MSVC link-time optimization miscompiles the
+// thread-local scratch when this function is inlined.
+#if defined(_MSC_VER)
+__declspec(noinline)
+#endif
+void qfb_nucomp(qfb_t r, const qfb_t f, const qfb_t g, mpz_t const& D, mpz_t const& L);
 
-   // Each scratch value is assigned before use. Keep its limb allocation
-   // across compositions, as NUDUPL does, without sharing between workers.
-   // The operand-order recursion above returns before touching this context.
-   struct qfb_nucomp_ctx {
-      mpz_t a1, a2, c2, ca, cb, cc, k, s, sp, ss, m, t, u2, v1, v2;
-      mpz_t m1, m2, r1, r2, co1, co2, temp;
-      qfb_nucomp_ctx() {
-         mpz_inits(a1, a2, c2, ca, cb, cc, k, s, sp, ss, m, t, u2, v1, v2,
-                   m1, m2, r1, r2, co1, co2, temp, nullptr);
-      }
-      ~qfb_nucomp_ctx() {
-         mpz_clears(a1, a2, c2, ca, cb, cc, k, s, sp, ss, m, t, u2, v1, v2,
-                    m1, m2, r1, r2, co1, co2, temp, nullptr);
-      }
-      qfb_nucomp_ctx(const qfb_nucomp_ctx&) = delete;
-      qfb_nucomp_ctx& operator=(const qfb_nucomp_ctx&) = delete;
-   };
-   static thread_local qfb_nucomp_ctx ctx;
-   mpz_t& a1 = ctx.a1;
-   mpz_t& a2 = ctx.a2;
-   mpz_t& c2 = ctx.c2;
-   mpz_t& ca = ctx.ca;
-   mpz_t& cb = ctx.cb;
-   mpz_t& cc = ctx.cc;
-   mpz_t& k = ctx.k;
-   mpz_t& s = ctx.s;
-   mpz_t& sp = ctx.sp;
-   mpz_t& ss = ctx.ss;
-   mpz_t& m = ctx.m;
-   mpz_t& t = ctx.t;
-   mpz_t& u2 = ctx.u2;
-   mpz_t& v1 = ctx.v1;
-   mpz_t& v2 = ctx.v2;
-
-   /* nucomp calculation */
-
-   mpz_set(a1, f->a);
-   mpz_set(a2, g->a);
-   mpz_set(c2, g->c);
-
-   mpz_add(ss, f->b, g->b);
-   mpz_fdiv_q_2exp(ss, ss, 1);
-
-   mpz_sub(m, f->b, g->b);
-   mpz_fdiv_q_2exp(m, m, 1);
-
-   mpz_fdiv_r(t, a2, a1);
-   if (!mpz_cmp_ui(t, 0))
-   {
-      mpz_set_ui(v1, 0);
-      mpz_set(sp, a1);
-   } else
-      mpz_gcdext(sp, v1, NULL, t, a1);
-
-   mpz_mul(k, m, v1);
-   mpz_fdiv_r(k, k, a1);
-
-   if (mpz_cmp_ui(sp, 1))
-   {
-      mpz_gcdext(s, v2, u2, ss, sp);
-
-      /* k = k*u2 - v2*c2 */
-      mpz_mul(k, k, u2);
-      mpz_mul(t, v2, c2);
-      mpz_sub(k, k, t);
-
-      if (mpz_cmp_ui(s, 1))
-      {
-         mpz_divexact(a1, a1, s);
-         mpz_divexact(a2, a2, s);
-         mpz_mul(c2, c2, s);
-      }
-
-      mpz_fdiv_r(k, k, a1);
-   }
-
-   if (mpz_cmp(a1, L) < 0)
-   {
-      mpz_mul(t, a2, k);
-
-      mpz_mul(ca, a2, a1);
-
-      mpz_mul_2exp(cb, t, 1);
-      mpz_add(cb, cb, g->b);
-
-      mpz_add(cc, g->b, t);
-      mpz_mul(cc, cc, k);
-      mpz_add(cc, cc, c2);
-
-      mpz_divexact(cc, cc, a1);
-   } else
-   {
-      mpz_t& m1 = ctx.m1;
-      mpz_t& m2 = ctx.m2;
-      mpz_t& r1 = ctx.r1;
-      mpz_t& r2 = ctx.r2;
-      mpz_t& co1 = ctx.co1;
-      mpz_t& co2 = ctx.co2;
-      mpz_t& temp = ctx.temp;
-
-      mpz_set(r2, a1);
-      mpz_set(r1, k);
-
-      mpz_xgcd_partial(co2, co1, r2, r1, L);
-
-      /* m1 = (m*co1 + a2*r1) / a1 */
-      mpz_mul(t, a2, r1);
-      mpz_mul(m1, m, co1);
-      mpz_add(m1, m1, t);
-      mpz_divexact(m1, m1, a1);
-
-      /* m2 = (ss*r1 - c2*co1) / a1 */
-      mpz_mul(m2, ss, r1);
-      mpz_mul(temp, c2, co1);
-      mpz_sub(m2, m2, temp);
-      mpz_divexact(m2, m2, a1);
-
-      /* ca = -sgn(co1) * (r1*m1 - co1*m2) */
-      mpz_mul(ca, r1, m1);
-      mpz_mul(temp, co1, m2);
-      if (mpz_sgn(co1) < 0)
-         mpz_sub(ca, ca, temp);
-      else
-         mpz_sub(ca, temp, ca);
-
-      /* cb = (2 * (t - ca*co2) / co1 - g->b) % (2*ca) */
-      mpz_mul(cb, ca, co2);
-      mpz_sub(cb, t, cb);
-      mpz_mul_2exp(cb, cb, 1);
-      mpz_divexact(cb, cb, co1);
-      mpz_sub(cb, cb, g->b);
-      mpz_mul_2exp(temp, ca, 1);
-      mpz_fdiv_r(cb, cb, temp);
-
-      /* cc = (cb*cb - D) / (4*ca) */
-      mpz_mul(cc, cb, cb);
-      mpz_sub(cc, cc, D);
-      mpz_divexact(cc, cc, ca);
-      mpz_fdiv_q_2exp(cc, cc, 2);
-
-      if (mpz_sgn(ca) < 0)
-      {
-         mpz_neg(ca, ca);
-         mpz_neg(cc, cc);
-      }
-
-   }
-
-   mpz_set(r->a, ca);
-   mpz_set(r->b, cb);
-   mpz_set(r->c, cc);
-
-}
+#ifndef CHIAVDF_NUCOMP_DECLARATION_ONLY
 
 // a = b * c
 void nucomp_form(form &a, form const& b, form const& c, integer const& D, integer const& L) {
@@ -452,5 +304,7 @@ void nudupl_form(form &a, form &b, const integer &D, const integer &L)
     *a.b.impl = *fr.b;
     *a.c.impl = *fr.c;
 }
+
+#endif // CHIAVDF_NUCOMP_DECLARATION_ONLY
 
 #endif // NUCOMP_H

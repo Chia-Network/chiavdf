@@ -13,7 +13,7 @@ This file is the build and operations guide for the client in this repository. T
 
 ## What you need
 
-- A Chia VDF ASIC board. Each ASIC has three VDF engines. Each board has two USB-C ports: one for power only, and one FT4222H data link to the host. See [Engines, ports, and cooling](#engines-ports-and-cooling).
+- A Chia VDF ASIC board. Each ASIC has three VDF engines. Each board has two USB-C ports: one for plain 5 V power only, and one FT4222H data link to the host. See [Engines, ports, and cooling](#engines-ports-and-cooling).
 - A host running Linux x86_64, Linux aarch64/arm64, macOS (Apple Silicon or Intel), or 64-bit Windows. Those are the architectures the package workflow builds.
 - A synced Chia full node on the timelord machine. The timelord reads peaks from that node.
 - Proof work runs on the host CPU (`--vdf-threads`, `--proof-threads`). A board at the default clock still needs a host that can keep up with three engines.
@@ -26,7 +26,7 @@ Each Chia VDF ASIC has three internal VDF engines (`N_HW_VDFS` is 3). `--vdfs-ma
 
 Three ASIC boards can supply one engine each (`hw_vdf_client 8000 1`, or a one-bit `--vdfs-mask`). Attach those boards to one, two, or three hosts. On this branch `FtdiDriver::Open()` calls `OpenClk` with location id 0, which selects the first FT4222H interface A in the D2XX list. Every process on that host opens the same device. Several boards on one host need `--device-loc` from draft PR [#425](https://github.com/Chia-Network/chiavdf/pull/425), and that flag is not on main. Until it is, run one board per host. Point each client at the same timelord with `--ip`, add each source address to `vdf_clients.ip`, and set `vdf_server.host` to `0.0.0.0`.
 
-Each board has two USB-C ports. One port is power only. The other is the data port: the FT4222H USB link to the host. FTDI DS_FT4222H (document FT_001011) describes the FT4222H as a USB 2.0 Hi-Speed device (480 Mbit/s). Any USB 2.0 or faster data port works for that link. `FtdiDriver::Open()` programs the chip as a quad-SPI master (`SPI_IO_QUAD`) with system clock `SYS_CLK_80` and divider `CLK_DIV_8` (one eighth of the system clock; `src/libft4222/libft4222.h`). The same datasheet lists 80 MHz among the system clocks `FT4222_SetClock` can select, and lists 1/8 as an SCK divider. That is the clock this client programs. This tree does not record a measured throughput for the USB-C data port.
+Each board has two USB-C ports. The power-only port takes plain 5 V USB-C power, standard USB-C default power, with no USB Power Delivery negotiation. Any ordinary USB-C port or 5 V USB-C supply can power it. The other port is the data port: the FT4222H USB link to the host. FTDI DS_FT4222H (document FT_001011) describes the FT4222H as a USB 2.0 Hi-Speed device (480 Mbit/s). Any USB 2.0 or faster data port works for that link. `FtdiDriver::Open()` programs the chip as a quad-SPI master (`SPI_IO_QUAD`) with system clock `SYS_CLK_80` and divider `CLK_DIV_8` (one eighth of the system clock; `src/libft4222/libft4222.h`). The same datasheet lists 80 MHz among the system clocks `FT4222_SetClock` can select, and lists 1/8 as an SCK divider. That is the clock this client programs. This tree does not record a measured throughput for the USB-C data port.
 
 `hw_test` and `hw_vdf_client` log the ASIC rail at startup, before the job:
 
@@ -38,7 +38,7 @@ These lines are the ASIC rail. They are not the wattage drawn at the power-only 
 
 On an Apple Silicon Mac mini, `hw_test` at the default request of 1100 MHz and 0.88 V (`HW_VDF_DEF_FREQ`, `HW_VDF_DEF_VOLTAGE`) reported board voltage 0.875 V, current 0.590 A, and power 0.516 W. 0.875 V is the VID step for a 0.88 V request. 0.875 × 0.590 = 0.51625, which the `%2.3f` power log prints as 0.516.
 
-**TODO:** measured wattage drawn from the power-only USB-C port. This tree, `hw_test`'s rail log, the `tools/m6mini-*` notes on PR #425, and DS_FT4222H do not give that figure.
+On an Apple Silicon Mac mini powering the board from its own USB-C port, macOS showed no PD contract on any port (`IOAccessoryPowerCurrentLimits` was 0 everywhere) and did not register the power-only connection.
 
 The boards are passively air cooled. The client writes 100 °C external and engine alarm thresholds into the PVT sensor and logs `ASIC Temp`.
 

@@ -18,8 +18,8 @@ Windows (x64), and produces:
 - `hw_vdf_client` and `hw_test` - the Chia VDF ASIC client and board test.
 - `emu_hw_vdf_client` and `emu_hw_test` - hardware-free emulators for CI and
   development.
-- The `chiavdf` Python bindings, plus optional `chiavdfc` shared/static
-  libraries.
+- The `chiavdf` Python bindings used by chia-blockchain to validate proofs of
+  time, plus optional `chiavdfc` shared/static libraries.
 
 CI builds the CPU and ASIC binaries on all of those platforms. The ASIC
 emulator tests run without a board.
@@ -66,6 +66,10 @@ troubleshooting. `emu_hw_vdf_client` and `emu_hw_test` let you exercise the
 hardware paths without a board.
 
 ## Building the Python wheel
+
+The published `chiavdf` wheels contain the native verifier bindings that
+chia-blockchain uses to validate proofs of time. This lets a node install a
+prebuilt wheel instead of compiling the C++ library itself.
 
 Building the Python bindings requires CMake, a C++17 compiler, and GMP
 (MPIR on Windows). Building the timelord client and tests also requires Boost

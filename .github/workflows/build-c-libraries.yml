@@ -12,8 +12,11 @@ on:
   workflow_call:
 
 concurrency:
-  # SHA is added to the end if on `main` to let all main workflows run
-  group: ${{ github.ref }}-${{ github.workflow }}-${{ github.event_name }}-${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/long_lived/')) && github.sha || '' }}
+  # This file is also called from build-packages.yml. github.workflow and
+  # github.event_name are the caller's, so they must not be the group key:
+  # the same group with cancel-in-progress would cancel or deadlock the release.
+  # SHA is added on main, release branches, and long-lived branches so those runs are not cancelled.
+  group: chiavdf-c-libraries-${{ github.ref }}-${{ github.event_name }}-${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/long_lived/')) && github.sha || '' }}
   cancel-in-progress: true
 
 permissions:

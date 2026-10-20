@@ -19,9 +19,11 @@ $ZipPath = Join-Path $WorkDir "LibFT4222-v1.4.8.zip"
 $ExtractDir = Join-Path $WorkDir "extract"
 
 # LibFT4222 1.4.8 ships the amd64 import library and LibFT4222-64.dll, but
-# not the native D2XX DLL that import library names. The DLL is staged from
-# FTDI's CDM redistributable, which stores it as amd64/FTD2XX64.dll.
-$D2xxUrl = "https://ftdichip.com/wp-content/uploads/2025/03/CDM-v2.12.36.20-WHQL-Certified.zip"
+# not the native D2XX DLL that import library names. The DLL comes from
+# FTDI CDM 2.12.36.20, which stores it as amd64/FTD2XX64.dll. ftdichip.com
+# answers the runner with a Cloudflare challenge, so this is FTDI's mirror
+# of that same archive. The SHA-256 is the pin for the bytes.
+$D2xxUrl = "https://ftdichip.cn/Drivers/CDM/CDM-v2.12.36.20-WHQL-Certified.zip"
 $D2xxSha256 = "e8ebf401d06994183694d78e5855ed5ab026bdfa8c3d4e4ccde09ec238a0eaf1"
 $D2xxZipPath = Join-Path $WorkDir "CDM-v2.12.36.20-WHQL-Certified.zip"
 $D2xxEntry = "amd64/FTD2XX64.dll"

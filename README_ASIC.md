@@ -390,7 +390,7 @@ This tree does not read `CHIAVDF_HW_DIRECT_STATUS` or `CHIAVDF_HW_TELEMETRY`. Th
 
 ## Multiple boards and proof construction
 
-`--device-loc` selects a board. `--list` prints each interface-A location; `0`, the default, selects the first available board. Run one client per board with distinct locations. Initialize them sequentially: wait for one client to connect before starting the next, since simultaneous FTDI enumeration can fail on macOS. Location values can change when USB cables or hubs change.
+`--device-loc` selects a board. `--list` prints each interface-A location; `0`, the default, selects the first available board. Run one client per board with distinct locations. If simultaneous FTDI enumeration proves unreliable on your macOS host, initialize the clients sequentially: wait for one client to connect before starting the next. Location values can change when USB cables or hubs change.
 
 The standalone test accepts the same location as an optional third argument: `hw_test N_VDFS N_ITERS DEVICE_LOC`.
 
@@ -407,8 +407,10 @@ Defaults are 1100 MHz and 0.88 V (`HW_VDF_DEF_FREQ`, `HW_VDF_DEF_VOLTAGE`). `hw_
 Auto-freq is off unless you pass `--auto-freq-period`. While it is on, the client steps one PLL entry up at each period when the next entry is at or below `--max-freq`, and one entry down after a bad VDF value. The default `--max-freq` is 3000, which is above the `--freq` ceiling. Set `--max-freq` to the highest clock you are willing to run, at or below 2200, whenever you turn auto-freq on:
 
 ```bash
-./hw_vdf_client --freq 1100 --auto-freq-period 60 --max-freq 1100 8000 3
+./hw_vdf_client --freq 1100 --auto-freq-period 60 --max-freq 1200 8000 3
 ```
+
+This example allows auto-frequency to step up to 1200 MHz; use `--max-freq 1100` if you want the cap to hold the default clock.
 
 The process writes 100 °C external and engine alarm thresholds into the PVT sensor and logs `ASIC Temp = ...` with the current frequency. The boards are passively air cooled. A climbing `ASIC Temp` line, or a stream of `Bad VDF value` restarts, means lower `--freq` or set `--max-freq` back to the clock you want to hold.
 
@@ -474,7 +476,7 @@ This repo does not ship a Windows service. Run `hw_vdf_client.exe` in a console 
 
 **`lzcnt.o: file format not recognized`.** `CC` and `CXX` are different compilers under LTO. Run `make clean`, then use `CC=gcc CXX=g++`.
 
-**`--list` prints `FT_CreateDeviceInfoList` error 18, or `No FTDI devices connected`.** The D2XX stack sees no device. Confirm the board is plugged in and powered. On Linux, `lsusb -d 0403:601c` should show the id the udev rule matches. Re-run the udev reload and replug if the device node is root-only. On Windows, install the D2XX driver from the FT4222H downloads page so the device enumerates for D2XX. On macOS, an immediate exit 137 (SIGKILL) means the FT4222/D2XX dylibs are unsigned. From `src/`, run `codesign -f -s - hw/libft4222/*.dylib hw_vdf_client hw_test` and start the binary again from that directory. A release zip is already signed. Launch it from `bin/`.
+**`--list` prints `FT_CreateDeviceInfoList` error 18, or `No FTDI devices connected`.** The D2XX stack sees no device. Confirm the board is plugged in and powered. On Linux, `lsusb -d 0403:601c` should show the id the udev rule matches. Re-run the udev reload and replug if the device node is root-only. On Windows, install the D2XX driver from the FT4222H downloads page so the device enumerates for D2XX. On macOS, an immediate exit 137 (SIGKILL) means the FT4222/D2XX dylibs are unsigned. From `src/`, run `codesign -f -s - hw/libft4222/*.dylib hw_vdf_client hw_test` and start the binary again with the executable still in `src/`. A release zip is already signed. Launch it from `bin/`.
 
 **`Failed to open device`.** `init_hw` prints this when `FtdiDriver::Open()` returns an error. With no board attached, that follows the FTDI error above (error 18 or `No FTDI devices connected`). **`No FT4222H detected`** means the device list was readable and no interface A matched. Another `hw_vdf_client` or `hw_test` may already hold the board. Use `--list` and pass the location with `--device-loc` when more than one board is attached.
 

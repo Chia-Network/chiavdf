@@ -22,6 +22,27 @@ static bool hw_proof_overlaps_gap(const struct vdf_proof &proof, uint32_t interv
     return first <= gap_last && gap_first <= last;
 }
 
+// One store. Callers that name a proof take aux_job_mtx first; GetForm stores directly.
+static void hw_proof_cancel_slot(struct vdf_state *vdf, uint8_t slot)
+{
+    if (slot < HW_VDF_MAX_AUX_THREADS)
+        vdf->aux_cancel[slot].store(1, std::memory_order_release);
+}
+
+// Stop every proof job still bound to a segment that has been marked failed.
+// Caller holds proofs_resize_mtx. Fills reuse proof_idx 0 and are not proofs.
+static void hw_proof_cancel_failed(struct vdf_state *vdf)
+{
+    std::lock_guard<std::mutex> lock(vdf->aux_job_mtx);
+    for (uint8_t slot = 0; slot < vdf->max_aux_threads; slot++) {
+        if (vdf->aux_jobs[slot].work != nullptr)
+            continue;
+        size_t idx = vdf->aux_jobs[slot].proof_idx;
+        if (idx < vdf->proofs.size() && (vdf->proofs[idx].flags & HW_VDF_PROOF_FLAG_FAILED))
+            hw_proof_cancel_slot(vdf, slot);
+    }
+}
+
 // A fill that stops short never publishes this grid range. Proofs that read
 // it fail, and waiters on those positions are released.
 static void hw_proof_abandon_gap(struct vdf_state *vdf, uint64_t from_iters, uint64_t to_iters)
@@ -39,6 +60,7 @@ static void hw_proof_abandon_gap(struct vdf_state *vdf, uint64_t from_iters, uin
             proof.flags &= ~HW_VDF_PROOF_FLAG_DONE;
             proof.flags |= HW_VDF_PROOF_FLAG_FAILED;
         }
+        hw_proof_cancel_failed(vdf);
         size_t dst = 0;
         for (size_t src = 0; src < vdf->queued_proofs.size(); src++) {
             uint16_t idx = vdf->queued_proofs[src];
@@ -65,8 +87,8 @@ static void hw_proof_abandon_gap(struct vdf_state *vdf, uint64_t from_iters, uin
 
 // One exit for an aux job. Unpublished proofs stay unpublished. A failed
 // segment is marked so retrieval does not wait on its chain. A value job
-// that does not finish abandons the grid range it still owed. A caller that
-// holds no slot passes slot >= max_aux_threads.
+// that does not finish abandons the grid range it still owed. A direct
+// caller passes a slot outside the worker array and only updates the proof.
 static void hw_proof_finish_job(struct vdf_state *vdf, uint8_t slot, bool proving,
         size_t proof_idx, bool published, bool track_gap = false,
         uint64_t gap_from = 0, uint64_t gap_to = 0)
@@ -77,10 +99,11 @@ static void hw_proof_finish_job(struct vdf_state *vdf, uint8_t slot, bool provin
             vdf->proofs[proof_idx].flags &= ~HW_VDF_PROOF_FLAG_DONE;
             vdf->proofs[proof_idx].flags |= HW_VDF_PROOF_FLAG_FAILED;
         }
+        hw_proof_cancel_failed(vdf);
     }
     if (!proving && !published && track_gap)
         hw_proof_abandon_gap(vdf, gap_from, gap_to);
-    if (slot < vdf->max_aux_threads) {
+    if (slot < HW_VDF_MAX_AUX_THREADS) {
         if (proving)
             vdf->n_proof_threads -= PARALLEL_PROVER_N_THREADS;
         vdf->aux_threads_busy &= ~(1UL << slot);
@@ -320,8 +343,7 @@ void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_work *work, int thr_
         if (iters == next_iters) {
             size_t pos = iters / vdf->interval;
 
-            if ((vdf->bad_square_iters != 0 && iters == vdf->bad_square_iters)
-                    || !f.check_valid(vdf->D)) {
+            if (!f.check_valid(vdf->D)) {
                 LOG_ERROR(" VDF %d: bad form at iters=%lu", vdf->idx, iters);
                 return;
             }
@@ -358,6 +380,7 @@ static bool hw_proof_submit(struct vdf_state *vdf, int slot, struct vdf_work *wo
     {
         std::lock_guard<std::mutex> lock(vdf->aux_job_mtx);
         if (vdf->stopping) return false;
+        vdf->aux_cancel[slot].store(0, std::memory_order_relaxed);
         vdf->aux_jobs[slot].work = work;
         vdf->aux_jobs[slot].proof_idx = proof_idx;
         vdf->aux_job_pending |= 1ULL << slot;
@@ -408,6 +431,8 @@ void hw_proof_process_work(struct vdf_state *vdf)
             if (!hw_proof_submit(vdf, i, nullptr, idx)) {
                 vdf->aux_threads_busy &= ~(1UL << i);
                 vdf->n_proof_threads -= PARALLEL_PROVER_N_THREADS;
+                proof->flags &= ~HW_VDF_PROOF_FLAG_STARTED;
+                proof->flags |= HW_VDF_PROOF_FLAG_FAILED;
             }
         }
     }
@@ -524,8 +549,8 @@ void hw_proof_handle_value(struct vdf_state *vdf, struct vdf_value *val)
         if (start_iters > vdf->target_iters) {
             LOG_ERROR("VDF %d: Fail at iters=%lu end_iters=%lu",
                     vdf->idx, last_iters, end_iters);
-            // No worker slot yet. The same drop a running job uses; nothing is queued.
-            hw_proof_finish_job(vdf, vdf->max_aux_threads, false, SIZE_MAX, false);
+            // The sample is not applied. Proofs already covered by last_val still start.
+            hw_proof_process_work(vdf);
             return;
         }
         //iters += interval;
@@ -574,11 +599,11 @@ void hw_stop_proof(struct vdf_state *vdf)
 
 class HwProver : public ParallelProver {
   public:
-    HwProver(Segment segm, integer D, struct vdf_state *vdf, size_t proof_idx)
+    HwProver(Segment segm, integer D, struct vdf_state *vdf, uint8_t slot)
         : ParallelProver(segm, D)
     {
         this->vdf = vdf;
-        this->proof_idx = proof_idx;
+        this->slot = slot;
         k = FindK(segm.length);
         l = vdf->interval / k;
         pos_offset = segm.start / vdf->interval;
@@ -587,6 +612,7 @@ class HwProver : public ParallelProver {
     form GetForm(uint64_t pos) override {
         pos += pos_offset;
         if (hw_proof_wait_value(vdf, pos)) {
+            hw_proof_cancel_slot(vdf, slot);
             // Provide arbitrary value when stopping; no proof is published.
             return *hw_proof_value_at(vdf, 0);
         }
@@ -601,13 +627,8 @@ class HwProver : public ParallelProver {
     }
 
     bool PerformExtraStep() override {
-        if (vdf->stopping)
-            return false;
-        if (proof_idx == SIZE_MAX)
-            return true;
-        std::lock_guard<std::mutex> lock(vdf->proofs_resize_mtx);
-        return proof_idx >= vdf->proofs.size()
-            || !(vdf->proofs[proof_idx].flags & HW_VDF_PROOF_FLAG_FAILED);
+        return !vdf->stopping && (slot >= HW_VDF_MAX_AUX_THREADS
+                || !vdf->aux_cancel[slot].load(std::memory_order_acquire));
     }
 
     void OnFinish() override {
@@ -639,7 +660,7 @@ class HwProver : public ParallelProver {
 
   private:
     struct vdf_state *vdf;
-    size_t proof_idx = SIZE_MAX;
+    uint8_t slot = HW_VDF_MAX_AUX_THREADS;
     uint32_t pos_offset;
 };
 
@@ -700,7 +721,7 @@ void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof 
 
     {
         Segment seg(start_iters, proof_iters - start_iters, x, y);
-        HwProver prover(seg, vdf->D, vdf, proof_idx);
+        HwProver prover(seg, vdf->D, vdf, thr_idx);
         prover.start();
 
         if (prover.IsFinished()) {
@@ -842,8 +863,9 @@ void init_vdf_state(struct vdf_state *vdf, struct vdf_proof_opts *opts, const ch
     vdf->n_proof_threads = 0;
     vdf->n_bad = 0;
     vdf->n_skipped = 0;
-    vdf->bad_square_iters = 0;
     vdf->log_cnt = 0;
+    for (uint8_t slot = 0; slot < HW_VDF_MAX_AUX_THREADS; slot++)
+        vdf->aux_cancel[slot].store(0, std::memory_order_relaxed);
     vdf->wq_warn_thres[0] = 1;
     vdf->wq_warn_thres[1] = HW_VDF_WQ_WARN_MULT * HW_VDF_WQ_WARN_MULT;
 

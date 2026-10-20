@@ -460,14 +460,22 @@ int main() {
             uint8_t initial[BQFC_FORM_SIZE] = {8};
             init_vdf_state(&vdf, nullptr, "-23", initial, 4000, 0);
             OwnedVdf owned{&vdf};
+            uint16_t covered = hw_queue_proof(&vdf, vdf.interval, HW_VDF_PROOF_NONE,
+                    HW_VDF_PROOF_FLAG_IS_REQ);
             vdf_value val;
             init_vdf_value(&val);
             val.iters = 12100;
-            vdf.last_val.iters = 4000;
+            vdf.last_val.iters = vdf.interval;
             hw_proof_handle_value(&vdf, &val);
             require(vdf.wq.empty(), "Past-target gap was queued");
+            require(vdf.last_val.iters == vdf.interval, "Past-target sample replaced the last value");
+            require(vdf.queued_proofs.empty(), "Covered proof stayed queued");
+            {
+                std::lock_guard<std::mutex> lock(vdf.proofs_resize_mtx);
+                require((vdf.proofs[covered].flags & HW_VDF_PROOF_FLAG_STARTED) != 0,
+                        "Covered proof did not start");
+            }
             require(vdf.done_proofs.empty(), "Past-target gap published a proof");
-            require(vdf.n_proof_threads.load() == 0, "Past-target gap took a proof slot");
             clear_vdf_value(&val);
         }
         {
@@ -541,12 +549,22 @@ int main() {
                     "Fill checkpoint was not the exact request");
             require((vdf.proofs[checkpoint].flags & HW_VDF_PROOF_FLAG_IS_REQ) == 0,
                     "Exact fill checkpoint was queued as its own segment");
-            // The stored square at this iteration is the one the checkpoint waits on.
-            vdf.bad_square_iters = vdf.interval;
+            // Not a form of this discriminant: b^2 - D is not divisible by 4a.
+            // The fill cannot square it into the grid point the checkpoint reads.
+            bool accepted = false;
+            try {
+                form ignored = form::from_abd(integer(1), integer(2), vdf.D);
+                (void)ignored;
+                accepted = true;
+            } catch (const std::exception &) {
+            }
+            require(!accepted, "Bad start form was a form of the discriminant");
             vdf.last_val.iters = vdf.interval;
             auto *work = new vdf_work;
             copy_vdf_value(&work->start_val, &vdf.last_val);
-            work->start_val.iters = 0;
+            mpz_set_ui(work->start_val.a, 1);
+            mpz_set_ui(work->start_val.b, 2);
+            work->start_val.iters = vdf.interval - 1;
             work->start_iters = vdf.interval;
             work->n_steps = 0;
             vdf.wq.push_back(work);
@@ -560,9 +578,9 @@ int main() {
                             && (flags & HW_VDF_PROOF_FLAG_EXACT_REQ) != 0
                             && (flags & HW_VDF_PROOF_FLAG_DONE) == 0;
                     }, std::chrono::seconds(5)),
-                    "Bad square stalled the dependent proof");
-            require(vdf.queued_proofs.empty(), "Bad square left the failed checkpoint queued");
-            require(vdf.done_proofs.empty(), "Bad square published the exact checkpoint");
+                    "Bad start form stalled the dependent proof");
+            require(vdf.queued_proofs.empty(), "Bad start form left the failed checkpoint queued");
+            require(vdf.done_proofs.empty(), "Bad start form published the exact checkpoint");
             {
                 std::lock_guard<std::mutex> lock(vdf.proofs_resize_mtx);
                 vdf_proof child{};
@@ -579,8 +597,8 @@ int main() {
             int count = hw_retrieve_proof(&vdf, &dropped);
             require(std::chrono::steady_clock::now() - started < std::chrono::seconds(1),
                     "Exact checkpoint failure stalled retrieval");
-            require(count < 0, "Chain through a bad square was published");
-            require(vdf.done_proofs.empty(), "Chain through a bad square stayed pending");
+            require(count < 0, "Chain through a bad start form was published");
+            require(vdf.done_proofs.empty(), "Chain through a bad start form stayed pending");
             {
                 std::lock_guard<std::mutex> lock(vdf.proofs_resize_mtx);
                 vdf_proof good{};
@@ -595,7 +613,36 @@ int main() {
             vdf_proof_delivery delivery{};
             count = hw_retrieve_proof(&vdf, &delivery);
             require(count == 0 && delivery.final.y[0] == 6,
-                    "Proof that does not read the bad square was not delivered");
+                    "Proof that does not read the missing square was not delivered");
+        }
+        {
+            vdf_state vdf{};
+            uint8_t initial[BQFC_FORM_SIZE] = {8};
+            init_vdf_state(&vdf, nullptr, "-23", initial, 4000, 0);
+            OwnedVdf owned{&vdf};
+            vdf.interval = 20;
+            const uint64_t length = 400;
+            form start = *hw_proof_value_at(&vdf, 0);
+            // The segment ends on the same form it starts on. An interior grid
+            // point is abandoned, so the proof must stop before verification.
+            size_t end_pos = length / vdf.interval;
+            *hw_proof_value_at(&vdf, end_pos) = start;
+            vdf.valid_values[end_pos / 8].fetch_or(1u << (end_pos % 8), std::memory_order_release);
+            vdf.abandoned_values[0].fetch_or(1u << 1, std::memory_order_release);
+            uint16_t proof = hw_queue_proof(&vdf, length, HW_VDF_PROOF_NONE, HW_VDF_PROOF_FLAG_IS_REQ);
+            vdf.last_val.iters = length;
+            hw_proof_process_work(&vdf);
+            require(wait_for([&] {
+                        if (vdf.aux_threads_busy.load() != 0 || vdf.n_proof_threads.load() != 0)
+                            return false;
+                        std::lock_guard<std::mutex> lock(vdf.proofs_resize_mtx);
+                        uint8_t flags = vdf.proofs[proof].flags;
+                        return (flags & HW_VDF_PROOF_FLAG_FAILED) != 0
+                            && (flags & HW_VDF_PROOF_FLAG_DONE) == 0;
+                    }, std::chrono::seconds(2)),
+                    "Abandoned interior point left the proof slot busy");
+            require(vdf.done_proofs.empty(), "Abandoned interior point published a proof");
+            require(vdf.queued_proofs.empty(), "Abandoned interior point stayed queued");
         }
         {
             vdf_state vdf{};

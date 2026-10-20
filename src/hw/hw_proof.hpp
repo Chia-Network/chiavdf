@@ -124,10 +124,10 @@ struct vdf_state {
     uint32_t checkpoint_threshold;
     uint32_t n_bad;
     uint32_t n_skipped;
-    // Non-zero only in tests. A fill treats this iteration as a bad square.
-    uint64_t bad_square_iters = 0;
     uint32_t log_cnt;
     std::atomic<uint64_t> aux_threads_busy;
+    // Set while a proof on this slot must stop. Cleared when the next job is submitted.
+    std::atomic<uint8_t> aux_cancel[HW_VDF_MAX_AUX_THREADS];
     std::array<std::thread, HW_VDF_MAX_AUX_THREADS> aux_threads;
     std::mutex aux_job_mtx;
     std::condition_variable aux_job_cv;

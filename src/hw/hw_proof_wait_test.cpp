@@ -1,6 +1,7 @@
 #include "hw_proof.hpp"
 #include <chrono>
 #include <cstring>
+#include <functional>
 #include <future>
 #include <iostream>
 #include <stdexcept>
@@ -8,6 +9,17 @@
 
 int hw_proof_wait_value(struct vdf_state *vdf, size_t pos);
 form *hw_proof_value_at(struct vdf_state *vdf, size_t pos);
+void hw_proof_process_work(struct vdf_state *vdf);
+
+static bool wait_for(const std::function<bool()> &ready, std::chrono::milliseconds limit)
+{
+    auto deadline = std::chrono::steady_clock::now() + limit;
+    while (!ready()) {
+        if (std::chrono::steady_clock::now() >= deadline) return false;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    return true;
+}
 
 static void require(bool condition, const char *message) {
     if (!condition) throw std::runtime_error(message);
@@ -419,6 +431,211 @@ int main() {
             hw_compute_proof(&vdf, SIZE_MAX, &rejected, 255);
             require((rejected.flags & HW_VDF_PROOF_FLAG_DONE) == 0,
                     "Invalid endpoint still published a proof");
+        }
+        {
+            vdf_state vdf{};
+            uint8_t initial[BQFC_FORM_SIZE] = {8};
+            init_vdf_state(&vdf, nullptr, "-23", initial, 4000, 0);
+            OwnedVdf owned{&vdf};
+            require(vdf.value_block_count == 1, "Short challenge did not fit in one intermediate block");
+            uint16_t proof = hw_queue_proof(&vdf, 100, HW_VDF_PROOF_NONE, HW_VDF_PROOF_FLAG_IS_REQ);
+            auto *work = new vdf_work;
+            copy_vdf_value(&work->start_val, &vdf.last_val);
+            // Blocks hold 4096 forms. This is the first iteration of the next block.
+            work->start_val.iters = 4096ULL * vdf.interval - 1;
+            work->start_iters = 4096ULL * vdf.interval;
+            work->n_steps = 0;
+            vdf.wq.push_back(work);
+            hw_proof_process_work(&vdf);
+            require(wait_for([&] { return vdf.wq.empty() && vdf.aux_threads_busy.load() == 0; },
+                             std::chrono::seconds(2)),
+                    "Out-of-range aux job did not finish");
+            require(vdf.value_block_count == 1, "Out-of-range position grew the intermediate directory");
+            require((vdf.proofs[proof].flags & HW_VDF_PROOF_FLAG_DONE) == 0,
+                    "Out-of-range aux job published a proof");
+            require(vdf.done_proofs.empty(), "Out-of-range aux job published a proof");
+        }
+        {
+            vdf_state vdf{};
+            uint8_t initial[BQFC_FORM_SIZE] = {8};
+            init_vdf_state(&vdf, nullptr, "-23", initial, 4000, 0);
+            OwnedVdf owned{&vdf};
+            vdf_value val;
+            init_vdf_value(&val);
+            val.iters = 12100;
+            vdf.last_val.iters = 4000;
+            hw_proof_handle_value(&vdf, &val);
+            require(vdf.wq.empty(), "Past-target gap was queued");
+            require(vdf.done_proofs.empty(), "Past-target gap published a proof");
+            require(vdf.n_proof_threads.load() == 0, "Past-target gap took a proof slot");
+            clear_vdf_value(&val);
+        }
+        {
+            vdf_state vdf{};
+            uint8_t initial[BQFC_FORM_SIZE] = {8};
+            init_vdf_state(&vdf, nullptr, "-23", initial, 4000, 0);
+            OwnedVdf owned{&vdf};
+            vdf.interval = 20;
+            form wrong = *hw_proof_value_at(&vdf, 0);
+            PulmarkReducer reducer;
+            nudupl_form(wrong, wrong, vdf.D, vdf.L);
+            reducer.reduce(wrong);
+            *hw_proof_value_at(&vdf, 1) = wrong;
+            vdf.valid_values[0].fetch_or(1 << 1, std::memory_order_release);
+            uint16_t checkpoint = hw_queue_proof(&vdf, vdf.interval, HW_VDF_PROOF_NONE, 0);
+            vdf.last_val.iters = vdf.interval;
+            hw_proof_process_work(&vdf);
+            require(wait_for([&] {
+                        if (vdf.aux_threads_busy.load() != 0) return false;
+                        std::lock_guard<std::mutex> lock(vdf.proofs_resize_mtx);
+                        uint8_t flags = vdf.proofs[checkpoint].flags;
+                        return (flags & HW_VDF_PROOF_FLAG_FAILED) != 0
+                            && (flags & HW_VDF_PROOF_FLAG_DONE) == 0;
+                    }, std::chrono::seconds(20)),
+                    "Verify failure did not release the checkpoint");
+            require(vdf.queued_proofs.empty(), "Failed checkpoint was requeued");
+            require(vdf.n_proof_threads.load() == 0, "Failed checkpoint left a proof slot busy");
+            {
+                std::lock_guard<std::mutex> lock(vdf.proofs_resize_mtx);
+                vdf_proof final{};
+                final.iters = vdf.interval * 2;
+                final.seg_iters = vdf.interval;
+                final.prev = checkpoint;
+                final.flags = HW_VDF_PROOF_FLAG_DONE | HW_VDF_PROOF_FLAG_IS_REQ;
+                final.y[0] = final.proof[0] = 9;
+                vdf.proofs.push_back(final);
+                vdf.done_proofs.push_back(static_cast<uint16_t>(vdf.proofs.size() - 1));
+            }
+            vdf_proof_delivery dropped{};
+            auto started = std::chrono::steady_clock::now();
+            int count = hw_retrieve_proof(&vdf, &dropped);
+            require(std::chrono::steady_clock::now() - started < std::chrono::seconds(1),
+                    "Failed chain stalled retrieval");
+            require(count < 0, "Failed chain was published");
+            require(vdf.done_proofs.empty(), "Failed chain stayed pending");
+            {
+                std::lock_guard<std::mutex> lock(vdf.proofs_resize_mtx);
+                vdf_proof good{};
+                good.iters = 50;
+                good.seg_iters = 50;
+                good.prev = HW_VDF_PROOF_NONE;
+                good.flags = HW_VDF_PROOF_FLAG_DONE | HW_VDF_PROOF_FLAG_IS_REQ;
+                good.y[0] = good.proof[0] = 4;
+                vdf.proofs.push_back(good);
+                vdf.done_proofs.push_back(static_cast<uint16_t>(vdf.proofs.size() - 1));
+            }
+            vdf_proof_delivery delivery{};
+            count = hw_retrieve_proof(&vdf, &delivery);
+            require(count == 0 && delivery.final.y[0] == 4, "Later proof was not delivered");
+        }
+        {
+            vdf_state vdf{};
+            uint8_t initial[BQFC_FORM_SIZE] = {8};
+            init_vdf_state(&vdf, nullptr, "-23", initial, 4000, 0);
+            OwnedVdf owned{&vdf};
+            vdf.interval = 20;
+            uint16_t checkpoint = hw_queue_proof(&vdf, vdf.interval, HW_VDF_PROOF_NONE, 0);
+            hw_request_proof(&vdf, vdf.proofs[checkpoint].iters, false);
+            hw_proof_process_req(&vdf);
+            require((vdf.proofs[checkpoint].flags & HW_VDF_PROOF_FLAG_EXACT_REQ) != 0,
+                    "Fill checkpoint was not the exact request");
+            require((vdf.proofs[checkpoint].flags & HW_VDF_PROOF_FLAG_IS_REQ) == 0,
+                    "Exact fill checkpoint was queued as its own segment");
+            // The stored square at this iteration is the one the checkpoint waits on.
+            vdf.bad_square_iters = vdf.interval;
+            vdf.last_val.iters = vdf.interval;
+            auto *work = new vdf_work;
+            copy_vdf_value(&work->start_val, &vdf.last_val);
+            work->start_val.iters = 0;
+            work->start_iters = vdf.interval;
+            work->n_steps = 0;
+            vdf.wq.push_back(work);
+            hw_proof_process_work(&vdf);
+            require(wait_for([&] {
+                        if (vdf.aux_threads_busy.load() != 0 || vdf.n_proof_threads.load() != 0)
+                            return false;
+                        std::lock_guard<std::mutex> lock(vdf.proofs_resize_mtx);
+                        uint8_t flags = vdf.proofs[checkpoint].flags;
+                        return (flags & HW_VDF_PROOF_FLAG_FAILED) != 0
+                            && (flags & HW_VDF_PROOF_FLAG_EXACT_REQ) != 0
+                            && (flags & HW_VDF_PROOF_FLAG_DONE) == 0;
+                    }, std::chrono::seconds(5)),
+                    "Bad square stalled the dependent proof");
+            require(vdf.queued_proofs.empty(), "Bad square left the failed checkpoint queued");
+            require(vdf.done_proofs.empty(), "Bad square published the exact checkpoint");
+            {
+                std::lock_guard<std::mutex> lock(vdf.proofs_resize_mtx);
+                vdf_proof child{};
+                child.iters = vdf.interval * 2;
+                child.seg_iters = vdf.interval;
+                child.prev = checkpoint;
+                child.flags = HW_VDF_PROOF_FLAG_DONE | HW_VDF_PROOF_FLAG_IS_REQ;
+                child.y[0] = child.proof[0] = 3;
+                vdf.proofs.push_back(child);
+                vdf.done_proofs.push_back(static_cast<uint16_t>(vdf.proofs.size() - 1));
+            }
+            vdf_proof_delivery dropped{};
+            auto started = std::chrono::steady_clock::now();
+            int count = hw_retrieve_proof(&vdf, &dropped);
+            require(std::chrono::steady_clock::now() - started < std::chrono::seconds(1),
+                    "Exact checkpoint failure stalled retrieval");
+            require(count < 0, "Chain through a bad square was published");
+            require(vdf.done_proofs.empty(), "Chain through a bad square stayed pending");
+            {
+                std::lock_guard<std::mutex> lock(vdf.proofs_resize_mtx);
+                vdf_proof good{};
+                good.iters = 80;
+                good.seg_iters = 80;
+                good.prev = HW_VDF_PROOF_NONE;
+                good.flags = HW_VDF_PROOF_FLAG_DONE | HW_VDF_PROOF_FLAG_IS_REQ;
+                good.y[0] = good.proof[0] = 6;
+                vdf.proofs.push_back(good);
+                vdf.done_proofs.push_back(static_cast<uint16_t>(vdf.proofs.size() - 1));
+            }
+            vdf_proof_delivery delivery{};
+            count = hw_retrieve_proof(&vdf, &delivery);
+            require(count == 0 && delivery.final.y[0] == 6,
+                    "Proof that does not read the bad square was not delivered");
+        }
+        {
+            vdf_state vdf{};
+            uint8_t initial[BQFC_FORM_SIZE] = {8};
+            vdf_proof_opts opts{};
+            opts.retain_asic_values = true;
+            init_vdf_state(&vdf, &opts, "-23", initial, 4000, 0);
+            OwnedVdf owned{&vdf};
+            form at_40 = *hw_proof_value_at(&vdf, 0);
+            PulmarkReducer reducer;
+            for (int i = 0; i < 40; i++) {
+                nudupl_form(at_40, at_40, vdf.D, vdf.L);
+                reducer.reduce(at_40);
+            }
+            {
+                std::lock_guard<std::mutex> lock(vdf.retained_values_mtx);
+                vdf.retained_values.push_back({vdf.retained_generation, 40, at_40});
+            }
+            vdf_proof proof{};
+            proof.iters = 100;
+            proof.seg_iters = 100;
+            proof.flags = HW_VDF_PROOF_FLAG_IS_REQ;
+            hw_compute_proof(&vdf, SIZE_MAX, &proof, 255);
+            {
+                std::lock_guard<std::mutex> lock(vdf.retained_values_mtx);
+                require(vdf.retained_values.size() == 1, "Matching retained sample was dropped");
+                require(vdf.retained_values.front().iters == 40, "Matching retained sample was replaced");
+                require(vdf.retained_values.front().value == at_40, "Matching retained sample was rewritten");
+            }
+            require((proof.flags & HW_VDF_PROOF_FLAG_DONE) != 0,
+                    "Matching retained sample dropped the proof");
+            form expect = at_40;
+            for (int i = 0; i < 60; i++) {
+                nudupl_form(expect, expect, vdf.D, vdf.L);
+                reducer.reduce(expect);
+            }
+            uint8_t encoded[BQFC_FORM_SIZE];
+            bqfc_serialize(encoded, expect.a.impl, expect.b.impl, mpz_sizeinbase(vdf.D.impl, 2));
+            require(std::memcmp(proof.y, encoded, BQFC_FORM_SIZE) == 0,
+                    "Proof endpoint did not follow the matching retained sample");
         }
         std::cout << "Readiness, worker draining, proof snapshots, retained endpoints, and intermediate publication passed\n";
         return 0;

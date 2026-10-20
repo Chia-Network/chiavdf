@@ -33,6 +33,8 @@
 // Queued checkpoint whose end is the requested iteration. It is delivered as
 // that request and still exports B for any longer chain that points at it.
 #define HW_VDF_PROOF_FLAG_EXACT_REQ 8
+// Unpublished. A chain that includes this segment is dropped, not waited on.
+#define HW_VDF_PROOF_FLAG_FAILED 16
 #define HW_VDF_PROOF_NONE ((uint16_t)0xffff)
 
 struct vdf_work {
@@ -104,6 +106,8 @@ struct vdf_state {
     std::unique_ptr<std::atomic<form *>[]> value_blocks;
     size_t value_block_count = 0;
     std::unique_ptr<std::atomic<uint8_t>[]> valid_values;
+    // Grid points a failed fill will not publish. Waiters on these positions return.
+    std::unique_ptr<std::atomic<uint8_t>[]> abandoned_values;
     std::mutex valid_values_mtx;
     std::condition_variable valid_values_cv;
     std::deque<struct vdf_proof_req> req_proofs;
@@ -120,6 +124,8 @@ struct vdf_state {
     uint32_t checkpoint_threshold;
     uint32_t n_bad;
     uint32_t n_skipped;
+    // Non-zero only in tests. A fill treats this iteration as a bad square.
+    uint64_t bad_square_iters = 0;
     uint32_t log_cnt;
     std::atomic<uint64_t> aux_threads_busy;
     std::array<std::thread, HW_VDF_MAX_AUX_THREADS> aux_threads;

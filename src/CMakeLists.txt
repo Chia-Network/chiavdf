@@ -457,6 +457,7 @@ if(BUILD_HW_TOOLS)
     ${CMAKE_CURRENT_SOURCE_DIR}/prover_runtime.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_util.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_proof.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_proof_queue.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_timelord_frame.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_interface.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/chia_driver.cpp

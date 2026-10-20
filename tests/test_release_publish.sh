@@ -235,6 +235,109 @@ if grep -q 'glue_chiavdf=' "$output" || grep -q 'glue_chiavdfc=' "$output"; then
   fail "gh failure should not record glue payloads"
 fi
 
+# publish-release waits on the jobs that produce or validate release assets.
+# ASAN/TSAN stay in their own matrix and are not part of that set.
+# shellcheck disable=SC2016
+assert_publish_dependencies() {
+  packages="${root}/.github/workflows/build-packages.yml"
+  client="${root}/.github/workflows/build-client.yml"
+
+  job_field() {
+    local file=$1 job=$2 key=$3
+    awk -v job="  ${job}:" -v key="$key" '
+      $0 == job { in_job = 1; next }
+      in_job && /^  [A-Za-z0-9-]+:/ { exit }
+      in_job && $0 ~ ("^[[:space:]]+" key ":") {
+        sub("^[[:space:]]+" key ":[[:space:]]*", "")
+        print
+        exit
+      }
+    ' "$file"
+  }
+
+  needs=$(job_field "$packages" publish-release needs)
+  if [ "$needs" != "[release-policy, package, c-libraries, release-publish-checks]" ]; then
+    fail "publish-release needs ${needs:-<missing>}"
+  fi
+
+  publish_if=$(awk '
+    $0 == "  publish-release:" { in_job = 1; next }
+    in_job && /^  [A-Za-z0-9-]+:/ { exit }
+    in_job { print }
+  ' "$packages")
+  if ! printf '%s\n' "$publish_if" | grep -q "needs.package.result == 'success'"; then
+    fail "publish-release does not require the package job"
+  fi
+  if printf '%s\n' "$publish_if" | grep -Eq 'needs\.(sanitize|build)(\.|[[:space:]])'; then
+    fail "publish-release still depends on a sanitizer or mixed build job"
+  fi
+
+  pkg_configs=$(job_field "$packages" package configs)
+  san_configs=$(job_field "$packages" sanitize configs)
+  if [ "$pkg_configs" != "'[\"optimized=1\"]'" ]; then
+    fail "package configs are ${pkg_configs:-<missing>}"
+  fi
+  case "$san_configs" in
+    *TSAN=1*) ;;
+    *) fail "sanitize configs missing TSAN: ${san_configs:-<missing>}" ;;
+  esac
+  case "$san_configs" in
+    *ASAN=1*) ;;
+    *) fail "sanitize configs missing ASAN: ${san_configs:-<missing>}" ;;
+  esac
+  case "$san_configs" in
+    *optimized=1*) fail "sanitize configs include the packaging build" ;;
+  esac
+
+  for job in package sanitize; do
+    uses=$(job_field "$packages" "$job" uses)
+    if [ "$uses" != "./.github/workflows/build-client.yml" ]; then
+      fail "${job} does not call the client matrix workflow: ${uses:-<missing>}"
+    fi
+    if awk -v job="  ${job}:" '
+      $0 == job { in_job = 1; next }
+      in_job && /^  [A-Za-z0-9-]+:/ { exit }
+      in_job && /^    if:/ { found = 1 }
+      END { exit !found }
+    ' "$packages"; then
+      fail "${job} filters matrix entries with a job if"
+    fi
+  done
+
+  if ! grep -q 'is_final: ${{ steps.policy.outputs.is_final }}' "$packages"; then
+    fail "release-policy output is_final was renamed"
+  fi
+  if ! grep -q 'sign_windows: ${{ steps.policy.outputs.sign_windows }}' "$packages"; then
+    fail "release-policy output sign_windows was renamed"
+  fi
+  if ! grep -q 'is_final: ${{ needs.release-policy.outputs.is_final }}' "$packages"; then
+    fail "package does not pass needs.release-policy.outputs.is_final"
+  fi
+  if ! grep -q 'sign_windows: ${{ needs.release-policy.outputs.sign_windows }}' "$packages"; then
+    fail "package does not pass needs.release-policy.outputs.sign_windows"
+  fi
+
+  if grep -q 'config: \[optimized=1, TSAN=1, ASAN=1\]' "$packages" "$client"; then
+    fail "artifact and sanitizer configs share one matrix"
+  fi
+  if ! grep -q 'config: ${{ fromJSON(inputs.configs) }}' "$client"; then
+    fail "client matrix is not selected by the caller"
+  fi
+  if ! grep -q 'REQUEST_WINDOWS_SIGNING: ${{ inputs.sign_windows }}' "$client"; then
+    fail "REQUEST_WINDOWS_SIGNING does not read inputs.sign_windows"
+  fi
+  if ! grep -Fq 'IS_RELEASE: ${{ inputs.is_final }}' "$client"; then
+    fail "IS_RELEASE does not read inputs.is_final"
+  fi
+  if ! grep -Fq "inputs.sign_windows == 'true'" "$client"; then
+    fail "sign steps do not check inputs.sign_windows"
+  fi
+  if grep -E 'sign_windows|REQUEST_WINDOWS_SIGNING:|IS_RELEASE:' "$client" | grep -q 'github.event_name'; then
+    fail "signing or IS_RELEASE still keys off github.event_name"
+  fi
+}
+assert_publish_dependencies
+
 rm -rf "$assets" "$gh_bin"
 rm -f "$calls" "$output"
 echo "release publish checks passed"

@@ -1,10 +1,10 @@
 #include "verifier.h"
+#include "vdf_new.h"
 #include "create_discriminant.h"
 #include "bit_manipulation.h"
 #include "double_utility.h"
 
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 #include <stdexcept>
 #include <string>
@@ -73,10 +73,6 @@ inline form ReducedPow(
 
 inline bool PowPathsMatch(form const& base, integer& D, integer const& exponent, integer& L, std::string& error, char const* label)
 {
-    if (exponent.num_bits() >= 64) {
-        std::fprintf(stderr, "pow %s bits %d\n", label, exponent.num_bits());
-        std::fflush(stderr);
-    }
     form one = ReducedPow(FastPowFormNucompWidth1, base, D, exponent, L);
     form window = ReducedPow(FastPowFormNucompWidth4, base, D, exponent, L);
     form dispatched = ReducedPow(FastPowFormNucomp, base, D, exponent, L);

@@ -3,6 +3,7 @@
 #include "Reducer.h"
 #include "bqfc.c"
 
+#include <cassert>
 #include <stdexcept>
 
 const int B_bits = 264;
@@ -135,6 +136,9 @@ form FastPowFormNucompWidth(form x, integer &D, integer num_iterations, integer 
 
     constexpr int kTable = 1 << Width;
     form table[kTable];
+    // Slot 0 is unused. A zero digit skips the multiply, and the leading digit
+    // includes the top bit so it is not zero. The default form is (0, 0, 0);
+    // reading it would divide by zero.
     table[1] = x;
     for (int i = 2; i < kTable; ++i) {
         nucomp_form(table[i], table[i - 1], x, D, L);
@@ -153,7 +157,9 @@ form FastPowFormNucompWidth(form x, integer &D, integer num_iterations, integer 
     };
 
     const int first_width = (nbits % Width == 0) ? Width : (nbits % Width);
-    form res = table[take_bits(first_width)];
+    const unsigned first_digit = take_bits(first_width);
+    assert(first_digit != 0);
+    form res = table[first_digit];
 
     while (index >= 0) {
         for (int i = 0; i < Width; ++i) {
@@ -162,6 +168,7 @@ form FastPowFormNucompWidth(form x, integer &D, integer num_iterations, integer 
         }
         const unsigned digit = take_bits(Width);
         if (digit != 0) {
+            assert(digit < static_cast<unsigned>(kTable));
             nucomp_form(res, res, table[digit], D, L);
             reduce_if_large(res);
         }

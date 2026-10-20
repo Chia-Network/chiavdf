@@ -61,7 +61,9 @@ typedef qfb qfb_t[1];
 
 // From Antic using Flint (works!)
 // MSVC link-time optimization miscompiles this function when it is inlined,
-// and the Windows package then divides by zero. Keep it out of line there.
+// and the Windows package then divides by zero. Moving this scratch into
+// another file does not stop that inlining, and the inlined build still
+// divides by zero. The fence below is what makes the Windows package pass.
 // Other compilers are unchanged.
 #if defined(_MSC_VER)
 __declspec(noinline)
@@ -233,6 +235,8 @@ void qfb_nucomp(qfb_t r, const qfb_t f, const qfb_t g, mpz_t const& D, mpz_t con
 void nucomp_form(form &a, form const& b, form const& c, integer const& D, integer const& L) {
     qfb fr, fr2, fr3;
 
+    // Copies the mpz header only. fr, fr2, and fr3 share limb storage with the
+    // source form. Do not clear, free, or reallocate them.
     *fr.a = *a.a.impl;
     *fr.b = *a.b.impl;
     *fr.c = *a.c.impl;
@@ -446,6 +450,8 @@ void nudupl_form(form &a, form &b, const integer &D, const integer &L)
 {
     qfb fr, fr2;
 
+    // Copies the mpz header only. fr and fr2 share limb storage with the
+    // source form. Do not clear, free, or reallocate them.
     *fr.a = *a.a.impl;
     *fr.b = *a.b.impl;
     *fr.c = *a.c.impl;

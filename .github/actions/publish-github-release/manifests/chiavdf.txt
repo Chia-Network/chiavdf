@@ -1,0 +1,20 @@
+# Every chiavdf client asset published to a final GitHub release.
+# A missing line fails the publish before gh runs.
+chiavdf_{tag}-1_amd64.deb
+chiavdf_{tag}-1_arm64.deb
+chiavdf-{tag}-macos-arm64.zip
+chiavdf-{tag}-macos-arm64.zip.sha256
+chiavdf-{tag}-macos-arm64.signing-status.txt
+chiavdf-{tag}-macos-arm64.codesign-summary.txt
+chiavdf-{tag}-macos-intel.zip
+chiavdf-{tag}-macos-intel.zip.sha256
+chiavdf-{tag}-macos-intel.signing-status.txt
+chiavdf-{tag}-macos-intel.codesign-summary.txt
+chiavdf-darwin-arm64.zip
+chiavdf-darwin-arm64.zip.sha256
+chiavdf-darwin-amd64.zip
+chiavdf-darwin-amd64.zip.sha256
+chiavdf-{tag}-windows-amd64.zip
+chiavdf-{tag}-windows-amd64.zip.sha256
+chiavdf-win64.zip
+chiavdf-win64.zip.sha256

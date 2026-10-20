@@ -197,7 +197,10 @@ struct form {
 
     void assert_valid(const integer& d);
 
-    bool operator==(const form& f) const;
+    bool operator==(const form& f) const {
+        return mpz_cmp(a.impl, f.a.impl) == 0 && mpz_cmp(b.impl, f.b.impl) == 0
+            && mpz_cmp(c.impl, f.c.impl) == 0;
+    }
 
     bool operator<(const form& f) const;
 

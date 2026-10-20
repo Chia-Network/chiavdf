@@ -1,0 +1,800 @@
+name: VDF client matrix
+
+# Called by build-packages.yml twice: once for the optimized packaging matrix
+# and once for ASAN/TSAN. This file is only a callee, so it has no concurrency
+# group. Policy outputs arrive as inputs with the same names.
+
+on:
+  workflow_call:
+    inputs:
+      configs:
+        description: 'JSON array of make configs, such as ["optimized=1"]'
+        required: true
+        type: string
+      is_final:
+        description: release-policy output is_final
+        required: true
+        type: string
+      sign_windows:
+        description: release-policy output sign_windows
+        required: true
+        type: string
+      notarize_macos:
+        description: release-policy output notarize_macos
+        required: true
+        type: string
+
+env:
+  CHIAVDF_LOG_AVX: "1"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: CI (${{ matrix.os }}, ${{ matrix.config }})
+    runs-on: ${{ matrix.os }}
+    env:
+      # Runtime feature gate read via getenv() in parameters.h.
+      # Keep this at job scope so all test/bench steps see it.
+      CHIA_ENABLE_AVX512_IFMA: "1"
+      # On release workflows, pin embedded CLI version to the tag.
+      RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-15-intel, macos-15, windows-latest]
+        config: ${{ fromJSON(inputs.configs) }}
+        exclude:
+          - os: windows-latest
+            config: ASAN=1
+          - os: windows-latest
+            config: TSAN=1
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install Python
+        uses: Chia-Network/actions/setup-python@main
+        with:
+          python-version: "3.12"
+
+      - name: Set Env
+        uses: Chia-Network/actions/setjobenv@main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Test macOS bundle packaging scripts
+        if: matrix.os == 'ubuntu-latest' && matrix.config == 'optimized=1'
+        run: bash tests/test_macos_bundle_dylibs.sh
+
+      - name: Test for Apple signing secrets
+        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
+        id: check_secrets
+        shell: bash
+        run: |
+          unset HAS_APPLE_SECRET
+          unset HAS_NOTARIZE_SECRETS
+          if [ -n "$APPLE_SECRET" ]; then HAS_APPLE_SECRET='true'; fi
+          if [ -n "$APPLE_NOTARIZE_USERNAME" ] && [ -n "$APPLE_NOTARIZE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            HAS_NOTARIZE_SECRETS='true'
+          fi
+          echo "HAS_APPLE_SECRET=${HAS_APPLE_SECRET}" >> "$GITHUB_OUTPUT"
+          echo "HAS_NOTARIZE_SECRETS=${HAS_NOTARIZE_SECRETS}" >> "$GITHUB_OUTPUT"
+        env:
+          APPLE_SECRET: "${{ secrets.APPLE_DEV_ID_APP }}"
+          APPLE_NOTARIZE_USERNAME: "${{ secrets.APPLE_NOTARIZE_USERNAME }}"
+          APPLE_NOTARIZE_PASSWORD: "${{ secrets.APPLE_NOTARIZE_PASSWORD }}"
+          APPLE_TEAM_ID: "${{ secrets.APPLE_TEAM_ID }}"
+
+      - name: Delete keychain if it already exists
+        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1' && (inputs.notarize_macos == 'true' || inputs.is_final == 'true') && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true'
+        run: security delete-keychain signing_temp.keychain || true
+
+      - name: Import Apple app signing certificate
+        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1' && (inputs.notarize_macos == 'true' || inputs.is_final == 'true') && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true'
+        uses: Apple-Actions/import-codesign-certs@v7.1.0
+        with:
+          p12-file-base64: ${{ secrets.APPLE_DEV_ID_APP }}
+          p12-password: ${{ secrets.APPLE_DEV_ID_APP_PASS }}
+
+      - name: Install macOS deps (build + runtime)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          brew ls --versions cmake >/dev/null 2>&1 || brew install cmake
+          # Keep gmp installed for CI builds/tests; Homebrew formulas must also
+          # declare gmp as a runtime dependency for end-user installs.
+          brew ls --versions gmp >/dev/null 2>&1 || brew install gmp
+          brew ls --versions boost >/dev/null 2>&1 || brew install boost
+          echo "DYLD_FALLBACK_LIBRARY_PATH=$(brew --prefix gmp)/lib:${DYLD_FALLBACK_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
+
+      # Runtime workaround for TSAN-instrumented binaries on Ubuntu runners.
+      # Apply before build because make TSAN=1 runs ./compile_asm during build.
+      # See: https://github.com/google/sanitizers/issues/1716
+      - name: Adjust mmap_rnd_bits before Ubuntu TSAN build/test execution
+        if: startsWith(matrix.os, 'ubuntu') && matrix.config == 'TSAN=1'
+        run: |
+          sudo sysctl vm.mmap_rnd_bits=28
+
+      - name: Build on Ubuntu
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          # Keep mmap_rnd_bits workaround step above this build for TSAN=1:
+          # make TSAN=1 executes thread-sanitized ./compile_asm during build.
+          sudo apt-get update -y -o Acquire::Retries=3
+          sudo apt-get install -y build-essential cmake libgmp-dev libboost-python-dev libpython3-dev libboost-system-dev
+          ./scripts/get-libft4222.sh install
+          cd src
+          if [ -n "$RELEASE_TAG" ]; then
+            make ${{ matrix.config }} CHIAVDF_VERSION="$RELEASE_TAG" -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test hw_proof_wait_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+          else
+            make ${{ matrix.config }} -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test hw_proof_wait_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+          fi
+
+      - name: Build on macOS
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          BOOST_VERSION="$(brew list --versions boost | awk '{print $2}')"
+          BOOST_INCLUDE=""
+          for cand in \
+            "$(brew --prefix boost)/include" \
+            "$(brew --prefix)/include" \
+            "$(brew --cellar boost)/${BOOST_VERSION}/include"; do
+            if [ -f "$cand/boost/asio.hpp" ]; then
+              BOOST_INCLUDE="$cand"
+              break
+            fi
+          done
+          if [ -z "$BOOST_INCLUDE" ]; then
+            echo "Could not locate boost/asio.hpp for brew boost=${BOOST_VERSION}" >&2
+            brew --prefix boost || true
+            brew --cellar boost || true
+            brew info boost || true
+            exit 1
+          fi
+          ./scripts/get-libft4222.sh install
+          cd src
+          if [ -n "$RELEASE_TAG" ]; then
+            make ${{ matrix.config }} CHIAVDF_VERSION="$RELEASE_TAG" CPPFLAGS="-I${BOOST_INCLUDE} ${CPPFLAGS:-}" -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test hw_proof_wait_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+          else
+            make ${{ matrix.config }} CPPFLAGS="-I${BOOST_INCLUDE} ${CPPFLAGS:-}" -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test hw_proof_wait_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+          fi
+
+      - name: Cache Boost on Windows
+        if: matrix.os == 'windows-latest'
+        id: cache-boost
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: C:\local\boost_*
+          key: windows-boost-msvc-14.3-v1
+
+      - name: Read mpir pin
+        if: matrix.os == 'windows-latest'
+        id: mpir-pin
+        shell: bash
+        run: echo "sha=$(tr -d '[:space:]' < scripts/mpir_gc_x64.commit)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache mpir checkout on Windows
+        if: matrix.os == 'windows-latest'
+        id: cache-mpir
+        uses: actions/cache@v6.1.0
+        with:
+          path: mpir_gc_x64
+          key: windows-mpir-gc-x64-${{ steps.mpir-pin.outputs.sha }}
+
+      - name: Checkout mpir for Windows
+        if: matrix.os == 'windows-latest' && steps.cache-mpir.outputs.cache-hit != 'true'
+        shell: bash
+        run: bash scripts/get-mpir-gc-x64.sh
+
+      - name: Install LLVM, Ninja and Boost on Windows
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        env:
+          BOOST_CACHE_HIT: ${{ steps.cache-boost.outputs.cache-hit }}
+        run: |
+          $llvmBin = "C:\Program Files\LLVM\bin\clang-cl.exe"
+          $ninjaBin = "C:\ProgramData\chocolatey\bin\ninja.exe"
+          if (-not (Test-Path $llvmBin) -or -not (Test-Path $ninjaBin)) {
+            choco install llvm ninja -y
+          }
+          $boostDir = Get-ChildItem "C:\local" -Directory -Filter "boost_*" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $boostDir) {
+            if ("$env:BOOST_CACHE_HIT" -ne "true") {
+              Write-Host "Boost cache miss and boost not found, installing boost-msvc-14.3"
+              choco install boost-msvc-14.3 -y
+            } else {
+              Write-Host "Boost cache reported hit but boost directory missing; reinstalling boost-msvc-14.3"
+              choco install boost-msvc-14.3 -y
+            }
+            $boostDir = Get-ChildItem "C:\local" -Directory -Filter "boost_*" -ErrorAction SilentlyContinue | Select-Object -First 1
+          } else {
+            Write-Host "Boost already present at $($boostDir.FullName), skipping choco install"
+          }
+          "C:\Program Files\LLVM\bin" | Out-File -Append -FilePath $env:GITHUB_PATH
+          if (-not $boostDir) {
+            throw "Boost install not found under C:\local"
+          }
+          "BOOST_INCLUDE_DIR=$($boostDir.FullName)" | Out-File -Append -FilePath $env:GITHUB_ENV
+
+      - name: Save Boost cache on Windows
+        if: matrix.os == 'windows-latest' && steps.cache-boost.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: C:\local\boost_*
+          key: ${{ steps.cache-boost.outputs.cache-primary-key }}
+
+      - name: Set up MSVC environment (Windows SDK + CRT libs)
+        if: matrix.os == 'windows-latest'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Download USB drivers (FT4222H) on Windows
+        if: matrix.os == 'windows-latest'
+        run: powershell -ExecutionPolicy Bypass -File scripts/get-libft4222.ps1 install
+
+      - name: Test for Windows signing secrets
+        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
+        id: check_windows_signing_secrets
+        shell: pwsh
+        env:
+          SM_CLIENT_CERT_FILE_B64: "${{ secrets.SM_CLIENT_CERT_FILE_B64 }}"
+          SM_API_KEY: "${{ secrets.SM_API_KEY }}"
+          SM_CLIENT_CERT_PASSWORD: "${{ secrets.SM_CLIENT_CERT_PASSWORD }}"
+          SM_CODE_SIGNING_CERT_SHA1_HASH: "${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }}"
+          SM_CERTKEY_ALIAS: "${{ secrets.SM_CERTKEY_ALIAS }}"
+        run: |
+          $required = @(
+            "SM_CLIENT_CERT_FILE_B64",
+            "SM_API_KEY",
+            "SM_CLIENT_CERT_PASSWORD",
+            "SM_CODE_SIGNING_CERT_SHA1_HASH",
+            "SM_CERTKEY_ALIAS"
+          )
+          $missing = @()
+          foreach ($name in $required) {
+            $value = [Environment]::GetEnvironmentVariable($name)
+            if ([string]::IsNullOrWhiteSpace($value)) {
+              $missing += $name
+            }
+          }
+          if ($missing.Count -eq 0) {
+            "HAS_WINDOWS_SIGNING_SECRET=true" | Out-File -Append -FilePath $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "Windows signing disabled. Missing secrets: $($missing -join ', ')"
+            "HAS_WINDOWS_SIGNING_SECRET=false" | Out-File -Append -FilePath $env:GITHUB_OUTPUT
+          }
+
+      - name: Build on Windows
+        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
+        shell: pwsh
+        run: |
+          $cmakeArgs = @(
+            "-S", "src",
+            "-B", "build",
+            "-G", "Ninja",
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DCMAKE_TRY_COMPILE_CONFIGURATION=Release",
+            "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL",
+            "-DCMAKE_C_COMPILER=clang-cl",
+            "-DCMAKE_CXX_COMPILER=clang-cl",
+            "-DCMAKE_ASM_COMPILER=clang-cl",
+            "-DBOOST_INCLUDE_DIR=$env:BOOST_INCLUDE_DIR",
+            "-DBUILD_PYTHON=OFF",
+            "-DBUILD_CHIAVDFC=OFF",
+            "-DBUILD_VDF_CLIENT=ON",
+            "-DBUILD_VDF_BENCH=ON",
+            "-DBUILD_VDF_TESTS=ON",
+            "-DBUILD_HW_TOOLS=ON",
+            "-DENABLE_GNU_ASM=ON"
+          )
+          if ($env:RELEASE_TAG) {
+            $cmakeArgs += "-DCHIAVDF_VERSION=$env:RELEASE_TAG"
+          }
+          & cmake @cmakeArgs
+          $gnuAsmEnabled = (& cmake -N -L build | Select-String '^ENABLE_GNU_ASM:BOOL=ON$')
+          if (-not $gnuAsmEnabled) {
+            throw "ENABLE_GNU_ASM is not ON on Windows CI build"
+          }
+          cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test regression_unit_tests regression_io_tests hw_proof_wait_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows build failed with exit code $LASTEXITCODE"
+          }
+          $asmFiles = @("asm_compiled.s", "avx2_asm_compiled.s", "avx512_asm_compiled.s")
+          foreach ($asmFile in $asmFiles) {
+            # Depending on generator/layout, CMAKE_CURRENT_BINARY_DIR for src may resolve
+            # to build/ or build/src/. Accept either location to avoid false negatives.
+            $candidatePaths = @("build/$asmFile", "build/src/$asmFile")
+            $foundPath = $candidatePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+            if (-not $foundPath) {
+              throw "Expected generated asm output not found in build/ or build/src/: $asmFile"
+            }
+            Write-Host "Verified generated asm output: $foundPath"
+          }
+
+      - name: Run HW smoke test (Ubuntu/macOS)
+        if: matrix.os != 'windows-latest' && (matrix.config != 'TSAN=1' || startsWith(matrix.os, 'ubuntu'))
+        run: |
+          cd src
+          # CI runners do not have FT4222 hardware attached; only validate binaries exist.
+          test -x ./hw_vdf_client
+          test -x ./hw_test
+          echo "Running hardware-free proof ownership and publication tests"
+          ./hw_proof_wait_test
+          echo "Running emu_hw_test"
+          ./emu_hw_test 1 2000
+          echo "Running emu_hw_vdf_client --list"
+          ./emu_hw_vdf_client --list
+
+      - name: Run GoogleTest regressions (Ubuntu/macOS)
+        if: matrix.config == 'optimized=1' && matrix.os != 'windows-latest'
+        run: |
+          cmake -S src -B build-regression -DBUILD_PYTHON=OFF -DBUILD_CHIAVDFC=OFF -DBUILD_VDF_CLIENT=OFF -DBUILD_VDF_BENCH=OFF -DBUILD_VDF_TESTS=ON -DBUILD_HW_TOOLS=OFF -DENABLE_GNU_ASM=ON
+          cmake --build build-regression --target regression_unit_tests regression_io_tests
+          ctest --test-dir build-regression --output-on-failure -R '^regression\.'
+
+      - name: Run vdf tests (optimized smoke)
+        if: matrix.config == 'optimized=1' && matrix.os != 'windows-latest' && !startsWith(matrix.os, 'ubuntu')
+        run: |
+          cd src
+          echo "Running 1weso_test (fast smoke)"
+          ./1weso_test 1000
+          echo "Running 2weso_test (fast smoke)"
+          ./2weso_test 1000
+
+      - name: Run vdf tests (optimized protected threshold path)
+        if: matrix.config == 'optimized=1' && startsWith(matrix.os, 'ubuntu')
+        run: |
+          cd src
+          echo "Running 1weso_test (fast smoke)"
+          ./1weso_test 1000
+          # 100 * 910000 = 91,000,000; this intentionally crosses the 2-weso switch threshold.
+          echo "Running 2weso_test (protected threshold path)"
+          ./2weso_test 910000
+
+      - name: Run vdf tests (short)
+        if: matrix.config != 'optimized=1' && matrix.os != 'windows-latest'
+        run: |
+          cd src
+          echo "Running 1weso_test"
+          ./1weso_test 1000
+          echo "Running 2weso_test"
+          ./2weso_test 1000
+
+      # macos thread sanitizer will give false positives on ./prover_test because
+      # it prints to std::cout from multiple threads. Which is allowed by the
+      # standard
+      - name: Run prover test (Ubuntu/macOS)
+        if: matrix.os != 'windows-latest' && (matrix.config != 'TSAN=1' || startsWith(matrix.os, 'ubuntu'))
+        run: |
+          cd src
+          echo "Running prover_test"
+          if [[ "${{ matrix.os }}" == ubuntu* ]]; then
+            ./prover_test
+          else
+            CHIAVDF_PROVER_TEST_FAST=1 ./prover_test
+          fi
+
+      - name: Run HW smoke test (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          cd build
+          # Keep native stderr as log output; emu binaries log diagnostics there.
+          $PSNativeCommandUseErrorActionPreference = $false
+          $env:PATH = "$PWD;$PWD\..\src\hw\libft4222;$PWD\..\mpir_gc_x64;$env:PATH"
+          # CI runners do not have FT4222 hardware attached; only validate binaries exist.
+          if (-not (Test-Path ".\hw_test.exe")) { throw "hw_test.exe is missing" }
+          if (-not (Test-Path ".\hw_vdf_client.exe")) { throw "hw_vdf_client.exe is missing" }
+          Write-Host "Running hardware-free proof ownership and publication tests"
+          .\hw_proof_wait_test.exe
+          if ($LASTEXITCODE -ne 0) { throw "hw_proof_wait_test failed with exit code $LASTEXITCODE" }
+          Write-Host "Running emu_hw_test"
+          .\emu_hw_test.exe 1 2000
+          if ($LASTEXITCODE -ne 0) { throw "emu_hw_test failed with exit code $LASTEXITCODE" }
+          Write-Host "Running emu_hw_vdf_client --list"
+          .\emu_hw_vdf_client.exe --list
+          if ($LASTEXITCODE -ne 0) { throw "emu_hw_vdf_client --list failed with exit code $LASTEXITCODE" }
+
+      - name: Run GoogleTest regressions (Windows)
+        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
+        shell: pwsh
+        run: |
+          cd build
+          $env:PATH = "$PWD;$PWD\..\src\hw\libft4222;$PWD\..\mpir_gc_x64;$env:PATH"
+          ctest -C Release --output-on-failure -R '^regression\.'
+
+      - name: Run vdf tests (Windows, optimized smoke)
+        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
+        shell: pwsh
+        run: |
+          cd build
+          $env:PATH = "$PWD;$PWD\..\src\hw\libft4222;$PWD\..\mpir_gc_x64;$env:PATH"
+          Write-Host "Running 1weso_test (fast smoke)"
+          .\1weso_test.exe 1000
+          if ($LASTEXITCODE -ne 0) { throw "1weso_test failed with exit code $LASTEXITCODE" }
+          Write-Host "Running 2weso_test (fast smoke)"
+          .\2weso_test.exe 1000
+          if ($LASTEXITCODE -ne 0) { throw "2weso_test failed with exit code $LASTEXITCODE" }
+
+      - name: Run prover test (Windows)
+        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
+        shell: pwsh
+        run: |
+          cd build
+          $env:PATH = "$PWD;$PWD\..\src\hw\libft4222;$PWD\..\mpir_gc_x64;$env:PATH"
+          Write-Host "Running prover_test"
+          $env:CHIAVDF_PROVER_TEST_FAST = "1"
+          .\prover_test.exe
+          if ($LASTEXITCODE -ne 0) { throw "prover_test failed with exit code $LASTEXITCODE" }
+
+      - name: Benchmark vdf_bench square (Ubuntu/Mac)
+        if: matrix.config == 'optimized=1' && matrix.os != 'windows-latest'
+        run: |
+          cd src
+          echo "Benchmarking vdf_bench with 2,000,000 iterations of square_asm"
+          ./vdf_bench square_asm 2000000
+
+      - name: Benchmark vdf_bench square (Windows)
+        if: matrix.config == 'optimized=1' && matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          cd build
+          $env:PATH = "$PWD;$PWD\..\src\hw\libft4222;$PWD\..\mpir_gc_x64;$env:PATH"
+          Write-Host "Benchmarking vdf_bench with 2,000,000 iterations of square_asm"
+          .\vdf_bench.exe square_asm 2000000
+          if ($LASTEXITCODE -ne 0) { throw "vdf_bench failed with exit code $LASTEXITCODE" }
+
+      - name: Assemble Windows zip bundle
+        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
+        shell: pwsh
+        env:
+          INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
+          REQUEST_WINDOWS_SIGNING: ${{ inputs.sign_windows }}
+          HAS_WINDOWS_SIGNING_SECRET: ${{ steps.check_windows_signing_secrets.outputs.HAS_WINDOWS_SIGNING_SECRET || '' }}
+        run: ./scripts/package-windows-bundle.ps1 -Action Assemble
+
+      - name: Setup Windows signer tooling
+        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1' && steps.check_windows_signing_secrets.outputs.HAS_WINDOWS_SIGNING_SECRET == 'true' && inputs.sign_windows == 'true'
+        uses: chia-network/actions/digicert/windows-sign@main
+        with:
+          sm_certkey_alias: ${{ secrets.SM_CERTKEY_ALIAS }}
+          sm_api_key: ${{ secrets.SM_API_KEY }}
+          sm_client_cert_file_b64: ${{ secrets.SM_CLIENT_CERT_FILE_B64 }}
+          sm_client_cert_password: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+          sm_code_signing_cert_sha1_hash: ${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }}
+          sign: "false"
+
+      - name: Sign Windows chiavdf executables and MPIR DLLs
+        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1' && steps.check_windows_signing_secrets.outputs.HAS_WINDOWS_SIGNING_SECRET == 'true' && inputs.sign_windows == 'true'
+        shell: pwsh
+        env:
+          INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
+          SM_CODE_SIGNING_CERT_SHA1_HASH: "${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }}"
+        run: ./scripts/package-windows-bundle.ps1 -Action Sign
+
+      - name: Package and verify Windows zip bundle
+        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
+        shell: pwsh
+        env:
+          INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
+          IS_RELEASE: ${{ inputs.is_final }}
+          REQUEST_WINDOWS_SIGNING: ${{ inputs.sign_windows }}
+        run: ./scripts/package-windows-bundle.ps1 -Action Package
+
+      - name: Assemble macOS brew bundle
+        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}
+          IS_RELEASE: ${{ inputs.is_final }}
+          REQUEST_NOTARIZE: ${{ inputs.notarize_macos }}
+          HAS_APPLE_SECRET: ${{ steps.check_secrets.outputs.HAS_APPLE_SECRET || '' }}
+          HAS_NOTARIZE_SECRETS: ${{ steps.check_secrets.outputs.HAS_NOTARIZE_SECRETS || '' }}
+          APPLE_NOTARIZE_USERNAME: "${{ secrets.APPLE_NOTARIZE_USERNAME }}"
+          APPLE_NOTARIZE_PASSWORD: "${{ secrets.APPLE_NOTARIZE_PASSWORD }}"
+          APPLE_TEAM_ID: "${{ secrets.APPLE_TEAM_ID }}"
+          NOTARIZE: ${{ (inputs.notarize_macos == 'true' && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true' && steps.check_secrets.outputs.HAS_NOTARIZE_SECRETS == 'true') && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+
+          if [ "${{ matrix.os }}" = "macos-15" ]; then
+            MACOS_ARCH="arm64"
+          else
+            MACOS_ARCH="intel"
+          fi
+          BASE_NAME="chiavdf-${RELEASE_TAG}-macos-${MACOS_ARCH}"
+          if [ "$IS_RELEASE" = "true" ]; then
+            if [ "$HAS_APPLE_SECRET" != "true" ]; then
+              echo "Release builds require Apple signing certificate secrets (APPLE_DEV_ID_APP/APPLE_DEV_ID_APP_PASS)." >&2
+              exit 1
+            fi
+            if [ "$HAS_NOTARIZE_SECRETS" != "true" ]; then
+              echo "Release builds require notarization secrets (APPLE_NOTARIZE_USERNAME/APPLE_NOTARIZE_PASSWORD/APPLE_TEAM_ID)." >&2
+              exit 1
+            fi
+          fi
+          if [ "$REQUEST_NOTARIZE" = "true" ] && [ "$HAS_APPLE_SECRET" != "true" ]; then
+            echo "Notarization requires Apple signing certificate secrets (APPLE_DEV_ID_APP/APPLE_DEV_ID_APP_PASS)." >&2
+            exit 1
+          fi
+          if [ "$REQUEST_NOTARIZE" = "true" ] && [ "$HAS_NOTARIZE_SECRETS" != "true" ]; then
+            echo "Notarization requires secrets (APPLE_NOTARIZE_USERNAME/APPLE_NOTARIZE_PASSWORD/APPLE_TEAM_ID)." >&2
+            exit 1
+          fi
+          BUNDLE_ROOT="dist/macos/${BASE_NAME}"
+          BIN_DIR="${BUNDLE_ROOT}/bin"
+          LIBEXEC_DIR="${BUNDLE_ROOT}/libexec/chiavdf"
+          mkdir -p "$BIN_DIR" "$LIBEXEC_DIR"
+
+          cp src/hw_vdf_client "$BIN_DIR/"
+          cp src/emu_hw_vdf_client "$BIN_DIR/"
+          cp src/hw_test "$BIN_DIR/"
+          cp src/emu_hw_test "$BIN_DIR/"
+          cp src/vdf_client "$BIN_DIR/"
+          cp src/vdf_bench "$BIN_DIR/"
+
+          # FTDI and Homebrew GMP share one libexec directory. The staging
+          # script rewrites install names and the executable rpath in one
+          # install_name_tool pass, before the codesign pass below.
+          scripts/stage-macos-bundle-dylibs.sh "$BIN_DIR" "$LIBEXEC_DIR"
+
+          dylib_files=()
+          for dylib in "$LIBEXEC_DIR"/*; do
+            if [ -L "$dylib" ] || [ ! -f "$dylib" ]; then
+              continue
+            fi
+            dylib_files+=("$dylib")
+          done
+          if [ "${#dylib_files[@]}" -eq 0 ]; then
+            echo "No dylibs staged into ${LIBEXEC_DIR}" >&2
+            exit 1
+          fi
+          sign_targets=()
+          for exe in "$BIN_DIR/"*; do
+            if [ ! -f "$exe" ] || [ -L "$exe" ]; then
+              echo "Unexpected bundle entry: $exe" >&2
+              exit 1
+            fi
+            sign_targets+=("$exe")
+          done
+          for dylib in "${dylib_files[@]}"; do
+            sign_targets+=("$dylib")
+          done
+
+          # Developer ID signing follows inputs.notarize_macos and inputs.is_final.
+          # Every other run ad-hoc signs so arm64 can launch after install_name_tool.
+          if [ "$REQUEST_NOTARIZE" = "true" ] || [ "$IS_RELEASE" = "true" ]; then
+            ASSET_NAME="${BASE_NAME}.zip"
+          else
+            ASSET_NAME="${BASE_NAME}-unsigned.zip"
+          fi
+
+          SIGNING_STATUS="ad-hoc signed (no Developer ID; codesign -s - after install_name_tool)"
+          CODESIGN_SUMMARY_PATH="dist/macos/${BASE_NAME}.codesign-summary.txt"
+          if [ "$REQUEST_NOTARIZE" = "true" ] || [ "$IS_RELEASE" = "true" ]; then
+            SIGNING_IDENTITY="$(security find-identity -v -p codesigning | grep 'Developer ID Application' | awk -F\" 'NR==1{print $2}')"
+            if [ -z "$SIGNING_IDENTITY" ]; then
+              echo "No Developer ID Application identity found after certificate import." >&2
+              exit 1
+            fi
+
+            is_valid_dev_id_signature() {
+              local path="$1"
+              local details
+              if ! codesign --verify --strict --verbose=2 "$path" >/dev/null 2>&1; then
+                return 1
+              fi
+              details="$(codesign -dv "$path" 2>&1 || true)"
+              if printf '%s\n' "$details" | grep -Fq "Authority=Developer ID Application"; then
+                return 0
+              fi
+              # Some runners may omit Authority lines in codesign -dv output.
+              # Treat a strict-valid signature with a populated TeamIdentifier
+              # as acceptable for Developer ID verification.
+              if printf '%s\n' "$details" | grep -Eq '^TeamIdentifier=[^[:space:]]+' && ! printf '%s\n' "$details" | grep -Fq 'TeamIdentifier=not set'; then
+                return 0
+              fi
+              return 1
+            }
+
+            echo "Checking bundled dylib signatures before signing..."
+            for dylib in "${dylib_files[@]}"; do
+              if is_valid_dev_id_signature "$dylib"; then
+                echo "Dylib already has a valid Developer ID signature: $dylib"
+              else
+                echo "Dylib needs signing: $dylib"
+              fi
+            done
+
+            for target in "${sign_targets[@]}"; do
+              if is_valid_dev_id_signature "$target"; then
+                echo "Already signed with Developer ID: $target"
+                continue
+              fi
+              codesign --force --timestamp --options runtime --sign "$SIGNING_IDENTITY" "$target"
+            done
+
+            echo "Verifying all bundled Mach-O binaries are signed..."
+            for target in "${sign_targets[@]}"; do
+              if ! is_valid_dev_id_signature "$target"; then
+                echo "Unsigned or invalid Developer ID signature: $target" >&2
+                codesign -dv "$target" 2>&1 || true
+                exit 1
+              fi
+            done
+            : > "$CODESIGN_SUMMARY_PATH"
+            printf "codesign -dv summary for %s\n\n" "$BASE_NAME" >> "$CODESIGN_SUMMARY_PATH"
+            echo "codesign -dv summary (post-sign verification):"
+            for target in "${sign_targets[@]}"; do
+              printf "==== %s ====\n" "$target" | tee -a "$CODESIGN_SUMMARY_PATH"
+              codesign -dv "$target" 2>&1 | grep -E '^(Identifier=|Format=|CodeDirectory v=|Authority=|TeamIdentifier=|Timestamp=)' | tee -a "$CODESIGN_SUMMARY_PATH"
+              echo | tee -a "$CODESIGN_SUMMARY_PATH"
+            done
+
+          else
+            # install_name_tool breaks the linker signature. arm64 will not
+            # execute that Mach-O until it is signed again. This path has no
+            # Developer ID, so re-sign ad-hoc.
+            for target in "${sign_targets[@]}"; do
+              codesign -s - --force "$target"
+            done
+          fi
+
+          (cd dist/macos && ditto -c -k --keepParent "${BASE_NAME}" "${ASSET_NAME}")
+          # Launch the zip that will be published. Notarization does not run it,
+          # and a signed binary with a Homebrew absolute path fails library
+          # validation only on a user's machine.
+          scripts/verify-macos-bundle.sh "dist/macos/${ASSET_NAME}"
+
+          if [ "$REQUEST_NOTARIZE" = "true" ] || [ "$IS_RELEASE" = "true" ]; then
+            if [ "${NOTARIZE}" = "true" ]; then
+              # stapler staple/validate accepts an app, a disk image, or an
+              # installer package. It rejects a bare zip, so there is no ticket
+              # to attach to this archive. notarytool --wait is the gate.
+              if ! xcrun notarytool submit "dist/macos/${ASSET_NAME}" --apple-id "$APPLE_NOTARIZE_USERNAME" --password "$APPLE_NOTARIZE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait; then
+                echo "Notarization failed for dist/macos/${ASSET_NAME}" >&2
+                exit 1
+              fi
+              SIGNING_STATUS="signed + notarized (notarytool accepted; a zip cannot be stapled)"
+            else
+              if [ "$REQUEST_NOTARIZE" = "true" ]; then
+                echo "Build reached unexpected state: notarization was requested but not enabled." >&2
+                exit 1
+              fi
+              SIGNING_STATUS="signed (notarization not requested)"
+            fi
+          fi
+
+          printf "macOS %s release bundle status: %s\n" "$MACOS_ARCH" "$SIGNING_STATUS" > "dist/macos/${BASE_NAME}.signing-status.txt"
+          shasum -a 256 "dist/macos/${ASSET_NAME}" | awk '{print $1}' > "dist/macos/${ASSET_NAME}.sha256"
+          if [ "$IS_RELEASE" = "true" ]; then
+            if [ "$MACOS_ARCH" = "arm64" ]; then
+              BREW_ARCH="arm64"
+            else
+              BREW_ARCH="amd64"
+            fi
+            BREW_ASSET_NAME="chiavdf-darwin-${BREW_ARCH}.zip"
+            cp "dist/macos/${ASSET_NAME}" "dist/macos/${BREW_ASSET_NAME}"
+            cp "dist/macos/${ASSET_NAME}.sha256" "dist/macos/${BREW_ASSET_NAME}.sha256"
+          fi
+
+      - name: Verify shipped macOS zip launches without Homebrew
+        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          zips=(dist/macos/*.zip)
+          if [ "${#zips[@]}" -eq 0 ]; then
+            echo "No macOS zip produced to verify" >&2
+            exit 1
+          fi
+          for zip in "${zips[@]}"; do
+            scripts/verify-macos-bundle.sh "$zip"
+          done
+
+      - name: Upload macOS brew bundle artifact
+        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.os == 'macos-15' && 'macos-arm64-brew-bundle' || 'macos-intel-brew-bundle' }}
+          path: |
+            dist/macos/*.zip
+            dist/macos/*.sha256
+            dist/macos/*.signing-status.txt
+            dist/macos/*.codesign-summary.txt
+
+      - name: Upload binaries artifact (Ubuntu)
+        if: startsWith(matrix.os, 'ubuntu') && matrix.config == 'optimized=1'
+        uses: actions/upload-artifact@v7
+        with:
+          name: binaries-${{ matrix.config }}-${{ matrix.os }}
+          path: |
+            src/vdf_client
+            src/vdf_bench
+            src/1weso_test
+            src/2weso_test
+            src/prover_test
+            src/emu_hw_test
+            src/hw_test
+            src/emu_hw_vdf_client
+            src/hw_vdf_client
+            ${{ matrix.os == 'ubuntu-24.04-arm' && 'src/hw/libft4222/build-arm-v8/libft4222.so' || 'src/hw/libft4222/build-x86_64/libft4222.so' }}
+
+      - name: Upload binaries artifact (macOS)
+        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
+        uses: actions/upload-artifact@v7
+        with:
+          name: binaries-${{ matrix.config }}-${{ matrix.os }}
+          path: |
+            src/vdf_client
+            src/vdf_bench
+            src/1weso_test
+            src/2weso_test
+            src/prover_test
+            src/emu_hw_test
+            src/hw_test
+            src/emu_hw_vdf_client
+            src/hw_vdf_client
+            src/hw/libft4222/*.dylib
+
+      - name: Upload binaries artifact (Windows)
+        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
+        uses: actions/upload-artifact@v7
+        with:
+          name: binaries-${{ matrix.config }}-${{ matrix.os }}
+          path: |
+            build/vdf_client.exe
+            build/vdf_bench.exe
+            build/1weso_test.exe
+            build/2weso_test.exe
+            build/prover_test.exe
+            build/emu_hw_test.exe
+            build/hw_test.exe
+            build/emu_hw_vdf_client.exe
+            build/hw_vdf_client.exe
+            src/hw/libft4222/*.dll
+            src/hw/libft4222/*.lib
+            mpir_gc_x64/*.dll
+
+      - name: Upload Windows bundle artifact
+        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-amd64-bundle
+          path: |
+            dist/windows/*.zip
+            dist/windows/*.sha256
+
+      - name: Assemble Ubuntu .deb (same runner as build)
+        if: startsWith(matrix.os, 'ubuntu') && matrix.config == 'optimized=1'
+        env:
+          INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
+          PLATFORM: ${{ matrix.os == 'ubuntu-24.04-arm' && 'arm64' || 'amd64' }}
+          LIBFT4222_DIR: ${{ matrix.os == 'ubuntu-24.04-arm' && 'build-arm-v8' || 'build-x86_64' }}
+        run: |
+          pip install jinjanator
+          CLI_DEB_BASE="chiavdf_$INSTALLER_VERSION-1_$PLATFORM"
+          mkdir -p "dist/$CLI_DEB_BASE/usr/bin"
+          mkdir -p "dist/$CLI_DEB_BASE/usr/lib"
+          mkdir -p "dist/$CLI_DEB_BASE/DEBIAN"
+          mkdir -p "dist/$CLI_DEB_BASE/etc/udev/rules.d"
+          j2 -o "dist/$CLI_DEB_BASE/DEBIAN/control" assets/deb/control.j2
+
+          cp src/vdf_client dist/$CLI_DEB_BASE/usr/bin/
+          cp src/vdf_bench dist/$CLI_DEB_BASE/usr/bin/
+          cp src/emu_hw_test dist/$CLI_DEB_BASE/usr/bin/
+          cp src/hw_test dist/$CLI_DEB_BASE/usr/bin/
+          cp src/hw_vdf_client dist/$CLI_DEB_BASE/usr/bin/
+          cp src/emu_hw_vdf_client dist/$CLI_DEB_BASE/usr/bin/
+          cp "src/hw/libft4222/$LIBFT4222_DIR/libft4222.so" dist/$CLI_DEB_BASE/usr/lib/
+          echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="601c", MODE="0666"' > dist/$CLI_DEB_BASE/etc/udev/rules.d/99-chiavdf.rules
+          dpkg-deb --build --root-owner-group "dist/$CLI_DEB_BASE"
+
+      - name: Upload Ubuntu installer
+        if: startsWith(matrix.os, 'ubuntu') && matrix.config == 'optimized=1'
+        uses: actions/upload-artifact@v7
+        with:
+          name: installer-${{ matrix.os }}
+          path: dist/*.deb

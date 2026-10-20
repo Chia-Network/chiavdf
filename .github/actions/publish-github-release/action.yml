@@ -1,0 +1,55 @@
+name: Publish GitHub release
+description: >
+  Upload every manifest asset in one gh release upload --clobber, then notify
+  glue. A non-final release or an incomplete set uploads nothing.
+inputs:
+  tag:
+    description: Release tag
+    required: true
+  assets_dir:
+    description: Directory tree containing the release assets
+    required: true
+  manifests:
+    description: Comma-separated manifest names uploaded together
+    required: true
+  is_final:
+    description: Must be the string true. Any other value skips publishing.
+    required: true
+  glue_url:
+    description: Glue API base URL
+    required: true
+outputs:
+  published:
+    description: true when the asset set was uploaded
+    value: ${{ steps.publish.outputs.published }}
+runs:
+  using: composite
+  steps:
+    - id: publish
+      shell: bash
+      env:
+        IS_FINAL: ${{ inputs.is_final }}
+        RELEASE_TAG: ${{ inputs.tag }}
+        ASSETS_DIR: ${{ inputs.assets_dir }}
+        MANIFESTS: ${{ inputs.manifests }}
+        GLUE_URL: ${{ inputs.glue_url }}
+        GH_TOKEN: ${{ github.token }}
+      run: bash "$GITHUB_ACTION_PATH/publish.sh"
+
+    - name: Notify chiavdf glue
+      if: steps.publish.outputs.glue_chiavdf != ''
+      uses: Chia-Network/actions/github/glue@main
+      with:
+        json_data: ${{ steps.publish.outputs.glue_chiavdf }}
+        glue_url: ${{ inputs.glue_url }}
+        glue_project: chiavdf
+        glue_path: trigger
+
+    - name: Notify chiavdfc glue
+      if: steps.publish.outputs.glue_chiavdfc != ''
+      uses: Chia-Network/actions/github/glue@main
+      with:
+        json_data: ${{ steps.publish.outputs.glue_chiavdfc }}
+        glue_url: ${{ inputs.glue_url }}
+        glue_project: chiavdfc
+        glue_path: trigger

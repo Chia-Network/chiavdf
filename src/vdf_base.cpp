@@ -20,3 +20,9 @@ form dummy_get_proof(ParallelProver &p)
     p.GenerateProof();
     return p.GetProof();
 }
+
+// Hardware proof threads call this from another translation unit. A const
+// member pointer has internal linkage and is dropped; an exported one keeps
+// the out-of-line copy that an optimized build would otherwise inline away.
+extern void (ParallelProver::*hw_generate_proof_anchor)();
+void (ParallelProver::*hw_generate_proof_anchor)() = &ParallelProver::GenerateProof;

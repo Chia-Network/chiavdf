@@ -61,7 +61,7 @@ sudo apt-get update
 sudo apt-get install chiavdf-hw
 ```
 
-The package depends on `libgmp-dev` and `libboost-system-dev`. arm64 and other architectures build from source.
+The package depends on `libgmp-dev` and `libboost-system-dev`. The apt index is amd64-only; final GitHub releases also attach `chiavdf_<version>-1_arm64.deb`. Other architectures build from source.
 
 The package workflow (`.github/workflows/build-packages.yml` calling `build-client.yml`) runs `dpkg-deb` on that tree. The apt package name in the published index is `chiavdf-hw`; release assets produced here use `chiavdf`.
 
@@ -137,7 +137,9 @@ make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client 
 
 `hw_proof_wait_test` links the emulator path and needs neither a board nor the FTDI shared library.
 
-`make` compiles `lzcnt.c` with `$(CC)` and everything else with `$(CXX)`, then links with `-flto=auto`. Both must be the same compiler. `build-essential` supplies gcc and g++. If `cc` is Clang and `g++` is GCC, the link fails with `lzcnt.o: file format not recognized`. Rebuild with `CC=gcc CXX=g++`.
+The software regression tests are separate from the hardware checks: they use CMake + CTest + GoogleTest (`regression_unit_tests`, `regression_io_tests`). The `hw_*` binaries above are standalone.
+
+`make` compiles `lzcnt.c` with `$(CC)` and everything else with `$(CXX)`, then links with LTO (`-flto=auto` for GCC, `-flto` for Clang). Both must be the same compiler. `build-essential` supplies gcc and g++. If `cc` is Clang and `g++` is GCC, the link fails with `lzcnt.o: file format not recognized`. Run `make clean` first, then rebuild with `CC=gcc CXX=g++` so the old `lzcnt.o` is not reused.
 
 The script selects the library directory from `uname -m`:
 
@@ -194,9 +196,9 @@ make CPPFLAGS="-I${BOOST_INCLUDE}" -f Makefile.vdf-client emu_hw_test hw_test em
 codesign -f -s - hw/libft4222/*.dylib hw_vdf_client hw_test
 ```
 
-The hardware link line is still `-lgmpxx -lgmp`. If that fails because the Boost header was not under the Homebrew prefix, the Makefile has not added `-L/opt/homebrew/lib`. Add `LDFLAGS="-L$(brew --prefix gmp)/lib"` for that build.
+The hardware link line is still `-lgmpxx -lgmp`. `Makefile.vdf-client` adds `-L/opt/homebrew/lib` (or `/usr/local/lib`) only when it finds `boost/asio.hpp` there. If GMP is installed elsewhere, add its `-L` path to the `LDFLAGS +=` line in `Makefile.vdf-client`; do not pass `LDFLAGS=...` on the `make` command line, because that replaces the Makefile's LTO, debug, and rpath flags.
 
-`hw_vdf_client` and `hw_test` get rpath `@executable_path/hw/libft4222`. Run them from `src/` so that path hits the dylibs the script staged. Copying only the executable leaves the loader without `libft4222.dylib` and `libftd2xx.dylib`.
+`hw_vdf_client` and `hw_test` get rpath `@executable_path/hw/libft4222`. The rpath is relative to the executable, not the current directory; keep the binaries in `src/` (or copy the whole `src/hw/libft4222` tree alongside them). Copying only the executable leaves the loader without `libft4222.dylib` and `libftd2xx.dylib`.
 
 The fetch script clears `com.apple.quarantine` and `com.apple.provenance` on the downloaded files. Clearing those attributes still leaves the dylibs unsigned. The `codesign -f -s -` step above is what allows `hw_vdf_client` to start.
 
@@ -332,7 +334,7 @@ Check the connections from the timelord host. One established connection per run
 ss -tnp | grep ':8000'
 ```
 
-When a proof finishes, the timelord writes `Estimated IPS:` to its log (default `~/.chia/mainnet/log/debug.log`), with the chain name. The client writes `HW speed:` on its own stderr when an engine stops.
+When a proof finishes, the timelord writes `Estimated IPS:` to its log (default `~/.chia/mainnet/log/debug.log`), with the chain name. The client writes `HW speed:` on its own stderr periodically and when an engine stops.
 
 Stop the client with Ctrl+C or `SIGTERM`. It handles both, tells the timelord to stop, and exits. Then:
 
@@ -431,7 +433,7 @@ StandardError=journal
 WantedBy=multi-user.target
 ```
 
-A source build needs `WorkingDirectory` set to `src/` and `Environment=LD_LIBRARY_PATH=hw/libft4222/build-x86_64` (or `build-arm-v8`).
+For a source build, set `ExecStart` to the absolute path of the binary, `WorkingDirectory` to `.../src`, and `Environment=LD_LIBRARY_PATH=hw/libft4222/build-x86_64` (or `build-arm-v8`).
 
 macOS launchd, with `caffeinate` so the USB session survives idle sleep. Replace the executable path. A release zip uses `.../bin/hw_vdf_client`.
 
@@ -466,11 +468,11 @@ This repo does not ship a Windows service. Run `hw_vdf_client.exe` in a console 
 
 **`libft4222.so: cannot open shared object file`.** Linux source build with no rpath. Export `LD_LIBRARY_PATH` to `hw/libft4222/build-x86_64` or `build-arm-v8` before starting the binary. The apt package's copy lives in `/usr/lib`.
 
-**`lzcnt.o: file format not recognized`.** `CC` and `CXX` are different compilers under `-flto=auto`. Use `CC=gcc CXX=g++`.
+**`lzcnt.o: file format not recognized`.** `CC` and `CXX` are different compilers under LTO. Run `make clean`, then use `CC=gcc CXX=g++`.
 
 **`--list` prints `FT_CreateDeviceInfoList` error 18, or `No FTDI devices connected`.** The D2XX stack sees no device. Confirm the board is plugged in and powered. On Linux, `lsusb -d 0403:601c` should show the id the udev rule matches. Re-run the udev reload and replug if the device node is root-only. On Windows, install the D2XX driver from the FT4222H downloads page so the device enumerates for D2XX. On macOS, an immediate exit 137 (SIGKILL) means the FT4222/D2XX dylibs are unsigned. From `src/`, run `codesign -f -s - hw/libft4222/*.dylib hw_vdf_client hw_test` and start the binary again from that directory. A release zip is already signed. Launch it from `bin/`.
 
-**`Failed to open device`.** `init_hw` prints this when `FtdiDriver::Open()` returns an error. With no board attached, that follows the error 18 line above. **`No FT4222H detected`** means the device list was readable and no interface A matched. Another `hw_vdf_client` or `hw_test` may already hold the board. Use `--list` and pass the location with `--device-loc` when more than one board is attached.
+**`Failed to open device`.** `init_hw` prints this when `FtdiDriver::Open()` returns an error. With no board attached, that follows the FTDI error above (error 18 or `No FTDI devices connected`). **`No FT4222H detected`** means the device list was readable and no interface A matched. Another `hw_vdf_client` or `hw_test` may already hold the board. Use `--list` and pass the location with `--device-loc` when more than one board is attached.
 
 **Gatekeeper / exit 137.** A browser-downloaded release zip can be quarantined. A notarized release opens after the normal macOS prompt. A source build that skips `codesign -f -s - hw/libft4222/*.dylib hw_vdf_client hw_test` (from `src/`) exits 137 (SIGKILL) on launch. The fetch script's quarantine clear does not sign the dylibs.
 

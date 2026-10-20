@@ -1,8 +1,10 @@
 #include "hw_proof.hpp"
 #include <chrono>
+#include <cstring>
 #include <future>
 #include <iostream>
 #include <stdexcept>
+#include <vector>
 
 int hw_proof_wait_value(struct vdf_state *vdf, size_t pos);
 form *hw_proof_value_at(struct vdf_state *vdf, size_t pos);
@@ -19,6 +21,71 @@ static void check_delivery(const vdf_proof_delivery &delivery) {
     const auto &checkpoint = delivery.checkpoints[0];
     require(checkpoint.B[0] == tag && checkpoint.proof[0] == tag,
             "Checkpoint payload was not published together");
+}
+
+struct OwnedVdf {
+    vdf_state *vdf;
+    ~OwnedVdf() {
+        hw_stop_proof(vdf);
+        clear_vdf_state(vdf);
+    }
+};
+
+static uint64_t read_be64(const uint8_t *bytes) {
+    uint64_t value = 0;
+    for (int i = 0; i < 8; i++) value = (value << 8) | bytes[i];
+    return value;
+}
+
+static std::vector<uint8_t> decode_hex_payload(const std::vector<uint8_t> &frame) {
+    require(frame.size() >= 4 && ((frame.size() - 4) % 2) == 0, "Frame length is not hex");
+    uint8_t expect[4];
+    Int32ToBytes(expect, static_cast<uint32_t>(frame.size() - 4));
+    require(std::memcmp(frame.data(), expect, 4) == 0, "Frame length prefix does not match the payload");
+    std::vector<uint8_t> binary((frame.size() - 4) / 2);
+    for (size_t i = 0; i < binary.size(); i++) {
+        auto nibble = [](uint8_t c) -> int {
+            if (c >= '0' && c <= '9') return c - '0';
+            if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+            return -1;
+        };
+        int hi = nibble(frame[4 + i * 2]);
+        int lo = nibble(frame[5 + i * 2]);
+        require(hi >= 0 && lo >= 0, "Frame is not hexadecimal");
+        binary[i] = static_cast<uint8_t>((hi << 4) | lo);
+    }
+    return binary;
+}
+
+static void check_frame(const vdf_proof_delivery &delivery) {
+    require(delivery.checkpoints.size() <= HW_VDF_MAX_CHKP_SEGMENTS,
+            "Checkpoint count exceeds the timelord limit");
+    std::vector<uint8_t> frame = hw_proof_timelord_frame(delivery);
+    std::vector<uint8_t> binary = decode_hex_payload(frame);
+    const size_t header = 8 + 8 + 1 + BQFC_FORM_SIZE * 2;
+    require(binary.size() >= header, "Frame header was truncated");
+    const size_t count = binary[16 + BQFC_FORM_SIZE];
+    require(count == delivery.checkpoints.size(), "Frame count does not match the checkpoint list");
+    require(binary.size() == header + count * sizeof(hw_timelord_segment),
+            "Frame payload does not cover the checkpoint list");
+    const uint8_t *cursor = binary.data() + header;
+    for (size_t i = 0; i < count; i++) {
+        hw_timelord_segment segment{};
+        std::memcpy(&segment, cursor, sizeof(segment));
+        cursor += sizeof(segment);
+        require(read_be64(segment.iters) == delivery.checkpoints[i].seg_iters,
+                "Frame segment length does not round-trip");
+        require(std::memcmp(segment.B, delivery.checkpoints[i].B, sizeof(segment.B)) == 0
+                && std::memcmp(segment.proof, delivery.checkpoints[i].proof, sizeof(segment.proof)) == 0,
+                "Frame segment bytes do not round-trip");
+    }
+}
+
+static void mark_chain_done(vdf_state &vdf, uint16_t idx) {
+    while (idx != HW_VDF_PROOF_NONE) {
+        vdf.proofs[idx].flags |= HW_VDF_PROOF_FLAG_DONE;
+        idx = vdf.proofs[idx].prev;
+    }
 }
 
 static void initialize_wait_state(vdf_state& vdf) {
@@ -84,22 +151,22 @@ int main() {
             initialize_wait_state(vdf);
             vdf.n_proof_threads = 2;
             vdf.aux_threads_busy = 1;
-            std::promise<void> finished_signal, allow_exit;
+            std::promise<void> allow_exit;
             auto permitted = allow_exit.get_future();
             vdf.aux_threads[0] = std::thread([&] {
-                vdf.aux_threads_busy = 0;
-                finished_signal.set_value();
                 permitted.wait();
                 vdf.n_proof_threads = 0;
+                vdf.aux_threads_busy = 0;
             });
-            finished_signal.get_future().wait();
             auto drain = std::async(std::launch::async, [&] { hw_proof_wait_values(&vdf, false); });
             auto before = drain.wait_for(std::chrono::milliseconds(20));
             allow_exit.set_value();
             drain.get();
             require(before == std::future_status::timeout, "Drain ignored a still-running owned worker");
             require(vdf.n_proof_threads == 0, "Drain returned before worker accounting finished");
-            require(!vdf.aux_threads[0].joinable(), "Drain left an unjoined worker");
+            require(vdf.aux_threads[0].joinable(), "Drain joined a worker it does not own");
+            hw_stop_proof(&vdf);
+            require(!vdf.aux_threads[0].joinable(), "Stop left an owned worker");
         }
         {
             vdf_state vdf{};
@@ -160,6 +227,7 @@ int main() {
             vdf_state vdf{};
             uint8_t initial[BQFC_FORM_SIZE] = {8};
             init_vdf_state(&vdf, nullptr, "-23", initial, 20000000, 0);
+            OwnedVdf owned{&vdf};
             std::vector<std::future<form *>> readers;
             for (int i = 0; i < 8; ++i)
                 readers.push_back(std::async(std::launch::async, [&] {
@@ -173,38 +241,129 @@ int main() {
             form *expected = readers[0].get();
             for (size_t i = 1; i < readers.size(); ++i)
                 require(readers[i].get() == expected, "Concurrent directory growth moved an intermediate block");
-            clear_vdf_state(&vdf);
         }
         {
             vdf_state vdf{};
             initialize_wait_state(vdf);
-            std::promise<void> worker_exiting, allow_exit;
+            vdf.aux_threads_busy = 1;
+            std::promise<void> allow_exit;
             auto permitted = allow_exit.get_future();
-            vdf.aux_threads[0] = std::thread([&] {
-                worker_exiting.set_value();
-                permitted.wait();
-            });
-            worker_exiting.get_future().wait();
+            vdf.aux_threads[0] = std::thread([&] { permitted.wait(); });
             auto owner = std::async(std::launch::async, [&] { hw_proof_wait_values(&vdf, true); });
-            auto cancellation = std::async(std::launch::async, [&] { hw_request_stop_proof(&vdf); });
-            auto cancelled = cancellation.wait_for(std::chrono::seconds(1));
-            auto blocked = owner.wait_for(std::chrono::milliseconds(20));
-            allow_exit.set_value();
-            cancellation.get();
+            require(owner.wait_for(std::chrono::milliseconds(20)) == std::future_status::timeout,
+                    "Owner did not wait for a busy worker");
+            hw_request_stop_proof(&vdf);
+            require(owner.wait_for(std::chrono::seconds(1)) == std::future_status::ready,
+                    "Cancellation did not release the owner");
             owner.get();
+            require(vdf.aux_threads[0].joinable(), "Cancellation joined an owned worker");
+            allow_exit.set_value();
             hw_stop_proof(&vdf);
-            require(cancelled == std::future_status::ready, "Cancellation tried to join an owner's worker");
-            require(blocked == std::future_status::timeout, "Owner did not wait for worker exit");
-            require(vdf.stopping && !vdf.aux_threads[0].joinable(), "Cancellation did not drain through the owner");
+            require(vdf.stopping && !vdf.aux_threads[0].joinable(), "Stop left an owned worker");
         }
         {
             vdf_state vdf{};
-            vdf_proof_opts options{};
-            options.retain_asic_values = true;
+            vdf.interval = HW_VDF_VALUE_INTERVAL;
+            vdf.checkpoint_threshold = 8000;
+            hw_request_proof(&vdf, 30000, false);
+            hw_proof_process_req(&vdf);
+            require(vdf.proofs.size() == 4, "Threshold split did not bound every segment");
+            uint64_t covered = 0;
+            for (size_t i = 0; i < vdf.proofs.size(); i++) {
+                require(vdf.proofs[i].seg_iters <= vdf.checkpoint_threshold,
+                        "Segment exceeded the checkpoint threshold");
+                if (i + 1 < vdf.proofs.size())
+                    require(vdf.proofs[i].seg_iters % vdf.interval == 0,
+                            "Checkpoint was not aligned to the value interval");
+                covered += vdf.proofs[i].seg_iters;
+            }
+            require(covered == 30000, "Segments do not cover the requested iteration");
+        }
+        {
+            vdf_state vdf{};
+            vdf.interval = HW_VDF_VALUE_INTERVAL;
+            vdf.checkpoint_threshold = HW_VDF_MIN_CHKP_THRESHOLD;
+            const uint64_t challenge = 2000000000ULL;
+            hw_request_proof(&vdf, challenge, false);
+            hw_proof_process_req(&vdf);
+            uint16_t request = HW_VDF_PROOF_NONE;
+            for (uint16_t i = 0; i < vdf.proofs.size(); i++) {
+                if (vdf.proofs[i].flags & HW_VDF_PROOF_FLAG_IS_REQ) request = i;
+            }
+            require(request != HW_VDF_PROOF_NONE, "Long challenge did not queue a proof");
+            mark_chain_done(vdf, request);
+            vdf.done_proofs.push_back(request);
+            vdf_proof_delivery delivery;
+            int count = hw_retrieve_proof(&vdf, &delivery);
+            require(count >= 0 && count <= HW_VDF_MAX_CHKP_SEGMENTS,
+                    "Long challenge exceeded the checkpoint cap");
+            require(static_cast<size_t>(count) == delivery.checkpoints.size(),
+                    "Retrieved count does not match the snapshot");
+            uint64_t covered = delivery.final.seg_iters;
+            for (const auto &checkpoint : delivery.checkpoints) covered += checkpoint.seg_iters;
+            require(covered == challenge, "Capped segments do not cover the challenge");
+            check_frame(delivery);
+        }
+        {
+            vdf_state vdf{};
+            vdf.interval = HW_VDF_VALUE_INTERVAL;
+            vdf.checkpoint_threshold = HW_VDF_MIN_CHKP_THRESHOLD;
+            uint16_t prev = HW_VDF_PROOF_NONE;
+            for (int i = 0; i < HW_VDF_MAX_CHKP_SEGMENTS; i++)
+                prev = hw_queue_proof(&vdf, vdf.interval, prev, 0);
+            hw_request_proof(&vdf, vdf.proofs[prev].iters + 2000000000ULL, false);
+            hw_proof_process_req(&vdf);
+            uint16_t request = HW_VDF_PROOF_NONE;
+            for (uint16_t i = 0; i < vdf.proofs.size(); i++) {
+                if (vdf.proofs[i].flags & HW_VDF_PROOF_FLAG_IS_REQ) request = i;
+            }
+            mark_chain_done(vdf, request);
+            vdf.done_proofs.push_back(request);
+            vdf_proof_delivery delivery;
+            int count = hw_retrieve_proof(&vdf, &delivery);
+            require(count == HW_VDF_MAX_CHKP_SEGMENTS, "Existing chain was extended past the cap");
+            check_frame(delivery);
+        }
+        {
+            vdf_state vdf{};
             uint8_t initial[BQFC_FORM_SIZE] = {8};
-            init_vdf_state(&vdf, &options, "-23", initial, 10000, 0);
+            vdf_proof_opts opts{};
+            opts.retain_asic_values = true;
+            init_vdf_state(&vdf, &opts, "-23", initial, 4000, 0);
+            OwnedVdf owned{&vdf};
             require(vdf.retain_asic_values, "Endpoint retention option was not applied");
-            clear_vdf_state(&vdf);
+            form wrong = form::from_abd(integer(1), integer(1), vdf.D);
+            {
+                std::lock_guard<std::mutex> lock(vdf.retained_values_mtx);
+                vdf.retained_values.push_back({vdf.retained_generation, 50, wrong});
+            }
+            vdf_proof proof{};
+            proof.iters = 100;
+            proof.seg_iters = 100;
+            proof.flags = HW_VDF_PROOF_FLAG_IS_REQ;
+            hw_compute_proof(&vdf, SIZE_MAX, &proof, 255);
+            require(vdf.retained_values.empty(), "Wrong retained form was kept");
+            require((proof.flags & HW_VDF_PROOF_FLAG_DONE) != 0, "Grid proof was dropped with the wrong sample");
+            form honest = *hw_proof_value_at(&vdf, 0);
+            PulmarkReducer reducer;
+            for (int i = 0; i < 100; i++) {
+                nudupl_form(honest, honest, vdf.D, vdf.L);
+                reducer.reduce(honest);
+            }
+            uint8_t encoded[BQFC_FORM_SIZE];
+            bqfc_serialize(encoded, honest.a.impl, honest.b.impl, mpz_sizeinbase(vdf.D.impl, 2));
+            require(std::memcmp(proof.y, encoded, BQFC_FORM_SIZE) == 0,
+                    "Proof endpoint followed the wrong retained form");
+
+            form *slot = hw_proof_value_at(&vdf, 0);
+            mpz_set_ui(slot->a.impl, 15);
+            vdf_proof rejected{};
+            rejected.iters = 100;
+            rejected.seg_iters = 100;
+            rejected.flags = HW_VDF_PROOF_FLAG_IS_REQ;
+            hw_compute_proof(&vdf, SIZE_MAX, &rejected, 255);
+            require((rejected.flags & HW_VDF_PROOF_FLAG_DONE) == 0,
+                    "Invalid endpoint still published a proof");
         }
         std::cout << "Readiness, worker draining, proof snapshots, retained endpoints, and intermediate publication passed\n";
         return 0;

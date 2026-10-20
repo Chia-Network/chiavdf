@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cerrno>
+#include <exception>
 #include <signal.h>
 
 #ifdef _WIN32
@@ -66,12 +67,6 @@ struct vdf_client {
     struct vdf_value values[N_HW_VDFS];
     struct vdf_client_opts opts;
     ChiaDriver *drv;
-};
-
-struct vdf_proof_segm {
-    uint8_t iters[sizeof(uint64_t)];
-    uint8_t B[HW_VDF_B_SIZE];
-    uint8_t proof[BQFC_FORM_SIZE];
 };
 
 void write_data(struct vdf_conn *conn, const char *buf, size_t size);
@@ -297,43 +292,14 @@ void handle_iters(struct vdf_client *client, struct vdf_conn *conn)
     }
 }
 
-void tl_enc_hex(char *out_data, uint8_t *data, size_t size)
-{
-    // Hex encode proof data for timelord
-    for (size_t i = 0; i < size; i++) {
-        snprintf(&out_data[i * 2], 3, "%02hhx", data[i]);
-    }
-}
-
-void handle_proofs(struct vdf_client *client, struct vdf_conn *conn)
+void handle_proofs(struct vdf_client *, struct vdf_conn *conn)
 {
     struct vdf_proof_delivery delivery;
-    int i;
-    while ((i = hw_retrieve_proof(&conn->vdf, &delivery)) >= 0) {
-        const auto *proof = &delivery.final;
-        uint8_t data[8 + 8 + 1 + BQFC_FORM_SIZE * 2];
-        char tl_data[sizeof(data) * 2 + 5] = {0};
-
-        LOG_INFO("VDF %d: Proof retrieved for iters=%llu", conn->vdf.idx, (unsigned long long)proof->iters);
-        Int64ToBytes(&data[0], proof->iters);
-        Int64ToBytes(&data[8], BQFC_FORM_SIZE);
-        memcpy(&data[16], proof->y, BQFC_FORM_SIZE);
-        data[16 + BQFC_FORM_SIZE] = i;
-        memcpy(&data[17 + BQFC_FORM_SIZE], proof->proof, BQFC_FORM_SIZE);
-
-        tl_enc_hex(&tl_data[4], data, sizeof(data));
-        Int32ToBytes((uint8_t *)tl_data, (sizeof(data) + i * sizeof(vdf_proof_segm)) * 2);
-        write_data(conn, tl_data, sizeof(tl_data) - 1);
-        for (const auto &checkpoint : delivery.checkpoints) {
-            struct vdf_proof_segm *segm = (struct vdf_proof_segm *)data;
-
-            Int64ToBytes(segm->iters, checkpoint.seg_iters);
-            memcpy(segm->B, checkpoint.B, sizeof(checkpoint.B));
-            memcpy(segm->proof, checkpoint.proof, sizeof(checkpoint.proof));
-
-            tl_enc_hex(tl_data, data, sizeof(*segm));
-            write_data(conn, tl_data, sizeof(*segm) * 2);
-        }
+    while (hw_retrieve_proof(&conn->vdf, &delivery) >= 0) {
+        LOG_INFO("VDF %d: Proof retrieved for iters=%llu", conn->vdf.idx,
+                (unsigned long long)delivery.final.iters);
+        std::vector<uint8_t> frame = hw_proof_timelord_frame(delivery);
+        write_data(conn, reinterpret_cast<const char *>(frame.data()), frame.size());
     }
 }
 
@@ -734,7 +700,7 @@ int hw_vdf_client_main(int argc, char **argv)
                 "  --vdf-threads N - number of software threads per VDF engine [4, 2 - 64]\n"
                 "  --proof-threads N - number of proof threads per VDF engine\n"
                 "  --retain-asic-values - use recent ASIC samples for off-grid proof endpoints\n"
-                "  --checkpoint-threshold N - split proofs above N iterations [1000000, 8000 - 4294967295]\n"
+                "  --checkpoint-threshold N - keep each segment at most N iterations when that fits in 61 checkpoints [1000000, 8000 - 4294967295]\n"
                 "  --auto-freq-period N - auto-adjust frequency every N seconds [0, 10 - inf]\n"
                 "  --version - print version and exit\n"
                 "  --list - list available devices and exit",
@@ -760,6 +726,18 @@ int hw_vdf_client_main(int argc, char **argv)
 
     init_vdf_client(&client);
 
+    struct StopLiveProofs {
+        struct vdf_client *client;
+        ~StopLiveProofs() {
+            if (!client) return;
+            for (uint8_t i = 0; i < N_HW_VDFS; i++) {
+                if (!client->conns[i].vdf.init_done) continue;
+                hw_stop_proof(&client->conns[i].vdf);
+                clear_vdf_state(&client->conns[i].vdf);
+            }
+        }
+    } stop_live_proofs{&client};
+
 #ifdef _WIN32
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
@@ -769,11 +747,20 @@ int hw_vdf_client_main(int argc, char **argv)
     sigaction(SIGTERM, &sa, NULL);
 #endif
 
-    event_loop(&client);
+    int rc = 0;
+    try {
+        event_loop(&client);
+    } catch (const std::exception &err) {
+        LOG_ERROR("VDF client stopped: %s", err.what());
+        rc = 1;
+    } catch (...) {
+        LOG_ERROR("VDF client stopped");
+        rc = 1;
+    }
 
     stop_hw(client.drv);
     clear_vdf_client(&client);
-    return 0;
+    return rc;
 }
 
 int main(int argc, char **argv)

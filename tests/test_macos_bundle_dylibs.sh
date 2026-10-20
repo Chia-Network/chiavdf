@@ -400,12 +400,14 @@ PY
 test_verify_appledouble_and_layout() {
   prepare_verify_tree
   make_zip "$BUNDLE" "$WORK/apple.zip"
-  add_zip_bytes "$WORK/apple.zip" "chiavdf-test/bin/._vdf_client=00051607"
+  add_zip_bytes "$WORK/apple.zip" \
+    "chiavdf-test/bin/._vdf_client=00051607" \
+    "._chiavdf-test=00051607"
   add_zip_entries "$WORK/apple.zip" \
     "__MACOSX/chiavdf-test/bin/._vdf_client=ignored" \
     "chiavdf-test/bin/.DS_Store=dsstore"
   "$VERIFY" "$WORK/apple.zip" >/dev/null
-  echo "ok: real AppleDouble, .DS_Store, and a top-level __MACOSX sibling pass"
+  echo "ok: real AppleDouble, .DS_Store, a top-level __MACOSX sibling, and ditto's root ._* pass"
 
   prepare_verify_tree
   make_zip "$BUNDLE" "$WORK/stray-dot.zip"
@@ -431,6 +433,16 @@ test_verify_appledouble_and_layout() {
   make_zip "$BUNDLE" "$WORK/readme.zip"
   add_zip_entries "$WORK/readme.zip" "README=hello"
   expect_fail "a root README fails verification" "$VERIFY" "$WORK/readme.zip"
+
+  prepare_verify_tree
+  make_zip "$BUNDLE" "$WORK/bad-root-apple.zip"
+  add_zip_entries "$WORK/bad-root-apple.zip" "._chiavdf-test=appledouble"
+  expect_fail "a root AppleDouble without the magic header fails verification" "$VERIFY" "$WORK/bad-root-apple.zip"
+
+  prepare_verify_tree
+  make_zip "$BUNDLE" "$WORK/orphan-root-apple.zip"
+  add_zip_bytes "$WORK/orphan-root-apple.zip" "._other=00051607"
+  expect_fail "a root AppleDouble without a sibling fails verification" "$VERIFY" "$WORK/orphan-root-apple.zip"
 
   prepare_verify_tree
   make_zip "$BUNDLE" "$WORK/extra-dir.zip"

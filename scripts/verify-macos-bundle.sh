@@ -36,8 +36,9 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 unzip -q "$ZIP_PATH" -d "$tmp"
 
-# Skip an in-bundle AppleDouble file only when it sits beside the real file
-# and starts with the AppleDouble magic. .DS_Store is Finder metadata.
+# Skip an AppleDouble file only when it sits beside the real file or directory
+# and starts with the AppleDouble magic. ditto writes that file for the bundle
+# directory itself, next to the archive root. .DS_Store is Finder metadata.
 is_skippable_metadata() {
   local path="$1"
   local base sibling magic
@@ -68,10 +69,17 @@ if [ "${#top[@]}" -ne 1 ]; then
   exit 1
 fi
 root="${top[0]}"
-stray_files="$(find "$tmp" -mindepth 1 -maxdepth 1 -type f)"
+stray_files=""
+while IFS= read -r stray; do
+  [ -n "$stray" ] || continue
+  if is_skippable_metadata "$stray"; then
+    continue
+  fi
+  stray_files="${stray_files}${stray}"$'\n'
+done < <(find "$tmp" -mindepth 1 -maxdepth 1 -type f)
 if [ -n "$stray_files" ]; then
   echo "Unexpected top-level file in $ZIP_PATH:" >&2
-  printf '%s\n' "$stray_files" >&2
+  printf '%s' "$stray_files" >&2
   exit 1
 fi
 libexec="$root/libexec/chiavdf"

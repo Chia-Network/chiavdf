@@ -702,9 +702,11 @@ int hw_vdf_client_main(int argc, char **argv)
                 "  --retain-asic-values - use recent ASIC samples for off-grid proof endpoints\n"
                 "  --checkpoint-threshold N - keep each segment at most N iterations when that fits in 61 checkpoints [1000000, 8000 - 4294967295]\n"
                 "  --auto-freq-period N - auto-adjust frequency every N seconds [0, 10 - inf]\n"
+                "  --max-freq N - max frequency while auto-freq is on [%.0f]\n"
                 "  --version - print version and exit\n"
                 "  --list - list available devices and exit",
-                argv[0], (int)HW_VDF_DEF_FREQ, HW_VDF_DEF_VOLTAGE);
+                argv[0], (int)HW_VDF_DEF_FREQ, HW_VDF_DEF_VOLTAGE,
+                pll_entries[VALID_PLL_FREQS - 1].freq);
         return 1;
     }
 

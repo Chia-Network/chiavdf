@@ -35,6 +35,28 @@ env:
   CHIAVDF_LOG_AVX: "1"
 
 jobs:
+  release-policy:
+    name: Release policy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      is_final: ${{ steps.policy.outputs.is_final }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: policy
+        uses: ./.github/actions/release-policy
+
+  # Release builds of the C libraries run in this workflow so one publish job
+  # can wait for them. Push and pull_request still use build-c-libraries.yml.
+  c-libraries:
+    name: C libraries
+    if: github.event_name == 'release' && github.event.action == 'published'
+    permissions:
+      contents: write
+      id-token: write
+    uses: ./.github/workflows/build-c-libraries.yml
+
   build:
     name: CI (${{ matrix.os }}, ${{ matrix.config }})
     runs-on: ${{ matrix.os }}
@@ -66,6 +88,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+
+      - name: Release policy
+        id: release_policy
+        uses: ./.github/actions/release-policy
 
       - name: Install Python
         uses: Chia-Network/actions/setup-python@main
@@ -460,7 +486,7 @@ jobs:
         shell: pwsh
         env:
           INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
-          REQUEST_WINDOWS_SIGNING: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.windows_sign == 'true') }}
+          REQUEST_WINDOWS_SIGNING: ${{ steps.release_policy.outputs.sign_windows }}
           HAS_WINDOWS_SIGNING_SECRET: ${{ steps.check_windows_signing_secrets.outputs.HAS_WINDOWS_SIGNING_SECRET || '' }}
         run: |
           $baseName = "chiavdf-$env:INSTALLER_VERSION-windows-amd64"
@@ -499,7 +525,7 @@ jobs:
           }
 
       - name: Setup Windows signer tooling
-        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1' && steps.check_windows_signing_secrets.outputs.HAS_WINDOWS_SIGNING_SECRET == 'true' && (github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.windows_sign == 'true'))
+        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1' && steps.check_windows_signing_secrets.outputs.HAS_WINDOWS_SIGNING_SECRET == 'true' && steps.release_policy.outputs.sign_windows == 'true'
         uses: chia-network/actions/digicert/windows-sign@main
         with:
           sm_certkey_alias: ${{ secrets.SM_CERTKEY_ALIAS }}
@@ -510,7 +536,7 @@ jobs:
           sign: "false"
 
       - name: Sign Windows bundled executables
-        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1' && steps.check_windows_signing_secrets.outputs.HAS_WINDOWS_SIGNING_SECRET == 'true' && (github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.windows_sign == 'true'))
+        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1' && steps.check_windows_signing_secrets.outputs.HAS_WINDOWS_SIGNING_SECRET == 'true' && steps.release_policy.outputs.sign_windows == 'true'
         shell: pwsh
         env:
           INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
@@ -541,7 +567,7 @@ jobs:
         shell: pwsh
         env:
           INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
-          IS_RELEASE: ${{ github.event_name == 'release' && 'true' || 'false' }}
+          IS_RELEASE: ${{ steps.release_policy.outputs.is_final }}
         run: |
           $baseName = "chiavdf-$env:INSTALLER_VERSION-windows-amd64"
           $bundleRoot = "dist/windows/$baseName"
@@ -564,14 +590,14 @@ jobs:
         if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
         env:
           RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}
-          IS_RELEASE: ${{ github.event_name == 'release' && 'true' || 'false' }}
-          REQUEST_NOTARIZE: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.macos_notarize == 'true') }}
+          IS_RELEASE: ${{ steps.release_policy.outputs.is_final }}
+          REQUEST_NOTARIZE: ${{ steps.release_policy.outputs.notarize_macos }}
           HAS_APPLE_SECRET: ${{ steps.check_secrets.outputs.HAS_APPLE_SECRET || '' }}
           HAS_NOTARIZE_SECRETS: ${{ steps.check_secrets.outputs.HAS_NOTARIZE_SECRETS || '' }}
           APPLE_NOTARIZE_USERNAME: "${{ secrets.APPLE_NOTARIZE_USERNAME }}"
           APPLE_NOTARIZE_PASSWORD: "${{ secrets.APPLE_NOTARIZE_PASSWORD }}"
           APPLE_TEAM_ID: "${{ secrets.APPLE_TEAM_ID }}"
-          NOTARIZE: ${{ (github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.macos_notarize == 'true')) && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true' && steps.check_secrets.outputs.HAS_NOTARIZE_SECRETS == 'true' }}
+          NOTARIZE: ${{ (steps.release_policy.outputs.notarize_macos == 'true' && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true' && steps.check_secrets.outputs.HAS_NOTARIZE_SECRETS == 'true') && 'true' || 'false' }}
         run: |
           set -euo pipefail
 
@@ -860,78 +886,66 @@ jobs:
           name: installer-${{ matrix.os }}
           path: dist/*.deb
 
-      - name: Upload release artifacts
-        if: startsWith(matrix.os, 'ubuntu') && matrix.config == 'optimized=1' && github.event_name == 'release'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          gh release upload \
-            --clobber \
-            $RELEASE_TAG \
-            dist/*.deb
-
-      - name: Upload macOS release artifacts
-        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1' && github.event_name == 'release'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          shopt -s nullglob
-          release_files=(
-            dist/macos/*.zip
-            dist/macos/*.sha256
-            dist/macos/*.signing-status.txt
-            dist/macos/*.codesign-summary.txt
-          )
-          if [ "${#release_files[@]}" -eq 0 ]; then
-            echo "No macOS release artifacts found to upload" >&2
-            exit 1
-          fi
-          gh release upload \
-            --clobber \
-            "$RELEASE_TAG" \
-            "${release_files[@]}"
-
-      - name: Upload Windows release artifacts
-        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1' && github.event_name == 'release'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          $releaseFiles = Get-ChildItem "dist/windows" -File | Where-Object { $_.Extension -in ".zip", ".sha256" } | ForEach-Object { $_.FullName }
-          if (-not $releaseFiles -or $releaseFiles.Count -eq 0) {
-            throw "No Windows release artifacts found to upload"
-          }
-          & gh release upload --clobber $env:RELEASE_TAG @releaseFiles
-
-  trigger-repo-update:
-    name: Trigger repo update
+  # One publish for every GitHub release asset. Skipped unless this is a
+  # final release and both matrices succeeded, so a partial set is never attached.
+  publish-release:
+    name: Publish GitHub release
+    needs: [release-policy, build, c-libraries]
+    if: >-
+      needs.release-policy.result == 'success' &&
+      needs.release-policy.outputs.is_final == 'true' &&
+      needs.build.result == 'success' &&
+      needs.c-libraries.result == 'success'
     runs-on: ubuntu-latest
-    needs: [build]
-    if: github.event_name == 'release'
+    permissions:
+      contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v7
+
+      - name: Download Debian packages
+        uses: actions/download-artifact@v8
         with:
-          fetch-depth: 1
+          pattern: installer-*
+          path: release-assets/debian
+          merge-multiple: true
 
-      - uses: Chia-Network/actions/github/jwt@main
-
-      - name: Build Homebrew release metadata
-        id: brew_metadata
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          set -euo pipefail
-          JSON_DATA="$(jq -nc --arg release_version "$RELEASE_TAG" --arg windows_amd64 "chiavdf-win64.zip" '{release_version:$release_version,windows_amd64:$windows_amd64}')"
-          echo "json_data=${JSON_DATA}" >> "$GITHUB_OUTPUT"
-
-      - name: Trigger repo update
-        uses: Chia-Network/actions/github/glue@main
+      - name: Download macOS bundles
+        uses: actions/download-artifact@v8
         with:
-          json_data: ${{ steps.brew_metadata.outputs.json_data }}
+          pattern: macos-*-brew-bundle
+          path: release-assets/macos
+          merge-multiple: true
+
+      - name: Download Windows bundle
+        uses: actions/download-artifact@v8
+        with:
+          pattern: windows-amd64-bundle
+          path: release-assets/windows
+          merge-multiple: true
+
+      - name: Download C library archives
+        uses: actions/download-artifact@v8
+        with:
+          pattern: chiavdfc-*
+          path: release-assets/c-libraries
+          merge-multiple: true
+
+      - name: Upload release assets and notify glue
+        uses: ./.github/actions/publish-github-release
+        with:
+          tag: ${{ github.event.release.tag_name }}
+          assets_dir: release-assets
+          manifests: chiavdf,chiavdfc
+          is_final: ${{ needs.release-policy.outputs.is_final }}
           glue_url: ${{ secrets.GLUE_API_URL }}
-          glue_project: "chiavdf"
-          glue_path: "trigger"
+
+  release-publish-checks:
+    name: Release publish checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: Test release policy and publish
+        run: bash tests/test_release_publish.sh

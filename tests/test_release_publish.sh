@@ -231,6 +231,9 @@ fi
 if grep -q '^published=true$' "$output"; then
   fail "gh failure should not record published=true"
 fi
+if grep -q 'glue_chiavdf=' "$output" || grep -q 'glue_chiavdfc=' "$output"; then
+  fail "gh failure should not record glue payloads"
+fi
 
 rm -rf "$assets" "$gh_bin"
 rm -f "$calls" "$output"

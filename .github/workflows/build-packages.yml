@@ -42,6 +42,8 @@ jobs:
       contents: read
     outputs:
       is_final: ${{ steps.policy.outputs.is_final }}
+      sign_windows: ${{ steps.policy.outputs.sign_windows }}
+      notarize_macos: ${{ steps.policy.outputs.notarize_macos }}
     steps:
       - uses: actions/checkout@v7
       - id: policy
@@ -59,6 +61,7 @@ jobs:
 
   build:
     name: CI (${{ matrix.os }}, ${{ matrix.config }})
+    needs: [release-policy]
     runs-on: ${{ matrix.os }}
     env:
       # Runtime feature gate read via getenv() in parameters.h.
@@ -88,10 +91,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
-
-      - name: Release policy
-        id: release_policy
-        uses: ./.github/actions/release-policy
 
       - name: Install Python
         uses: Chia-Network/actions/setup-python@main
@@ -486,7 +485,7 @@ jobs:
         shell: pwsh
         env:
           INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
-          REQUEST_WINDOWS_SIGNING: ${{ steps.release_policy.outputs.sign_windows }}
+          REQUEST_WINDOWS_SIGNING: ${{ needs.release-policy.outputs.sign_windows }}
           HAS_WINDOWS_SIGNING_SECRET: ${{ steps.check_windows_signing_secrets.outputs.HAS_WINDOWS_SIGNING_SECRET || '' }}
         run: |
           $baseName = "chiavdf-$env:INSTALLER_VERSION-windows-amd64"
@@ -525,7 +524,7 @@ jobs:
           }
 
       - name: Setup Windows signer tooling
-        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1' && steps.check_windows_signing_secrets.outputs.HAS_WINDOWS_SIGNING_SECRET == 'true' && steps.release_policy.outputs.sign_windows == 'true'
+        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1' && steps.check_windows_signing_secrets.outputs.HAS_WINDOWS_SIGNING_SECRET == 'true' && needs.release-policy.outputs.sign_windows == 'true'
         uses: chia-network/actions/digicert/windows-sign@main
         with:
           sm_certkey_alias: ${{ secrets.SM_CERTKEY_ALIAS }}
@@ -536,7 +535,7 @@ jobs:
           sign: "false"
 
       - name: Sign Windows bundled executables
-        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1' && steps.check_windows_signing_secrets.outputs.HAS_WINDOWS_SIGNING_SECRET == 'true' && steps.release_policy.outputs.sign_windows == 'true'
+        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1' && steps.check_windows_signing_secrets.outputs.HAS_WINDOWS_SIGNING_SECRET == 'true' && needs.release-policy.outputs.sign_windows == 'true'
         shell: pwsh
         env:
           INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
@@ -567,7 +566,7 @@ jobs:
         shell: pwsh
         env:
           INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
-          IS_RELEASE: ${{ steps.release_policy.outputs.is_final }}
+          IS_RELEASE: ${{ needs.release-policy.outputs.is_final }}
         run: |
           $baseName = "chiavdf-$env:INSTALLER_VERSION-windows-amd64"
           $bundleRoot = "dist/windows/$baseName"
@@ -590,14 +589,14 @@ jobs:
         if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
         env:
           RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}
-          IS_RELEASE: ${{ steps.release_policy.outputs.is_final }}
-          REQUEST_NOTARIZE: ${{ steps.release_policy.outputs.notarize_macos }}
+          IS_RELEASE: ${{ needs.release-policy.outputs.is_final }}
+          REQUEST_NOTARIZE: ${{ needs.release-policy.outputs.notarize_macos }}
           HAS_APPLE_SECRET: ${{ steps.check_secrets.outputs.HAS_APPLE_SECRET || '' }}
           HAS_NOTARIZE_SECRETS: ${{ steps.check_secrets.outputs.HAS_NOTARIZE_SECRETS || '' }}
           APPLE_NOTARIZE_USERNAME: "${{ secrets.APPLE_NOTARIZE_USERNAME }}"
           APPLE_NOTARIZE_PASSWORD: "${{ secrets.APPLE_NOTARIZE_PASSWORD }}"
           APPLE_TEAM_ID: "${{ secrets.APPLE_TEAM_ID }}"
-          NOTARIZE: ${{ (steps.release_policy.outputs.notarize_macos == 'true' && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true' && steps.check_secrets.outputs.HAS_NOTARIZE_SECRETS == 'true') && 'true' || 'false' }}
+          NOTARIZE: ${{ (needs.release-policy.outputs.notarize_macos == 'true' && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true' && steps.check_secrets.outputs.HAS_NOTARIZE_SECRETS == 'true') && 'true' || 'false' }}
         run: |
           set -euo pipefail
 
@@ -890,12 +889,13 @@ jobs:
   # final release and both matrices succeeded, so a partial set is never attached.
   publish-release:
     name: Publish GitHub release
-    needs: [release-policy, build, c-libraries]
+    needs: [release-policy, build, c-libraries, release-publish-checks]
     if: >-
       needs.release-policy.result == 'success' &&
       needs.release-policy.outputs.is_final == 'true' &&
       needs.build.result == 'success' &&
-      needs.c-libraries.result == 'success'
+      needs.c-libraries.result == 'success' &&
+      needs.release-publish-checks.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write

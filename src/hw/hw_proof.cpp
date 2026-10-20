@@ -379,6 +379,19 @@ static uint64_t hw_proof_queue_segments(struct vdf_state *vdf, uint16_t *prev, u
     return iters;
 }
 
+// The tail after prev. A zero span already ends on that checkpoint.
+static void hw_proof_queue_request(struct vdf_state *vdf, uint16_t prev, uint64_t span)
+{
+    span = hw_proof_queue_segments(vdf, &prev, span);
+    if (span != 0) {
+        hw_queue_proof(vdf, span, prev, HW_VDF_PROOF_FLAG_IS_REQ);
+        return;
+    }
+    if (prev != HW_VDF_PROOF_NONE) {
+        vdf->proofs[prev].flags |= HW_VDF_PROOF_FLAG_EXACT_REQ;
+    }
+}
+
 void hw_proof_process_req(struct vdf_state *vdf)
 {
     uint64_t iters;
@@ -426,8 +439,7 @@ void hw_proof_process_req(struct vdf_state *vdf)
         }
     }
 
-    iters = hw_proof_queue_segments(vdf, &prev, req_iters - base_iters);
-    hw_queue_proof(vdf, iters, prev, HW_VDF_PROOF_FLAG_IS_REQ);
+    hw_proof_queue_request(vdf, prev, req_iters - base_iters);
 
     {
         ProofCmp cmp(vdf->proofs);
@@ -814,12 +826,13 @@ void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof 
             bqfc_serialize(out_proof->y, y.a.impl, y.b.impl, d_bits);
             bqfc_serialize(out_proof->proof, proof_val.a.impl, proof_val.b.impl, d_bits);
 
-            if (out_proof->flags & HW_VDF_PROOF_FLAG_IS_REQ) {
-                vdf->done_proofs.push_back((uint16_t)proof_idx);
-            } else {
+            if (!(out_proof->flags & HW_VDF_PROOF_FLAG_IS_REQ)) {
                 integer B = GetB(vdf->D, x, y);
 
                 mpz_export(out_proof->B, NULL, 1, 1, 0, 0, B.impl);
+            }
+            if (out_proof->flags & (HW_VDF_PROOF_FLAG_IS_REQ | HW_VDF_PROOF_FLAG_EXACT_REQ)) {
+                vdf->done_proofs.push_back((uint16_t)proof_idx);
             }
             out_proof->flags |= HW_VDF_PROOF_FLAG_DONE;
             vdf->proofs_resize_mtx.unlock();

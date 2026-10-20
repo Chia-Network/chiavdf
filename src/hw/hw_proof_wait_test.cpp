@@ -282,6 +282,61 @@ int main() {
         {
             vdf_state vdf{};
             vdf.interval = HW_VDF_VALUE_INTERVAL;
+            vdf.checkpoint_threshold = 8000;
+            uint16_t checkpoint = hw_queue_proof(&vdf, 8000, HW_VDF_PROOF_NONE, 0);
+            hw_request_proof(&vdf, vdf.proofs[checkpoint].iters, false);
+            hw_proof_process_req(&vdf);
+            require(vdf.proofs.size() == 1, "Exact checkpoint match queued another segment");
+            require(vdf.proofs[0].seg_iters == 8000, "Exact match changed the checkpoint length");
+            require((vdf.proofs[0].flags & HW_VDF_PROOF_FLAG_EXACT_REQ) != 0,
+                    "Exact checkpoint was not delivered as the request");
+            require((vdf.proofs[0].flags & HW_VDF_PROOF_FLAG_IS_REQ) == 0,
+                    "Exact checkpoint was no longer a checkpoint");
+            hw_request_proof(&vdf, 16000, false);
+            hw_proof_process_req(&vdf);
+            require(vdf.proofs.size() == 2, "Later request did not extend the exact checkpoint");
+            require(vdf.proofs[1].prev == checkpoint && vdf.proofs[1].seg_iters == 8000
+                    && vdf.proofs[1].iters == 16000,
+                    "Later request did not continue from the reused checkpoint");
+            for (const auto &proof : vdf.proofs) {
+                require(proof.seg_iters != 0, "Zero-length segment was queued");
+            }
+            vdf.proofs[0].flags |= HW_VDF_PROOF_FLAG_DONE;
+            vdf.done_proofs.push_back(checkpoint);
+            vdf_proof_delivery delivery;
+            int count = hw_retrieve_proof(&vdf, &delivery);
+            require(count == 0 && delivery.final.iters == 8000 && delivery.final.seg_iters == 8000,
+                    "Exact checkpoint request was not the checkpoint itself");
+            check_frame(delivery);
+        }
+        {
+            vdf_state vdf{};
+            vdf.interval = HW_VDF_VALUE_INTERVAL;
+            vdf.checkpoint_threshold = 8000;
+            hw_request_proof(&vdf, 24000, false);
+            hw_proof_process_req(&vdf);
+            hw_request_proof(&vdf, 16000, false);
+            while (!vdf.req_proofs.empty()) hw_proof_process_req(&vdf);
+            bool saw_16000 = false;
+            uint64_t covered_24000 = 0;
+            for (uint16_t i = 0; i < vdf.proofs.size(); i++) {
+                const vdf_proof &proof = vdf.proofs[i];
+                if (proof.flags == 0xff) continue;
+                require(proof.seg_iters != 0, "Even split queued a zero-length segment");
+                if (proof.iters == 16000 &&
+                        (proof.flags & (HW_VDF_PROOF_FLAG_IS_REQ | HW_VDF_PROOF_FLAG_EXACT_REQ)))
+                    saw_16000 = true;
+                if (proof.iters == 24000 && (proof.flags & HW_VDF_PROOF_FLAG_IS_REQ)) {
+                    for (uint16_t idx = i; idx != HW_VDF_PROOF_NONE; idx = vdf.proofs[idx].prev)
+                        covered_24000 += vdf.proofs[idx].seg_iters;
+                }
+            }
+            require(saw_16000, "Request on an even checkpoint was not queued");
+            require(covered_24000 == 24000, "Even-split chain does not cover its request");
+        }
+        {
+            vdf_state vdf{};
+            vdf.interval = HW_VDF_VALUE_INTERVAL;
             vdf.checkpoint_threshold = HW_VDF_MIN_CHKP_THRESHOLD;
             const uint64_t challenge = 2000000000ULL;
             hw_request_proof(&vdf, challenge, false);

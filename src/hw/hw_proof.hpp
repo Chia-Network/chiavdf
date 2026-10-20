@@ -30,6 +30,9 @@
 #define HW_VDF_PROOF_FLAG_DONE 1
 #define HW_VDF_PROOF_FLAG_IS_REQ 2
 #define HW_VDF_PROOF_FLAG_STARTED 4
+// Queued checkpoint whose end is the requested iteration. It is delivered as
+// that request and still exports B for any longer chain that points at it.
+#define HW_VDF_PROOF_FLAG_EXACT_REQ 8
 #define HW_VDF_PROOF_NONE ((uint16_t)0xffff)
 
 struct vdf_work {

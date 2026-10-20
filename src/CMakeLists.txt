@@ -477,7 +477,7 @@ if(BUILD_HW_TOOLS)
 
   if(WIN32)
     set(HW_LIBS
-      ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222/libft4222.lib
+      ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222/LibFT4222-64.lib
       ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222/ftd2xx.lib
     )
     set(HW_SOCKET_LIBS ws2_32)

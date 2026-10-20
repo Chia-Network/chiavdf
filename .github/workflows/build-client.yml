@@ -40,14 +40,6 @@ jobs:
       CHIA_ENABLE_AVX512_IFMA: "1"
       # On release workflows, pin embedded CLI version to the tag.
       RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
-      # Keep Windows bundle/sign targets in one place.
-      WINDOWS_BUNDLE_EXE_FILES: |-
-        vdf_client.exe
-        vdf_bench.exe
-        hw_vdf_client.exe
-        emu_hw_vdf_client.exe
-        hw_test.exe
-        emu_hw_test.exe
     strategy:
       fail-fast: false
       matrix:
@@ -462,41 +454,7 @@ jobs:
           INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
           REQUEST_WINDOWS_SIGNING: ${{ inputs.sign_windows }}
           HAS_WINDOWS_SIGNING_SECRET: ${{ steps.check_windows_signing_secrets.outputs.HAS_WINDOWS_SIGNING_SECRET || '' }}
-        run: |
-          $baseName = "chiavdf-$env:INSTALLER_VERSION-windows-amd64"
-          $bundleRoot = "dist/windows/$baseName"
-          $binDir = "$bundleRoot/bin"
-          $libDir = "$bundleRoot/lib"
-          New-Item -ItemType Directory -Force -Path $binDir, $libDir | Out-Null
-
-          if ($env:REQUEST_WINDOWS_SIGNING -eq "true" -and $env:HAS_WINDOWS_SIGNING_SECRET -ne "true") {
-            throw "Windows signing was requested but signing secrets (SM_*) are not configured."
-          }
-
-          $exeFiles = @($env:WINDOWS_BUNDLE_EXE_FILES -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-          if (-not $exeFiles -or $exeFiles.Count -eq 0) {
-            throw "WINDOWS_BUNDLE_EXE_FILES is empty; expected one or more executable names."
-          }
-          foreach ($exe in $exeFiles) {
-            $source = "build/$exe"
-            if (-not (Test-Path $source)) {
-              throw "Missing expected binary: $source"
-            }
-            Copy-Item $source -Destination $binDir -Force
-          }
-
-          $ftdiDlls = Get-ChildItem "src/hw/libft4222" -Filter "*.dll" -File -ErrorAction Stop
-          foreach ($dll in $ftdiDlls) {
-            Copy-Item $dll.FullName -Destination $libDir -Force
-          }
-          $mpirDlls = Get-ChildItem "mpir_gc_x64" -Filter "*.dll" -File -ErrorAction Stop
-          foreach ($dll in $mpirDlls) {
-            Copy-Item $dll.FullName -Destination $libDir -Force
-          }
-
-          if ($env:REQUEST_WINDOWS_SIGNING -ne "true") {
-            Write-Host "Windows signing not requested; publishing unsigned Windows bundle"
-          }
+        run: ./scripts/package-windows-bundle.ps1 -Action Assemble
 
       - name: Setup Windows signer tooling
         if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1' && steps.check_windows_signing_secrets.outputs.HAS_WINDOWS_SIGNING_SECRET == 'true' && inputs.sign_windows == 'true'
@@ -509,56 +467,22 @@ jobs:
           sm_code_signing_cert_sha1_hash: ${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }}
           sign: "false"
 
-      - name: Sign Windows bundled executables
+      - name: Sign Windows chiavdf executables and MPIR DLLs
         if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1' && steps.check_windows_signing_secrets.outputs.HAS_WINDOWS_SIGNING_SECRET == 'true' && inputs.sign_windows == 'true'
         shell: pwsh
         env:
           INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
           SM_CODE_SIGNING_CERT_SHA1_HASH: "${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }}"
-        run: |
-          $binDir = "dist/windows/chiavdf-$env:INSTALLER_VERSION-windows-amd64/bin"
-          $exeFiles = @($env:WINDOWS_BUNDLE_EXE_FILES -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-          if (-not $exeFiles -or $exeFiles.Count -eq 0) {
-            throw "WINDOWS_BUNDLE_EXE_FILES is empty; expected one or more executable names."
-          }
-          foreach ($exe in $exeFiles) {
-            $file = Join-Path $binDir $exe
-            if (-not (Test-Path $file)) {
-              throw "Missing expected executable for signing: $file"
-            }
-            & signtool.exe sign /sha1 "$env:SM_CODE_SIGNING_CERT_SHA1_HASH" /tr "http://timestamp.digicert.com" /td SHA256 /fd SHA256 "$file"
-            if ($LASTEXITCODE -ne 0) {
-              throw "signtool sign failed for $file with exit code $LASTEXITCODE"
-            }
-            & signtool.exe verify /v /pa "$file"
-            if ($LASTEXITCODE -ne 0) {
-              throw "signtool verify failed for $file with exit code $LASTEXITCODE"
-            }
-          }
+        run: ./scripts/package-windows-bundle.ps1 -Action Sign
 
-      - name: Package Windows zip bundle
+      - name: Package and verify Windows zip bundle
         if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
         shell: pwsh
         env:
           INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
           IS_RELEASE: ${{ inputs.is_final }}
-        run: |
-          $baseName = "chiavdf-$env:INSTALLER_VERSION-windows-amd64"
-          $bundleRoot = "dist/windows/$baseName"
-          if (-not (Test-Path $bundleRoot)) {
-            throw "Missing expected bundle directory: $bundleRoot"
-          }
-          $assetName = "$baseName.zip"
-          $assetPath = "dist/windows/$assetName"
-          Compress-Archive -Path $bundleRoot -DestinationPath $assetPath -Force
-          $assetHash = (Get-FileHash -Path $assetPath -Algorithm SHA256).Hash.ToLowerInvariant()
-          Set-Content -Path "$assetPath.sha256" -Value $assetHash -NoNewline
-
-          if ($env:IS_RELEASE -eq "true") {
-            $wingetAssetPath = "dist/windows/chiavdf-win64.zip"
-            Copy-Item $assetPath -Destination $wingetAssetPath -Force
-            Set-Content -Path "$wingetAssetPath.sha256" -Value $assetHash -NoNewline
-          }
+          REQUEST_WINDOWS_SIGNING: ${{ inputs.sign_windows }}
+        run: ./scripts/package-windows-bundle.ps1 -Action Package
 
       - name: Assemble macOS brew bundle
         if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'

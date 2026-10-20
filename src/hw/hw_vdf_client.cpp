@@ -435,9 +435,14 @@ void event_loop(struct vdf_client *client)
         if (client->opts.auto_freq && !(loop_cnt % 256)) {
             uint64_t elapsed = vdf_get_elapsed_us(client->drv->last_freq_update);
             if (elapsed / 1000000 >= client->opts.auto_freq_period) {
-                // Check and see what the next frequency would be, and if its <= max allowed frequency
-                double next_freq = pll_entries[client->drv->freq_idx + 1].freq;
-                if (next_freq <= client->opts.max_freq) {
+                // Check the next table entry before reading it; freq_idx is
+                // allowed to sit on the last entry.
+                bool can_step_up = client->drv->freq_idx < VALID_PLL_FREQS - 1;
+                if (can_step_up) {
+                    double next_freq = pll_entries[client->drv->freq_idx + 1].freq;
+                    can_step_up = next_freq <= client->opts.max_freq;
+                }
+                if (can_step_up) {
                     adjust_hw_freq(client->drv, running_mask, 1);
                 } else {
                     LOG_INFO("Can't increase frequency, already at maximum");

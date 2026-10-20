@@ -140,12 +140,33 @@ void adjust_hw_freq(ChiaDriver *drv, uint8_t idx_mask, int direction)
 {
     double freq;
 
+    if (direction == 0) {
+        return;
+    }
+    if (drv->freq_idx >= VALID_PLL_FREQS) {
+        LOG_ERROR("Current frequency index %u is out of range", drv->freq_idx);
+        return;
+    }
+    if (direction < 0 && drv->freq_idx == 0) {
+        LOG_INFO("Already at minimum frequency; not decreasing");
+        return;
+    }
+    if (direction > 0 && drv->freq_idx >= VALID_PLL_FREQS - 1) {
+        LOG_INFO("Already at maximum frequency; not increasing");
+        return;
+    }
+
     hw_vdf_control(drv, idx_mask, 0);
 
-    drv->SetPLLFrequency(0.0, drv->freq_idx + direction);
+    bool changed = drv->SetPLLFrequency(0.0, drv->freq_idx + direction);
     freq = drv->GetPLLFrequency();
-    LOG_INFO("Frequency is %s to %.1f MHz; freq_idx = %u",
-            direction > 0 ? "increased" : "decreased", freq, drv->freq_idx);
+    if (changed) {
+        LOG_INFO("Frequency is %s to %.1f MHz; freq_idx = %u",
+                direction > 0 ? "increased" : "decreased", freq, drv->freq_idx);
+    } else {
+        LOG_ERROR("Failed to %s frequency; current is %.1f MHz; freq_idx = %u",
+                direction > 0 ? "increase" : "decrease", freq, drv->freq_idx);
+    }
 
     hw_vdf_control(drv, idx_mask, 1);
 }

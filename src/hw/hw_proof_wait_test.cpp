@@ -1,4 +1,6 @@
 #include "hw_proof.hpp"
+#include "chia_driver.hpp"
+#include "pll_freqs.hpp"
 #include <chrono>
 #include <cstring>
 #include <functional>
@@ -23,6 +25,23 @@ static bool wait_for(const std::function<bool()> &ready, std::chrono::millisecon
 
 static void require(bool condition, const char *message) {
     if (!condition) throw std::runtime_error(message);
+}
+
+static void check_pll_bounds() {
+    ChiaDriver driver;
+    require(!driver.SetPLLFrequency(0.0, VALID_PLL_FREQS),
+            "SetPLLFrequency accepted an index past the PLL table");
+    require(!driver.SetPLLFrequency(0.0, UINT32_MAX),
+            "SetPLLFrequency accepted a wrapped PLL index");
+
+    driver.freq_idx = 0;
+    adjust_hw_freq(&driver, 0, -1);
+    require(driver.freq_idx == 0, "Frequency moved below the PLL table");
+
+    driver.freq_idx = VALID_PLL_FREQS - 1;
+    adjust_hw_freq(&driver, 0, 1);
+    require(driver.freq_idx == VALID_PLL_FREQS - 1,
+            "Frequency moved past the PLL table");
 }
 
 static void check_delivery(const vdf_proof_delivery &delivery) {
@@ -114,6 +133,7 @@ static void initialize_wait_state(vdf_state& vdf) {
 int main() {
     try {
         VdfBaseInit();
+        check_pll_bounds();
         {
             vdf_state vdf{};
             initialize_wait_state(vdf);

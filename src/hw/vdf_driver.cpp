@@ -325,6 +325,11 @@ void VdfDriver::ResetPLL() {
 }
 
 bool VdfDriver::SetPLLFrequency(double frequency, uint32_t entry_index) {
+  if (entry_index >= VALID_PLL_FREQS) {
+    fprintf(stderr, "SetPLLFrequency entry index out of range: %u\n", entry_index);
+    return false;
+  }
+
   if (frequency > pll_entries[VALID_PLL_FREQS - 1].freq) {
     fprintf(stderr, "SetPLLFrequency frequency too high %lf\n", frequency);
     return false;
@@ -333,8 +338,13 @@ bool VdfDriver::SetPLLFrequency(double frequency, uint32_t entry_index) {
   if (!entry_index) {
     // Reset is necessary for the initial setting of frequency
     Reset(10000);
-    while (frequency > pll_entries[entry_index].freq) {
+    while (entry_index < VALID_PLL_FREQS &&
+           frequency > pll_entries[entry_index].freq) {
       entry_index++;
+    }
+    if (entry_index >= VALID_PLL_FREQS) {
+      fprintf(stderr, "SetPLLFrequency frequency not found %lf\n", frequency);
+      return false;
     }
   }
 

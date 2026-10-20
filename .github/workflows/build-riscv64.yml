@@ -32,8 +32,6 @@ jobs:
             emoji: 🐧
             runs-on: ubuntu-latest
         python:
-          - major-dot-minor: '3.10'
-            matrix: '3.10'
           - major-dot-minor: '3.11'
             matrix: '3.11'
           - major-dot-minor: '3.12'

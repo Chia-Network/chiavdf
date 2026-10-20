@@ -71,9 +71,9 @@ The published `chiavdf` wheels contain the native verifier bindings that
 chia-blockchain uses to validate proofs of time. This lets a node install a
 prebuilt wheel instead of compiling the C++ library itself.
 
-Building the Python bindings requires CMake, a C++17 compiler, and GMP
-(MPIR on Windows). Building the timelord client and tests also requires Boost
-headers.
+The Python bindings require Python 3.11 or newer. Building them requires
+CMake, a C++17 compiler, and GMP (MPIR on Windows). Building the timelord
+client and tests also requires Boost headers.
 
 ```bash
 python3 -m venv venv

@@ -35,9 +35,27 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 unzip -q "$ZIP_PATH" -d "$tmp"
 
+# ditto -c -k stores resource forks that unzip materializes as __MACOSX and
+# AppleDouble ._* files. Those are not bundle contents.
+is_apple_metadata() {
+  local path="$1"
+  local base
+  base="$(basename "$path")"
+  case "$path" in
+    */__MACOSX|*/__MACOSX/*) return 0 ;;
+  esac
+  case "$base" in
+    ._*|.DS_Store) return 0 ;;
+  esac
+  return 1
+}
+
 top=()
 while IFS= read -r dir; do
   [ -n "$dir" ] || continue
+  if [ "$(basename "$dir")" = "__MACOSX" ]; then
+    continue
+  fi
   top+=("$dir")
 done < <(find "$tmp" -mindepth 1 -maxdepth 1 -type d)
 if [ "${#top[@]}" -ne 1 ]; then
@@ -77,6 +95,9 @@ fail=0
 checked=0
 while IFS= read -r macho; do
   [ -n "$macho" ] || continue
+  if is_apple_metadata "$macho"; then
+    continue
+  fi
   checked=$((checked + 1))
   if ! loads="$(otool -L "$macho")"; then
     echo "otool -L failed for $macho" >&2

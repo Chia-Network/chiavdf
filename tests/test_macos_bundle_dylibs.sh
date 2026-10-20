@@ -333,6 +333,43 @@ test_verify_rejects_homebrew_and_usr_local() {
   rm -rf "$WORK"
 }
 
+add_zip_entries() {
+  local zip_path="$1"
+  shift
+  python3 - "$zip_path" "$@" <<'PY'
+import sys
+import zipfile
+
+zip_path = sys.argv[1]
+with zipfile.ZipFile(zip_path, "a") as zf:
+    for spec in sys.argv[2:]:
+        name, payload = spec.split("=", 1)
+        zf.writestr(name, payload)
+PY
+}
+
+test_verify_ignores_appledouble_metadata() {
+  prepare_verify_tree
+  make_zip "$BUNDLE" "$WORK/apple.zip"
+  add_zip_entries "$WORK/apple.zip" \
+    "__MACOSX/chiavdf-test/bin/._vdf_client=appledouble" \
+    "chiavdf-test/bin/._vdf_client=appledouble" \
+    "chiavdf-test/.DS_Store=dsstore"
+  "$VERIFY" "$WORK/apple.zip" >/dev/null
+  echo "ok: AppleDouble metadata does not fail verification"
+
+  prepare_verify_tree
+  make_zip "$BUNDLE" "$WORK/extra-dir.zip"
+  add_zip_entries "$WORK/extra-dir.zip" "notes/README=not metadata"
+  expect_fail "a second top-level directory fails verification" "$VERIFY" "$WORK/extra-dir.zip"
+
+  prepare_verify_tree
+  make_zip "$BUNDLE" "$WORK/stray.zip"
+  add_zip_entries "$WORK/stray.zip" "chiavdf-test/bin/README.txt=not a mach-o"
+  expect_fail "a non-Mach-O bundle file fails verification" "$VERIFY" "$WORK/stray.zip"
+  rm -rf "$WORK"
+}
+
 test_verify_rejects_failed_launch_and_missing_gmp() {
   prepare_verify_tree
   printf '#!/bin/bash\nexit 7\n' > "$BUNDLE/bin/vdf_client"
@@ -354,6 +391,7 @@ test_stage_refuses_basename_collision
 test_stage_refuses_relative_install_name
 test_stage_refuses_missing_rpath_dylib
 test_verify_launches_with_dyld_unset
+test_verify_ignores_appledouble_metadata
 test_verify_rejects_homebrew_and_usr_local
 test_verify_rejects_failed_launch_and_missing_gmp
 echo "all macOS bundle dylib tests passed"

@@ -435,6 +435,8 @@ WantedBy=multi-user.target
 
 For a source build, set `ExecStart` to the absolute path of the binary, `WorkingDirectory` to `.../src`, and `Environment=LD_LIBRARY_PATH=hw/libft4222/build-x86_64` (or `build-arm-v8`).
 
+The unit runs as root unless you add `User=` and `Group=`. The packaged udev rule grants an unprivileged account access to the board.
+
 macOS launchd, with `caffeinate` so the USB session survives idle sleep. Replace the executable path. A release zip uses `.../bin/hw_vdf_client`.
 
 ```xml
@@ -461,6 +463,8 @@ macOS launchd, with `caffeinate` so the USB session survives idle sleep. Replace
 </dict>
 </plist>
 ```
+
+Install the plist as a LaunchAgent for the logged-in user; a LaunchDaemon runs it as root.
 
 This repo does not ship a Windows service. Run `hw_vdf_client.exe` in a console that will not sleep, or register that command with Task Scheduler at logon. A release zip has every DLL in `bin\`, so no `PATH` change is needed.
 

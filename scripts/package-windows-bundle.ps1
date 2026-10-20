@@ -3,10 +3,14 @@
 #
 # Windows loads a DLL from the directory containing the executable, then
 # System32, the Windows directory, the current directory, and PATH. It does
-# not look in a sibling lib directory. MPIR's proxy also loads its CPU
-# variant from the directory that contains mpir.dll. Every shipped exe and
-# DLL therefore lives in bin/, and the zip is launched from an empty
-# directory with a PATH that contains only the system directories.
+# not look in a sibling lib directory. Every shipped exe and DLL therefore
+# lives in bin/. The set of DLLs is the import closure of those binaries:
+# each non-system import must exist in bin/ under the name in the import
+# table. MPIR's proxy loads its CPU variant from the directory that contains
+# mpir.dll, so the other native DLLs in that directory ship with it. The VC++
+# runtime is copied from the MSVC redist and is part of the closure. The zip
+# is launched from an empty directory with a PATH that contains only the
+# system directories.
 
 [CmdletBinding()]
 param(
@@ -17,6 +21,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+. (Join-Path $PSScriptRoot 'windows-pe.ps1')
 
 $RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 
@@ -29,26 +35,27 @@ $BundleExes = @(
     'emu_hw_test.exe'
 )
 
-# Floor for the two source trees. Get-SourceDlls also ships every other DLL
-# those directories contain, and the zip must match that set exactly.
-$RequiredDllNames = @(
-    'mpir.dll',
-    'mpir_gc.dll',
-    'mpir_sandybridge.dll',
-    'mpir_haswell.dll',
-    'mpir_broadwell.dll',
-    'mpir_broadwell_avx.dll',
-    'mpir_skylake_avx.dll',
-    'mpir_bulldozer.dll',
-    'mpir_piledriver.dll',
-    'libft4222.dll',
-    'ftd2xx.dll'
-)
-
 $DllSourceDirs = @(
     (Join-Path $RepoRoot 'mpir_gc_x64'),
     (Join-Path $RepoRoot 'src/hw/libft4222')
 )
+
+# Windows DLLs the loader finds in System32. The VC++ 2015-2022 runtime is
+# intentionally absent: a zip that does not carry it fails the closure.
+$SystemDllNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+foreach ($name in @(
+        'advapi32.dll', 'bcrypt.dll', 'bcryptprimitives.dll', 'cabinet.dll', 'cfgmgr32.dll',
+        'combase.dll', 'crypt32.dll', 'cryptbase.dll', 'dbghelp.dll', 'dnsapi.dll',
+        'gdi32.dll', 'imagehlp.dll', 'imm32.dll', 'iphlpapi.dll', 'kernel32.dll',
+        'kernelbase.dll', 'msvcrt.dll', 'mswsock.dll', 'normaliz.dll', 'nsi.dll',
+        'ntdll.dll', 'ole32.dll', 'oleaut32.dll', 'powrprof.dll', 'profapi.dll',
+        'psapi.dll', 'rpcrt4.dll', 'sechost.dll', 'secur32.dll', 'setupapi.dll',
+        'shell32.dll', 'shlwapi.dll', 'sspicli.dll', 'ucrtbase.dll', 'user32.dll',
+        'userenv.dll', 'version.dll', 'winmm.dll', 'wintrust.dll', 'wldap32.dll',
+        'ws2_32.dll', 'wsock32.dll'
+    )) {
+    [void]$SystemDllNames.Add($name)
+}
 
 function Require-Text {
     param([Parameter(Mandatory = $true)][string]$Name)
@@ -86,8 +93,27 @@ function Get-BundlePaths {
     }
 }
 
-function Get-SourceDlls {
-    $found = foreach ($dir in $DllSourceDirs) {
+function Test-VcRuntimeName {
+    param([Parameter(Mandatory = $true)][string]$Leaf)
+    return $Leaf -match '^(?i)(?:vcruntime140|msvcp140|concrt140|vccorlib140)(?:_[0-9a-z]+)*\.dll$'
+}
+
+function Test-SystemDllName {
+    param([Parameter(Mandatory = $true)][string]$Leaf)
+    if (Test-VcRuntimeName $Leaf) {
+        return $false
+    }
+    if ($Leaf -like 'api-ms-win-*' -or $Leaf -like 'ext-ms-*') {
+        return $true
+    }
+    return $SystemDllNames.Contains($Leaf)
+}
+
+function Get-DllCandidates {
+    $map = [System.Collections.Generic.Dictionary[string, System.IO.FileInfo]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase
+    )
+    foreach ($dir in $DllSourceDirs) {
         if (-not (Test-Path -LiteralPath $dir -PathType Container)) {
             throw "DLL source directory is missing: $dir"
         }
@@ -95,24 +121,126 @@ function Get-SourceDlls {
         if ($dlls.Count -eq 0) {
             throw "DLL source directory contains no DLLs: $dir"
         }
-        $dlls
+        foreach ($dll in $dlls) {
+            Assert-NativeAmd64Dll $dll.FullName | Out-Null
+            if ($map.ContainsKey($dll.Name)) {
+                throw "Duplicate runtime DLL name: $($dll.Name)"
+            }
+            $map.Add($dll.Name, $dll)
+        }
     }
-    $found = @($found)
-    $names = @($found | ForEach-Object { $_.Name })
-    $duplicates = @($names | Group-Object | Where-Object { $_.Count -gt 1 } | ForEach-Object { $_.Name })
-    if ($duplicates.Count -gt 0) {
-        throw "Duplicate runtime DLL names: $($duplicates -join ', ')"
-    }
-    $missing = @($RequiredDllNames | Where-Object { $names -notcontains $_ })
-    if ($missing.Count -gt 0) {
-        throw "Required runtime DLLs were not found beside their sources: $($missing -join ', ')"
-    }
-    return $found
+    return $map
 }
 
-function Get-DllNames {
-    param([Parameter(Mandatory = $true)]$Dlls)
-    return @($Dlls | ForEach-Object { $_.Name } | Sort-Object)
+function Get-MsvcCrtDirectory {
+    $roots = [System.Collections.Generic.List[string]]::new()
+    if (-not [string]::IsNullOrWhiteSpace($env:VCToolsRedistDir)) {
+        $roots.Add($env:VCToolsRedistDir.Trim())
+    }
+    $programFilesX86 = [Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
+    if (-not [string]::IsNullOrWhiteSpace($programFilesX86)) {
+        $vswhere = Join-Path $programFilesX86 'Microsoft Visual Studio\Installer\vswhere.exe'
+    } else {
+        $vswhere = $null
+    }
+    if ($vswhere -and (Test-Path -LiteralPath $vswhere -PathType Leaf)) {
+        $installs = @(& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath)
+        foreach ($install in $installs) {
+            if (-not [string]::IsNullOrWhiteSpace($install)) {
+                $roots.Add((Join-Path $install.Trim() 'VC\Redist\MSVC'))
+            }
+        }
+    }
+    foreach ($root in $roots) {
+        if (-not (Test-Path -LiteralPath $root -PathType Container)) {
+            continue
+        }
+        $match = @(Get-ChildItem -LiteralPath $root -Recurse -Directory -Filter 'Microsoft.VC*.CRT' -ErrorAction SilentlyContinue |
+                Where-Object {
+                    $_.FullName -match '[\\/]x64[\\/]Microsoft\.VC\d+\.CRT$' -and
+                    (Test-Path -LiteralPath (Join-Path $_.FullName 'vcruntime140.dll') -PathType Leaf)
+                } |
+                Sort-Object FullName -Descending |
+                Select-Object -First 1)
+        if ($match.Count -eq 1) {
+            return $match[0].FullName
+        }
+    }
+    throw 'MSVC x64 CRT redist directory was not found. Refusing to copy the VC++ runtime from System32.'
+}
+
+function Find-CrtDll {
+    param(
+        [Parameter(Mandatory = $true)][string]$CrtDirectory,
+        [Parameter(Mandatory = $true)][string]$Leaf
+    )
+    $match = @(Get-ChildItem -LiteralPath $CrtDirectory -File | Where-Object { $_.Name -eq $Leaf })
+    if ($match.Count -ne 1) {
+        throw "MSVC redist directory $CrtDirectory does not contain $Leaf. Refusing to take it from System32."
+    }
+    return $match[0].FullName
+}
+
+function Get-RequiredRuntimeDlls {
+    param([Parameter(Mandatory = $true)][string[]]$ExePaths)
+    $candidates = Get-DllCandidates
+    $crtDirectory = Get-MsvcCrtDirectory
+    $required = [System.Collections.Generic.List[object]]::new()
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $queue = [System.Collections.Generic.Queue[string]]::new()
+    $contributedDirs = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($exe in $ExePaths) {
+        if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+            throw "Missing expected binary: $exe"
+        }
+        $queue.Enqueue((Resolve-Path -LiteralPath $exe).Path)
+    }
+
+    $scanSiblings = $true
+    while ($queue.Count -gt 0 -or $scanSiblings) {
+        if ($queue.Count -eq 0) {
+            $scanSiblings = $false
+            foreach ($candidate in @($candidates.Values)) {
+                $dir = [System.IO.Path]::GetDirectoryName($candidate.FullName)
+                if ($contributedDirs.Contains($dir) -and $seen.Add($candidate.Name)) {
+                    $required.Add([pscustomobject]@{ Name = $candidate.Name; Source = $candidate.FullName })
+                    $queue.Enqueue($candidate.FullName)
+                    $scanSiblings = $true
+                }
+            }
+            continue
+        }
+
+        $image = Assert-NativeAmd64Dll $queue.Dequeue()
+        foreach ($import in @($image.Imports)) {
+            if ([string]::IsNullOrWhiteSpace($import)) {
+                continue
+            }
+            $leaf = [System.IO.Path]::GetFileName($import)
+            if ([string]::IsNullOrWhiteSpace($leaf)) {
+                throw "Empty import name in $($image.Path)"
+            }
+            if ((Test-SystemDllName $leaf) -or -not $seen.Add($leaf)) {
+                continue
+            }
+            if (Test-VcRuntimeName $leaf) {
+                $source = Find-CrtDll $crtDirectory $leaf
+                Assert-NativeAmd64Dll $source | Out-Null
+            } elseif ($candidates.ContainsKey($leaf)) {
+                $source = $candidates[$leaf].FullName
+                [void]$contributedDirs.Add([System.IO.Path]::GetDirectoryName($source))
+            } else {
+                throw "$($image.Path) imports $leaf, which is not in the Windows runtime set."
+            }
+            $required.Add([pscustomobject]@{ Name = $leaf; Source = $source })
+            $queue.Enqueue($source)
+        }
+    }
+    return @($required.ToArray())
+}
+
+function Get-BuildExePaths {
+    return @($BundleExes | ForEach-Object { Join-Path $RepoRoot (Join-Path 'build' $_) })
 }
 
 function Assert-BundleRoot {
@@ -135,10 +263,10 @@ function Assert-BundleRoot {
     if ($nested.Count -gt 0) {
         throw "bin/ must be a flat directory. Nested entries: $($nested.Name -join ', ')"
     }
-    $actual = @($binFiles | ForEach-Object { $_.Name } | Sort-Object)
-    $expected = @($BundleExes + $DllNames | Sort-Object -Unique)
-    $missing = @($expected | Where-Object { $actual -notcontains $_ })
-    $extra = @($actual | Where-Object { $expected -notcontains $_ })
+    $actual = @($binFiles | ForEach-Object { $_.Name })
+    $expected = @($BundleExes + $DllNames)
+    $missing = @($expected | Where-Object { $actual -cnotcontains $_ })
+    $extra = @($actual | Where-Object { $expected -cnotcontains $_ })
     if ($actual.Count -ne (@($BundleExes).Count + @($DllNames).Count) -or
         $actual.Count -ne $expected.Count -or
         $missing.Count -gt 0 -or
@@ -164,7 +292,25 @@ function Copy-BundlePayload {
         Copy-Item -LiteralPath $source -Destination (Join-Path $BinDir $exe) -Force
     }
     foreach ($dll in @($Dlls)) {
-        Copy-Item -LiteralPath $dll.FullName -Destination (Join-Path $BinDir $dll.Name) -Force
+        Copy-Item -LiteralPath $dll.Source -Destination (Join-Path $BinDir $dll.Name) -Force
+    }
+}
+
+function Assert-ImportClosure {
+    param([Parameter(Mandatory = $true)][string]$BinDir)
+    $files = @(Get-ChildItem -LiteralPath $BinDir -File -Force)
+    foreach ($file in $files) {
+        $image = Assert-NativeAmd64Dll $file.FullName
+        foreach ($import in @($image.Imports)) {
+            $leaf = [System.IO.Path]::GetFileName($import)
+            if ([string]::IsNullOrWhiteSpace($leaf) -or (Test-SystemDllName $leaf)) {
+                continue
+            }
+            $present = @($files | Where-Object { $_.Name -ceq $leaf })
+            if ($present.Count -ne 1) {
+                throw "$($file.Name) imports $leaf, which is not in bin/ under that name."
+            }
+        }
     }
 }
 
@@ -229,11 +375,11 @@ function Get-SystemOnlyPath {
 function Assert-SystemOnlyPath {
     param(
         [Parameter(Mandatory = $true)][string]$PathValue,
-        [Parameter(Mandatory = $true)][string]$Expected,
         [Parameter(Mandatory = $true)][string[]]$ForbiddenRoots
     )
-    if ($PathValue -ne $Expected) {
-        throw "Launch PATH is not limited to the system directories. Refusing to run. PATH=$PathValue"
+    $systemOnly = Get-SystemOnlyPath
+    if (-not [string]::Equals($PathValue, $systemOnly, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Child PATH is not limited to the system directories. Stored PATH=$PathValue"
     }
     $entries = @($PathValue -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     if ($entries.Count -ne 2) {
@@ -274,8 +420,8 @@ public static extern uint SetErrorMode(uint uMode);
 function Invoke-VersionProbe {
     param(
         [Parameter(Mandatory = $true)][string]$ExePath,
-        [Parameter(Mandatory = $true)][string]$PathValue,
-        [Parameter(Mandatory = $true)][string]$WorkDir
+        [Parameter(Mandatory = $true)][string]$WorkDir,
+        [Parameter(Mandatory = $true)][string[]]$ForbiddenRoots
     )
     $leaf = [System.IO.Path]::GetFileName($ExePath)
     $psi = [System.Diagnostics.ProcessStartInfo]::new()
@@ -286,16 +432,14 @@ function Invoke-VersionProbe {
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
     $psi.CreateNoWindow = $true
-    $psi.EnvironmentVariables['Path'] = $PathValue
-    $applied = $psi.EnvironmentVariables['Path']
-    if ($applied -ne $PathValue) {
-        throw "Failed to restrict PATH for ${leaf}. Applied PATH=$applied"
-    }
+    $psi.EnvironmentVariables['Path'] = Get-SystemOnlyPath
+    $storedPath = $psi.EnvironmentVariables['Path']
+    Assert-SystemOnlyPath -PathValue $storedPath -ForbiddenRoots $ForbiddenRoots
 
     Write-Host "Launching $leaf --version"
     Write-Host "  exe: $ExePath"
     Write-Host "  cwd: $WorkDir"
-    Write-Host "  PATH: $applied"
+    Write-Host "  PATH: $storedPath"
 
     $process = [System.Diagnostics.Process]::new()
     $process.StartInfo = $psi
@@ -405,16 +549,16 @@ function Invoke-ExtractedZip {
         $bundleRoot = Assert-ZipRoot -ExtractDir $extractDir -BaseName $Paths.BaseName
         Assert-BundleRoot -BundleRoot $bundleRoot -DllNames $DllNames
         $binDir = Join-Path $bundleRoot 'bin'
+        Assert-ImportClosure -BinDir $binDir
         if ($RequireSignatures) {
             Assert-Authenticode -BinDir $binDir
         }
-        $systemPath = Get-SystemOnlyPath
-        Assert-SystemOnlyPath -PathValue $systemPath -Expected $systemPath -ForbiddenRoots @(
+        Enable-FailFastLoaderErrors
+        $forbidden = @(
             $RepoRoot, $extractDir, $bundleRoot, $binDir, $workDir, $Paths.BundleRoot, $Paths.DistDir
         )
-        Enable-FailFastLoaderErrors
         foreach ($exe in $BundleExes) {
-            Invoke-VersionProbe -ExePath (Join-Path $binDir $exe) -PathValue $systemPath -WorkDir $workDir
+            Invoke-VersionProbe -ExePath (Join-Path $binDir $exe) -WorkDir $workDir -ForbiddenRoots $forbidden
         }
     } finally {
         if (Test-Path -LiteralPath $tempRoot) {
@@ -437,23 +581,30 @@ function Invoke-Assemble {
         Remove-Item -LiteralPath $paths.BundleRoot -Recurse -Force
     }
     New-Item -ItemType Directory -Path $paths.BinDir | Out-Null
-    $dlls = @(Get-SourceDlls)
+    $dlls = @(Get-RequiredRuntimeDlls (Get-BuildExePaths))
     Copy-BundlePayload -BinDir $paths.BinDir -Dlls $dlls
-    Assert-BundleRoot -BundleRoot $paths.BundleRoot -DllNames (Get-DllNames $dlls)
+    $dllNames = @($dlls | ForEach-Object { $_.Name })
+    Assert-BundleRoot -BundleRoot $paths.BundleRoot -DllNames $dllNames
+    Assert-ImportClosure -BinDir $paths.BinDir
     Write-Host "Assembled $($paths.BundleRoot)"
+}
+
+function Get-RuntimeDllNames {
+    return @((Get-RequiredRuntimeDlls (Get-BuildExePaths)) | ForEach-Object { $_.Name })
 }
 
 function Invoke-Sign {
     $paths = Get-BundlePaths (Require-Text 'INSTALLER_VERSION')
-    $dllNames = Get-DllNames (Get-SourceDlls)
-    Assert-BundleRoot -BundleRoot $paths.BundleRoot -DllNames $dllNames
+    Assert-BundleRoot -BundleRoot $paths.BundleRoot -DllNames (Get-RuntimeDllNames)
+    Assert-ImportClosure -BinDir $paths.BinDir
     Sign-ShippedBinaries -BinDir $paths.BinDir
 }
 
 function Invoke-Package {
     $paths = Get-BundlePaths (Require-Text 'INSTALLER_VERSION')
-    $dllNames = Get-DllNames (Get-SourceDlls)
+    $dllNames = Get-RuntimeDllNames
     Assert-BundleRoot -BundleRoot $paths.BundleRoot -DllNames $dllNames
+    Assert-ImportClosure -BinDir $paths.BinDir
     Publish-BundleZip -Paths $paths -IsRelease (Require-Flag 'IS_RELEASE')
     Invoke-ExtractedZip -Paths $paths -DllNames $dllNames -RequireSignatures (Require-Flag 'REQUEST_WINDOWS_SIGNING')
     Write-Host "Verified $($paths.AssetPath)"

@@ -61,7 +61,9 @@ typedef qfb qfb_t[1];
 
 // From Antic using Flint (works!)
 // MSVC link-time optimization miscompiles this function when it is inlined,
-// and the Windows package then divides by zero. Keep it out of line there.
+// and the Windows package then divides by zero. Moving this scratch into
+// another file does not stop that inlining, and the inlined build still
+// divides by zero. The fence below is what makes the Windows package pass.
 // Other compilers are unchanged.
 #if defined(_MSC_VER)
 __declspec(noinline)
@@ -70,8 +72,8 @@ void qfb_nucomp(qfb_t r, const qfb_t f, const qfb_t g, mpz_t const& D, mpz_t con
 {
    // Order the inputs once. A recursive call would re-enter the thread-local
    // scratch below if this block were ever moved under that scratch.
-   const qfb *left = f;
-   const qfb *right = g;
+   const qfb* left = f;
+   const qfb* right = g;
    if (mpz_cmp(f->a, g->a) > 0)
    {
       left = g;
@@ -82,18 +84,20 @@ void qfb_nucomp(qfb_t r, const qfb_t f, const qfb_t g, mpz_t const& D, mpz_t con
    struct qfb_nucomp_ctx {
       mpz_t a1, a2, c2, ca, cb, cc, k, s, sp, ss, m, t, u2, v1, v2;
       mpz_t m1, m2, r1, r2, co1, co2, temp;
+
       qfb_nucomp_ctx() {
          mpz_inits(a1, a2, c2, ca, cb, cc, k, s, sp, ss, m, t, u2, v1, v2,
-                   m1, m2, r1, r2, co1, co2, temp, nullptr);
+            m1, m2, r1, r2, co1, co2, temp, nullptr);
       }
       ~qfb_nucomp_ctx() {
          mpz_clears(a1, a2, c2, ca, cb, cc, k, s, sp, ss, m, t, u2, v1, v2,
-                    m1, m2, r1, r2, co1, co2, temp, nullptr);
+            m1, m2, r1, r2, co1, co2, temp, nullptr);
       }
       qfb_nucomp_ctx(const qfb_nucomp_ctx&) = delete;
       qfb_nucomp_ctx& operator=(const qfb_nucomp_ctx&) = delete;
    };
    static thread_local qfb_nucomp_ctx ctx;
+
    mpz_t& a1 = ctx.a1;
    mpz_t& a2 = ctx.a2;
    mpz_t& c2 = ctx.c2;
@@ -220,19 +224,19 @@ void qfb_nucomp(qfb_t r, const qfb_t f, const qfb_t g, mpz_t const& D, mpz_t con
          mpz_neg(ca, ca);
          mpz_neg(cc, cc);
       }
-
    }
 
    mpz_set(r->a, ca);
    mpz_set(r->b, cb);
    mpz_set(r->c, cc);
-
 }
 
 // a = b * c
 void nucomp_form(form &a, form const& b, form const& c, integer const& D, integer const& L) {
     qfb fr, fr2, fr3;
 
+    // Copies the mpz header only. fr, fr2, and fr3 share limb storage with the
+    // source form. Do not clear, free, or reallocate them.
     *fr.a = *a.a.impl;
     *fr.b = *a.b.impl;
     *fr.c = *a.c.impl;
@@ -446,6 +450,8 @@ void nudupl_form(form &a, form &b, const integer &D, const integer &L)
 {
     qfb fr, fr2;
 
+    // Copies the mpz header only. fr and fr2 share limb storage with the
+    // source form. Do not clear, free, or reallocate them.
     *fr.a = *a.a.impl;
     *fr.b = *a.b.impl;
     *fr.c = *a.c.impl;

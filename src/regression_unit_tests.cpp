@@ -7,3 +7,4 @@
 #include "proof_block_cache_regression_test.cpp"
 #include "proof_arithmetic_regression_test.cpp"
 #include "parallel_prover_witness_test.cpp"
+#include "fastpow_nucomp_regression_test.cpp"

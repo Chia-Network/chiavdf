@@ -144,9 +144,9 @@ int hw_test_main(int argc, char **argv)
     }
     for (uint8_t i = 0; i < n_vdfs; i++) {
         if (proof_threads[i].joinable()) proof_threads[i].join();
-        // A completed engine's proof thread owns its auxiliary drain. Join it
-        // before the failure path drains workers that never reached completion.
-        if (failed) hw_stop_proof(&vdfs[i]);
+    }
+    for (uint8_t i = 0; i < n_vdfs; i++) {
+        hw_stop_proof(&vdfs[i]);
         clear_vdf_state(&vdfs[i]);
         clear_vdf_value(&values[i]);
     }

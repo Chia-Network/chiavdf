@@ -10,7 +10,8 @@
 # mpir.dll, so the other native DLLs in that directory ship with it. The VC++
 # runtime is copied from the MSVC redist and is part of the closure. The zip
 # is launched from an empty directory with a PATH that contains only the
-# system directories.
+# system directories. Signing covers the six chiavdf executables and the
+# MPIR DLLs. The VC++ runtime and the FTDI DLLs keep their vendor signatures.
 
 [CmdletBinding()]
 param(
@@ -327,22 +328,51 @@ function Get-ShippedBinaries {
     return $binaries
 }
 
-function Sign-ShippedBinaries {
+function Get-BinariesWeSign {
+    param([Parameter(Mandatory = $true)][string]$BinDir)
+    $mpirRoot = (Resolve-Path -LiteralPath (Join-Path $RepoRoot 'mpir_gc_x64')).Path
+    $paths = [System.Collections.Generic.List[string]]::new()
+    foreach ($exe in $BundleExes) {
+        $path = Join-Path $BinDir $exe
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "Missing expected binary to sign: $path"
+        }
+        $paths.Add($path)
+    }
+    foreach ($dll in @(Get-RequiredRuntimeDlls (Get-BuildExePaths))) {
+        $sourceDir = [System.IO.Path]::GetDirectoryName($dll.Source)
+        if (-not $sourceDir.Equals($mpirRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            continue
+        }
+        $path = Join-Path $BinDir $dll.Name
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "Missing MPIR DLL to sign: $path"
+        }
+        $paths.Add($path)
+    }
+    $names = @($paths | ForEach-Object { [System.IO.Path]::GetFileName($_) })
+    if ($names -cnotcontains 'mpir.dll') {
+        throw 'mpir.dll was not selected for signing.'
+    }
+    return @($paths.ToArray())
+}
+
+function Sign-OurBinaries {
     param([Parameter(Mandatory = $true)][string]$BinDir)
     $thumbprint = Require-Text 'SM_CODE_SIGNING_CERT_SHA1_HASH'
     if (-not (Get-Command signtool.exe -ErrorAction SilentlyContinue)) {
         throw 'signtool.exe is not on PATH.'
     }
-    foreach ($binary in @(Get-ShippedBinaries $BinDir)) {
-        & signtool.exe sign /sha1 $thumbprint /tr http://timestamp.digicert.com /td SHA256 /fd SHA256 $binary.FullName
+    foreach ($path in @(Get-BinariesWeSign $BinDir)) {
+        & signtool.exe sign /sha1 $thumbprint /tr http://timestamp.digicert.com /td SHA256 /fd SHA256 $path
         if ($LASTEXITCODE -ne 0) {
-            throw "signtool sign failed for $($binary.FullName) with exit code $LASTEXITCODE"
+            throw "signtool sign failed for $path with exit code $LASTEXITCODE"
         }
-        & signtool.exe verify /v /pa $binary.FullName
+        & signtool.exe verify /v /pa $path
         if ($LASTEXITCODE -ne 0) {
-            throw "signtool verify failed for $($binary.FullName) with exit code $LASTEXITCODE"
+            throw "signtool verify failed for $path with exit code $LASTEXITCODE"
         }
-        Write-Host "Signed $($binary.Name)"
+        Write-Host "Signed $([System.IO.Path]::GetFileName($path))"
     }
 }
 
@@ -354,7 +384,7 @@ function Assert-Authenticode {
     foreach ($binary in @(Get-ShippedBinaries $BinDir)) {
         & signtool.exe verify /v /pa $binary.FullName
         if ($LASTEXITCODE -ne 0) {
-            throw "Shipped binary is unsigned or its signature is invalid: $($binary.FullName)"
+            throw "$($binary.Name) has no valid Authenticode signature. Vendor DLLs are left with the signature they shipped with."
         }
     }
 }
@@ -597,7 +627,7 @@ function Invoke-Sign {
     $paths = Get-BundlePaths (Require-Text 'INSTALLER_VERSION')
     Assert-BundleRoot -BundleRoot $paths.BundleRoot -DllNames (Get-RuntimeDllNames)
     Assert-ImportClosure -BinDir $paths.BinDir
-    Sign-ShippedBinaries -BinDir $paths.BinDir
+    Sign-OurBinaries -BinDir $paths.BinDir
 }
 
 function Invoke-Package {

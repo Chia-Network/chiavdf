@@ -2,7 +2,16 @@
 
 ## Initial setup
 
-Download and unpack LibFT4222 library:
+On Apple Silicon macOS, install the dependencies and use the existing FTDI
+installer before building:
+
+~~~bash
+brew install gmp boost
+CHIAVDF_ADHOC_SIGN_FTDI=1 bash scripts/get-libft4222.sh install
+make -C src -f Makefile.vdf-client hw_test hw_vdf_client
+~~~
+
+On Linux, download and unpack LibFT4222:
 ```bash
 # in chiavdf directory
 wget https://ftdichip.com/wp-content/uploads/2022/06/libft4222-linux-1.4.4.170.tgz
@@ -60,6 +69,9 @@ List of options [default, min - max]:
   --voltage N - set board voltage [0.88, 0.7 - 1.0]
   --ip A.B.C.D - timelord IP address [localhost]
         Allows connecting to a timelord running on a remote host. Useful when running multiple machines with VDF hardware connecting to a single timelord.
+  --device-loc N - FTDI board location printed by --list [0: first available]
+  --checkpoint-threshold N - split proof requests above N iterations [1000000, 8000 - 4294967295]
+  --retain-asic-values - reuse recent validated ASIC samples for off-grid proof endpoints
   --vdfs-mask N - mask for enabling VDF engines [7, 1 - 7]
         The ASIC has 3 VDF engines numbered 0, 1, 2. If not running all 3 engines, the mask can be specified to enable specific engines. It must be the result of bitwise OR of the engine bits (1, 2, 4 for engines 0, 1, 2).
   --vdf-threads N - number of software threads per VDF engine [4, 2 - 64]
@@ -69,6 +81,26 @@ List of options [default, min - max]:
   --auto-freq-period N - auto-adjust frequency every N seconds [0, 10 - inf]
   --list - list available devices and exit
 ```
+
+## Multiple boards and proof construction
+
+Select each board by the location printed by `--list`; the default location 0
+selects the first available board. Run one client per board with distinct
+locations. Initialize them sequentially: wait for one client to connect before
+starting the next, since simultaneous FTDI enumeration can fail on macOS.
+Location values can change when USB connections change.
+
+The standalone test accepts the same location as an optional third argument:
+`hw_test N_VDFS N_ITERS DEVICE_LOC`.
+
+The checkpoint threshold changes how requests are divided into proof segments;
+its default remains one million iterations. Smaller thresholds can reduce final
+segment latency while adding checkpoint work. Endpoint retention is opt-in,
+bounded to 64 recent validated samples, and cleared on recovery and challenge
+changes. These options do not change the proof format or disable verification.
+
+`hw_proof_wait_test` runs publication, cancellation, worker ownership and proof
+snapshot regressions through the emulator without a physical board.
 
 ## Shutting down
 

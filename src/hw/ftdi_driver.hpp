@@ -32,7 +32,7 @@ public:
 
   // Open a connection to an automatically located FTDI device
   // Returns status, 0 for success
-  int Open();
+  int Open(DWORD target_id = 0);
 
   // Open with given SPI clock parameters
   int OpenClk(unsigned sys_clk, unsigned clk_div, DWORD target_id = 0);

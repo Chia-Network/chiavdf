@@ -20,7 +20,8 @@ struct vdf_value {
 extern int chia_vdf_is_emu;
 
 class ChiaDriver;
-ChiaDriver *init_hw(double freq, double brd_voltage);
+// device_loc is the FTDI location printed by --list; zero selects the first board.
+ChiaDriver *init_hw(double freq, double brd_voltage, uint32_t device_loc = 0);
 void stop_hw(ChiaDriver *drv);
 
 struct vdf_state;

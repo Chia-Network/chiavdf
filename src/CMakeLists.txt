@@ -457,6 +457,7 @@ if(BUILD_HW_TOOLS)
     ${CMAKE_CURRENT_SOURCE_DIR}/prover_runtime.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_util.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_proof.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_timelord_frame.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_interface.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/chia_driver.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/ftdi_driver.cpp
@@ -545,6 +546,26 @@ if(BUILD_HW_TOOLS)
   target_include_directories(emu_hw_vdf_client PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/hw ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222)
   target_link_libraries(emu_hw_vdf_client PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads ${HW_SOCKET_LIBS})
   vdf_add_windows_clang_opts(emu_hw_vdf_client)
+  if(UNIX AND NOT APPLE)
+    target_link_options(emu_hw_vdf_client PRIVATE -no-pie)
+  endif()
+
+  add_executable(hw_proof_wait_test
+    ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_proof_wait_test.cpp
+  )
+  target_sources(hw_proof_wait_test PRIVATE ${HW_COMMON_SOURCES} ${EMU_SOURCES} ${HW_VDF_ASM_SOURCES} ${VDF_COMMON_SOURCES})
+  target_compile_definitions(hw_proof_wait_test PRIVATE ${VDF_COMMON_DEFINITIONS})
+  target_include_directories(hw_proof_wait_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/hw ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222)
+  target_link_libraries(hw_proof_wait_test PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
+  vdf_add_windows_clang_opts(hw_proof_wait_test)
+  if(UNIX AND NOT APPLE)
+    # Generated asm objects use absolute relocations; disable PIE for this target.
+    target_link_options(hw_proof_wait_test PRIVATE -no-pie)
+  endif()
+  if(BUILD_VDF_TESTS)
+    add_test(NAME regression.hw.proof_wait COMMAND hw_proof_wait_test)
+  endif()
+
 endif()
 
 add_executable(verifier_test

@@ -10,6 +10,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cerrno>
+#include <exception>
 #include <signal.h>
 
 #ifdef _WIN32
@@ -48,6 +50,7 @@ struct vdf_client_opts {
     double freq;
     double voltage;
     uint32_t ip;
+    uint32_t device_loc;
     int port;
     int n_vdfs;
     uint32_t auto_freq_period;
@@ -64,12 +67,6 @@ struct vdf_client {
     struct vdf_value values[N_HW_VDFS];
     struct vdf_client_opts opts;
     ChiaDriver *drv;
-};
-
-struct vdf_proof_segm {
-    uint8_t iters[sizeof(uint64_t)];
-    uint8_t B[HW_VDF_B_SIZE];
-    uint8_t proof[BQFC_FORM_SIZE];
 };
 
 void write_data(struct vdf_conn *conn, const char *buf, size_t size);
@@ -295,46 +292,14 @@ void handle_iters(struct vdf_client *client, struct vdf_conn *conn)
     }
 }
 
-void tl_enc_hex(char *out_data, uint8_t *data, size_t size)
+void handle_proofs(struct vdf_client *, struct vdf_conn *conn)
 {
-    // Hex encode proof data for timelord
-    for (size_t i = 0; i < size; i++) {
-        snprintf(&out_data[i * 2], 3, "%02hhx", data[i]);
-    }
-}
-
-void handle_proofs(struct vdf_client *client, struct vdf_conn *conn)
-{
-    struct vdf_proof *proof;
-    int i;
-    while ((i = hw_retrieve_proof(&conn->vdf, &proof)) >= 0) {
-        uint8_t data[8 + 8 + 1 + BQFC_FORM_SIZE * 2];
-        char tl_data[sizeof(data) * 2 + 5] = {0};
-
-        LOG_INFO("VDF %d: Proof retrieved for iters=%llu", conn->vdf.idx, (unsigned long long)proof->iters);
-
-        Int64ToBytes(&data[0], proof->iters);
-        Int64ToBytes(&data[8], BQFC_FORM_SIZE);
-        memcpy(&data[16], proof->y, BQFC_FORM_SIZE);
-        data[16 + BQFC_FORM_SIZE] = i;
-        memcpy(&data[17 + BQFC_FORM_SIZE], proof->proof, BQFC_FORM_SIZE);
-
-        tl_enc_hex(&tl_data[4], data, sizeof(data));
-        Int32ToBytes((uint8_t *)tl_data, (sizeof(data) + i * sizeof(vdf_proof_segm)) * 2);
-        write_data(conn, tl_data, sizeof(tl_data) - 1);
-        while (i) {
-            struct vdf_proof_segm *segm = (struct vdf_proof_segm *)data;
-
-            i--;
-            //proof = conn->vdf.chkp_proofs[i];
-            proof = &conn->vdf.proofs[proof->prev];
-            Int64ToBytes(segm->iters, proof->seg_iters);
-            memcpy(segm->B, proof->B, sizeof(proof->B));
-            memcpy(segm->proof, proof->proof, sizeof(proof->proof));
-
-            tl_enc_hex(tl_data, data, sizeof(*segm));
-            write_data(conn, tl_data, sizeof(*segm) * 2);
-        }
+    struct vdf_proof_delivery delivery;
+    while (hw_retrieve_proof(&conn->vdf, &delivery) >= 0) {
+        LOG_INFO("VDF %d: Proof retrieved for iters=%llu", conn->vdf.idx,
+                (unsigned long long)delivery.final.iters);
+        std::vector<uint8_t> frame = hw_proof_timelord_frame(delivery);
+        write_data(conn, reinterpret_cast<const char *>(frame.data()), frame.size());
     }
 }
 
@@ -446,6 +411,7 @@ void event_loop(struct vdf_client *client)
                     size_t pos = 0;
                     form *f;
 
+                    hw_proof_reset_retained_values(vdf);
                     stop_hw_vdf(client->drv, vdf->idx);
                     f = hw_proof_last_good_form(vdf, &pos);
                     vdf->iters_offset = pos * vdf->interval;
@@ -496,6 +462,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     opts->voltage = HW_VDF_DEF_VOLTAGE;
     opts->freq = HW_VDF_DEF_FREQ;
     opts->ip = INADDR_LOOPBACK;
+    opts->device_loc = 0;
     opts->port = 0;
     opts->n_vdfs = 3;
     opts->do_list = false;
@@ -504,6 +471,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     opts->max_freq = pll_entries[VALID_PLL_FREQS - 1].freq;
     opts->vpo.max_aux_threads = HW_VDF_DEFAULT_MAX_AUX_THREADS;
     opts->vpo.max_proof_threads = 0;
+    opts->vpo.checkpoint_threshold = HW_VDF_CHKP_INTERVAL;
     opts->vdfs_mask = 0;
 
     while (argi < argc) {
@@ -545,6 +513,12 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
             argi++;
             continue;
         }
+        if (!strcmp(name, "retain-asic-values")) {
+            if (value) return -1;
+            opts->vpo.retain_asic_values = true;
+            argi++;
+            continue;
+        }
         if (!strcmp(name, "version")) {
             if (value) {
                 LOG_SIMPLE("Invalid option");
@@ -582,10 +556,30 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
                 opts->ip = ntohl(parsed_addr.s_addr);
             }
 #endif
+        } else if (!strcmp(name, "device-loc")) {
+            char *end = nullptr;
+            errno = 0;
+            unsigned long loc = strtoul(value, &end, 0);
+            if (!value[0] || value[0] == '-' || *end || errno == ERANGE || loc > UINT32_MAX) {
+                LOG_SIMPLE("Invalid device location");
+                return -1;
+            }
+            opts->device_loc = static_cast<uint32_t>(loc);
         } else if (!strcmp(name, "vdfs-mask")) {
             opts->vdfs_mask = strtoul(value, NULL, 0);
         } else if (!strcmp(name, "vdf-threads")) {
             opts->vpo.max_aux_threads = strtoul(value, NULL, 0);
+        } else if (!strcmp(name, "checkpoint-threshold")) {
+            char *end = nullptr;
+            errno = 0;
+            unsigned long threshold = strtoul(value, &end, 0);
+            if (value[0] < '0' || value[0] > '9' || *end || errno == ERANGE ||
+                    threshold < HW_VDF_MIN_CHKP_THRESHOLD || threshold > UINT32_MAX) {
+                LOG_SIMPLE("Checkpoint threshold must be between %u and %u iterations",
+                        HW_VDF_MIN_CHKP_THRESHOLD, UINT32_MAX);
+                return -1;
+            }
+            opts->vpo.checkpoint_threshold = static_cast<uint32_t>(threshold);
         } else if (!strcmp(name, "proof-threads")) {
             opts->vpo.max_proof_threads = strtoul(value, NULL, 0);
         } else if (!strcmp(name, "auto-freq-period")) {
@@ -701,9 +695,12 @@ int hw_vdf_client_main(int argc, char **argv)
                 "  --freq N - set ASIC frequency [%d, 200 - 2200]\n"
                 "  --voltage N - set board voltage [%.2f, 0.7 - 1.0]\n"
                 "  --ip A.B.C.D - timelord IP address [localhost]\n"
+                "  --device-loc N - FTDI board location from --list [0: first available]\n"
                 "  --vdfs-mask N - mask for enabling VDF engines [7, 1 - 7]\n"
                 "  --vdf-threads N - number of software threads per VDF engine [4, 2 - 64]\n"
                 "  --proof-threads N - number of proof threads per VDF engine\n"
+                "  --retain-asic-values - use recent ASIC samples for off-grid proof endpoints\n"
+                "  --checkpoint-threshold N - keep each segment at most N iterations when that fits in 61 checkpoints [1000000, 8000 - 4294967295]\n"
                 "  --auto-freq-period N - auto-adjust frequency every N seconds [0, 10 - inf]\n"
                 "  --version - print version and exit\n"
                 "  --list - list available devices and exit",
@@ -722,12 +719,24 @@ int hw_vdf_client_main(int argc, char **argv)
         return ret;
     }
 
-    client.drv = init_hw(client.opts.freq, client.opts.voltage);
+    client.drv = init_hw(client.opts.freq, client.opts.voltage, client.opts.device_loc);
     if (!client.drv) {
         return 1;
     }
 
     init_vdf_client(&client);
+
+    struct StopLiveProofs {
+        struct vdf_client *client;
+        ~StopLiveProofs() {
+            if (!client) return;
+            for (uint8_t i = 0; i < N_HW_VDFS; i++) {
+                if (!client->conns[i].vdf.init_done) continue;
+                hw_stop_proof(&client->conns[i].vdf);
+                clear_vdf_state(&client->conns[i].vdf);
+            }
+        }
+    } stop_live_proofs{&client};
 
 #ifdef _WIN32
     signal(SIGINT, signal_handler);
@@ -738,11 +747,20 @@ int hw_vdf_client_main(int argc, char **argv)
     sigaction(SIGTERM, &sa, NULL);
 #endif
 
-    event_loop(&client);
+    int rc = 0;
+    try {
+        event_loop(&client);
+    } catch (const std::exception &err) {
+        LOG_ERROR("VDF client stopped: %s", err.what());
+        rc = 1;
+    } catch (...) {
+        LOG_ERROR("VDF client stopped");
+        rc = 1;
+    }
 
     stop_hw(client.drv);
     clear_vdf_client(&client);
-    return 0;
+    return rc;
 }
 
 int main(int argc, char **argv)

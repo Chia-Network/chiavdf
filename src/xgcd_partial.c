@@ -256,7 +256,8 @@ void mpz_xgcd_partial(mpz_t co2, mpz_t co1,
             mpz_addmul_ui(r1, r2, bb1);
          else
             mpz_submul_ui(r1, r2, -bb1);
-         mpz_set(r2, r);
+         // The old r2 is no longer needed; reuse its allocation as scratch.
+         mpz_swap(r2, r);
 
          mpz_mul_si(r, co2, bb2);
          if (aa2 >= 0)
@@ -268,7 +269,7 @@ void mpz_xgcd_partial(mpz_t co2, mpz_t co1,
             mpz_addmul_ui(co1, co2, bb1);
          else
             mpz_submul_ui(co1, co2, -bb1);
-         mpz_set(co2, r);
+         mpz_swap(co2, r);
 #endif
 
          if (mpz_sgn(r1) < 0) { mpz_neg(co1, co1); mpz_neg(r1, r1); }

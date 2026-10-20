@@ -5,8 +5,9 @@
 # GMP is not: the Makefile links Homebrew's absolute install names, and the
 # hardened runtime will not load those on a machine that does not have that
 # Homebrew prefix. Both land in the same libexec directory, and every absolute
-# non-system install name is rewritten to @rpath/<basename>. The caller signs
-# the resulting files with one codesign invocation.
+# non-system install name is rewritten to @rpath/<basename>. Executables also
+# drop @executable_path/hw/libft4222 and gain @loader_path/../libexec/chiavdf
+# in that same install_name_tool pass. The caller signs the resulting files once.
 set -euo pipefail
 
 # shellcheck source=scripts/macos-install-names.sh
@@ -237,18 +238,38 @@ rewrite_macho() {
       ;;
   esac
 
-  if [ ! -s "$rewrites" ]; then
-    return 0
+  if [ -s "$rewrites" ]; then
+    while IFS=$'\t' read -r old new; do
+      [ -n "${old:-}" ] || continue
+      if [ -n "$self_id" ] && [ "$old" = "$self_id" ]; then
+        continue
+      fi
+      if printf '%s\n' "$loads" | grep -Fxq "$old"; then
+        install_name_tool -change "$old" "$new" "$macho"
+      fi
+    done < "$rewrites"
   fi
-  while IFS=$'\t' read -r old new; do
-    [ -n "${old:-}" ] || continue
-    if [ -n "$self_id" ] && [ "$old" = "$self_id" ]; then
-      continue
-    fi
-    if printf '%s\n' "$loads" | grep -Fxq "$old"; then
-      install_name_tool -change "$old" "$new" "$macho"
-    fi
-  done < "$rewrites"
+
+  # Executables only. This is the same install_name_tool pass as the id and
+  # dependency edits above, not a later walk in the workflow.
+  case "$macho" in
+    "$BIN_DIR"/*) rewrite_executable_rpath "$macho" ;;
+  esac
+}
+
+rewrite_executable_rpath() {
+  local macho="$1"
+  local rpaths
+  rpaths="$(macos_rpaths "$macho")" || {
+    echo "otool -l failed for $macho" >&2
+    exit 1
+  }
+  if printf '%s\n' "$rpaths" | grep -Fxq "@executable_path/hw/libft4222"; then
+    install_name_tool -delete_rpath "@executable_path/hw/libft4222" "$macho"
+  fi
+  if ! printf '%s\n' "$rpaths" | grep -Fxq "@loader_path/../libexec/chiavdf"; then
+    install_name_tool -add_rpath "@loader_path/../libexec/chiavdf" "$macho"
+  fi
 }
 
 for dir in "$BIN_DIR" "$LIBEXEC_DIR"; do

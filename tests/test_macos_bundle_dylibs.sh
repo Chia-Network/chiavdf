@@ -135,6 +135,8 @@ write_bin_fixture() {
     done
     printf '\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1.0.0)\n'
   } > "$OTOOL_FIXTURE/L/$name"
+  # No LC_RPATH yet, so the staging pass must add the bundle rpath.
+  write_otool l "$name" ""
 }
 
 stage_bundle() {
@@ -147,6 +149,10 @@ test_stage_rewrites_homebrew_gmp_with_ftdi() {
   write_gmp_fixtures "$GMP" "$GMPXX"
   write_bin_fixture vdf_client "$GMPXX" "$GMP"
   write_bin_fixture hw_vdf_client "@rpath/libft4222.dylib" "@rpath/libftd2xx.dylib" "$GMPXX" "$GMP"
+  write_otool l hw_vdf_client "$(printf '%s\n' \
+    '          cmd LC_RPATH' \
+    '      cmdsize 48' \
+    '         path @executable_path/hw/libft4222 (offset 12)')"
   cp "$GMP" "$WORK/gmp.before"
   cp "$GMPXX" "$WORK/gmpxx.before"
 
@@ -177,6 +183,17 @@ test_stage_rewrites_homebrew_gmp_with_ftdi() {
   fi
   grep -Fxq -e "-dr com.apple.provenance $WORK/libexec" "$XATTR_LOG" || fail "provenance xattr was not cleared"
   grep -Fxq -e "-dr com.apple.quarantine $WORK/libexec" "$XATTR_LOG" || fail "quarantine xattr was not cleared"
+  grep -Fxq -e "-delete_rpath @executable_path/hw/libft4222 $WORK/bin/hw_vdf_client" "$INSTALL_NAME_LOG" || fail "development rpath was not deleted"
+  grep -Fxq -e "-add_rpath @loader_path/../libexec/chiavdf $WORK/bin/vdf_client" "$INSTALL_NAME_LOG" || fail "vdf_client bundle rpath was not added"
+  grep -Fxq -e "-add_rpath @loader_path/../libexec/chiavdf $WORK/bin/hw_vdf_client" "$INSTALL_NAME_LOG" || fail "hw_vdf_client bundle rpath was not added"
+  if grep -F -- "-delete_rpath" "$INSTALL_NAME_LOG" | grep -F "$WORK/bin/vdf_client"; then
+    fail "vdf_client had no development rpath to delete"
+  fi
+  if grep -E -- '^-delete_rpath |^-add_rpath ' "$INSTALL_NAME_LOG" | grep -F "$WORK/libexec/"; then
+    fail "rpath edit was applied to a dylib"
+  fi
+  add_count="$(grep -c -F -- "-add_rpath " "$INSTALL_NAME_LOG" || true)"
+  assert_eq "$add_count" "2" "bundle rpath added once per executable"
   echo "ok: stage rewrites Homebrew GMP next to FTDI"
   rm -rf "$WORK"
 }
@@ -193,6 +210,13 @@ test_stage_rewrites_usr_local_gmp() {
   write_bin_fixture vdf_client "$GMPXX" "$GMP"
   stage_bundle
   grep -Fxq -e "-change $GMP @rpath/libgmp.10.dylib $WORK/bin/vdf_client" "$INSTALL_NAME_LOG" || fail "usr/local libgmp was not rewritten"
+  grep -Fxq -e "-add_rpath @loader_path/../libexec/chiavdf $WORK/bin/vdf_client" "$INSTALL_NAME_LOG" || fail "usr/local bundle rpath was not added"
+  if grep -F -- "-delete_rpath" "$INSTALL_NAME_LOG"; then
+    fail "delete_rpath ran without a development rpath"
+  fi
+  if grep -E -- '^-delete_rpath |^-add_rpath ' "$INSTALL_NAME_LOG" | grep -F "$WORK/libexec/"; then
+    fail "rpath edit was applied to a dylib"
+  fi
   echo "ok: stage rewrites /usr/local GMP"
   rm -rf "$WORK"
 }
@@ -219,6 +243,16 @@ test_stage_refuses_relative_install_name() {
   new_workspace
   write_bin_fixture vdf_client "libgmp.10.dylib"
   expect_fail "relative install name fails the bundle" stage_bundle
+  rm -rf "$WORK"
+}
+
+test_stage_refuses_unreadable_rpath() {
+  new_workspace
+  gmp_paths
+  write_gmp_fixtures "$GMP" "$GMPXX"
+  write_bin_fixture vdf_client "$GMPXX" "$GMP"
+  rm -f "$OTOOL_FIXTURE/l/vdf_client"
+  expect_fail "unreadable LC_RPATH fails the bundle" stage_bundle
   rm -rf "$WORK"
 }
 
@@ -267,21 +301,19 @@ prepare_verify_tree() {
   new_workspace
   BUNDLE="$WORK/chiavdf-test"
   mkdir -p "$BUNDLE/bin" "$BUNDLE/libexec/chiavdf"
-  cat > "$BUNDLE/bin/vdf_client" <<'EOF'
+  for tool in vdf_client vdf_bench hw_vdf_client emu_hw_vdf_client hw_test emu_hw_test; do
+    cat > "$BUNDLE/bin/$tool" <<EOF
 #!/bin/bash
-if [ -n "${DYLD_LIBRARY_PATH+x}" ] || [ -n "${DYLD_FALLBACK_LIBRARY_PATH+x}" ] || [ -n "${DYLD_INSERT_LIBRARIES+x}" ]; then
+if [ -n "\${DYLD_LIBRARY_PATH+x}" ] || [ -n "\${DYLD_FALLBACK_LIBRARY_PATH+x}" ] || [ -n "\${DYLD_INSERT_LIBRARIES+x}" ]; then
   echo "dyld path leaked" >&2
   exit 2
 fi
-if [ "${1:-}" != "--version" ]; then
+if [ "\${1:-}" != "--version" ]; then
   echo "expected --version" >&2
   exit 3
 fi
-echo "vdf_client test-version"
+echo "$tool test-version"
 EOF
-  chmod +x "$BUNDLE/bin/vdf_client"
-  for tool in vdf_bench hw_vdf_client emu_hw_vdf_client hw_test emu_hw_test; do
-    printf '#!/bin/bash\nexit 0\n' > "$BUNDLE/bin/$tool"
     chmod +x "$BUNDLE/bin/$tool"
   done
   for lib in libgmp.10.dylib libgmpxx.4.dylib libftd2xx.dylib libft4222.dylib libft4222.1.4.4.190.dylib; do
@@ -311,12 +343,14 @@ test_verify_launches_with_dyld_unset() {
   export DYLD_FALLBACK_LIBRARY_PATH="/opt/homebrew/lib"
   export DYLD_LIBRARY_PATH="/usr/local/lib"
   output="$("$VERIFY" "$WORK/bundle.zip")"
-  printf '%s\n' "$output" | grep -Fxq "vdf_client test-version" || fail "vdf_client did not run from the zip"
+  for tool in vdf_client vdf_bench hw_vdf_client emu_hw_vdf_client hw_test emu_hw_test; do
+    printf '%s\n' "$output" | grep -Fxq "$tool test-version" || fail "$tool did not run from the zip"
+  done
   if printf '%s\n' "$output" | grep -F "dyld path leaked"; then
-    fail "DYLD paths were visible to vdf_client"
+    fail "DYLD paths were visible to a shipped executable"
   fi
   unset DYLD_FALLBACK_LIBRARY_PATH DYLD_LIBRARY_PATH
-  echo "ok: verify launches vdf_client with DYLD paths unset"
+  echo "ok: verify launches every shipped executable with DYLD paths unset"
   rm -rf "$WORK"
 }
 
@@ -348,15 +382,55 @@ with zipfile.ZipFile(zip_path, "a") as zf:
 PY
 }
 
-test_verify_ignores_appledouble_metadata() {
+add_zip_bytes() {
+  local zip_path="$1"
+  shift
+  python3 - "$zip_path" "$@" <<'PY'
+import sys
+import zipfile
+
+zip_path = sys.argv[1]
+with zipfile.ZipFile(zip_path, "a") as zf:
+    for spec in sys.argv[2:]:
+        name, hex_payload = spec.split("=", 1)
+        zf.writestr(name, bytes.fromhex(hex_payload))
+PY
+}
+
+test_verify_appledouble_and_layout() {
   prepare_verify_tree
   make_zip "$BUNDLE" "$WORK/apple.zip"
+  add_zip_bytes "$WORK/apple.zip" "chiavdf-test/bin/._vdf_client=00051607"
   add_zip_entries "$WORK/apple.zip" \
-    "__MACOSX/chiavdf-test/bin/._vdf_client=appledouble" \
-    "chiavdf-test/bin/._vdf_client=appledouble" \
-    "chiavdf-test/.DS_Store=dsstore"
+    "__MACOSX/chiavdf-test/bin/._vdf_client=ignored" \
+    "chiavdf-test/bin/.DS_Store=dsstore"
   "$VERIFY" "$WORK/apple.zip" >/dev/null
-  echo "ok: AppleDouble metadata does not fail verification"
+  echo "ok: real AppleDouble, .DS_Store, and a top-level __MACOSX sibling pass"
+
+  prepare_verify_tree
+  make_zip "$BUNDLE" "$WORK/stray-dot.zip"
+  add_zip_entries "$WORK/stray-dot.zip" "chiavdf-test/bin/._stray=appledouble"
+  expect_fail "bin/._stray without a sibling fails verification" "$VERIFY" "$WORK/stray-dot.zip"
+
+  prepare_verify_tree
+  make_zip "$BUNDLE" "$WORK/notes.zip"
+  add_zip_entries "$WORK/notes.zip" "chiavdf-test/libexec/chiavdf/._notes.txt=notes"
+  expect_fail "libexec AppleDouble without a sibling fails verification" "$VERIFY" "$WORK/notes.zip"
+
+  prepare_verify_tree
+  make_zip "$BUNDLE" "$WORK/nested-macosx.zip"
+  add_zip_entries "$WORK/nested-macosx.zip" "chiavdf-test/__MACOSX/payload.txt=payload"
+  expect_fail "an in-bundle __MACOSX file fails verification" "$VERIFY" "$WORK/nested-macosx.zip"
+
+  prepare_verify_tree
+  make_zip "$BUNDLE" "$WORK/fake-magic.zip"
+  add_zip_entries "$WORK/fake-magic.zip" "chiavdf-test/bin/._vdf_client=appledouble"
+  expect_fail "._vdf_client whose body is not AppleDouble fails verification" "$VERIFY" "$WORK/fake-magic.zip"
+
+  prepare_verify_tree
+  make_zip "$BUNDLE" "$WORK/readme.zip"
+  add_zip_entries "$WORK/readme.zip" "README=hello"
+  expect_fail "a root README fails verification" "$VERIFY" "$WORK/readme.zip"
 
   prepare_verify_tree
   make_zip "$BUNDLE" "$WORK/extra-dir.zip"
@@ -378,6 +452,12 @@ test_verify_rejects_failed_launch_and_missing_gmp() {
   expect_fail "failing vdf_client fails verification" "$VERIFY" "$WORK/crash.zip"
 
   prepare_verify_tree
+  printf '#!/bin/bash\nexit 0\n' > "$BUNDLE/bin/hw_test"
+  chmod +x "$BUNDLE/bin/hw_test"
+  make_zip "$BUNDLE" "$WORK/silent.zip"
+  expect_fail "a --version with no output fails verification" "$VERIFY" "$WORK/silent.zip"
+
+  prepare_verify_tree
   write_otool L vdf_client "$(printf '%s\n\t/usr/lib/libSystem.B.dylib' "vdf_client:")"
   make_zip "$BUNDLE" "$WORK/no-gmp.zip"
   expect_fail "missing bundled GMP fails verification" "$VERIFY" "$WORK/no-gmp.zip"
@@ -389,9 +469,10 @@ test_stage_rewrites_usr_local_gmp
 test_stage_refuses_missing_dependency
 test_stage_refuses_basename_collision
 test_stage_refuses_relative_install_name
+test_stage_refuses_unreadable_rpath
 test_stage_refuses_missing_rpath_dylib
 test_verify_launches_with_dyld_unset
-test_verify_ignores_appledouble_metadata
+test_verify_appledouble_and_layout
 test_verify_rejects_homebrew_and_usr_local
 test_verify_rejects_failed_launch_and_missing_gmp
 echo "all macOS bundle dylib tests passed"

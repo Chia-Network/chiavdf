@@ -32,3 +32,11 @@ macos_bundled_relpath() {
   rel="${rel#@executable_path/}"
   printf '%s\n' "$rel"
 }
+
+# LC_RPATH paths on one Mach-O, one per line. Status is otool's.
+macos_rpaths() {
+  otool -l "$1" | awk '
+    $1 == "cmd" && $2 == "LC_RPATH" { in_rpath = 1; next }
+    in_rpath && $1 == "path" { print $2; in_rpath = 0 }
+  '
+}

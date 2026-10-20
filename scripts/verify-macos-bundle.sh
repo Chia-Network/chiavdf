@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fail unless a shipped macOS zip is relocatable and vdf_client actually starts.
+# Fail unless a shipped macOS zip is relocatable and every shipped executable starts.
 #
 # Notarization submits the zip; it does not execute it. Homebrew absolute
 # paths survive codesign and are rejected later by the hardened runtime's
@@ -30,24 +30,29 @@ need_cmd() {
 need_cmd otool
 need_cmd unzip
 need_cmd find
+need_cmd od
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 unzip -q "$ZIP_PATH" -d "$tmp"
 
-# ditto -c -k stores resource forks that unzip materializes as __MACOSX and
-# AppleDouble ._* files. Those are not bundle contents.
-is_apple_metadata() {
+# Skip an in-bundle AppleDouble file only when it sits beside the real file
+# and starts with the AppleDouble magic. .DS_Store is Finder metadata.
+is_skippable_metadata() {
   local path="$1"
-  local base
+  local base sibling magic
   base="$(basename "$path")"
-  case "$path" in
-    */__MACOSX|*/__MACOSX/*) return 0 ;;
-  esac
   case "$base" in
-    ._*|.DS_Store) return 0 ;;
+    .DS_Store) return 0 ;;
+    ._*) ;;
+    *) return 1 ;;
   esac
-  return 1
+  sibling="$(dirname "$path")/${base#._}"
+  if [ ! -e "$sibling" ] && [ ! -L "$sibling" ]; then
+    return 1
+  fi
+  magic="$(od -An -t x1 -N 4 "$path" 2>/dev/null | tr -s '[:space:]' ' ' | sed 's/^ //;s/ $//')" || return 1
+  [ "$magic" = "00 05 16 07" ]
 }
 
 top=()
@@ -63,6 +68,12 @@ if [ "${#top[@]}" -ne 1 ]; then
   exit 1
 fi
 root="${top[0]}"
+stray_files="$(find "$tmp" -mindepth 1 -maxdepth 1 -type f)"
+if [ -n "$stray_files" ]; then
+  echo "Unexpected top-level file in $ZIP_PATH:" >&2
+  printf '%s\n' "$stray_files" >&2
+  exit 1
+fi
 libexec="$root/libexec/chiavdf"
 
 if [ ! -d "$libexec" ]; then
@@ -84,18 +95,11 @@ portable_dep() {
   esac
 }
 
-rpaths_of() {
-  otool -l "$1" | awk '
-    $1 == "cmd" && $2 == "LC_RPATH" { in_rpath = 1; next }
-    in_rpath && $1 == "path" { print $2; in_rpath = 0 }
-  '
-}
-
 fail=0
 checked=0
 while IFS= read -r macho; do
   [ -n "$macho" ] || continue
-  if is_apple_metadata "$macho"; then
+  if is_skippable_metadata "$macho"; then
     continue
   fi
   checked=$((checked + 1))
@@ -138,7 +142,7 @@ while IFS= read -r macho; do
 
   case "$macho" in
     "$root/bin/"*)
-      if ! rpath_list="$(rpaths_of "$macho")"; then
+      if ! rpath_list="$(macos_rpaths "$macho")"; then
         echo "otool -l failed for $macho" >&2
         exit 1
       fi
@@ -174,26 +178,35 @@ if ! otool -L "$root/bin/hw_vdf_client" | awk 'NR > 1 { print $1 }' | grep -Fxq 
   exit 1
 fi
 
-set +e
-launch_out="$(
-  env -u DYLD_LIBRARY_PATH \
-      -u DYLD_FALLBACK_LIBRARY_PATH \
-      -u DYLD_FRAMEWORK_PATH \
-      -u DYLD_FALLBACK_FRAMEWORK_PATH \
-      -u DYLD_INSERT_LIBRARIES \
-      -u DYLD_IMAGE_SUFFIX \
-      "$client" --version 2>&1
-)"
-launch_status=$?
-set -e
-printf '%s\n' "$launch_out"
-if [ "$launch_status" -ne 0 ]; then
-  echo "vdf_client --version failed with status $launch_status" >&2
-  exit 1
-fi
-if [ -z "$launch_out" ]; then
-  echo "vdf_client --version produced no output" >&2
-  exit 1
-fi
+launch_bundled() {
+  local bin="$1"
+  shift
+  local launch_out launch_status
+  set +e
+  launch_out="$(
+    env -u DYLD_LIBRARY_PATH \
+        -u DYLD_FALLBACK_LIBRARY_PATH \
+        -u DYLD_FRAMEWORK_PATH \
+        -u DYLD_FALLBACK_FRAMEWORK_PATH \
+        -u DYLD_INSERT_LIBRARIES \
+        -u DYLD_IMAGE_SUFFIX \
+        "$bin" "$@" 2>&1
+  )"
+  launch_status=$?
+  set -e
+  printf '%s\n' "$launch_out"
+  if [ "$launch_status" -ne 0 ]; then
+    echo "$bin $* failed with status $launch_status" >&2
+    exit 1
+  fi
+  if [ -z "$launch_out" ]; then
+    echo "$bin $* produced no output" >&2
+    exit 1
+  fi
+}
 
-echo "Verified $ZIP_PATH: no Homebrew load paths, vdf_client --version ok"
+for tool in vdf_client vdf_bench hw_vdf_client emu_hw_vdf_client hw_test emu_hw_test; do
+  launch_bundled "$root/bin/$tool" --version
+done
+
+echo "Verified $ZIP_PATH: no Homebrew load paths, every shipped executable --version ok"

@@ -100,9 +100,7 @@ bin\LibFT4222-64.dll
 bin\FTD2XX.dll
 bin\mpir.dll
 bin\<mpir cpu variants>
-bin\VCRUNTIME140.dll
-bin\VCRUNTIME140_1.dll
-bin\MSVCP140.dll
+bin\<VC++ 2015-2022 runtime DLLs, such as VCRUNTIME140.dll and MSVCP140.dll>
 ```
 
 The zip has a flat `bin\` and no `lib\`. The loader looks in the executable's directory, then System32, the Windows directory, the current directory, and `PATH`; it does not search a sibling `lib\`. Every non-system import of every shipped executable and DLL is in `bin\` under the exact name in its import table. That includes the MPIR CPU variants beside `mpir.dll` and the VC++ 2015-2022 runtime copied from the MSVC redist. Run the extracted binaries directly:

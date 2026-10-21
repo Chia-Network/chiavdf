@@ -358,8 +358,21 @@ function Get-BinariesWeSign {
     return @($paths.ToArray())
 }
 
+function Add-SigntoolToPath {
+    # Keep package verification independent of the signing action's PATH setup.
+    $programFilesX86 = [Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
+    if ([string]::IsNullOrWhiteSpace($programFilesX86)) {
+        return
+    }
+    $kit = Join-Path $programFilesX86 'Windows Kits\10\App Certification Kit'
+    if (Test-Path -LiteralPath $kit -PathType Container) {
+        $env:Path = "$kit;$env:Path"
+    }
+}
+
 function Assert-Authenticode {
     param([Parameter(Mandatory = $true)][string]$BinDir)
+    Add-SigntoolToPath
     if (-not (Get-Command signtool.exe -ErrorAction SilentlyContinue)) {
         throw 'Signing was requested, but signtool.exe is not on PATH. Refusing to publish the zip.'
     }

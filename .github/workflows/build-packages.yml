@@ -16,11 +16,6 @@ on:
         required: false
         default: false
         type: boolean
-      windows_sign:
-        description: "Sign the Windows release zip on manual runs (requires the windows-code-signing environment)"
-        required: false
-        default: false
-        type: boolean
 
 concurrency:
   # SHA is added to the end if on `main` to let all main workflows run
@@ -42,7 +37,6 @@ jobs:
       contents: read
     outputs:
       is_final: ${{ steps.policy.outputs.is_final }}
-      sign_windows: ${{ steps.policy.outputs.sign_windows }}
       notarize_macos: ${{ steps.policy.outputs.notarize_macos }}
     steps:
       - uses: actions/checkout@v7
@@ -71,7 +65,6 @@ jobs:
     with:
       configs: '["optimized=1"]'
       is_final: ${{ needs.release-policy.outputs.is_final }}
-      sign_windows: ${{ needs.release-policy.outputs.sign_windows }}
       notarize_macos: ${{ needs.release-policy.outputs.notarize_macos }}
     secrets: inherit
 
@@ -84,7 +77,6 @@ jobs:
     with:
       configs: '["TSAN=1", "ASAN=1"]'
       is_final: ${{ 'false' }}
-      sign_windows: ${{ 'false' }}
       notarize_macos: ${{ 'false' }}
     secrets: inherit
 

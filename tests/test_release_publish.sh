@@ -18,8 +18,7 @@ run_policy() {
   EVENT_NAME=$1 \
     EVENT_ACTION=$2 \
     PRERELEASE_JSON=$3 \
-    WINDOWS_SIGN_JSON=$4 \
-    MACOS_NOTARIZE_JSON=$5 \
+    MACOS_NOTARIZE_JSON=$4 \
     GITHUB_OUTPUT=$out \
     bash "$policy"
   cat "$out"
@@ -27,29 +26,26 @@ run_policy() {
 }
 
 assert_policy() {
-  local label=$1 expected_final=$2 expected_sign=$3 expected_notarize=$4
-  shift 4
+  local label=$1 expected_final=$2 expected_notarize=$3
+  shift 3
   local out
   out=$(run_policy "$@")
   got_final=$(printf '%s\n' "$out" | awk -F= '$1 == "is_final" { print $2 }')
-  got_sign=$(printf '%s\n' "$out" | awk -F= '$1 == "sign_windows" { print $2 }')
   got_notarize=$(printf '%s\n' "$out" | awk -F= '$1 == "notarize_macos" { print $2 }')
-  if [ "$got_final" != "$expected_final" ] || [ "$got_sign" != "$expected_sign" ] || [ "$got_notarize" != "$expected_notarize" ]; then
-    fail "${label}: expected final=${expected_final} sign=${expected_sign} notarize=${expected_notarize}, got final=${got_final} sign=${got_sign} notarize=${got_notarize}"
+  if [ "$got_final" != "$expected_final" ] || [ "$got_notarize" != "$expected_notarize" ]; then
+    fail "${label}: expected final=${expected_final} notarize=${expected_notarize}, got final=${got_final} notarize=${got_notarize}"
   fi
 }
 
-assert_policy "final release" true true true release published false null null
-assert_policy "prerelease" false false false release published true null null
-assert_policy "prerelease ignores windows input" false false false release published true true true
-assert_policy "missing prerelease flag" false false false release published null null null
-assert_policy "string false is not boolean false" false false false release published '"false"' null null
-assert_policy "release edited" false false false release edited false null null
-assert_policy "push" false false false push "" null null null
-assert_policy "dispatch signs windows only" false true false workflow_dispatch workflow_dispatch null true null
-assert_policy "dispatch notarizes only" false false true workflow_dispatch workflow_dispatch null null true
-assert_policy "dispatch string true" false true true workflow_dispatch workflow_dispatch null '"true"' '"true"'
-assert_policy "dispatch boolean false" false false false workflow_dispatch workflow_dispatch null false false
+assert_policy "final release" true true release published false null
+assert_policy "prerelease" false false release published true null
+assert_policy "missing prerelease flag" false false release published null null
+assert_policy "string false is not boolean false" false false release published '"false"' null
+assert_policy "release edited" false false release edited false null
+assert_policy "push" false false push "" null null
+assert_policy "dispatch notarizes" false true workflow_dispatch workflow_dispatch null true
+assert_policy "dispatch string true" false true workflow_dispatch workflow_dispatch null '"true"'
+assert_policy "dispatch boolean false" false false workflow_dispatch workflow_dispatch null false
 
 tag=1.2.3
 assets=$(mktemp -d)
@@ -269,15 +265,11 @@ assert_publish_dependencies() {
     fail "publish-release needs ${needs:-<missing>}"
   fi
 
-  publish_if=$(awk '
-    $0 == "  publish-release:" { in_job = 1; next }
-    in_job && /^  [A-Za-z0-9-]+:/ { exit }
-    in_job { print }
-  ' "$packages")
-  if ! printf '%s\n' "$publish_if" | grep -q "needs.package.result == 'success'"; then
+  publish_block=$(job_block "$packages" publish-release)
+  if ! printf '%s\n' "$publish_block" | grep -q "needs.package.result == 'success'"; then
     fail "publish-release does not require the package job"
   fi
-  if printf '%s\n' "$publish_if" | grep -Eq 'needs\.(sanitize|build)(\.|[[:space:]])'; then
+  if printf '%s\n' "$publish_block" | grep -Eq 'needs\.(sanitize|build)(\.|[[:space:]])'; then
     fail "publish-release still depends on a sanitizer or mixed build job"
   fi
 
@@ -303,12 +295,7 @@ assert_publish_dependencies() {
     if [ "$uses" != "./.github/workflows/build-client.yml" ]; then
       fail "${job} does not call the client matrix workflow: ${uses:-<missing>}"
     fi
-    if awk -v job="  ${job}:" '
-      $0 == job { in_job = 1; next }
-      in_job && /^  [A-Za-z0-9-]+:/ { exit }
-      in_job && /^    if:/ { found = 1 }
-      END { exit !found }
-    ' "$packages"; then
+    if printf '%s\n' "$(job_block "$packages" "$job")" | grep -q '^    if:'; then
       fail "${job} filters matrix entries with a job if"
     fi
   done
@@ -316,14 +303,11 @@ assert_publish_dependencies() {
   if ! grep -q 'is_final: ${{ steps.policy.outputs.is_final }}' "$packages"; then
     fail "release-policy output is_final was renamed"
   fi
-  if ! grep -q 'sign_windows: ${{ steps.policy.outputs.sign_windows }}' "$packages"; then
-    fail "release-policy output sign_windows was renamed"
-  fi
   if ! grep -q 'is_final: ${{ needs.release-policy.outputs.is_final }}' "$packages"; then
     fail "package does not pass needs.release-policy.outputs.is_final"
   fi
-  if ! grep -q 'sign_windows: ${{ needs.release-policy.outputs.sign_windows }}' "$packages"; then
-    fail "package does not pass needs.release-policy.outputs.sign_windows"
+  if grep -q 'sign_windows\|windows_sign' "$packages" "$client"; then
+    fail "Windows signing is still gated by sign_windows/windows_sign"
   fi
 
   if grep -q 'config: \[optimized=1, TSAN=1, ASAN=1\]' "$packages" "$client"; then
@@ -349,8 +333,8 @@ assert_windows_signing_wiring() {
   if [ "$(job_field "$client" sign-windows needs)" != "[build]" ]; then
     fail "Windows signing job does not need the build job"
   fi
-  if [ "$(job_field "$client" sign-windows if)" != "inputs.sign_windows == 'true'" ]; then
-    fail "Windows signing job does not require sign_windows"
+  if [ "$(job_field "$client" sign-windows if)" != "contains(inputs.configs, 'optimized=1') && github.event_name != 'pull_request'" ]; then
+    fail "Windows signing job is not tied to optimized non-PR Windows builds"
   fi
   if [ "$(job_field "$client" sign-windows runs-on)" != "windows-latest" ]; then
     fail "Windows signing job does not run on windows-latest"
@@ -368,7 +352,7 @@ assert_windows_signing_wiring() {
     fail "package caller does not grant id-token: write to the signing workflow"
   fi
   # build-client.yml contains the sign-windows job, so every caller must allow
-  # id-token even when sign_windows is false and that job is skipped.
+  # id-token even when the optimized Windows matrix is absent.
   if [ "$(job_field "$packages" sanitize id-token)" != "write" ]; then
     fail "sanitize caller must grant id-token: write for the nested signing job"
   fi
@@ -379,29 +363,20 @@ assert_windows_signing_wiring() {
   if ! printf '%s\n' "$sign_block" | grep -Fq 'name: windows-amd64-binaries'; then
     fail "sign job does not download windows-amd64-binaries"
   fi
-  if ! printf '%s\n' "$build_block" | grep -Fq 'name: windows-amd64-bundle'; then
-    fail "build job does not upload the unsigned windows-amd64-bundle"
+  if printf '%s\n' "$build_block" | grep -Fq 'name: windows-amd64-bundle'; then
+    fail "build job still uploads an unsigned windows-amd64-bundle"
   fi
   if ! printf '%s\n' "$sign_block" | grep -Fq 'name: windows-amd64-bundle'; then
     fail "sign job does not upload the signed windows-amd64-bundle"
   fi
-  if ! printf '%s\n' "$build_block" | grep -Fq "inputs.sign_windows != 'true'"; then
-    fail "unsigned Windows steps do not exclude signing runs"
-  fi
-  if ! printf '%s\n' "$build_block" | grep -Fq "REQUIRE_SIGNATURES: 'false'"; then
-    fail "unsigned Windows packaging does not disable signature verification"
+  if grep -Fq "REQUIRE_SIGNATURES: 'false'" "$client"; then
+    fail "unsigned Windows packaging path still exists"
   fi
   if ! printf '%s\n' "$sign_block" | grep -Fq "REQUIRE_SIGNATURES: 'true'"; then
     fail "signed Windows packaging does not require signature verification"
   fi
-  if ! printf '%s\n' "$build_block" | grep -Fq 'IS_RELEASE: ${{ inputs.is_final }}'; then
-    fail "unsigned Windows packaging does not read inputs.is_final"
-  fi
   if ! printf '%s\n' "$sign_block" | grep -Fq 'IS_RELEASE: ${{ inputs.is_final }}'; then
     fail "signed Windows packaging does not read inputs.is_final"
-  fi
-  if ! printf '%s\n' "$sign_block" | grep -Fq "inputs.sign_windows == 'true'"; then
-    fail "Windows signing job does not check inputs.sign_windows"
   fi
   if ! printf '%s\n' "$sign_block" | grep -Fq 'Chia-Network/actions/sign/azure-windows@main'; then
     fail "Windows signing does not use the shared Azure Windows Code Sign action"
@@ -454,7 +429,7 @@ assert_windows_signing_wiring() {
   if grep -Fq "ValidateSet('Assemble', 'Sign', 'Package')" "$script"; then
     fail "Windows script still exposes the removed local Sign action"
   fi
-  if grep -E 'sign_windows|REQUIRE_SIGNATURES:|IS_RELEASE:' "$client" | grep -q 'github.event_name'; then
+  if grep -E 'REQUIRE_SIGNATURES:|IS_RELEASE:' "$client" | grep -q 'github.event_name'; then
     fail "signing or IS_RELEASE still keys off github.event_name"
   fi
   if grep -Eq 'SM_(API_KEY|CLIENT_CERT_FILE_B64|CODE_SIGNING_CERT_SHA1_HASH|CERTKEY_ALIAS)' "$client"; then

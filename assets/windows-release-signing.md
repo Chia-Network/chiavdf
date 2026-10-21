@@ -20,19 +20,19 @@ shows up as a 403 / `SignerSign()` failure.
 
 ## Release flow
 
-1. `release-policy` sets `sign_windows=true` for a final release, or for a manual
-   `workflow_dispatch` with `windows_sign` enabled.
-2. The `build` job builds and tests Windows, uploads `windows-amd64-binaries`,
-   and skips Windows packaging because signing was requested.
-3. The `sign-windows` job enters the `windows-code-signing` environment,
+1. `release-policy` determines whether this is a final release and whether macOS
+   notarization may run.
+2. The `build` job builds and tests Windows and uploads `windows-amd64-binaries`.
+3. The `sign-windows` job runs for optimized Windows builds on pushes, releases,
+   and manual dispatches. It enters the `windows-code-signing` environment,
    downloads the binaries, assembles the bundle, signs it, packages the zip, and
    verifies every signature and every executable before uploading
    `windows-amd64-bundle`.
-4. `publish-release` downloads `windows-amd64-bundle` and publishes the
-   versioned zip plus `chiavdf-win64.zip`.
+4. On a final release, `publish-release` downloads `windows-amd64-bundle` and
+   publishes the versioned zip plus `chiavdf-win64.zip`.
 
-Pull-request and push builds have `sign_windows=false`, so they stay entirely in
-the `build` job and upload only unsigned workflow artifacts.
+Pull requests still build and test Windows, but do not enter the signing
+environment. They therefore do not produce a signed Windows bundle.
 
 ## What gets signed
 
@@ -62,9 +62,8 @@ those values from repository variables to pin the publishers exactly.
 The `sign-windows` job in `.github/workflows/build-client.yml`:
 
 - Declares `environment: windows-code-signing` and `permissions.id-token: write`.
-- Checks for `secrets.AZURE_SIGNING_CLIENT_ID` and
-  `secrets.AZURE_SIGNING_TENANT_ID`; signing is not silently skipped when they
-  are missing.
+- Assumes `AZURE_SIGNING_CLIENT_ID` and `AZURE_SIGNING_TENANT_ID` are configured
+  on that environment; the shared signing action fails if either is missing.
 - Assembles the bundle, lists the files to sign, then calls
   `Chia-Network/actions/sign/azure-windows@main` with the file list and secrets.
 - The shared action installs `Microsoft.ArtifactSigning.Client` from NuGet,
@@ -134,9 +133,9 @@ old DigiCert `SM_*` secrets are no longer read and can be removed.
    produce signed builds. This repo uses numeric release tags such as `1.2.0`,
    not `v1.2.0`, so a `v*` tag rule blocks releases. If you add tag rules, use a
    pattern that matches the numeric tags, such as `1.*` or `*`. A published
-   release runs on a tag ref, so a branch-only rule can block it. Signing jobs
-   run only for final releases or a manual `windows_sign` dispatch, so pull
-   requests are unaffected.
+   release runs on a tag ref, so a branch-only rule can block it. Signing runs
+   for optimized Windows builds on pushes, releases, and manual dispatches, so
+   make sure the environment allows those branches and tags.
 5. Copy the `build-client.yml` signing pattern: a dedicated Windows job with the
    environment and `id-token: write`, using
    `Chia-Network/actions/sign/azure-windows@main` for the NuGet client, late OIDC
@@ -144,9 +143,9 @@ old DigiCert `SM_*` secrets are no longer read and can be removed.
 
 ## Testing before enabling releases
 
-1. Run **Actions → VDF client & HW CI → Run workflow** with `windows_sign`
-   enabled. This is a `workflow_dispatch` run, so it signs without publishing a
-   GitHub release.
+1. Run **Actions → VDF client & HW CI → Run workflow**. The optimized Windows
+   build signs on every run, including this manual dispatch, without publishing
+   a GitHub release.
 2. Download the `windows-amd64-bundle` artifact.
 3. Unzip it and verify a signed binary:
 
@@ -159,9 +158,9 @@ environment's deployment rules, or merge and dispatch the workflow from `main`.
 
 ## Troubleshooting
 
-- **Missing credentials:** the sign-windows job fails before signing when it
-  cannot see `AZURE_SIGNING_CLIENT_ID` or `AZURE_SIGNING_TENANT_ID`. Check the
-  environment name, the federated credential subject, and repository access.
+- **Missing credentials:** the shared signing action fails when it cannot see
+  `AZURE_SIGNING_CLIENT_ID` or `AZURE_SIGNING_TENANT_ID`. Check the environment
+  name, the federated credential subject, and repository access.
 - **OIDC / federated credential errors:** the repository or environment in Entra
   does not match, or `permissions.id-token: write` is missing.
 - **403 / `SignerSign()` failure:** the endpoint region does not match the

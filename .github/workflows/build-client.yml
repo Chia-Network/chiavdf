@@ -15,10 +15,6 @@ on:
         description: release-policy output is_final
         required: true
         type: string
-      sign_windows:
-        description: release-policy output sign_windows
-        required: true
-        type: string
       notarize_macos:
         description: release-policy output notarize_macos
         required: true
@@ -423,22 +419,6 @@ jobs:
           .\vdf_bench.exe square_asm 2000000
           if ($LASTEXITCODE -ne 0) { throw "vdf_bench failed with exit code $LASTEXITCODE" }
 
-      # Signed releases assemble, sign, and package in the sign-windows job so
-      # the Azure federated credential is only used by a job that holds the
-      # windows-code-signing environment. Unsigned runs package here.
-      - name: Assemble Windows zip bundle
-        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1' && inputs.sign_windows != 'true'
-        shell: pwsh
-        run: ./scripts/package-windows-bundle.ps1 -Action Assemble
-
-      - name: Package and verify Windows zip bundle
-        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1' && inputs.sign_windows != 'true'
-        shell: pwsh
-        env:
-          IS_RELEASE: ${{ inputs.is_final }}
-          REQUIRE_SIGNATURES: 'false'
-        run: ./scripts/package-windows-bundle.ps1 -Action Package
-
       - name: Assemble macOS brew bundle
         if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
         env:
@@ -715,16 +695,6 @@ jobs:
             src/hw/libft4222/*.lib
             mpir_gc_x64/*.dll
 
-      - name: Upload Windows bundle artifact
-        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1' && inputs.sign_windows != 'true'
-        uses: actions/upload-artifact@v7
-        with:
-          name: windows-amd64-bundle
-          if-no-files-found: error
-          path: |
-            dist/windows/*.zip
-            dist/windows/*.sha256
-
       - name: Assemble Ubuntu .deb (same runner as build)
         if: startsWith(matrix.os, 'ubuntu') && matrix.config == 'optimized=1'
         env:
@@ -756,16 +726,15 @@ jobs:
           name: installer-${{ matrix.os }}
           path: dist/*.deb
 
-  # Windows release signing. The job enters the windows-code-signing
-  # environment, so the Azure credentials are scoped here and the OIDC subject
-  # includes the environment. The caller passes secrets with `secrets: inherit`;
-  # the credential check below fails closed if they did not arrive. It consumes
-  # the raw binaries from the build job, then assembles, signs, packages, and
-  # verifies the zip the release publishes.
+  # Every optimized Windows build outside a pull request is signed. The job
+  # enters the windows-code-signing environment, so the Azure credentials are
+  # scoped here and the OIDC subject includes the environment. The environment
+  # secrets are assumed to exist; the shared signing action fails if they are
+  # missing. PR builds compile/test Windows without entering the environment.
   sign-windows:
     name: Sign Windows bundle
     needs: [build]
-    if: inputs.sign_windows == 'true'
+    if: contains(inputs.configs, 'optimized=1') && github.event_name != 'pull_request'
     runs-on: windows-latest
     timeout-minutes: 30
     # Federated credential subject:
@@ -809,17 +778,6 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
-
-      - name: Check for Azure signing credentials
-        shell: bash
-        env:
-          AZURE_SIGNING_CLIENT_ID: ${{ secrets.AZURE_SIGNING_CLIENT_ID }}
-          AZURE_SIGNING_TENANT_ID: ${{ secrets.AZURE_SIGNING_TENANT_ID }}
-        run: |
-          if [[ -z "$AZURE_SIGNING_CLIENT_ID" || -z "$AZURE_SIGNING_TENANT_ID" ]]; then
-            echo "::error::Windows signing requires AZURE_SIGNING_CLIENT_ID and AZURE_SIGNING_TENANT_ID in the windows-code-signing environment"
-            exit 1
-          fi
 
       - name: Assemble Windows zip bundle
         shell: pwsh

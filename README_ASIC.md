@@ -67,7 +67,7 @@ The package workflow (`.github/workflows/build-packages.yml` calling `build-clie
 
 ### macOS release archive and package
 
-A release of this repo uploads `chiavdf-<tag>-macos-arm64.zip` (Apple Silicon, `macos-15`), `chiavdf-<tag>-macos-intel.zip`, and a `.pkg` for each. The release job signs the binaries and the pkg, notarizes the pkg, and staples the ticket to it. The zip ships the same signed binaries, so Gatekeeper verifies it through the online notarization lookup; a zip cannot be stapled. Layout:
+A release of this repo uploads `chiavdf-<tag>-macos-arm64.zip` (Apple Silicon, `macos-15`), `chiavdf-<tag>-macos-intel.zip`, and a `.pkg` for each. The release job signs the binaries and the pkg, notarizes the pkg, and staples the ticket to it. The zip ships the same signed binaries, so Gatekeeper verifies it through the online notarization lookup; a zip cannot be stapled. Final releases require `APPLE_DEV_ID_APP`/`APPLE_DEV_ID_APP_PASS`, `APPLE_DEV_ID_INSTALLER`/`APPLE_DEV_ID_INSTALLER_PASS`, and `APPLE_NOTARIZE_USERNAME`/`APPLE_NOTARIZE_PASSWORD`/`APPLE_TEAM_ID`; the build fails before packaging if any are missing. Layout:
 
 ```text
 bin/hw_vdf_client
@@ -175,7 +175,7 @@ codesign -f -s - hw/libft4222/*.dylib hw_vdf_client hw_test
 
 The `codesign` line is required for a local source build. The FT4222 and D2XX dylibs from `get-libft4222.sh` are unsigned, and macOS kills a process that loads them. `hw_vdf_client` then exits 137 (SIGKILL) before `--list` or a timelord connection. Run the command from `src/` after every rebuild of `hw_vdf_client` or `hw_test`. It ad-hoc signs those two binaries and every dylib in `hw/libft4222/`.
 
-`CHIAVDF_ADHOC_SIGN_FTDI=1 ./scripts/get-libft4222.sh install` signs the dylibs at download time and does not sign the binaries. It does not replace the `codesign` line above. Release zips are Developer ID signed and notarized, so that line is for a tree you built yourself.
+`CHIAVDF_ADHOC_SIGN_FTDI=1 ./scripts/get-libft4222.sh install` signs the dylibs at download time and does not sign the binaries. It does not replace the `codesign` line above. Release zips are Developer ID signed, and their binaries are covered by the pkg's notarization ticket, so that line is for a tree you built yourself.
 
 `Makefile.vdf-client` adds `-I` and `-L` for `/opt/homebrew` or `/usr/local` when `boost/asio.hpp` is visible there. Homebrew Boost is often keg-only. The workflow locates the header and passes it explicitly when it also builds `vdf_client`:
 

@@ -3,7 +3,8 @@
 #
 # The import-codesign-certs action exposes valid codesigning identities as JSON
 # (one entry per SHA-1 hash and common name). Renewed certificates keep the same
-# common name, so select by team and pass the hash to codesign/productsign.
+# common name, so select by team; pass the app hash to codesign and the installer
+# common name to productsign, which resolves identities by name.
 #
 # The action lists its keychain with the codesigning policy, which excludes
 # Developer ID Installer identities. Query the same keychain with the basic
@@ -41,21 +42,30 @@ app_hash="$(
 )"
 [ -n "$app_hash" ] || die "No Developer ID Application identity for team ${team}."
 
+# productsign resolves identities by common name, not by SHA-1 hash.
 installer_hash=""
+installer_name=""
+if ! installer_listing="$(
+  security find-identity -v -p basic "$keychain" |
+    sed -nE 's/^[[:space:]]*[0-9]+\)[[:space:]]+([0-9A-Fa-f]{40})[[:space:]]+"(.*)"$/\1 \2/p'
+)"; then
+  die "Failed to query keychain ${keychain} for a Developer ID Installer identity."
+fi
 while IFS=' ' read -r hash name; do
   case "$name" in
     "Developer ID Installer: "*"(${team})")
       installer_hash=$hash
+      installer_name=$name
       break
       ;;
   esac
-done < <(
-  security find-identity -v -p basic "$keychain" 2>/dev/null |
-    sed -nE 's/^[[:space:]]*[0-9]+\)[[:space:]]+([0-9A-Fa-f]{40})[[:space:]]+"(.*)"$/\1 \2/p'
-)
-[ -n "$installer_hash" ] || die "No Developer ID Installer identity for team ${team}."
+done <<<"$installer_listing"
+if [ -z "$installer_hash" ] || [ -z "$installer_name" ]; then
+  die "No Developer ID Installer identity for team ${team} in keychain ${keychain}."
+fi
 
 {
   printf 'app_identity_hash=%s\n' "$app_hash"
   printf 'installer_identity_hash=%s\n' "$installer_hash"
+  printf 'installer_identity_name=%s\n' "$installer_name"
 } >> "$output"

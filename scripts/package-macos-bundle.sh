@@ -34,7 +34,7 @@ Environment:
   HAS_NOTARIZE_SECRETS         true when notarization credentials are available
   HAS_INSTALLER_SECRET         true when the installer certificate is available
   APP_SIGNING_IDENTITY         Developer ID Application SHA-1 hash
-  INSTALLER_SIGNING_IDENTITY   Developer ID Installer SHA-1 hash
+  INSTALLER_SIGNING_IDENTITY   Developer ID Installer common name (productsign)
   APPLE_NOTARIZE_USERNAME      Apple ID for notarytool
   APPLE_NOTARIZE_PASSWORD      app-specific password for notarytool
   APPLE_TEAM_ID                Apple team ID
@@ -100,7 +100,7 @@ if [ "$is_release" = true ] || [ "$request_notarize" = true ]; then
   [ -n "$app_signing_identity" ] ||
     die "APP_SIGNING_IDENTITY is required for a Developer ID build."
   [ -n "$installer_signing_identity" ] ||
-    die "INSTALLER_SIGNING_IDENTITY is required for a Developer ID build."
+    die "INSTALLER_SIGNING_IDENTITY (the installer common name) is required for a Developer ID build."
   # Match the existing release gate: even a final release that did not request
   # notarization must have the notarization credentials present.
   [ "$has_notarize_secrets" = true ] ||

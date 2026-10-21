@@ -51,7 +51,7 @@ output="$(run_plan \
   HAS_INSTALLER_SECRET=true \
   HAS_NOTARIZE_SECRETS=true \
   APP_SIGNING_IDENTITY=app-hash \
-  INSTALLER_SIGNING_IDENTITY=installer-hash)"
+  INSTALLER_SIGNING_IDENTITY=installer-name)"
 assert_has "$output" "mode=developer-id" "release without notarization stays Developer ID"
 assert_has "$output" "asset_name=chiavdf-v1.2.3-macos-arm64.zip" "Developer ID zip name"
 assert_has "$output" "pkg_name=chiavdf-v1.2.3-macos-arm64.pkg" "Developer ID pkg name"
@@ -65,7 +65,7 @@ output="$(run_plan \
   HAS_INSTALLER_SECRET=true \
   HAS_NOTARIZE_SECRETS=true \
   APP_SIGNING_IDENTITY=app-hash \
-  INSTALLER_SIGNING_IDENTITY=installer-hash \
+  INSTALLER_SIGNING_IDENTITY=installer-name \
   APPLE_NOTARIZE_USERNAME=user \
   APPLE_NOTARIZE_PASSWORD=pass \
   APPLE_TEAM_ID=TEAM123)"
@@ -80,7 +80,7 @@ output="$(run_plan \
   HAS_INSTALLER_SECRET=true \
   HAS_NOTARIZE_SECRETS=true \
   APP_SIGNING_IDENTITY=app-hash \
-  INSTALLER_SIGNING_IDENTITY=installer-hash \
+  INSTALLER_SIGNING_IDENTITY=installer-name \
   APPLE_NOTARIZE_USERNAME=user \
   APPLE_NOTARIZE_PASSWORD=pass \
   APPLE_TEAM_ID=TEAM123)"
@@ -95,19 +95,19 @@ assert_plan_fails "notarization without installer secrets" \
 assert_plan_fails "release without notarization secrets" \
   "require notarization secrets" \
   IS_RELEASE=true REQUEST_NOTARIZE=false HAS_APPLE_SECRET=true HAS_INSTALLER_SECRET=true HAS_NOTARIZE_SECRETS=false \
-  APP_SIGNING_IDENTITY=app-hash INSTALLER_SIGNING_IDENTITY=installer-hash
+  APP_SIGNING_IDENTITY=app-hash INSTALLER_SIGNING_IDENTITY=installer-name
 assert_plan_fails "Developer ID build without an app hash" \
   "APP_SIGNING_IDENTITY is required" \
   IS_RELEASE=true REQUEST_NOTARIZE=false HAS_APPLE_SECRET=true HAS_INSTALLER_SECRET=true HAS_NOTARIZE_SECRETS=true \
-  APP_SIGNING_IDENTITY= INSTALLER_SIGNING_IDENTITY=installer-hash
-assert_plan_fails "Developer ID build without an installer hash" \
-  "INSTALLER_SIGNING_IDENTITY is required" \
+  APP_SIGNING_IDENTITY= INSTALLER_SIGNING_IDENTITY=installer-name
+assert_plan_fails "Developer ID build without an installer name" \
+  "INSTALLER_SIGNING_IDENTITY (the installer common name) is required" \
   IS_RELEASE=true REQUEST_NOTARIZE=false HAS_APPLE_SECRET=true HAS_INSTALLER_SECRET=true HAS_NOTARIZE_SECRETS=true \
   APP_SIGNING_IDENTITY=app-hash INSTALLER_SIGNING_IDENTITY=
 assert_plan_fails "notarization without credentials" \
   "APPLE_NOTARIZE_USERNAME is required" \
   IS_RELEASE=false REQUEST_NOTARIZE=true HAS_APPLE_SECRET=true HAS_INSTALLER_SECRET=true HAS_NOTARIZE_SECRETS=true \
-  APP_SIGNING_IDENTITY=app-hash INSTALLER_SIGNING_IDENTITY=installer-hash \
+  APP_SIGNING_IDENTITY=app-hash INSTALLER_SIGNING_IDENTITY=installer-name \
   APPLE_NOTARIZE_USERNAME= APPLE_NOTARIZE_PASSWORD=pass APPLE_TEAM_ID=TEAM123
 
 echo "macOS bundle release plan checks passed"

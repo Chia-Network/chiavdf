@@ -64,6 +64,8 @@ grep -Fxq 'app_identity_hash=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC' "$out" \
   || fail "the app identity for the requested team was not selected: $(cat "$out")"
 grep -Fxq 'installer_identity_hash=2222222222222222222222222222222222222222' "$out" \
   || fail "the installer identity for the requested team was not selected: $(cat "$out")"
+grep -Fxq 'installer_identity_name=Developer ID Installer: Chia Network Inc. (TEAM123)' "$out" \
+  || fail "the installer common name for the requested team was not selected: $(cat "$out")"
 grep -Fxq 'find-identity -v -p basic signing_temp.keychain' "$security_log" \
   || fail "the installer identity was not queried from the imported keychain: $(cat "$security_log")"
 
@@ -85,6 +87,7 @@ assert_fail() {
 assert_fail "missing app identity for the team" \
   "No Developer ID Application identity for team TEAM123." '[]' "${tmp}/basic.txt"
 assert_fail "missing installer identity for the team" \
-  "No Developer ID Installer identity for team TEAM123." "$app_identities" "${tmp}/no-installer.txt"
+  "No Developer ID Installer identity for team TEAM123 in keychain signing_temp.keychain." \
+  "$app_identities" "${tmp}/no-installer.txt"
 
 echo "macOS signing identity selection checks passed"

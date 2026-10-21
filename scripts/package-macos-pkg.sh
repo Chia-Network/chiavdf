@@ -6,8 +6,8 @@
 # installing the same tree under /usr/local keeps the rpath valid.
 #
 # An empty installer identity produces an unsigned package. Release builds pass
-# a "Developer ID Installer" identity, which is what productsign requires; the
-# "Developer ID Application" certificate used for the binaries cannot sign a
+# a "Developer ID Installer" common name, which is what productsign requires;
+# the "Developer ID Application" certificate used for the binaries cannot sign a
 # package.
 set -euo pipefail
 

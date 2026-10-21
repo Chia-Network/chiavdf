@@ -69,14 +69,17 @@ chmod +x "${fakebin}/pkgbuild" "${fakebin}/productsign" "${fakebin}/pkgutil"
 write_payload() {
   local tool
   {
-    echo bin
+    echo .
+    echo ./bin
     for tool in "${MACOS_BUNDLE_TOOLS[@]}"; do
-      echo "bin/$tool"
+      echo "./bin/$tool"
     done
-    echo libexec
-    echo libexec/chiavdf
-    echo libexec/chiavdf/libft4222.dylib
-    echo libexec/chiavdf/libgmp.10.dylib
+    echo ./bin/._vdf_client
+    echo ./libexec
+    echo ./libexec/chiavdf
+    echo ./libexec/chiavdf/._libft4222.dylib
+    echo ./libexec/chiavdf/libft4222.dylib
+    echo ./libexec/chiavdf/libgmp.10.dylib
   } > "$1"
 }
 
@@ -165,7 +168,7 @@ fi
 
 # A payload that puts files outside bin/ or libexec/ is rejected.
 write_payload "${tmp}/bad-payload.txt"
-printf 'etc/chiavdf.conf\n' >> "${tmp}/bad-payload.txt"
+printf './etc/chiavdf.conf\n' >> "${tmp}/bad-payload.txt"
 payload="${tmp}/bad-payload.txt"
 if run_pkg "$bundle" "${tmp}/bad-layout.pkg" "1.2.3"; then
   fail "payload with an unexpected top-level directory was accepted"
@@ -173,7 +176,7 @@ fi
 
 # A top-level file outside bin/ or libexec/ is rejected too.
 write_payload "${tmp}/top-level-file-payload.txt"
-printf 'README.txt\n' >> "${tmp}/top-level-file-payload.txt"
+printf './README.txt\n' >> "${tmp}/top-level-file-payload.txt"
 payload="${tmp}/top-level-file-payload.txt"
 if run_pkg "$bundle" "${tmp}/top-level-file.pkg" "1.2.3"; then
   fail "payload with an unexpected top-level file was accepted"
@@ -181,7 +184,7 @@ fi
 
 # Finder/AppleDouble metadata at the top level is not a payload entry.
 write_payload "${tmp}/metadata-payload.txt"
-printf '._bin\n._README.txt\n' >> "${tmp}/metadata-payload.txt"
+printf './._bin\n./._README.txt\n' >> "${tmp}/metadata-payload.txt"
 payload="${tmp}/metadata-payload.txt"
 run_pkg "$bundle" "${tmp}/metadata.pkg" "1.2.3" \
   || fail "top-level AppleDouble metadata was rejected"

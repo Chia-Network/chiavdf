@@ -324,13 +324,19 @@ EOF
   done
 
   gmp_loads="$(printf '%s\n\t%s\n\t%s\n\t/usr/lib/libSystem.B.dylib' "bin:" "@rpath/libgmpxx.4.dylib" "@rpath/libgmp.10.dylib")"
-  for tool in vdf_client vdf_bench emu_hw_vdf_client emu_hw_test; do
-    write_otool loads "$tool" "$gmp_loads"
-    write_otool rpaths "$tool" "$(bundle_rpath_fixture)"
-  done
   hw_loads="$(printf '%s\n\t%s\n\t%s\n\t%s\n\t/usr/lib/libSystem.B.dylib' "bin:" "@rpath/libft4222.dylib" "@rpath/libgmpxx.4.dylib" "@rpath/libgmp.10.dylib")"
-  for tool in hw_vdf_client hw_test; do
-    write_otool loads "$tool" "$hw_loads"
+  for tool in "${MACOS_BUNDLE_TOOLS[@]}"; do
+    case "$tool" in
+      vdf_client|vdf_bench|emu_hw_vdf_client|emu_hw_test)
+        write_otool loads "$tool" "$gmp_loads"
+        ;;
+      hw_vdf_client|hw_test)
+        write_otool loads "$tool" "$hw_loads"
+        ;;
+      *)
+        fail "no otool dependency fixture for $tool"
+        ;;
+    esac
     write_otool rpaths "$tool" "$(bundle_rpath_fixture)"
   done
   for lib in libgmp.10.dylib libgmpxx.4.dylib libftd2xx.dylib libft4222.dylib libft4222.1.4.4.190.dylib; do

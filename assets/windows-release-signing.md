@@ -32,7 +32,9 @@ shows up as a 403 / `SignerSign()` failure.
    publishes the versioned zip plus `chiavdf-win64.zip`.
 
 Pull requests still build and test Windows, but do not enter the signing
-environment. They therefore do not produce a signed Windows bundle.
+environment and do not produce a signed Windows bundle. Optimized push and
+manual builds sign in `sign-windows`; the build job uploads only the raw
+`windows-amd64-binaries` artifact.
 
 ## What gets signed
 
@@ -82,15 +84,13 @@ The `sign-windows` job in `.github/workflows/build-client.yml`:
   verification fails. The dlib requires the .NET 8 runtime, which
   `windows-latest` provides.
 
-Unsigned pull-request and push builds never enter the environment. They assemble
-and package the zip in the normal build job with signing disabled.
-
 ## Manual packaging
 
 The script exposes three actions:
 
 - `Assemble` requires `INSTALLER_VERSION` and builds `dist/windows/<bundle>/bin`.
-- `ListSignFiles` prints the absolute paths of the six executables and MPIR DLLs.
+- `ListSignFiles` requires `INSTALLER_VERSION` and prints the absolute paths of
+  the six executables and MPIR DLLs.
 - `Package` requires `INSTALLER_VERSION`, `IS_RELEASE`, and `REQUIRE_SIGNATURES`.
   Set `REQUIRE_SIGNATURES=false` for an unsigned local package; set it to `true`
   only after signing, and optionally set `EXPECTED_SIGNER_SUBJECT`,

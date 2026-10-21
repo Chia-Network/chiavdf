@@ -23,6 +23,28 @@ static bool wait_for(const std::function<bool()> &ready, std::chrono::millisecon
     return true;
 }
 
+// A stopped proof returns in about 3ms. Under 3x CPU oversubscription the same
+// wait stayed within a few tens of milliseconds, with no failures. An uncancelled
+// proof of this fixture runs for several seconds and then verifies, so five
+// seconds still fails closed.
+constexpr std::chrono::milliseconds kAbandonedProofDeadline{5000};
+
+constexpr size_t kMaxSquaringOrbit = 64;
+
+static bool wait_for_proof_failed(vdf_state &vdf, uint16_t proof, std::chrono::milliseconds limit,
+        uint8_t required = 0)
+{
+    return wait_for([&] {
+        if (vdf.aux_threads_busy.load() != 0 || vdf.n_proof_threads.load() != 0)
+            return false;
+        std::lock_guard<std::mutex> lock(vdf.proofs_resize_mtx);
+        uint8_t flags = vdf.proofs[proof].flags;
+        return (flags & HW_VDF_PROOF_FLAG_FAILED) != 0
+            && (flags & HW_VDF_PROOF_FLAG_DONE) == 0
+            && (flags & required) == required;
+    }, limit);
+}
+
 static void require(bool condition, const char *message) {
     if (!condition) throw std::runtime_error(message);
 }
@@ -120,8 +142,8 @@ static void mark_chain_done(vdf_state &vdf, uint16_t idx) {
 }
 
 // Squaring a reduced form stays in a finite set. A repeat selects the same
-// element as walking every step. An orbit that does not repeat inside this
-// bound is rejected instead of storing one form per iteration.
+// element as walking every step. An orbit that does not repeat inside
+// kMaxSquaringOrbit is rejected instead of storing one form per iteration.
 static form square_steps(form value, const integer &D, const integer &L, uint64_t steps)
 {
     PulmarkReducer reducer;
@@ -141,7 +163,7 @@ static form square_steps(form value, const integer &D, const integer &L, uint64_
                 throw std::runtime_error("Squaring orbit index was outside the prefix");
             return orbit[index];
         }
-        if (orbit.size() >= 64)
+        if (orbit.size() >= kMaxSquaringOrbit)
             throw std::runtime_error("Squaring orbit was not usable");
         orbit.push_back(value);
     }
@@ -542,13 +564,7 @@ int main() {
             uint16_t checkpoint = hw_queue_proof(&vdf, vdf.interval, HW_VDF_PROOF_NONE, 0);
             vdf.last_val.iters = vdf.interval;
             hw_proof_process_work(&vdf);
-            require(wait_for([&] {
-                        if (vdf.aux_threads_busy.load() != 0) return false;
-                        std::lock_guard<std::mutex> lock(vdf.proofs_resize_mtx);
-                        uint8_t flags = vdf.proofs[checkpoint].flags;
-                        return (flags & HW_VDF_PROOF_FLAG_FAILED) != 0
-                            && (flags & HW_VDF_PROOF_FLAG_DONE) == 0;
-                    }, std::chrono::seconds(20)),
+            require(wait_for_proof_failed(vdf, checkpoint, std::chrono::seconds(20)),
                     "Verify failure did not release the checkpoint");
             require(vdf.queued_proofs.empty(), "Failed checkpoint was requeued");
             require(vdf.n_proof_threads.load() == 0, "Failed checkpoint left a proof slot busy");
@@ -607,7 +623,7 @@ int main() {
                 accepted = true;
             } catch (const std::exception &) {
             }
-            require(!accepted, "Bad start form was a form of the discriminant");
+            require(!accepted, "Bad start form was accepted by from_abd");
             vdf.last_val.iters = vdf.interval;
             auto *work = new vdf_work;
             copy_vdf_value(&work->start_val, &vdf.last_val);
@@ -618,15 +634,8 @@ int main() {
             work->n_steps = 0;
             vdf.wq.push_back(work);
             hw_proof_process_work(&vdf);
-            require(wait_for([&] {
-                        if (vdf.aux_threads_busy.load() != 0 || vdf.n_proof_threads.load() != 0)
-                            return false;
-                        std::lock_guard<std::mutex> lock(vdf.proofs_resize_mtx);
-                        uint8_t flags = vdf.proofs[checkpoint].flags;
-                        return (flags & HW_VDF_PROOF_FLAG_FAILED) != 0
-                            && (flags & HW_VDF_PROOF_FLAG_EXACT_REQ) != 0
-                            && (flags & HW_VDF_PROOF_FLAG_DONE) == 0;
-                    }, std::chrono::seconds(5)),
+            require(wait_for_proof_failed(vdf, checkpoint, std::chrono::seconds(5),
+                            HW_VDF_PROOF_FLAG_EXACT_REQ),
                     "Bad start form stalled the dependent proof");
             require((vdf.valid_values[0].load(std::memory_order_acquire) & (1u << 1)) == 0,
                     "Rejected start form published the grid point");
@@ -667,11 +676,12 @@ int main() {
                     "Proof that does not read the missing square was not delivered");
         }
         {
-            // The endpoint is the real square of the start form, so a proof that
-            // finishes verifies and is marked DONE. Every interior grid point is
-            // abandoned, so GetForm returns at once instead of blocking, and the
-            // segment is long enough that those squares cannot be proved before
-            // the deadline. The lock is FAILED (not DONE) within that deadline.
+            // The endpoint is the real square of the start form. Interior grid
+            // points are stand-ins: an abandoned GetForm returns the form at
+            // position 0. The squaring period is 2 and the interval is even, so
+            // that stand-in equals the real grid form. Skipping cancel_slot, the
+            // proof verifies and is marked DONE after several seconds. Only
+            // cancellation yields FAILED before the deadline.
             vdf_state vdf{};
             uint8_t initial[BQFC_FORM_SIZE] = {8};
             const uint64_t length = 400000000;
@@ -691,14 +701,7 @@ int main() {
             uint16_t proof = hw_queue_proof(&vdf, length, HW_VDF_PROOF_NONE, HW_VDF_PROOF_FLAG_IS_REQ);
             vdf.last_val.iters = length;
             hw_proof_process_work(&vdf);
-            require(wait_for([&] {
-                        if (vdf.aux_threads_busy.load() != 0 || vdf.n_proof_threads.load() != 0)
-                            return false;
-                        std::lock_guard<std::mutex> lock(vdf.proofs_resize_mtx);
-                        uint8_t flags = vdf.proofs[proof].flags;
-                        return (flags & HW_VDF_PROOF_FLAG_FAILED) != 0
-                            && (flags & HW_VDF_PROOF_FLAG_DONE) == 0;
-                    }, std::chrono::milliseconds(400)),
+            require(wait_for_proof_failed(vdf, proof, kAbandonedProofDeadline),
                     "Abandoned interior point did not stop before the deadline");
             require(vdf.done_proofs.empty(), "Abandoned interior point published a proof");
             require(vdf.queued_proofs.empty(), "Abandoned interior point stayed queued");

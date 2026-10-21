@@ -97,15 +97,32 @@ old DigiCert `SM_*` secrets are no longer read and can be removed.
 3. In the GitHub repository, create the `windows-code-signing` environment and
    add `AZURE_SIGNING_CLIENT_ID` and `AZURE_SIGNING_TENANT_ID` (the same values as
    the other Chia repositories unless a separate app is used).
-4. Restrict the environment to the branches and tags that should produce signed
-   builds (typically `main`, `release/**`, and the release tag pattern such as
-   `v*`). A published release runs on a tag ref, so a branch-only rule can block
-   it. Signing jobs run only for final releases or a manual `windows_sign`
-   dispatch, so pull requests are unaffected.
+4. Optionally restrict the environment to the branches and tags that should
+   produce signed builds. This repo uses numeric release tags such as `1.2.0`,
+   not `v1.2.0`, so a `v*` tag rule blocks releases. If you add tag rules, use a
+   pattern that matches the numeric tags, such as `1.*` or `*`. A published
+   release runs on a tag ref, so a branch-only rule can block it. Signing jobs
+   run only for final releases or a manual `windows_sign` dispatch, so pull
+   requests are unaffected.
 5. Copy the `build-client.yml` signing pattern: a dedicated Windows job with the
    environment and `id-token: write`, calling a signing action that handles the
    NuGet client, the late OIDC token request, `signtool` with `/dlib` and
    `/dmdf`, and `signtool verify /pa`.
+
+## Testing before enabling releases
+
+1. Run **Actions → VDF client & HW CI → Run workflow** with `windows_sign`
+   enabled. This is a `workflow_dispatch` run, so it signs without publishing a
+   GitHub release.
+2. Download the `windows-amd64-bundle` artifact.
+3. Unzip it and verify a signed binary:
+
+   ```powershell
+   signtool verify /v /pa .\bin\vdf_client.exe
+   ```
+
+To test from a pull-request branch before merging, allow that branch in the
+environment's deployment rules, or merge and dispatch the workflow from `main`.
 
 ## Troubleshooting
 

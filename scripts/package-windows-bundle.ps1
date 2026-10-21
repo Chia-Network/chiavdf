@@ -711,7 +711,7 @@ function Invoke-Package {
     Assert-BundleRoot -BundleRoot $paths.BundleRoot -DllNames $dllNames
     Assert-ImportClosure -BinDir $paths.BinDir
     Publish-BundleZip -Paths $paths -IsRelease (Require-Flag 'IS_RELEASE')
-    Invoke-ExtractedZip -Paths $paths -DllNames $dllNames -RequireSignatures (Require-Flag 'REQUEST_WINDOWS_SIGNING')
+    Invoke-ExtractedZip -Paths $paths -DllNames $dllNames -RequireSignatures (Require-Flag 'REQUIRE_SIGNATURES')
     Write-Host "Verified $($paths.AssetPath)"
 }
 

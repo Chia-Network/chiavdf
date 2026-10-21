@@ -429,7 +429,7 @@ jobs:
         shell: pwsh
         env:
           IS_RELEASE: ${{ inputs.is_final }}
-          REQUEST_WINDOWS_SIGNING: ${{ inputs.sign_windows }}
+          REQUIRE_SIGNATURES: 'false'
         run: ./scripts/package-windows-bundle.ps1 -Action Package
 
       - name: Assemble macOS brew bundle
@@ -687,6 +687,8 @@ jobs:
             src/hw_vdf_client
             src/hw/libft4222/*.dylib
 
+      # sign-windows downloads this into the workspace root and expects the
+      # build/, src/hw/libft4222/, and mpir_gc_x64/ paths to be preserved.
       - name: Upload binaries artifact (Windows)
         if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
         uses: actions/upload-artifact@v7
@@ -763,8 +765,6 @@ jobs:
       id-token: write
     env:
       INSTALLER_VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}
-      IS_RELEASE: ${{ inputs.is_final }}
-      REQUEST_WINDOWS_SIGNING: ${{ inputs.sign_windows }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -799,6 +799,9 @@ jobs:
 
       - name: Package and verify Windows zip bundle
         shell: pwsh
+        env:
+          IS_RELEASE: ${{ inputs.is_final }}
+          REQUIRE_SIGNATURES: 'true'
         run: ./scripts/package-windows-bundle.ps1 -Action Package
 
       - name: Upload Windows bundle artifact

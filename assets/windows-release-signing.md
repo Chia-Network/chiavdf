@@ -22,9 +22,8 @@ shows up as a 403 / `SignerSign()` failure.
 
 1. `release-policy` sets `sign_windows=true` for a final release, or for a manual
    `workflow_dispatch` with `windows_sign` enabled.
-2. The `build` job builds and tests Windows, uploads
-   `binaries-optimized=1-windows-latest`, and skips Windows packaging because
-   signing was requested.
+2. The `build` job builds and tests Windows, uploads `windows-amd64-binaries`,
+   and skips Windows packaging because signing was requested.
 3. The `sign-windows` job enters the `windows-code-signing` environment,
    downloads the binaries, assembles the bundle, signs it, packages the zip, and
    verifies every signature and every executable before uploading
@@ -89,10 +88,14 @@ old DigiCert `SM_*` secrets are no longer read and can be removed.
 ## Enable signing on a new repository
 
 1. In Entra ID, add a federated credential to the existing signing app for the
-   GitHub repository. The subject must include the environment, for example
-   `repo:Chia-Network/chiavdf:environment:windows-code-signing`. Look under
-   **Home > App Registrations > All applications > GithubActions > Add a
-   Certificate or Secret**.
+   GitHub repository. The subject must include the environment. For an existing
+   repo that has not opted into immutable subject claims, use
+   `repo:Chia-Network/chiavdf:environment:windows-code-signing`. Repos created
+   after July 15, 2026, or repos that opt in, use the immutable form
+   `repo:OWNER@OWNER_ID/REPO@REPO_ID:environment:windows-code-signing` instead.
+   The Entra wizard may generate the immutable form, so edit the subject if the
+   repo still emits the name-based format. Look under **Home > App Registrations
+   > All applications > GithubActions > Add a Certificate or Secret**.
 2. Confirm the app can use Artifact Signing account/profile `ChiaNetworkInc`.
 3. In the GitHub repository, create the `windows-code-signing` environment and
    add `AZURE_SIGNING_CLIENT_ID` and `AZURE_SIGNING_TENANT_ID` (the same values as

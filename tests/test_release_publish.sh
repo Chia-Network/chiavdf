@@ -235,25 +235,25 @@ if grep -q 'glue_chiavdf=' "$output" || grep -q 'glue_chiavdfc=' "$output"; then
   fail "gh failure should not record glue payloads"
 fi
 
+job_field() {
+  local file=$1 job=$2 key=$3
+  awk -v job="  ${job}:" -v key="$key" '
+    $0 == job { in_job = 1; next }
+    in_job && /^  [A-Za-z0-9-]+:/ { exit }
+    in_job && $0 ~ ("^[[:space:]]+" key ":") {
+      sub("^[[:space:]]+" key ":[[:space:]]*", "")
+      print
+      exit
+    }
+  ' "$file"
+}
+
 # publish-release waits on the jobs that produce or validate release assets.
 # ASAN/TSAN stay in their own matrix and are not part of that set.
 # shellcheck disable=SC2016
 assert_publish_dependencies() {
   packages="${root}/.github/workflows/build-packages.yml"
   client="${root}/.github/workflows/build-client.yml"
-
-  job_field() {
-    local file=$1 job=$2 key=$3
-    awk -v job="  ${job}:" -v key="$key" '
-      $0 == job { in_job = 1; next }
-      in_job && /^  [A-Za-z0-9-]+:/ { exit }
-      in_job && $0 ~ ("^[[:space:]]+" key ":") {
-        sub("^[[:space:]]+" key ":[[:space:]]*", "")
-        print
-        exit
-      }
-    ' "$file"
-  }
 
   needs=$(job_field "$packages" publish-release needs)
   if [ "$needs" != "[release-policy, package, c-libraries, release-publish-checks]" ]; then
@@ -323,8 +323,28 @@ assert_publish_dependencies() {
   if ! grep -q 'config: ${{ fromJSON(inputs.configs) }}' "$client"; then
     fail "client matrix is not selected by the caller"
   fi
-  if ! grep -q 'REQUEST_WINDOWS_SIGNING: ${{ inputs.sign_windows }}' "$client"; then
-    fail "REQUEST_WINDOWS_SIGNING does not read inputs.sign_windows"
+}
+
+assert_windows_signing_wiring() {
+  client="${root}/.github/workflows/build-client.yml"
+
+  if [ "$(job_field "$client" sign-windows environment)" != "windows-code-signing" ]; then
+    fail "Windows signing job does not use the windows-code-signing environment"
+  fi
+  if [ "$(job_field "$client" sign-windows id-token)" != "write" ]; then
+    fail "Windows signing job does not request id-token: write"
+  fi
+  if ! grep -Fq 'AZURE_SIGNING_CLIENT_ID' "$client" || ! grep -Fq 'AZURE_SIGNING_TENANT_ID' "$client"; then
+    fail "Windows signing job does not read the Azure signing secrets"
+  fi
+  if [ "$(grep -Fc 'name: windows-amd64-binaries' "$client")" -lt 2 ]; then
+    fail "Windows build artifact and sign job do not share windows-amd64-binaries"
+  fi
+  if ! grep -Fq "REQUIRE_SIGNATURES: 'false'" "$client"; then
+    fail "unsigned Windows packaging does not disable signature verification"
+  fi
+  if ! grep -Fq "REQUIRE_SIGNATURES: 'true'" "$client"; then
+    fail "signed Windows packaging does not require signature verification"
   fi
   if ! grep -Fq 'IS_RELEASE: ${{ inputs.is_final }}' "$client"; then
     fail "IS_RELEASE does not read inputs.is_final"
@@ -332,19 +352,8 @@ assert_publish_dependencies() {
   if ! grep -Fq "inputs.sign_windows == 'true'" "$client"; then
     fail "sign steps do not check inputs.sign_windows"
   fi
-  if grep -E 'sign_windows|REQUEST_WINDOWS_SIGNING:|IS_RELEASE:' "$client" | grep -q 'github.event_name'; then
+  if grep -E 'sign_windows|REQUIRE_SIGNATURES:|IS_RELEASE:' "$client" | grep -q 'github.event_name'; then
     fail "signing or IS_RELEASE still keys off github.event_name"
-  fi
-}
-
-assert_windows_signing_wiring() {
-  client="${root}/.github/workflows/build-client.yml"
-
-  if ! grep -Fq 'environment: windows-code-signing' "$client"; then
-    fail "Windows signing job does not use the windows-code-signing environment"
-  fi
-  if ! grep -Fq 'AZURE_SIGNING_CLIENT_ID' "$client" || ! grep -Fq 'AZURE_SIGNING_TENANT_ID' "$client"; then
-    fail "Windows signing job does not read the Azure signing secrets"
   fi
   if grep -Eq 'SM_(API_KEY|CLIENT_CERT_FILE_B64|CODE_SIGNING_CERT_SHA1_HASH|CERTKEY_ALIAS)' "$client"; then
     fail "client workflow still references DigiCert SM_* secrets"

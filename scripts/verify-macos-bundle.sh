@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Fail unless a shipped macOS zip is relocatable and every shipped executable starts.
 #
-# Notarization submits the zip; it does not execute it. Homebrew absolute
-# paths survive codesign and are rejected later by the hardened runtime's
-# library validation. This check unzips the artifact that would be published.
+# Notarization inspects the pkg payload; it does not execute the binaries.
+# Homebrew absolute paths survive codesign and are rejected later by the
+# hardened runtime's library validation. This check unzips the artifact that
+# would be published.
 set -euo pipefail
 
 # shellcheck source=scripts/macos-install-names.sh

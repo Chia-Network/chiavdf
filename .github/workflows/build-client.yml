@@ -700,13 +700,12 @@ jobs:
 
           if [ "$REQUEST_NOTARIZE" = "true" ] || [ "$IS_RELEASE" = "true" ]; then
             if [ "${NOTARIZE}" = "true" ]; then
-              # stapler staple/validate accepts an app, a disk image, or an
-              # installer package. It rejects a bare zip, so there is no ticket
-              # to attach to this archive. notarytool --wait is the gate.
-              if ! xcrun notarytool submit "dist/macos/${ASSET_NAME}" --apple-id "$APPLE_NOTARIZE_USERNAME" --password "$APPLE_NOTARIZE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait; then
-                echo "Notarization failed for dist/macos/${ASSET_NAME}" >&2
-                exit 1
-              fi
+              # Submit only the pkg. Notarization is recorded per code object
+              # (CDHash), and pkgbuild does not modify the binaries, so this
+              # submission covers the exact signatures the zip ships; Gatekeeper
+              # finds them during the zip's online lookup. A zip cannot be
+              # stapled, so a separate zip submission would only duplicate those
+              # records. Both artifacts are built from the same BUNDLE_ROOT.
               if ! xcrun notarytool submit "$PKG_PATH" --apple-id "$APPLE_NOTARIZE_USERNAME" --password "$APPLE_NOTARIZE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait; then
                 echo "Notarization failed for $PKG_PATH" >&2
                 exit 1
@@ -714,7 +713,7 @@ jobs:
               xcrun stapler staple "$PKG_PATH"
               xcrun stapler validate "$PKG_PATH"
               spctl -a -vv -t install "$PKG_PATH"
-              SIGNING_STATUS="zip: signed + notarized (a zip cannot be stapled); pkg: signed + notarized + stapled"
+              SIGNING_STATUS="zip: signed, binaries notarized via the pkg submission (a zip cannot be stapled); pkg: signed + notarized + stapled"
               PKG_STATUS="signed + notarized + stapled (Developer ID Installer)"
             else
               if [ "$REQUEST_NOTARIZE" = "true" ]; then

@@ -65,9 +65,9 @@ The package depends on `libgmp-dev` and `libboost-system-dev`. The apt index is 
 
 The package workflow (`.github/workflows/build-packages.yml` calling `build-client.yml`) runs `dpkg-deb` on that tree. The apt package name in the published index is `chiavdf-hw`; release assets produced here use `chiavdf`.
 
-### macOS release zip
+### macOS release archive and package
 
-A release of this repo uploads `chiavdf-<tag>-macos-arm64.zip` (Apple Silicon, `macos-15`) and `chiavdf-<tag>-macos-intel.zip`. The release job signs and notarizes those archives. Layout:
+A release of this repo uploads `chiavdf-<tag>-macos-arm64.zip` (Apple Silicon, `macos-15`), `chiavdf-<tag>-macos-intel.zip`, and a `.pkg` for each. The release job signs both artifacts, notarizes the pkg, and staples the ticket to it. The zip ships the same signed binaries, so Gatekeeper verifies it through the online notarization lookup; a zip cannot be stapled. Layout:
 
 ```text
 bin/hw_vdf_client
@@ -83,7 +83,7 @@ libexec/chiavdf/libgmp.<version>.dylib
 libexec/chiavdf/libgmpxx.<version>.dylib
 ```
 
-Run `bin/hw_vdf_client`. The bundle's rpath is `@loader_path/../libexec/chiavdf`, so the FTDI and GMP dylibs resolve next to `bin/` with no `DYLD_LIBRARY_PATH`. Release staging rewrites the Homebrew GMP install names to `@rpath/<basename>` and copies those dylibs into `libexec/chiavdf`. Details of signing are in `assets/macos-release-bundle.md`.
+Run `bin/hw_vdf_client`. The bundle's rpath is `@loader_path/../libexec/chiavdf`, so the FTDI and GMP dylibs resolve next to `bin/` with no `DYLD_LIBRARY_PATH`. Release staging rewrites the Homebrew GMP install names to `@rpath/<basename>` and copies those dylibs into `libexec/chiavdf`. The `.pkg` installs the same tree under `/usr/local` (`/usr/local/bin`, `/usr/local/libexec/chiavdf`). Details of signing are in `assets/macos-release-bundle.md`.
 
 ### Windows release zip
 
@@ -480,7 +480,7 @@ This repo does not ship a Windows service. Run `hw_vdf_client.exe` in a console 
 
 **`Failed to open device`.** `init_hw` prints this when `FtdiDriver::Open()` returns an error. With no board attached, that follows the FTDI error above (error 18 or `No FTDI devices connected`). **`No FT4222H detected`** means the device list was readable and no interface A matched. Another `hw_vdf_client` or `hw_test` may already hold the board. Use `--list` and pass the location with `--device-loc` when more than one board is attached.
 
-**Gatekeeper / exit 137.** A browser-downloaded release zip can be quarantined. A notarized release opens after the normal macOS prompt. A source build that skips `codesign -f -s - hw/libft4222/*.dylib hw_vdf_client hw_test` (from `src/`) exits 137 (SIGKILL) on launch. The fetch script's quarantine clear does not sign the dylibs.
+**Gatekeeper / exit 137.** A browser-downloaded release zip can be quarantined. A notarized release opens after the normal macOS prompt: the zip needs an online lookup, while the `.pkg` carries a stapled ticket and verifies offline. A source build that skips `codesign -f -s - hw/libft4222/*.dylib hw_vdf_client hw_test` (from `src/`) exits 137 (SIGKILL) on launch. The fetch script's quarantine clear does not sign the dylibs.
 
 **No TCP session on port 8000.** The timelord is down, `vdf_server.host` is unreachable, or the source IP is missing from `vdf_clients.ip` (`Rejected VDF client from non-whitelisted IP` in `debug.log`). Software `vdf_client` processes from `chia_timelord_launcher` compete for the three chains. Stop the launcher with `chia stop timelord-launcher-only`, or set `timelord_launcher.process_count` to 0 and restart it. Until something listens, the hardware client's stderr repeats `Connecting to ...` and `connect: Connection refused`.
 

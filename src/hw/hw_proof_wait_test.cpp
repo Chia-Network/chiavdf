@@ -119,6 +119,35 @@ static void mark_chain_done(vdf_state &vdf, uint16_t idx) {
     }
 }
 
+// Squaring a reduced form stays in a finite set. A repeat selects the same
+// element as walking every step. An orbit that does not repeat inside this
+// bound is rejected instead of storing one form per iteration.
+static form square_steps(form value, const integer &D, const integer &L, uint64_t steps)
+{
+    PulmarkReducer reducer;
+    std::vector<form> orbit;
+    orbit.push_back(value);
+    for (uint64_t done = 0; done < steps; ) {
+        nudupl_form(value, value, D, L);
+        reducer.reduce(value);
+        ++done;
+        if (!value.check_valid(D))
+            throw std::runtime_error("Squaring left the discriminant");
+        for (size_t i = 0; i < orbit.size(); i++) {
+            if (!(orbit[i] == value)) continue;
+            uint64_t period = done - static_cast<uint64_t>(i);
+            uint64_t index = static_cast<uint64_t>(i) + (steps - static_cast<uint64_t>(i)) % period;
+            if (index >= orbit.size())
+                throw std::runtime_error("Squaring orbit index was outside the prefix");
+            return orbit[index];
+        }
+        if (orbit.size() >= 64)
+            throw std::runtime_error("Squaring orbit was not usable");
+        orbit.push_back(value);
+    }
+    return value;
+}
+
 static void initialize_wait_state(vdf_state& vdf) {
     vdf.valid_values = std::make_unique<std::atomic<uint8_t>[]>(2);
     for (size_t i = 0; i < 2; ++i) vdf.valid_values[i].store(0);
@@ -569,8 +598,8 @@ int main() {
                     "Fill checkpoint was not the exact request");
             require((vdf.proofs[checkpoint].flags & HW_VDF_PROOF_FLAG_IS_REQ) == 0,
                     "Exact fill checkpoint was queued as its own segment");
-            // Not a form of this discriminant: b^2 - D is not divisible by 4a.
-            // The fill cannot square it into the grid point the checkpoint reads.
+            // 4a does not divide b^2 - D, so from_abd throws before nudupl.
+            // hw_job_exit abandons the gap while that exception unwinds.
             bool accepted = false;
             try {
                 form ignored = form::from_abd(integer(1), integer(2), vdf.D);
@@ -578,7 +607,7 @@ int main() {
                 accepted = true;
             } catch (const std::exception &) {
             }
-            require(!accepted, "Bad start form was a form of the discriminant");
+            require(!accepted, "Rejected start form reached nudupl");
             vdf.last_val.iters = vdf.interval;
             auto *work = new vdf_work;
             copy_vdf_value(&work->start_val, &vdf.last_val);
@@ -599,6 +628,8 @@ int main() {
                             && (flags & HW_VDF_PROOF_FLAG_DONE) == 0;
                     }, std::chrono::seconds(5)),
                     "Bad start form stalled the dependent proof");
+            require((vdf.valid_values[0].load(std::memory_order_acquire) & (1u << 1)) == 0,
+                    "Rejected start form published the grid point");
             require(vdf.queued_proofs.empty(), "Bad start form left the failed checkpoint queued");
             require(vdf.done_proofs.empty(), "Bad start form published the exact checkpoint");
             {
@@ -636,19 +667,27 @@ int main() {
                     "Proof that does not read the missing square was not delivered");
         }
         {
+            // The endpoint is the real square of the start form, so a proof that
+            // finishes verifies and is marked done. Every interior grid point is
+            // abandoned, so GetForm returns at once instead of blocking, and the
+            // segment is long enough that those squares cannot be proved before
+            // the deadline. aux_cancel is what makes the job fail in time.
             vdf_state vdf{};
             uint8_t initial[BQFC_FORM_SIZE] = {8};
-            init_vdf_state(&vdf, nullptr, "-23", initial, 4000, 0);
+            const uint64_t length = 400000000;
+            init_vdf_state(&vdf, nullptr, "-23", initial, length, 0);
             OwnedVdf owned{&vdf};
-            vdf.interval = 20;
-            const uint64_t length = 400;
+            require(length % vdf.interval == 0 && length / vdf.interval > 1,
+                    "Abandoned segment does not cover an interior grid point");
             form start = *hw_proof_value_at(&vdf, 0);
-            // The segment ends on the same form it starts on. An interior grid
-            // point is abandoned, so the proof must stop before verification.
+            form end = square_steps(start, vdf.D, vdf.L, length);
+            require(end.check_valid(vdf.D), "Proof endpoint is not a form of the discriminant");
             size_t end_pos = length / vdf.interval;
-            *hw_proof_value_at(&vdf, end_pos) = start;
+            *hw_proof_value_at(&vdf, end_pos) = end;
             vdf.valid_values[end_pos / 8].fetch_or(1u << (end_pos % 8), std::memory_order_release);
-            vdf.abandoned_values[0].fetch_or(1u << 1, std::memory_order_release);
+            for (size_t pos = 1; pos < end_pos; pos++) {
+                vdf.abandoned_values[pos / 8].fetch_or(1u << (pos % 8), std::memory_order_release);
+            }
             uint16_t proof = hw_queue_proof(&vdf, length, HW_VDF_PROOF_NONE, HW_VDF_PROOF_FLAG_IS_REQ);
             vdf.last_val.iters = length;
             hw_proof_process_work(&vdf);
@@ -659,8 +698,12 @@ int main() {
                         uint8_t flags = vdf.proofs[proof].flags;
                         return (flags & HW_VDF_PROOF_FLAG_FAILED) != 0
                             && (flags & HW_VDF_PROOF_FLAG_DONE) == 0;
-                    }, std::chrono::seconds(2)),
-                    "Abandoned interior point left the proof slot busy");
+                    }, std::chrono::milliseconds(400)),
+                    "Abandoned interior point did not stop before the deadline");
+            // The first free aux slot runs this proof. GetForm sets its cancel
+            // bit, and the next extra step returns before a proof is published.
+            require(vdf.aux_cancel[0].load(std::memory_order_acquire) != 0,
+                    "Abandoned interior point was not ended by aux_cancel");
             require(vdf.done_proofs.empty(), "Abandoned interior point published a proof");
             require(vdf.queued_proofs.empty(), "Abandoned interior point stayed queued");
         }

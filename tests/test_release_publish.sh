@@ -335,6 +335,15 @@ assert_publish_dependencies() {
   if grep -E 'sign_windows|REQUEST_WINDOWS_SIGNING:|IS_RELEASE:' "$client" | grep -q 'github.event_name'; then
     fail "signing or IS_RELEASE still keys off github.event_name"
   fi
+  if ! grep -Fq 'environment: windows-code-signing' "$client"; then
+    fail "Windows signing job does not use the windows-code-signing environment"
+  fi
+  if ! grep -Fq 'AZURE_SIGNING_CLIENT_ID' "$client" || ! grep -Fq 'AZURE_SIGNING_TENANT_ID' "$client"; then
+    fail "Windows signing job does not read the Azure signing secrets"
+  fi
+  if grep -Eq 'SM_(API_KEY|CLIENT_CERT_FILE_B64|CODE_SIGNING_CERT_SHA1_HASH|CERTKEY_ALIAS)' "$client"; then
+    fail "client workflow still references DigiCert SM_* secrets"
+  fi
 }
 assert_publish_dependencies
 

@@ -17,7 +17,7 @@ on:
         default: false
         type: boolean
       windows_sign:
-        description: "Sign Windows winget bundle (requires Windows SM_* signing secrets)"
+        description: "Sign Windows winget bundle (requires the windows-code-signing environment)"
         required: false
         default: false
         type: boolean
@@ -66,6 +66,7 @@ jobs:
     needs: [release-policy]
     permissions:
       contents: write
+      id-token: write
     uses: ./.github/workflows/build-client.yml
     with:
       configs: '["optimized=1"]'
@@ -78,6 +79,7 @@ jobs:
     name: Sanitize
     permissions:
       contents: write
+      id-token: write
     uses: ./.github/workflows/build-client.yml
     with:
       configs: '["TSAN=1", "ASAN=1"]'

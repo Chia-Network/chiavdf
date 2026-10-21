@@ -11,7 +11,8 @@
 # runtime is copied from the MSVC redist and is part of the closure. The zip
 # is launched from an empty directory with a PATH that contains only the
 # system directories. Signing covers the six chiavdf executables and the
-# MPIR DLLs. The VC++ runtime and the FTDI DLLs keep their vendor signatures.
+# MPIR DLLs, using Azure Artifact Signing. The VC++ runtime and the FTDI DLLs
+# keep their vendor signatures.
 
 [CmdletBinding()]
 param(
@@ -357,22 +358,64 @@ function Get-BinariesWeSign {
     return @($paths.ToArray())
 }
 
+function Request-AzureFederatedToken {
+    # Request a fresh GitHub OIDC token immediately before signtool. The token
+    # is short lived, so requesting it when packaging starts can expire during
+    # the build/test steps.
+    $tokenUrl = [Environment]::GetEnvironmentVariable('ACTIONS_ID_TOKEN_REQUEST_URL')
+    $requestToken = [Environment]::GetEnvironmentVariable('ACTIONS_ID_TOKEN_REQUEST_TOKEN')
+    if ([string]::IsNullOrWhiteSpace($tokenUrl) -or [string]::IsNullOrWhiteSpace($requestToken)) {
+        throw 'ACTIONS_ID_TOKEN_REQUEST_URL/TOKEN are not available; the signing job needs permissions: id-token: write.'
+    }
+    $headers = @{ Authorization = "Bearer $requestToken" }
+    $response = Invoke-RestMethod -Uri "$tokenUrl&audience=api://AzureADTokenExchange" -Headers $headers -Method Get
+    if ([string]::IsNullOrWhiteSpace($response.value)) {
+        throw 'Failed to obtain a GitHub OIDC token for the Azure federated credential.'
+    }
+    $tokenFile = Join-Path ([System.IO.Path]::GetTempPath()) ("azure-federated-token-" + [guid]::NewGuid().ToString('n'))
+    Set-Content -LiteralPath $tokenFile -Value $response.value -NoNewline
+    return $tokenFile
+}
+
 function Sign-OurBinaries {
     param([Parameter(Mandatory = $true)][string]$BinDir)
-    $thumbprint = Require-Text 'SM_CODE_SIGNING_CERT_SHA1_HASH'
+    $dlib = Require-Text 'AZURE_CODE_SIGNING_DLIB'
+    $metadata = Require-Text 'AZURE_CODE_SIGNING_METADATA'
+    foreach ($path in @($dlib, $metadata)) {
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "Azure Artifact Signing file is missing: $path"
+        }
+    }
     if (-not (Get-Command signtool.exe -ErrorAction SilentlyContinue)) {
         throw 'signtool.exe is not on PATH.'
     }
-    foreach ($path in @(Get-BinariesWeSign $BinDir)) {
-        & signtool.exe sign /sha1 $thumbprint /tr http://timestamp.digicert.com /td SHA256 /fd SHA256 $path
-        if ($LASTEXITCODE -ne 0) {
-            throw "signtool sign failed for $path with exit code $LASTEXITCODE"
+
+    # AZURE_TOKEN_CREDENTIALS=prod makes Azure Identity use the federated token
+    # file instead of Azure CLI or other developer credentials.
+    $env:AZURE_TOKEN_CREDENTIALS = 'prod'
+    $env:AZURE_TENANT_ID = Require-Text 'AZURE_SIGNING_TENANT_ID'
+    $env:AZURE_CLIENT_ID = Require-Text 'AZURE_SIGNING_CLIENT_ID'
+    $tokenFile = Request-AzureFederatedToken
+    try {
+        $env:AZURE_FEDERATED_TOKEN_FILE = $tokenFile
+        foreach ($path in @(Get-BinariesWeSign $BinDir)) {
+            & signtool.exe sign /v /fd SHA256 /tr 'http://timestamp.acs.microsoft.com' /td SHA256 `
+                /dlib $dlib /dmdf $metadata $path
+            if ($LASTEXITCODE -ne 0) {
+                throw "Azure Artifact Signing failed for $path with exit code $LASTEXITCODE"
+            }
+            & signtool.exe verify /v /pa $path
+            if ($LASTEXITCODE -ne 0) {
+                throw "signtool verify failed for $path with exit code $LASTEXITCODE"
+            }
+            Write-Host "Signed $([System.IO.Path]::GetFileName($path))"
         }
-        & signtool.exe verify /v /pa $path
-        if ($LASTEXITCODE -ne 0) {
-            throw "signtool verify failed for $path with exit code $LASTEXITCODE"
+    } finally {
+        Remove-Item Env:\AZURE_FEDERATED_TOKEN_FILE -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $tokenFile) {
+            Set-Content -LiteralPath $tokenFile -Value '' -NoNewline
+            Remove-Item -LiteralPath $tokenFile -Force -ErrorAction SilentlyContinue
         }
-        Write-Host "Signed $([System.IO.Path]::GetFileName($path))"
     }
 }
 
@@ -601,7 +644,7 @@ function Invoke-Assemble {
     $signingRequested = Require-Flag 'REQUEST_WINDOWS_SIGNING'
     if ($signingRequested) {
         if (-not (Require-Flag 'HAS_WINDOWS_SIGNING_SECRET')) {
-            throw 'Windows signing was requested but signing secrets (SM_*) are not configured.'
+            throw 'Windows signing was requested but the Azure signing secrets are not configured in the windows-code-signing environment.'
         }
     } else {
         Write-Host 'Windows signing not requested; the bundle will be published unsigned.'

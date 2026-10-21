@@ -32,9 +32,9 @@ shows up as a 403 / `SignerSign()` failure.
    publishes the versioned zip plus `chiavdf-win64.zip`.
 
 Pull requests still build and test Windows, but do not enter the signing
-environment and do not produce a signed Windows bundle. Optimized push and
-manual builds sign in `sign-windows`; the build job uploads only the raw
-`windows-amd64-binaries` artifact.
+environment and do not produce a signed Windows bundle. Optimized builds on
+pushes, releases, and manual dispatches sign in `sign-windows`; the build job
+uploads only the raw `windows-amd64-binaries` artifact.
 
 ## What gets signed
 

@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       macos_notarize:
-        description: "Notarize macOS bundles (requires Apple signing + notarization secrets)"
+        description: "Notarize macOS bundles (requires Apple app, notarization, and installer secrets)"
         required: false
         default: false
         type: boolean

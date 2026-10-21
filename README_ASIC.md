@@ -67,7 +67,7 @@ The package workflow (`.github/workflows/build-packages.yml` calling `build-clie
 
 ### macOS release archive and package
 
-A release of this repo uploads `chiavdf-<tag>-macos-arm64.zip` (Apple Silicon, `macos-15`), `chiavdf-<tag>-macos-intel.zip`, and a `.pkg` for each. The release job signs both artifacts, notarizes the pkg, and staples the ticket to it. The zip ships the same signed binaries, so Gatekeeper verifies it through the online notarization lookup; a zip cannot be stapled. Layout:
+A release of this repo uploads `chiavdf-<tag>-macos-arm64.zip` (Apple Silicon, `macos-15`), `chiavdf-<tag>-macos-intel.zip`, and a `.pkg` for each. The release job signs the binaries and the pkg, notarizes the pkg, and staples the ticket to it. The zip ships the same signed binaries, so Gatekeeper verifies it through the online notarization lookup; a zip cannot be stapled. Layout:
 
 ```text
 bin/hw_vdf_client

@@ -9,6 +9,9 @@ set -euo pipefail
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 script="${root}/scripts/package-macos-pkg.sh"
 
+# shellcheck source=../scripts/macos-bundle-tools.sh disable=SC1091
+source "${root}/scripts/macos-bundle-tools.sh"
+
 fail() {
   echo "FAIL: $*" >&2
   exit 1
@@ -64,19 +67,17 @@ EOF
 chmod +x "${fakebin}/pkgbuild" "${fakebin}/productsign" "${fakebin}/pkgutil"
 
 write_payload() {
-  cat > "$1" << 'EOF'
-bin
-bin/vdf_client
-bin/vdf_bench
-bin/hw_vdf_client
-bin/emu_hw_vdf_client
-bin/hw_test
-bin/emu_hw_test
-libexec
-libexec/chiavdf
-libexec/chiavdf/libft4222.dylib
-libexec/chiavdf/libgmp.10.dylib
-EOF
+  local tool
+  {
+    echo bin
+    for tool in "${MACOS_BUNDLE_TOOLS[@]}"; do
+      echo "bin/$tool"
+    done
+    echo libexec
+    echo libexec/chiavdf
+    echo libexec/chiavdf/libft4222.dylib
+    echo libexec/chiavdf/libgmp.10.dylib
+  } > "$1"
 }
 
 write_payload "$payload"
@@ -91,7 +92,7 @@ make_bundle() {
   local dest=$1 tool
   rm -rf "$dest"
   mkdir -p "$dest/bin" "$dest/libexec/chiavdf"
-  for tool in vdf_client vdf_bench hw_vdf_client emu_hw_vdf_client hw_test emu_hw_test; do
+  for tool in "${MACOS_BUNDLE_TOOLS[@]}"; do
     printf '#!/bin/sh\nexit 0\n' > "$dest/bin/$tool"
     chmod +x "$dest/bin/$tool"
   done
@@ -163,21 +164,27 @@ if run_pkg "$missing" "${tmp}/missing.pkg" "1.2.3"; then
 fi
 
 # A payload that puts files outside bin/ or libexec/ is rejected.
-cat > "${tmp}/bad-payload.txt" << 'EOF'
-bin
-bin/vdf_client
-bin/vdf_bench
-bin/hw_vdf_client
-bin/emu_hw_vdf_client
-bin/hw_test
-bin/emu_hw_test
-etc/chiavdf.conf
-libexec/chiavdf/libft4222.dylib
-EOF
+write_payload "${tmp}/bad-payload.txt"
+printf 'etc/chiavdf.conf\n' >> "${tmp}/bad-payload.txt"
 payload="${tmp}/bad-payload.txt"
 if run_pkg "$bundle" "${tmp}/bad-layout.pkg" "1.2.3"; then
   fail "payload with an unexpected top-level directory was accepted"
 fi
+
+# A top-level file outside bin/ or libexec/ is rejected too.
+write_payload "${tmp}/top-level-file-payload.txt"
+printf 'README.txt\n' >> "${tmp}/top-level-file-payload.txt"
+payload="${tmp}/top-level-file-payload.txt"
+if run_pkg "$bundle" "${tmp}/top-level-file.pkg" "1.2.3"; then
+  fail "payload with an unexpected top-level file was accepted"
+fi
+
+# Finder/AppleDouble metadata at the top level is not a payload entry.
+write_payload "${tmp}/metadata-payload.txt"
+printf '._bin\n._README.txt\n' >> "${tmp}/metadata-payload.txt"
+payload="${tmp}/metadata-payload.txt"
+run_pkg "$bundle" "${tmp}/metadata.pkg" "1.2.3" \
+  || fail "top-level AppleDouble metadata was rejected"
 
 # A signed package must carry a Developer ID Installer signature.
 payload="${tmp}/payload.txt"

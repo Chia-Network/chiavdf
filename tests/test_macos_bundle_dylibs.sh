@@ -7,6 +7,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STAGE="$ROOT_DIR/scripts/stage-macos-bundle-dylibs.sh"
 VERIFY="$ROOT_DIR/scripts/verify-macos-bundle.sh"
 
+# shellcheck source=../scripts/macos-bundle-tools.sh disable=SC1091
+source "$ROOT_DIR/scripts/macos-bundle-tools.sh"
+
 fail() {
   echo "FAIL: $*" >&2
   exit 1
@@ -59,9 +62,9 @@ mode=""
 target=""
 for arg in "$@"; do
   case "$arg" in
-    -L) mode=L ;;
-    -D) mode=D ;;
-    -l) mode=l ;;
+    -L) mode=loads ;;
+    -D) mode=id ;;
+    -l) mode=rpaths ;;
     -*)
       echo "unsupported otool flag: $arg" >&2
       exit 1
@@ -112,31 +115,31 @@ gmp_paths() {
 write_gmp_fixtures() {
   local gmp_id="$1"
   local gmpxx_id="$2"
-  write_otool D libgmp.10.dylib "$(printf '%s\n%s' "libgmp.10.dylib:" "$gmp_id")"
-  write_otool L libgmp.10.dylib "$(printf '%s\n\t%s (compatibility version 16.0.0, current version 16.0.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1.0.0)' "libgmp.10.dylib:" "$gmp_id")"
-  write_otool D libgmpxx.4.dylib "$(printf '%s\n%s' "libgmpxx.4.dylib:" "$gmpxx_id")"
-  write_otool L libgmpxx.4.dylib "$(printf '%s\n\t%s (compatibility version 11.0.0, current version 11.0.0)\n\t%s (compatibility version 16.0.0, current version 16.0.0)\n\t/usr/lib/libc++.1.dylib (compatibility version 1.0.0, current version 1.0.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1.0.0)' "libgmpxx.4.dylib:" "$gmpxx_id" "$gmp_id")"
-  write_otool D libftd2xx.dylib "$(printf '%s\n%s' "libftd2xx.dylib:" "@rpath/libftd2xx.dylib")"
-  write_otool L libftd2xx.dylib "$(printf '%s\n\t%s\n\t/usr/lib/libSystem.B.dylib' "libftd2xx.dylib:" "@rpath/libftd2xx.dylib")"
-  write_otool D libft4222.1.4.4.190.dylib "$(printf '%s\n%s' "libft4222.1.4.4.190.dylib:" "@rpath/libft4222.dylib")"
-  write_otool L libft4222.1.4.4.190.dylib "$(printf '%s\n\t%s\n\t%s\n\t/usr/lib/libSystem.B.dylib' "libft4222.1.4.4.190.dylib:" "@rpath/libft4222.dylib" "@rpath/libftd2xx.dylib")"
+  write_otool id libgmp.10.dylib "$(printf '%s\n%s' "libgmp.10.dylib:" "$gmp_id")"
+  write_otool loads libgmp.10.dylib "$(printf '%s\n\t%s (compatibility version 16.0.0, current version 16.0.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1.0.0)' "libgmp.10.dylib:" "$gmp_id")"
+  write_otool id libgmpxx.4.dylib "$(printf '%s\n%s' "libgmpxx.4.dylib:" "$gmpxx_id")"
+  write_otool loads libgmpxx.4.dylib "$(printf '%s\n\t%s (compatibility version 11.0.0, current version 11.0.0)\n\t%s (compatibility version 16.0.0, current version 16.0.0)\n\t/usr/lib/libc++.1.dylib (compatibility version 1.0.0, current version 1.0.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1.0.0)' "libgmpxx.4.dylib:" "$gmpxx_id" "$gmp_id")"
+  write_otool id libftd2xx.dylib "$(printf '%s\n%s' "libftd2xx.dylib:" "@rpath/libftd2xx.dylib")"
+  write_otool loads libftd2xx.dylib "$(printf '%s\n\t%s\n\t/usr/lib/libSystem.B.dylib' "libftd2xx.dylib:" "@rpath/libftd2xx.dylib")"
+  write_otool id libft4222.1.4.4.190.dylib "$(printf '%s\n%s' "libft4222.1.4.4.190.dylib:" "@rpath/libft4222.dylib")"
+  write_otool loads libft4222.1.4.4.190.dylib "$(printf '%s\n\t%s\n\t%s\n\t/usr/lib/libSystem.B.dylib' "libft4222.1.4.4.190.dylib:" "@rpath/libft4222.dylib" "@rpath/libftd2xx.dylib")"
 }
 
 write_bin_fixture() {
   local name="$1"
   shift
   : > "$WORK/bin/$name"
-  write_otool D "$name" "$name:"
-  mkdir -p "$OTOOL_FIXTURE/L"
+  write_otool id "$name" "$name:"
+  mkdir -p "$OTOOL_FIXTURE/loads"
   {
     echo "$name:"
     for dep in "$@"; do
       printf '\t%s (compatibility version 1.0.0, current version 1.0.0)\n' "$dep"
     done
     printf '\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1.0.0)\n'
-  } > "$OTOOL_FIXTURE/L/$name"
+  } > "$OTOOL_FIXTURE/loads/$name"
   # No LC_RPATH yet, so the staging pass must add the bundle rpath.
-  write_otool l "$name" ""
+  write_otool rpaths "$name" ""
 }
 
 stage_bundle() {
@@ -149,7 +152,7 @@ test_stage_rewrites_homebrew_gmp_with_ftdi() {
   write_gmp_fixtures "$GMP" "$GMPXX"
   write_bin_fixture vdf_client "$GMPXX" "$GMP"
   write_bin_fixture hw_vdf_client "@rpath/libft4222.dylib" "@rpath/libftd2xx.dylib" "$GMPXX" "$GMP"
-  write_otool l hw_vdf_client "$(printf '%s\n' \
+  write_otool rpaths hw_vdf_client "$(printf '%s\n' \
     '          cmd LC_RPATH' \
     '      cmdsize 48' \
     '         path @executable_path/hw/libft4222 (offset 12)')"
@@ -251,7 +254,7 @@ test_stage_refuses_unreadable_rpath() {
   gmp_paths
   write_gmp_fixtures "$GMP" "$GMPXX"
   write_bin_fixture vdf_client "$GMPXX" "$GMP"
-  rm -f "$OTOOL_FIXTURE/l/vdf_client"
+  rm -f "$OTOOL_FIXTURE/rpaths/vdf_client"
   expect_fail "unreadable LC_RPATH fails the bundle" stage_bundle
   rm -rf "$WORK"
 }
@@ -301,7 +304,7 @@ prepare_verify_tree() {
   new_workspace
   BUNDLE="$WORK/chiavdf-test"
   mkdir -p "$BUNDLE/bin" "$BUNDLE/libexec/chiavdf"
-  for tool in vdf_client vdf_bench hw_vdf_client emu_hw_vdf_client hw_test emu_hw_test; do
+  for tool in "${MACOS_BUNDLE_TOOLS[@]}"; do
     cat > "$BUNDLE/bin/$tool" <<EOF
 #!/bin/bash
 if [ -n "\${DYLD_LIBRARY_PATH+x}" ] || [ -n "\${DYLD_FALLBACK_LIBRARY_PATH+x}" ] || [ -n "\${DYLD_INSERT_LIBRARIES+x}" ]; then
@@ -322,19 +325,19 @@ EOF
 
   gmp_loads="$(printf '%s\n\t%s\n\t%s\n\t/usr/lib/libSystem.B.dylib' "bin:" "@rpath/libgmpxx.4.dylib" "@rpath/libgmp.10.dylib")"
   for tool in vdf_client vdf_bench emu_hw_vdf_client emu_hw_test; do
-    write_otool L "$tool" "$gmp_loads"
-    write_otool l "$tool" "$(bundle_rpath_fixture)"
+    write_otool loads "$tool" "$gmp_loads"
+    write_otool rpaths "$tool" "$(bundle_rpath_fixture)"
   done
   hw_loads="$(printf '%s\n\t%s\n\t%s\n\t%s\n\t/usr/lib/libSystem.B.dylib' "bin:" "@rpath/libft4222.dylib" "@rpath/libgmpxx.4.dylib" "@rpath/libgmp.10.dylib")"
   for tool in hw_vdf_client hw_test; do
-    write_otool L "$tool" "$hw_loads"
-    write_otool l "$tool" "$(bundle_rpath_fixture)"
+    write_otool loads "$tool" "$hw_loads"
+    write_otool rpaths "$tool" "$(bundle_rpath_fixture)"
   done
   for lib in libgmp.10.dylib libgmpxx.4.dylib libftd2xx.dylib libft4222.dylib libft4222.1.4.4.190.dylib; do
-    write_otool L "$lib" "$(printf '%s\n\t@rpath/%s\n\t/usr/lib/libSystem.B.dylib' "$lib:" "$lib")"
+    write_otool loads "$lib" "$(printf '%s\n\t@rpath/%s\n\t/usr/lib/libSystem.B.dylib' "$lib:" "$lib")"
   done
   # libgmpxx records a sibling @rpath dependency, matching a rewritten Homebrew dylib.
-  write_otool L libgmpxx.4.dylib "$(printf '%s\n\t@rpath/libgmpxx.4.dylib\n\t@rpath/libgmp.10.dylib\n\t/usr/lib/libc++.1.dylib' "libgmpxx.4.dylib:")"
+  write_otool loads libgmpxx.4.dylib "$(printf '%s\n\t@rpath/libgmpxx.4.dylib\n\t@rpath/libgmp.10.dylib\n\t/usr/lib/libc++.1.dylib' "libgmpxx.4.dylib:")"
 }
 
 test_verify_launches_with_dyld_unset() {
@@ -343,7 +346,7 @@ test_verify_launches_with_dyld_unset() {
   export DYLD_FALLBACK_LIBRARY_PATH="/opt/homebrew/lib"
   export DYLD_LIBRARY_PATH="/usr/local/lib"
   output="$("$VERIFY" "$WORK/bundle.zip")"
-  for tool in vdf_client vdf_bench hw_vdf_client emu_hw_vdf_client hw_test emu_hw_test; do
+  for tool in "${MACOS_BUNDLE_TOOLS[@]}"; do
     printf '%s\n' "$output" | grep -Fxq "$tool test-version" || fail "$tool did not run from the zip"
   done
   if printf '%s\n' "$output" | grep -F "dyld path leaked"; then
@@ -356,12 +359,12 @@ test_verify_launches_with_dyld_unset() {
 
 test_verify_rejects_homebrew_and_usr_local() {
   prepare_verify_tree
-  write_otool L vdf_client "$(printf '%s\n\t/opt/homebrew/opt/gmp/lib/libgmp.10.dylib\n\t@rpath/libgmpxx.4.dylib' "vdf_client:")"
+  write_otool loads vdf_client "$(printf '%s\n\t/opt/homebrew/opt/gmp/lib/libgmp.10.dylib\n\t@rpath/libgmpxx.4.dylib' "vdf_client:")"
   make_zip "$BUNDLE" "$WORK/homebrew.zip"
   expect_fail "otool /opt/homebrew fails verification" "$VERIFY" "$WORK/homebrew.zip"
 
   prepare_verify_tree
-  write_otool L vdf_client "$(printf '%s\n\t/usr/local/opt/gmp/lib/libgmp.10.dylib\n\t@rpath/libgmpxx.4.dylib' "vdf_client:")"
+  write_otool loads vdf_client "$(printf '%s\n\t/usr/local/opt/gmp/lib/libgmp.10.dylib\n\t@rpath/libgmpxx.4.dylib' "vdf_client:")"
   make_zip "$BUNDLE" "$WORK/usr-local.zip"
   expect_fail "otool /usr/local fails verification" "$VERIFY" "$WORK/usr-local.zip"
   rm -rf "$WORK"
@@ -470,7 +473,7 @@ test_verify_rejects_failed_launch_and_missing_gmp() {
   expect_fail "a --version with no output fails verification" "$VERIFY" "$WORK/silent.zip"
 
   prepare_verify_tree
-  write_otool L vdf_client "$(printf '%s\n\t/usr/lib/libSystem.B.dylib' "vdf_client:")"
+  write_otool loads vdf_client "$(printf '%s\n\t/usr/lib/libSystem.B.dylib' "vdf_client:")"
   make_zip "$BUNDLE" "$WORK/no-gmp.zip"
   expect_fail "missing bundled GMP fails verification" "$VERIFY" "$WORK/no-gmp.zip"
   rm -rf "$WORK"

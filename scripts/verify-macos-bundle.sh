@@ -7,8 +7,10 @@
 # would be published.
 set -euo pipefail
 
-# shellcheck source=scripts/macos-install-names.sh
+# shellcheck source=scripts/macos-install-names.sh disable=SC1091
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/macos-install-names.sh"
+# shellcheck source=scripts/macos-bundle-tools.sh disable=SC1091
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/macos-bundle-tools.sh"
 
 if [ "$#" -ne 1 ]; then
   echo "Usage: scripts/verify-macos-bundle.sh <bundle.zip>" >&2
@@ -90,7 +92,7 @@ if [ ! -d "$libexec" ]; then
   exit 1
 fi
 
-for tool in vdf_client vdf_bench hw_vdf_client emu_hw_vdf_client hw_test emu_hw_test; do
+for tool in "${MACOS_BUNDLE_TOOLS[@]}"; do
   if [ ! -x "$root/bin/$tool" ]; then
     echo "Missing executable bin/$tool in $ZIP_PATH" >&2
     exit 1
@@ -214,7 +216,7 @@ launch_bundled() {
   fi
 }
 
-for tool in vdf_client vdf_bench hw_vdf_client emu_hw_vdf_client hw_test emu_hw_test; do
+for tool in "${MACOS_BUNDLE_TOOLS[@]}"; do
   launch_bundled "$root/bin/$tool" --version
 done
 

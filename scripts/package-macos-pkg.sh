@@ -11,6 +11,9 @@
 # package.
 set -euo pipefail
 
+# shellcheck source=scripts/macos-bundle-tools.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/macos-bundle-tools.sh"
+
 usage() {
   echo "Usage: scripts/package-macos-pkg.sh <bundle-root> <output.pkg> <version> [installer-identity]" >&2
   exit 1
@@ -28,13 +31,11 @@ identity=${4:-}
 pkg_identifier=${PKG_IDENTIFIER:-com.chia.chiavdf}
 install_location=${PKG_INSTALL_LOCATION:-/usr/local}
 
-tools=(vdf_client vdf_bench hw_vdf_client emu_hw_vdf_client hw_test emu_hw_test)
-
 if [ ! -d "$bundle_root" ]; then
   echo "Missing bundle root: $bundle_root" >&2
   exit 1
 fi
-for tool in "${tools[@]}"; do
+for tool in "${MACOS_BUNDLE_TOOLS[@]}"; do
   if [ ! -x "$bundle_root/bin/$tool" ]; then
     echo "Missing executable bin/$tool in $bundle_root" >&2
     exit 1
@@ -79,7 +80,7 @@ payload_list="${tmp}/payload.txt"
 pkgutil --payload-files "$output" | sed 's#^\./##; s#/$##' > "$payload_list"
 
 fail=0
-for tool in "${tools[@]}"; do
+for tool in "${MACOS_BUNDLE_TOOLS[@]}"; do
   if ! grep -Fxq "bin/$tool" "$payload_list"; then
     echo "Package payload is missing bin/$tool" >&2
     fail=1
@@ -89,16 +90,19 @@ if ! grep -Fq 'libexec/chiavdf/' "$payload_list"; then
   echo "Package payload is missing libexec/chiavdf" >&2
   fail=1
 fi
+# Ignore top-level AppleDouble/Finder metadata, but reject every other entry
+# that is outside bin/ and libexec/, including top-level files. The previous
+# NF > 1 filter skipped top-level files entirely.
 while IFS= read -r unexpected; do
-  [ -n "$unexpected" ] || continue
   case "$unexpected" in
+    ''|.|.DS_Store|._*) ;;
     bin|libexec) ;;
     *)
-      echo "Unexpected top-level payload directory: $unexpected" >&2
+      echo "Unexpected top-level payload entry: $unexpected" >&2
       fail=1
       ;;
   esac
-done < <(awk -F/ 'NF > 1 { print $1 }' "$payload_list" | sort -u)
+done < <(awk -F/ '{ print $1 }' "$payload_list" | sort -u)
 
 if [ -n "$identity" ]; then
   if ! pkgutil --check-signature "$output" | grep -Fq 'Developer ID Installer'; then

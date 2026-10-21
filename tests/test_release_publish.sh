@@ -340,6 +340,9 @@ assert_windows_signing_wiring() {
   if [ "$(grep -Fc 'name: windows-amd64-binaries' "$client")" -lt 2 ]; then
     fail "Windows build artifact and sign job do not share windows-amd64-binaries"
   fi
+  if ! grep -Fq 'Chia-Network/actions/sign/azure-windows@main' "$client"; then
+    fail "Windows signing does not use the shared Azure Windows Code Sign action"
+  fi
   if ! grep -Fq "REQUIRE_SIGNATURES: 'false'" "$client"; then
     fail "unsigned Windows packaging does not disable signature verification"
   fi

@@ -36,7 +36,7 @@ the `build` job and publish only unsigned workflow artifacts.
 
 ## What gets signed
 
-`scripts/package-windows-bundle.ps1` signs the six shipped chiavdf executables:
+The `sign-windows` job signs the six shipped chiavdf executables:
 
 - `vdf_client.exe`
 - `vdf_bench.exe`
@@ -45,10 +45,11 @@ the `build` job and publish only unsigned workflow artifacts.
 - `hw_test.exe`
 - `emu_hw_test.exe`
 
-It also signs the MPIR DLLs, including `mpir.dll`. The VC++ 2015-2022 runtime
-DLLs and the FTDI DLLs keep the signatures they shipped with. After signing,
-`signtool verify /pa` runs on every binary and the packaged zip is extracted and
-verified again before it is uploaded.
+It also signs the MPIR DLLs, including `mpir.dll`. The list comes from
+`scripts/package-windows-bundle.ps1 -Action ListSignFiles`. The VC++ 2015-2022
+runtime DLLs and the FTDI DLLs keep the signatures they shipped with. The shared
+action verifies each signed file, and the packaged zip is extracted and verified
+again before it is uploaded.
 
 ## How auth works
 
@@ -58,17 +59,19 @@ The `sign-windows` job in `.github/workflows/build-client.yml`:
 - Checks for `secrets.AZURE_SIGNING_CLIENT_ID` and
   `secrets.AZURE_SIGNING_TENANT_ID`; signing is not silently skipped when they
   are missing.
-- Runs the `Sign` action in `scripts/package-windows-bundle.ps1`, which installs
-  `Microsoft.ArtifactSigning.Client` from NuGet, writes `metadata.json`, and adds
-  the Windows App Certification Kit to `PATH` for `signtool.exe`.
-- Immediately before `signtool`, requests a fresh GitHub OIDC token with
-  `audience=api://AzureADTokenExchange` and writes it to
+- Assembles the bundle, lists the files to sign, then calls
+  `Chia-Network/actions/sign/azure-windows@main` with the file list and secrets.
+- The shared action installs `Microsoft.ArtifactSigning.Client` from NuGet,
+  writes `metadata.json`, and adds the Windows App Certification Kit to `PATH`
+  for `signtool.exe`.
+- Immediately before `signtool`, the action requests a fresh GitHub OIDC token
+  with `audience=api://AzureADTokenExchange` and writes it to
   `AZURE_FEDERATED_TOKEN_FILE`. Requesting it late avoids an expired token after
   a long build.
-- Sets `AZURE_TOKEN_CREDENTIALS=prod`, then maps `AZURE_TENANT_ID` and
+- The action sets `AZURE_TOKEN_CREDENTIALS=prod`, then maps `AZURE_TENANT_ID` and
   `AZURE_CLIENT_ID` from the two environment secrets. Azure Identity uses the
   federated token file; it does not fall back to Azure CLI credentials.
-- Runs `signtool sign /v /fd SHA256 /tr http://timestamp.acs.microsoft.com
+- It runs `signtool sign /fd SHA256 /tr http://timestamp.acs.microsoft.com
   /td SHA256 /dlib ... /dmdf ... FILE` and fails the job if signing or
   verification fails.
 
@@ -108,9 +111,9 @@ old DigiCert `SM_*` secrets are no longer read and can be removed.
    run only for final releases or a manual `windows_sign` dispatch, so pull
    requests are unaffected.
 5. Copy the `build-client.yml` signing pattern: a dedicated Windows job with the
-   environment and `id-token: write`, calling a signing action that handles the
-   NuGet client, the late OIDC token request, `signtool` with `/dlib` and
-   `/dmdf`, and `signtool verify /pa`.
+   environment and `id-token: write`, using
+   `Chia-Network/actions/sign/azure-windows@main` for the NuGet client, late OIDC
+   token, `signtool` with `/dlib` and `/dmdf`, and `signtool verify /pa`.
 
 ## Testing before enabling releases
 

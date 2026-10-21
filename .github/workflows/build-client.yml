@@ -790,12 +790,24 @@ jobs:
         shell: pwsh
         run: ./scripts/package-windows-bundle.ps1 -Action Assemble
 
-      - name: Sign Windows chiavdf executables and MPIR DLLs
+      - name: List Windows files to sign
+        id: sign_files
         shell: pwsh
-        env:
-          AZURE_SIGNING_TENANT_ID: ${{ secrets.AZURE_SIGNING_TENANT_ID }}
-          AZURE_SIGNING_CLIENT_ID: ${{ secrets.AZURE_SIGNING_CLIENT_ID }}
-        run: ./scripts/package-windows-bundle.ps1 -Action Sign
+        run: |
+          $files = @(./scripts/package-windows-bundle.ps1 -Action ListSignFiles)
+          if ($files.Count -eq 0) {
+            throw "No Windows files were selected for signing"
+          }
+          "files<<EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          $files | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Sign Windows chiavdf executables and MPIR DLLs
+        uses: Chia-Network/actions/sign/azure-windows@main
+        with:
+          azure_tenant_id: ${{ secrets.AZURE_SIGNING_TENANT_ID }}
+          azure_client_id: ${{ secrets.AZURE_SIGNING_CLIENT_ID }}
+          file: ${{ steps.sign_files.outputs.files }}
 
       - name: Package and verify Windows zip bundle
         shell: pwsh

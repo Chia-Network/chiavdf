@@ -10,14 +10,14 @@
 # mpir.dll, so the other native DLLs in that directory ship with it. The VC++
 # runtime is copied from the MSVC redist and is part of the closure. The zip
 # is launched from an empty directory with a PATH that contains only the
-# system directories. Signing covers the six chiavdf executables and the
-# MPIR DLLs, using Azure Artifact Signing. The VC++ runtime and the FTDI DLLs
-# keep their vendor signatures.
+# system directories. ListSignFiles reports the six chiavdf executables and the
+# MPIR DLLs for Chia-Network/actions/sign/azure-windows; the VC++ runtime and
+# the FTDI DLLs keep their vendor signatures.
 
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('Assemble', 'Sign', 'Package')]
+    [ValidateSet('Assemble', 'ListSignFiles', 'Package')]
     [string]$Action
 )
 
@@ -358,109 +358,8 @@ function Get-BinariesWeSign {
     return @($paths.ToArray())
 }
 
-function Add-SigntoolToPath {
-    $programFilesX86 = [Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
-    if ([string]::IsNullOrWhiteSpace($programFilesX86)) {
-        return
-    }
-    $kit = Join-Path $programFilesX86 'Windows Kits\10\App Certification Kit'
-    if (Test-Path -LiteralPath $kit -PathType Container) {
-        $env:Path = "$kit;$env:Path"
-    }
-}
-
-function Initialize-AzureSigningClient {
-    $toolsRoot = $env:RUNNER_TEMP
-    if ([string]::IsNullOrWhiteSpace($toolsRoot)) {
-        $toolsRoot = [System.IO.Path]::GetTempPath()
-    }
-    $toolsDir = Join-Path $toolsRoot 'artifact-signing-client'
-    New-Item -ItemType Directory -Path $toolsDir -Force | Out-Null
-    Push-Location $toolsDir
-    try {
-        Invoke-WebRequest -Uri 'https://dist.nuget.org/win-x86-commandline/latest/nuget.exe' -OutFile nuget.exe | Out-Null
-        .\nuget.exe install Microsoft.ArtifactSigning.Client -x -OutputDirectory . | Out-Null
-
-        $dlib = Get-ChildItem -Recurse -Filter 'Azure.CodeSigning.Dlib.dll' |
-            Where-Object { $_.FullName -match '[\\/]x64[\\/]' } |
-            Select-Object -First 1
-        if (-not $dlib) {
-            throw 'Azure.CodeSigning.Dlib.dll (x64) not found after installing Microsoft.ArtifactSigning.Client'
-        }
-
-        $metadataPath = Join-Path $toolsDir 'metadata.json'
-        @{
-            Endpoint = 'https://wus2.codesigning.azure.net/'
-            CodeSigningAccountName = 'ChiaNetworkInc'
-            CertificateProfileName = 'ChiaNetworkInc'
-            CorrelationId = "github-actions-$env:GITHUB_RUN_ID"
-        } | ConvertTo-Json | Set-Content -Path $metadataPath
-
-        return [pscustomobject]@{ Dlib = $dlib.FullName; Metadata = $metadataPath }
-    } finally {
-        Pop-Location
-    }
-}
-
-function Request-AzureFederatedToken {
-    # Request a fresh GitHub OIDC token immediately before signtool. The token
-    # is short lived, so requesting it when packaging starts can expire during
-    # the build/test steps.
-    $tokenUrl = [Environment]::GetEnvironmentVariable('ACTIONS_ID_TOKEN_REQUEST_URL')
-    $requestToken = [Environment]::GetEnvironmentVariable('ACTIONS_ID_TOKEN_REQUEST_TOKEN')
-    if ([string]::IsNullOrWhiteSpace($tokenUrl) -or [string]::IsNullOrWhiteSpace($requestToken)) {
-        throw 'ACTIONS_ID_TOKEN_REQUEST_URL/TOKEN are not available; the signing job needs permissions: id-token: write.'
-    }
-    $headers = @{ Authorization = "Bearer $requestToken" }
-    $response = Invoke-RestMethod -Uri "$tokenUrl&audience=api://AzureADTokenExchange" -Headers $headers -Method Get
-    if ([string]::IsNullOrWhiteSpace($response.value)) {
-        throw 'Failed to obtain a GitHub OIDC token for the Azure federated credential.'
-    }
-    $tokenFile = Join-Path ([System.IO.Path]::GetTempPath()) ("azure-federated-token-" + [guid]::NewGuid().ToString('n'))
-    Set-Content -LiteralPath $tokenFile -Value $response.value -NoNewline
-    return $tokenFile
-}
-
-function Sign-OurBinaries {
-    param([Parameter(Mandatory = $true)][string]$BinDir)
-    Add-SigntoolToPath
-    if (-not (Get-Command signtool.exe -ErrorAction SilentlyContinue)) {
-        throw 'signtool.exe is not on PATH.'
-    }
-    $client = Initialize-AzureSigningClient
-
-    # AZURE_TOKEN_CREDENTIALS=prod makes Azure Identity use the federated token
-    # file instead of Azure CLI or other developer credentials.
-    $env:AZURE_TOKEN_CREDENTIALS = 'prod'
-    $env:AZURE_TENANT_ID = Require-Text 'AZURE_SIGNING_TENANT_ID'
-    $env:AZURE_CLIENT_ID = Require-Text 'AZURE_SIGNING_CLIENT_ID'
-    $tokenFile = Request-AzureFederatedToken
-    try {
-        $env:AZURE_FEDERATED_TOKEN_FILE = $tokenFile
-        foreach ($path in @(Get-BinariesWeSign $BinDir)) {
-            & signtool.exe sign /v /fd SHA256 /tr 'http://timestamp.acs.microsoft.com' /td SHA256 `
-                /dlib $client.Dlib /dmdf $client.Metadata $path
-            if ($LASTEXITCODE -ne 0) {
-                throw "Azure Artifact Signing failed for $path with exit code $LASTEXITCODE"
-            }
-            & signtool.exe verify /v /pa $path
-            if ($LASTEXITCODE -ne 0) {
-                throw "signtool verify failed for $path with exit code $LASTEXITCODE"
-            }
-            Write-Host "Signed $([System.IO.Path]::GetFileName($path))"
-        }
-    } finally {
-        Remove-Item Env:\AZURE_FEDERATED_TOKEN_FILE -ErrorAction SilentlyContinue
-        if (Test-Path -LiteralPath $tokenFile) {
-            Set-Content -LiteralPath $tokenFile -Value '' -NoNewline
-            Remove-Item -LiteralPath $tokenFile -Force -ErrorAction SilentlyContinue
-        }
-    }
-}
-
 function Assert-Authenticode {
     param([Parameter(Mandatory = $true)][string]$BinDir)
-    Add-SigntoolToPath
     if (-not (Get-Command signtool.exe -ErrorAction SilentlyContinue)) {
         throw 'Signing was requested, but signtool.exe is not on PATH. Refusing to publish the zip.'
     }
@@ -698,11 +597,11 @@ function Get-RuntimeDllNames {
     return @((Get-RequiredRuntimeDlls (Get-BuildExePaths)) | ForEach-Object { $_.Name })
 }
 
-function Invoke-Sign {
+function Invoke-ListSignFiles {
     $paths = Get-BundlePaths (Require-Text 'INSTALLER_VERSION')
     Assert-BundleRoot -BundleRoot $paths.BundleRoot -DllNames (Get-RuntimeDllNames)
     Assert-ImportClosure -BinDir $paths.BinDir
-    Sign-OurBinaries -BinDir $paths.BinDir
+    return @(Get-BinariesWeSign -BinDir $paths.BinDir)
 }
 
 function Invoke-Package {
@@ -718,7 +617,7 @@ function Invoke-Package {
 if ($MyInvocation.InvocationName -ne '.') {
     switch ($Action) {
         'Assemble' { Invoke-Assemble }
-        'Sign' { Invoke-Sign }
+        'ListSignFiles' { Invoke-ListSignFiles }
         'Package' { Invoke-Package }
     }
 }

@@ -358,6 +358,50 @@ function Get-BinariesWeSign {
     return @($paths.ToArray())
 }
 
+function Add-SigntoolToPath {
+    $programFilesX86 = [Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
+    if ([string]::IsNullOrWhiteSpace($programFilesX86)) {
+        return
+    }
+    $kit = Join-Path $programFilesX86 'Windows Kits\10\App Certification Kit'
+    if (Test-Path -LiteralPath $kit -PathType Container) {
+        $env:Path = "$kit;$env:Path"
+    }
+}
+
+function Initialize-AzureSigningClient {
+    $toolsRoot = $env:RUNNER_TEMP
+    if ([string]::IsNullOrWhiteSpace($toolsRoot)) {
+        $toolsRoot = [System.IO.Path]::GetTempPath()
+    }
+    $toolsDir = Join-Path $toolsRoot 'artifact-signing-client'
+    New-Item -ItemType Directory -Path $toolsDir -Force | Out-Null
+    Push-Location $toolsDir
+    try {
+        Invoke-WebRequest -Uri 'https://dist.nuget.org/win-x86-commandline/latest/nuget.exe' -OutFile nuget.exe | Out-Null
+        .\nuget.exe install Microsoft.ArtifactSigning.Client -x -OutputDirectory . | Out-Null
+
+        $dlib = Get-ChildItem -Recurse -Filter 'Azure.CodeSigning.Dlib.dll' |
+            Where-Object { $_.FullName -match '[\\/]x64[\\/]' } |
+            Select-Object -First 1
+        if (-not $dlib) {
+            throw 'Azure.CodeSigning.Dlib.dll (x64) not found after installing Microsoft.ArtifactSigning.Client'
+        }
+
+        $metadataPath = Join-Path $toolsDir 'metadata.json'
+        @{
+            Endpoint = 'https://wus2.codesigning.azure.net/'
+            CodeSigningAccountName = 'ChiaNetworkInc'
+            CertificateProfileName = 'ChiaNetworkInc'
+            CorrelationId = "github-actions-$env:GITHUB_RUN_ID"
+        } | ConvertTo-Json | Set-Content -Path $metadataPath
+
+        return [pscustomobject]@{ Dlib = $dlib.FullName; Metadata = $metadataPath }
+    } finally {
+        Pop-Location
+    }
+}
+
 function Request-AzureFederatedToken {
     # Request a fresh GitHub OIDC token immediately before signtool. The token
     # is short lived, so requesting it when packaging starts can expire during
@@ -379,16 +423,11 @@ function Request-AzureFederatedToken {
 
 function Sign-OurBinaries {
     param([Parameter(Mandatory = $true)][string]$BinDir)
-    $dlib = Require-Text 'AZURE_CODE_SIGNING_DLIB'
-    $metadata = Require-Text 'AZURE_CODE_SIGNING_METADATA'
-    foreach ($path in @($dlib, $metadata)) {
-        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-            throw "Azure Artifact Signing file is missing: $path"
-        }
-    }
+    Add-SigntoolToPath
     if (-not (Get-Command signtool.exe -ErrorAction SilentlyContinue)) {
         throw 'signtool.exe is not on PATH.'
     }
+    $client = Initialize-AzureSigningClient
 
     # AZURE_TOKEN_CREDENTIALS=prod makes Azure Identity use the federated token
     # file instead of Azure CLI or other developer credentials.
@@ -400,7 +439,7 @@ function Sign-OurBinaries {
         $env:AZURE_FEDERATED_TOKEN_FILE = $tokenFile
         foreach ($path in @(Get-BinariesWeSign $BinDir)) {
             & signtool.exe sign /v /fd SHA256 /tr 'http://timestamp.acs.microsoft.com' /td SHA256 `
-                /dlib $dlib /dmdf $metadata $path
+                /dlib $client.Dlib /dmdf $client.Metadata $path
             if ($LASTEXITCODE -ne 0) {
                 throw "Azure Artifact Signing failed for $path with exit code $LASTEXITCODE"
             }
@@ -421,6 +460,7 @@ function Sign-OurBinaries {
 
 function Assert-Authenticode {
     param([Parameter(Mandatory = $true)][string]$BinDir)
+    Add-SigntoolToPath
     if (-not (Get-Command signtool.exe -ErrorAction SilentlyContinue)) {
         throw 'Signing was requested, but signtool.exe is not on PATH. Refusing to publish the zip.'
     }
@@ -641,14 +681,6 @@ function Invoke-ExtractedZip {
 }
 
 function Invoke-Assemble {
-    $signingRequested = Require-Flag 'REQUEST_WINDOWS_SIGNING'
-    if ($signingRequested) {
-        if (-not (Require-Flag 'HAS_WINDOWS_SIGNING_SECRET')) {
-            throw 'Windows signing was requested but the Azure signing secrets are not configured in the windows-code-signing environment.'
-        }
-    } else {
-        Write-Host 'Windows signing not requested; the bundle will be published unsigned.'
-    }
     $paths = Get-BundlePaths (Require-Text 'INSTALLER_VERSION')
     if (Test-Path -LiteralPath $paths.BundleRoot) {
         Remove-Item -LiteralPath $paths.BundleRoot -Recurse -Force

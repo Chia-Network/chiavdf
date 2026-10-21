@@ -59,8 +59,9 @@ The `sign-windows` job in `.github/workflows/build-client.yml`:
 - Checks for `secrets.AZURE_SIGNING_CLIENT_ID` and
   `secrets.AZURE_SIGNING_TENANT_ID`; signing is not silently skipped when they
   are missing.
-- Installs `Microsoft.ArtifactSigning.Client` from NuGet, writes `metadata.json`,
-  and adds the Windows App Certification Kit to `PATH` (for `signtool.exe`).
+- Runs the `Sign` action in `scripts/package-windows-bundle.ps1`, which installs
+  `Microsoft.ArtifactSigning.Client` from NuGet, writes `metadata.json`, and adds
+  the Windows App Certification Kit to `PATH` for `signtool.exe`.
 - Immediately before `signtool`, requests a fresh GitHub OIDC token with
   `audience=api://AzureADTokenExchange` and writes it to
   `AZURE_FEDERATED_TOKEN_FILE`. Requesting it late avoids an expired token after
@@ -102,8 +103,9 @@ old DigiCert `SM_*` secrets are no longer read and can be removed.
    it. Signing jobs run only for final releases or a manual `windows_sign`
    dispatch, so pull requests are unaffected.
 5. Copy the `build-client.yml` signing pattern: a dedicated Windows job with the
-   environment, `id-token: write`, the NuGet client install, the late OIDC token
-   request, `signtool` with `/dlib` and `/dmdf`, and `signtool verify /pa`.
+   environment and `id-token: write`, calling a signing action that handles the
+   NuGet client, the late OIDC token request, `signtool` with `/dlib` and
+   `/dmdf`, and `signtool verify /pa`.
 
 ## Troubleshooting
 

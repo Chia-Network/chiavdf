@@ -335,6 +335,11 @@ assert_publish_dependencies() {
   if grep -E 'sign_windows|REQUEST_WINDOWS_SIGNING:|IS_RELEASE:' "$client" | grep -q 'github.event_name'; then
     fail "signing or IS_RELEASE still keys off github.event_name"
   fi
+}
+
+assert_windows_signing_wiring() {
+  client="${root}/.github/workflows/build-client.yml"
+
   if ! grep -Fq 'environment: windows-code-signing' "$client"; then
     fail "Windows signing job does not use the windows-code-signing environment"
   fi
@@ -345,7 +350,9 @@ assert_publish_dependencies() {
     fail "client workflow still references DigiCert SM_* secrets"
   fi
 }
+
 assert_publish_dependencies
+assert_windows_signing_wiring
 
 rm -rf "$assets" "$gh_bin"
 rm -f "$calls" "$output"

@@ -29,7 +29,6 @@ env:
 
 permissions:
   contents: write
-  id-token: write
 
 jobs:
   build:
@@ -41,6 +40,7 @@ jobs:
       CHIA_ENABLE_AVX512_IFMA: "1"
       # On release workflows, pin embedded CLI version to the tag.
       RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
+      INSTALLER_VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}
     strategy:
       fail-fast: false
       matrix:
@@ -422,17 +422,12 @@ jobs:
       - name: Assemble Windows zip bundle
         if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1' && inputs.sign_windows != 'true'
         shell: pwsh
-        env:
-          INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
-          REQUEST_WINDOWS_SIGNING: ${{ inputs.sign_windows }}
-          HAS_WINDOWS_SIGNING_SECRET: 'false'
         run: ./scripts/package-windows-bundle.ps1 -Action Assemble
 
       - name: Package and verify Windows zip bundle
         if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1' && inputs.sign_windows != 'true'
         shell: pwsh
         env:
-          INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
           IS_RELEASE: ${{ inputs.is_final }}
           REQUEST_WINDOWS_SIGNING: ${{ inputs.sign_windows }}
         run: ./scripts/package-windows-bundle.ps1 -Action Package
@@ -696,7 +691,7 @@ jobs:
         if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
         uses: actions/upload-artifact@v7
         with:
-          name: binaries-${{ matrix.config }}-${{ matrix.os }}
+          name: windows-amd64-binaries
           path: |
             build/vdf_client.exe
             build/vdf_bench.exe
@@ -723,7 +718,6 @@ jobs:
       - name: Assemble Ubuntu .deb (same runner as build)
         if: startsWith(matrix.os, 'ubuntu') && matrix.config == 'optimized=1'
         env:
-          INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
           PLATFORM: ${{ matrix.os == 'ubuntu-24.04-arm' && 'arm64' || 'amd64' }}
           LIBFT4222_DIR: ${{ matrix.os == 'ubuntu-24.04-arm' && 'build-arm-v8' || 'build-x86_64' }}
         run: |
@@ -767,6 +761,10 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    env:
+      INSTALLER_VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}
+      IS_RELEASE: ${{ inputs.is_final }}
+      REQUEST_WINDOWS_SIGNING: ${{ inputs.sign_windows }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -774,80 +772,33 @@ jobs:
       - name: Download Windows binaries
         uses: actions/download-artifact@v8
         with:
-          name: binaries-optimized=1-windows-latest
+          name: windows-amd64-binaries
           path: .
 
       - name: Check for Azure signing credentials
-        id: azure_signing
         shell: bash
         env:
           AZURE_SIGNING_CLIENT_ID: ${{ secrets.AZURE_SIGNING_CLIENT_ID }}
           AZURE_SIGNING_TENANT_ID: ${{ secrets.AZURE_SIGNING_TENANT_ID }}
         run: |
-          if [[ -z "$AZURE_SIGNING_CLIENT_ID" && -z "$AZURE_SIGNING_TENANT_ID" ]]; then
-            echo "::error::Windows signing was requested but the windows-code-signing environment has no AZURE_SIGNING_CLIENT_ID/AZURE_SIGNING_TENANT_ID secrets"
-            exit 1
-          fi
           if [[ -z "$AZURE_SIGNING_CLIENT_ID" || -z "$AZURE_SIGNING_TENANT_ID" ]]; then
-            echo "::error::Windows signing is partially configured; both AZURE_SIGNING_CLIENT_ID and AZURE_SIGNING_TENANT_ID are required"
+            echo "::error::Windows signing requires AZURE_SIGNING_CLIENT_ID and AZURE_SIGNING_TENANT_ID in the windows-code-signing environment"
             exit 1
           fi
-          echo "available=true" >> "$GITHUB_OUTPUT"
-
-      - name: Install Azure Artifact Signing client
-        shell: pwsh
-        run: |
-          $toolsDir = Join-Path $env:RUNNER_TEMP "artifact-signing-client"
-          New-Item -ItemType Directory -Path $toolsDir -Force | Out-Null
-          Push-Location $toolsDir
-          try {
-            Invoke-WebRequest -Uri "https://dist.nuget.org/win-x86-commandline/latest/nuget.exe" -OutFile nuget.exe
-            .\nuget.exe install Microsoft.ArtifactSigning.Client -x -OutputDirectory .
-
-            $dlib = Get-ChildItem -Recurse -Filter "Azure.CodeSigning.Dlib.dll" |
-              Where-Object { $_.FullName -match '[\\/]x64[\\/]' } |
-              Select-Object -First 1
-            if (-not $dlib) {
-              throw "Azure.CodeSigning.Dlib.dll (x64) not found after installing Microsoft.ArtifactSigning.Client"
-            }
-
-            $metadataPath = Join-Path $toolsDir "metadata.json"
-            @{
-              Endpoint = "https://wus2.codesigning.azure.net/"
-              CodeSigningAccountName = "ChiaNetworkInc"
-              CertificateProfileName = "ChiaNetworkInc"
-              CorrelationId = "github-actions-$env:GITHUB_RUN_ID"
-            } | ConvertTo-Json | Set-Content -Path $metadataPath
-
-            Add-Content -Path $env:GITHUB_ENV -Value "AZURE_CODE_SIGNING_DLIB=$($dlib.FullName)"
-            Add-Content -Path $env:GITHUB_ENV -Value "AZURE_CODE_SIGNING_METADATA=$metadataPath"
-            Add-Content -Path $env:GITHUB_PATH -Value "C:\Program Files (x86)\Windows Kits\10\App Certification Kit"
-          } finally {
-            Pop-Location
-          }
 
       - name: Assemble Windows zip bundle
         shell: pwsh
-        env:
-          INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
-          REQUEST_WINDOWS_SIGNING: ${{ inputs.sign_windows }}
-          HAS_WINDOWS_SIGNING_SECRET: ${{ steps.azure_signing.outputs.available }}
         run: ./scripts/package-windows-bundle.ps1 -Action Assemble
 
       - name: Sign Windows chiavdf executables and MPIR DLLs
         shell: pwsh
         env:
-          INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
           AZURE_SIGNING_TENANT_ID: ${{ secrets.AZURE_SIGNING_TENANT_ID }}
           AZURE_SIGNING_CLIENT_ID: ${{ secrets.AZURE_SIGNING_CLIENT_ID }}
         run: ./scripts/package-windows-bundle.ps1 -Action Sign
 
       - name: Package and verify Windows zip bundle
         shell: pwsh
-        env:
-          INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
-          IS_RELEASE: ${{ inputs.is_final }}
-          REQUEST_WINDOWS_SIGNING: ${{ inputs.sign_windows }}
         run: ./scripts/package-windows-bundle.ps1 -Action Package
 
       - name: Upload Windows bundle artifact

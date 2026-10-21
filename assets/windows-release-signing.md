@@ -32,7 +32,7 @@ shows up as a 403 / `SignerSign()` failure.
    versioned zip plus `chiavdf-win64.zip`.
 
 Pull-request and push builds have `sign_windows=false`, so they stay entirely in
-the `build` job and publish only unsigned workflow artifacts.
+the `build` job and upload only unsigned workflow artifacts.
 
 ## What gets signed
 
@@ -48,8 +48,14 @@ The `sign-windows` job signs the six shipped chiavdf executables:
 It also signs the MPIR DLLs, including `mpir.dll`. The list comes from
 `scripts/package-windows-bundle.ps1 -Action ListSignFiles`. The VC++ 2015-2022
 runtime DLLs and the FTDI DLLs keep the signatures they shipped with. The shared
-action verifies each signed file, and the packaged zip is extracted and verified
-again before it is uploaded.
+action signs and checks each file; the packaged zip is then extracted and
+independently verified before it is uploaded. The package step requires a valid
+Authenticode chain for every shipped binary, a timestamp for our signed files,
+and a signer subject matching `EXPECTED_SIGNER_SUBJECT` or a thumbprint matching
+`EXPECTED_SIGNER_THUMBPRINT`. When neither is set, the default subject must
+contain `Chia Network`. If both are set, both must match. Vendor DLLs must match
+`EXPECTED_VENDOR_SUBJECT`; the default accepts Microsoft and FTDI subjects. Set
+those values from repository variables to pin the publishers exactly.
 
 ## How auth works
 
@@ -64,19 +70,36 @@ The `sign-windows` job in `.github/workflows/build-client.yml`:
 - The shared action installs `Microsoft.ArtifactSigning.Client` from NuGet,
   writes `metadata.json`, and adds the Windows App Certification Kit to `PATH`
   for `signtool.exe`.
-- Immediately before `signtool`, the action requests a fresh GitHub OIDC token
-  with `audience=api://AzureADTokenExchange` and writes it to
+- Immediately before the signing loop, the action requests a fresh GitHub OIDC
+  token with `audience=api://AzureADTokenExchange` and writes it to
   `AZURE_FEDERATED_TOKEN_FILE`. Requesting it late avoids an expired token after
-  a long build.
+  a long build. The token is reused for the file list, so keep the list and
+  Azure response time within the token lifetime; the current list is 15 files.
 - The action sets `AZURE_TOKEN_CREDENTIALS=prod`, then maps `AZURE_TENANT_ID` and
   `AZURE_CLIENT_ID` from the two environment secrets. Azure Identity uses the
   federated token file; it does not fall back to Azure CLI credentials.
 - It runs `signtool sign /fd SHA256 /tr http://timestamp.acs.microsoft.com
   /td SHA256 /dlib ... /dmdf ... FILE` and fails the job if signing or
-  verification fails.
+  verification fails. The dlib requires the .NET 8 runtime, which
+  `windows-latest` provides.
 
 Unsigned pull-request and push builds never enter the environment. They assemble
 and package the zip in the normal build job with signing disabled.
+
+## Manual packaging
+
+The script exposes three actions:
+
+- `Assemble` requires `INSTALLER_VERSION` and builds `dist/windows/<bundle>/bin`.
+- `ListSignFiles` prints the absolute paths of the six executables and MPIR DLLs.
+- `Package` requires `INSTALLER_VERSION`, `IS_RELEASE`, and `REQUIRE_SIGNATURES`.
+  Set `REQUIRE_SIGNATURES=false` for an unsigned local package; set it to `true`
+  only after signing, and optionally set `EXPECTED_SIGNER_SUBJECT`,
+  `EXPECTED_SIGNER_THUMBPRINT`, or `EXPECTED_VENDOR_SUBJECT` to pin the
+  publishers.
+
+The `Sign` action is intentionally not local: it is provided by
+`Chia-Network/actions/sign/azure-windows@main` and needs GitHub OIDC variables.
 
 ## GitHub secrets (environment `windows-code-signing`)
 
@@ -98,8 +121,12 @@ old DigiCert `SM_*` secrets are no longer read and can be removed.
    `repo:OWNER@OWNER_ID/REPO@REPO_ID:environment:windows-code-signing` instead.
    The Entra wizard may generate the immutable form, so edit the subject if the
    repo still emits the name-based format. Look under **Home > App Registrations
-   > All applications > GithubActions > Add a Certificate or Secret**.
-2. Confirm the app can use Artifact Signing account/profile `ChiaNetworkInc`.
+   > All applications > GithubActions > Certificates & secrets > Federated
+   credentials**.
+2. Confirm the app has the **Artifact Signing Certificate Profile Signer** role
+   on the `ChiaNetworkInc` account/profile. The federated credential issuer is
+   `https://token.actions.githubusercontent.com` and the audience is
+   `api://AzureADTokenExchange`.
 3. In the GitHub repository, create the `windows-code-signing` environment and
    add `AZURE_SIGNING_CLIENT_ID` and `AZURE_SIGNING_TENANT_ID` (the same values as
    the other Chia repositories unless a separate app is used).
@@ -132,11 +159,13 @@ environment's deployment rules, or merge and dispatch the workflow from `main`.
 
 ## Troubleshooting
 
-- **Unsigned or skipped:** the job cannot see `AZURE_SIGNING_CLIENT_ID`. Check
-  the environment name, the federated credential subject, and repository access.
+- **Missing credentials:** the sign-windows job fails before signing when it
+  cannot see `AZURE_SIGNING_CLIENT_ID` or `AZURE_SIGNING_TENANT_ID`. Check the
+  environment name, the federated credential subject, and repository access.
 - **OIDC / federated credential errors:** the repository or environment in Entra
   does not match, or `permissions.id-token: write` is missing.
 - **403 / `SignerSign()` failure:** the endpoint region does not match the
   account, or the app lacks Artifact Signing permissions on the account/profile.
-- **Token expired mid-job:** request the federated token immediately before
-  `signtool`, not at the start of packaging.
+- **Token expired mid-job:** the shared action requests one token before the
+  signing loop. If the file list grows, request a token per file or per batch in
+  the shared action rather than relying on the late single request.

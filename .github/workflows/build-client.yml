@@ -23,6 +23,13 @@ on:
         description: release-policy output notarize_macos
         required: true
         type: string
+    secrets:
+      AZURE_SIGNING_CLIENT_ID:
+        description: Azure Artifact Signing Entra application client ID
+        required: false
+      AZURE_SIGNING_TENANT_ID:
+        description: Azure Artifact Signing Entra tenant ID
+        required: false
 
 env:
   CHIAVDF_LOG_AVX: "1"
@@ -713,6 +720,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: windows-amd64-bundle
+          if-no-files-found: error
           path: |
             dist/windows/*.zip
             dist/windows/*.sha256
@@ -748,8 +756,10 @@ jobs:
           name: installer-${{ matrix.os }}
           path: dist/*.deb
 
-  # Windows release signing. The job holds the windows-code-signing environment
-  # so only this job can see the Azure federated credential secrets. It consumes
+  # Windows release signing. The job enters the windows-code-signing
+  # environment, so the Azure credentials are scoped here and the OIDC subject
+  # includes the environment. The caller passes secrets with `secrets: inherit`;
+  # the credential check below fails closed if they did not arrive. It consumes
   # the raw binaries from the build job, then assembles, signs, packages, and
   # verifies the zip the release publishes.
   sign-windows:
@@ -757,6 +767,7 @@ jobs:
     needs: [build]
     if: inputs.sign_windows == 'true'
     runs-on: windows-latest
+    timeout-minutes: 30
     # Federated credential subject:
     # repo:Chia-Network/chiavdf:environment:windows-code-signing
     environment: windows-code-signing
@@ -774,6 +785,30 @@ jobs:
         with:
           name: windows-amd64-binaries
           path: .
+
+      - name: Verify downloaded Windows build inputs
+        shell: pwsh
+        run: |
+          $required = @(
+            'build/vdf_client.exe',
+            'build/vdf_bench.exe',
+            'build/emu_hw_test.exe',
+            'build/hw_test.exe',
+            'build/emu_hw_vdf_client.exe',
+            'build/hw_vdf_client.exe',
+            'mpir_gc_x64/mpir.dll',
+            'src/hw/libft4222'
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path -LiteralPath $path)) {
+              throw "Missing Windows build input: $path"
+            }
+          }
+
+      - name: Set up MSVC environment (Windows SDK + CRT libs)
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
       - name: Check for Azure signing credentials
         shell: bash
@@ -798,9 +833,14 @@ jobs:
           if ($files.Count -eq 0) {
             throw "No Windows files were selected for signing"
           }
-          "files<<EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          $files | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          "EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          foreach ($file in $files) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+              throw "Selected signing file is missing: $file"
+            }
+          }
+          "files<<EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8NoBOM
+          $files | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8NoBOM
+          "EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8NoBOM
 
       - name: Sign Windows chiavdf executables and MPIR DLLs
         uses: Chia-Network/actions/sign/azure-windows@main
@@ -814,6 +854,9 @@ jobs:
         env:
           IS_RELEASE: ${{ inputs.is_final }}
           REQUIRE_SIGNATURES: 'true'
+          EXPECTED_SIGNER_SUBJECT: ${{ vars.WINDOWS_SIGNING_SIGNER_SUBJECT }}
+          EXPECTED_SIGNER_THUMBPRINT: ${{ vars.WINDOWS_SIGNING_SIGNER_THUMBPRINT }}
+          EXPECTED_VENDOR_SUBJECT: ${{ vars.WINDOWS_SIGNING_VENDOR_SUBJECT }}
         run: ./scripts/package-windows-bundle.ps1 -Action Package
 
       - name: Upload Windows bundle artifact

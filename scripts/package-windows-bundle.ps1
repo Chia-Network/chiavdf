@@ -12,7 +12,15 @@
 # is launched from an empty directory with a PATH that contains only the
 # system directories. ListSignFiles reports the six chiavdf executables and the
 # MPIR DLLs for Chia-Network/actions/sign/azure-windows; the VC++ runtime and
-# the FTDI DLLs keep their vendor signatures.
+# the FTDI DLLs keep their vendor signatures. Package verifies every shipped
+# Authenticode signature, requires a timestamp and the expected Chia signer for
+# our signed files, and accepts the vendor chain for the remaining DLLs.
+#
+# EXPECTED_SIGNER_SUBJECT (regex) and EXPECTED_SIGNER_THUMBPRINT optionally pin
+# the publisher for our signed files. When both are unset, the subject must
+# contain "Chia Network" (the Artifact Signing certificate profile).
+# EXPECTED_VENDOR_SUBJECT optionally pins the vendor DLLs; the default accepts
+# Microsoft and FTDI signatures.
 
 [CmdletBinding()]
 param(
@@ -358,28 +366,43 @@ function Get-BinariesWeSign {
     return @($paths.ToArray())
 }
 
-function Add-SigntoolToPath {
-    # Keep package verification independent of the signing action's PATH setup.
-    $programFilesX86 = [Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
-    if ([string]::IsNullOrWhiteSpace($programFilesX86)) {
-        return
-    }
-    $kit = Join-Path $programFilesX86 'Windows Kits\10\App Certification Kit'
-    if (Test-Path -LiteralPath $kit -PathType Container) {
-        $env:Path = "$kit;$env:Path"
-    }
-}
-
 function Assert-Authenticode {
     param([Parameter(Mandatory = $true)][string]$BinDir)
-    Add-SigntoolToPath
-    if (-not (Get-Command signtool.exe -ErrorAction SilentlyContinue)) {
-        throw 'Signing was requested, but signtool.exe is not on PATH. Refusing to publish the zip.'
+    $expectedSubject = [Environment]::GetEnvironmentVariable('EXPECTED_SIGNER_SUBJECT')
+    $expectedThumbprint = [Environment]::GetEnvironmentVariable('EXPECTED_SIGNER_THUMBPRINT')
+    $expectedVendorSubject = [Environment]::GetEnvironmentVariable('EXPECTED_VENDOR_SUBJECT')
+    if ([string]::IsNullOrWhiteSpace($expectedSubject) -and [string]::IsNullOrWhiteSpace($expectedThumbprint)) {
+        $expectedSubject = '(?i)Chia ?Network'
     }
+    if ([string]::IsNullOrWhiteSpace($expectedVendorSubject)) {
+        $expectedVendorSubject = '(?i)Microsoft|FTDI|Future Technology'
+    }
+    $signedNames = @(Get-BinariesWeSign -BinDir $BinDir | ForEach-Object { [System.IO.Path]::GetFileName($_) })
     foreach ($binary in @(Get-ShippedBinaries $BinDir)) {
-        & signtool.exe verify /v /pa $binary.FullName
-        if ($LASTEXITCODE -ne 0) {
-            throw "$($binary.Name) has no valid Authenticode signature. Vendor DLLs are left with the signature they shipped with."
+        $signature = Get-AuthenticodeSignature -LiteralPath $binary.FullName
+        if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
+            throw "$($binary.Name) has no valid Authenticode signature: $($signature.StatusMessage)"
+        }
+        if ($null -eq $signature.SignerCertificate) {
+            throw "$($binary.Name) has no signer certificate."
+        }
+        if ($signedNames -contains $binary.Name) {
+            if ($null -eq $signature.TimeStamperCertificate) {
+                throw "$($binary.Name) has no timestamp."
+            }
+            if (-not [string]::IsNullOrWhiteSpace($expectedThumbprint)) {
+                $actual = ($signature.SignerCertificate.Thumbprint -replace '\s', '').ToUpperInvariant()
+                $wanted = ($expectedThumbprint -replace '\s', '').ToUpperInvariant()
+                if ($actual -ne $wanted) {
+                    throw "$($binary.Name) signer thumbprint $actual does not match $wanted."
+                }
+            }
+            if (-not [string]::IsNullOrWhiteSpace($expectedSubject) -and
+                $signature.SignerCertificate.Subject -notmatch $expectedSubject) {
+                throw "$($binary.Name) signer subject '$($signature.SignerCertificate.Subject)' does not match '$expectedSubject'."
+            }
+        } elseif ($signature.SignerCertificate.Subject -notmatch $expectedVendorSubject) {
+            throw "$($binary.Name) vendor signer '$($signature.SignerCertificate.Subject)' does not match '$expectedVendorSubject'."
         }
     }
 }
@@ -549,6 +572,8 @@ function Publish-BundleZip {
     $hash = (Get-FileHash -LiteralPath $Paths.AssetPath -Algorithm SHA256).Hash.ToLowerInvariant()
     Set-Content -LiteralPath "$($Paths.AssetPath).sha256" -Value $hash -NoNewline
     if (-not $IsRelease) {
+        Remove-Item -LiteralPath $Paths.WingetAssetPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath "$($Paths.WingetAssetPath).sha256" -Force -ErrorAction SilentlyContinue
         return
     }
     Copy-Item -LiteralPath $Paths.AssetPath -Destination $Paths.WingetAssetPath -Force

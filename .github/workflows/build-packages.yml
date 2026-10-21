@@ -17,7 +17,7 @@ on:
         default: false
         type: boolean
       windows_sign:
-        description: "Sign Windows winget bundle (requires the windows-code-signing environment)"
+        description: "Sign the Windows release zip on manual runs (requires the windows-code-signing environment)"
         required: false
         default: false
         type: boolean

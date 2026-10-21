@@ -387,7 +387,7 @@ assert_windows_signing_wiring() {
   if ! printf '%s\n' "$sign_block" | grep -Fq -- '-Action ListSignFiles'; then
     fail "Windows signing does not list files with ListSignFiles"
   fi
-  if ! printf '%s\n' "$sign_block" | grep -Fq 'ilammy/msvc-dev-cmd@v1'; then
+  if ! printf '%s\n' "$sign_block" | grep -Fq 'step-security/msvc-dev-cmd@v1.13.1'; then
     fail "Windows signing job does not set up the MSVC environment"
   fi
   if ! printf '%s\n' "$sign_block" | grep -Fq 'EXPECTED_SIGNER_SUBJECT' ||

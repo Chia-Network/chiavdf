@@ -231,7 +231,7 @@ jobs:
 
       - name: Set up MSVC environment (Windows SDK + CRT libs)
         if: matrix.os == 'windows-latest'
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: step-security/msvc-dev-cmd@v1.13.1
         with:
           arch: x64
 
@@ -775,7 +775,7 @@ jobs:
           }
 
       - name: Set up MSVC environment (Windows SDK + CRT libs)
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: step-security/msvc-dev-cmd@v1.13.1
         with:
           arch: x64
 

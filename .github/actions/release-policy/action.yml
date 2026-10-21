@@ -1,14 +1,11 @@
 name: Release policy
 description: >
   Decide whether this event is a final (non-prerelease) GitHub release, and
-  whether DigiCert signing or Apple notarization may run.
+  whether Apple notarization may run.
 outputs:
   is_final:
     description: true only for a published release whose prerelease flag is boolean false
     value: ${{ steps.set.outputs.is_final }}
-  sign_windows:
-    description: true when Windows DigiCert signing should run
-    value: ${{ steps.set.outputs.sign_windows }}
   notarize_macos:
     description: true when macOS notarization should run
     value: ${{ steps.set.outputs.notarize_macos }}
@@ -21,6 +18,5 @@ runs:
         EVENT_NAME: ${{ github.event_name }}
         EVENT_ACTION: ${{ github.event.action }}
         PRERELEASE_JSON: ${{ toJSON(github.event.release.prerelease) }}
-        WINDOWS_SIGN_JSON: ${{ toJSON(github.event.inputs.windows_sign) }}
         MACOS_NOTARIZE_JSON: ${{ toJSON(github.event.inputs.macos_notarize) }}
       run: bash "$GITHUB_ACTION_PATH/policy.sh"

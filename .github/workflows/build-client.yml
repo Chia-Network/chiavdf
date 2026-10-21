@@ -15,14 +15,17 @@ on:
         description: release-policy output is_final
         required: true
         type: string
-      sign_windows:
-        description: release-policy output sign_windows
-        required: true
-        type: string
       notarize_macos:
         description: release-policy output notarize_macos
         required: true
         type: string
+    secrets:
+      AZURE_SIGNING_CLIENT_ID:
+        description: Azure Artifact Signing Entra application client ID
+        required: false
+      AZURE_SIGNING_TENANT_ID:
+        description: Azure Artifact Signing Entra tenant ID
+        required: false
 
 env:
   CHIAVDF_LOG_AVX: "1"
@@ -40,6 +43,7 @@ jobs:
       CHIA_ENABLE_AVX512_IFMA: "1"
       # On release workflows, pin embedded CLI version to the tag.
       RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
+      INSTALLER_VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}
     strategy:
       fail-fast: false
       matrix:
@@ -235,38 +239,6 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: powershell -ExecutionPolicy Bypass -File scripts/get-libft4222.ps1 install
 
-      - name: Test for Windows signing secrets
-        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
-        id: check_windows_signing_secrets
-        shell: pwsh
-        env:
-          SM_CLIENT_CERT_FILE_B64: "${{ secrets.SM_CLIENT_CERT_FILE_B64 }}"
-          SM_API_KEY: "${{ secrets.SM_API_KEY }}"
-          SM_CLIENT_CERT_PASSWORD: "${{ secrets.SM_CLIENT_CERT_PASSWORD }}"
-          SM_CODE_SIGNING_CERT_SHA1_HASH: "${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }}"
-          SM_CERTKEY_ALIAS: "${{ secrets.SM_CERTKEY_ALIAS }}"
-        run: |
-          $required = @(
-            "SM_CLIENT_CERT_FILE_B64",
-            "SM_API_KEY",
-            "SM_CLIENT_CERT_PASSWORD",
-            "SM_CODE_SIGNING_CERT_SHA1_HASH",
-            "SM_CERTKEY_ALIAS"
-          )
-          $missing = @()
-          foreach ($name in $required) {
-            $value = [Environment]::GetEnvironmentVariable($name)
-            if ([string]::IsNullOrWhiteSpace($value)) {
-              $missing += $name
-            }
-          }
-          if ($missing.Count -eq 0) {
-            "HAS_WINDOWS_SIGNING_SECRET=true" | Out-File -Append -FilePath $env:GITHUB_OUTPUT
-          } else {
-            Write-Host "Windows signing disabled. Missing secrets: $($missing -join ', ')"
-            "HAS_WINDOWS_SIGNING_SECRET=false" | Out-File -Append -FilePath $env:GITHUB_OUTPUT
-          }
-
       - name: Build on Windows
         if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
         shell: pwsh
@@ -446,43 +418,6 @@ jobs:
           Write-Host "Benchmarking vdf_bench with 2,000,000 iterations of square_asm"
           .\vdf_bench.exe square_asm 2000000
           if ($LASTEXITCODE -ne 0) { throw "vdf_bench failed with exit code $LASTEXITCODE" }
-
-      - name: Assemble Windows zip bundle
-        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
-        shell: pwsh
-        env:
-          INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
-          REQUEST_WINDOWS_SIGNING: ${{ inputs.sign_windows }}
-          HAS_WINDOWS_SIGNING_SECRET: ${{ steps.check_windows_signing_secrets.outputs.HAS_WINDOWS_SIGNING_SECRET || '' }}
-        run: ./scripts/package-windows-bundle.ps1 -Action Assemble
-
-      - name: Setup Windows signer tooling
-        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1' && steps.check_windows_signing_secrets.outputs.HAS_WINDOWS_SIGNING_SECRET == 'true' && inputs.sign_windows == 'true'
-        uses: chia-network/actions/digicert/windows-sign@main
-        with:
-          sm_certkey_alias: ${{ secrets.SM_CERTKEY_ALIAS }}
-          sm_api_key: ${{ secrets.SM_API_KEY }}
-          sm_client_cert_file_b64: ${{ secrets.SM_CLIENT_CERT_FILE_B64 }}
-          sm_client_cert_password: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
-          sm_code_signing_cert_sha1_hash: ${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }}
-          sign: "false"
-
-      - name: Sign Windows chiavdf executables and MPIR DLLs
-        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1' && steps.check_windows_signing_secrets.outputs.HAS_WINDOWS_SIGNING_SECRET == 'true' && inputs.sign_windows == 'true'
-        shell: pwsh
-        env:
-          INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
-          SM_CODE_SIGNING_CERT_SHA1_HASH: "${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }}"
-        run: ./scripts/package-windows-bundle.ps1 -Action Sign
-
-      - name: Package and verify Windows zip bundle
-        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
-        shell: pwsh
-        env:
-          INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
-          IS_RELEASE: ${{ inputs.is_final }}
-          REQUEST_WINDOWS_SIGNING: ${{ inputs.sign_windows }}
-        run: ./scripts/package-windows-bundle.ps1 -Action Package
 
       - name: Assemble macOS brew bundle
         if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
@@ -739,11 +674,13 @@ jobs:
             src/hw_vdf_client
             src/hw/libft4222/*.dylib
 
+      # sign-windows downloads this into the workspace root and expects the
+      # build/, src/hw/libft4222/, and mpir_gc_x64/ paths to be preserved.
       - name: Upload binaries artifact (Windows)
         if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
         uses: actions/upload-artifact@v7
         with:
-          name: binaries-${{ matrix.config }}-${{ matrix.os }}
+          name: windows-amd64-binaries
           path: |
             build/vdf_client.exe
             build/vdf_bench.exe
@@ -758,19 +695,9 @@ jobs:
             src/hw/libft4222/*.lib
             mpir_gc_x64/*.dll
 
-      - name: Upload Windows bundle artifact
-        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
-        uses: actions/upload-artifact@v7
-        with:
-          name: windows-amd64-bundle
-          path: |
-            dist/windows/*.zip
-            dist/windows/*.sha256
-
       - name: Assemble Ubuntu .deb (same runner as build)
         if: startsWith(matrix.os, 'ubuntu') && matrix.config == 'optimized=1'
         env:
-          INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
           PLATFORM: ${{ matrix.os == 'ubuntu-24.04-arm' && 'arm64' || 'amd64' }}
           LIBFT4222_DIR: ${{ matrix.os == 'ubuntu-24.04-arm' && 'build-arm-v8' || 'build-x86_64' }}
         run: |
@@ -798,3 +725,103 @@ jobs:
         with:
           name: installer-${{ matrix.os }}
           path: dist/*.deb
+
+  # Every optimized Windows build outside a pull request is signed. The job
+  # enters the windows-code-signing environment, so the Azure credentials are
+  # scoped here and the OIDC subject includes the environment. The environment
+  # secrets are assumed to exist; the shared signing action fails if they are
+  # missing. PR builds compile/test Windows without entering the environment.
+  sign-windows:
+    name: Sign Windows bundle
+    needs: [build]
+    if: contains(inputs.configs, 'optimized=1') && github.event_name != 'pull_request'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    # Federated credential subject:
+    # repo:Chia-Network/chiavdf:environment:windows-code-signing
+    environment: windows-code-signing
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      INSTALLER_VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Download Windows binaries
+        uses: actions/download-artifact@v8
+        with:
+          name: windows-amd64-binaries
+          path: .
+
+      - name: Verify downloaded Windows build inputs
+        shell: pwsh
+        run: |
+          $required = @(
+            'build/vdf_client.exe',
+            'build/vdf_bench.exe',
+            'build/emu_hw_test.exe',
+            'build/hw_test.exe',
+            'build/emu_hw_vdf_client.exe',
+            'build/hw_vdf_client.exe',
+            'mpir_gc_x64/mpir.dll',
+            'src/hw/libft4222'
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path -LiteralPath $path)) {
+              throw "Missing Windows build input: $path"
+            }
+          }
+
+      - name: Set up MSVC environment (Windows SDK + CRT libs)
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Assemble Windows zip bundle
+        shell: pwsh
+        run: ./scripts/package-windows-bundle.ps1 -Action Assemble
+
+      - name: List Windows files to sign
+        id: sign_files
+        shell: pwsh
+        run: |
+          $files = @(./scripts/package-windows-bundle.ps1 -Action ListSignFiles)
+          if ($files.Count -eq 0) {
+            throw "No Windows files were selected for signing"
+          }
+          foreach ($file in $files) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+              throw "Selected signing file is missing: $file"
+            }
+          }
+          "files<<EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8NoBOM
+          $files | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8NoBOM
+          "EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8NoBOM
+
+      - name: Sign Windows chiavdf executables and MPIR DLLs
+        uses: Chia-Network/actions/sign/azure-windows@main
+        with:
+          azure_tenant_id: ${{ secrets.AZURE_SIGNING_TENANT_ID }}
+          azure_client_id: ${{ secrets.AZURE_SIGNING_CLIENT_ID }}
+          file: ${{ steps.sign_files.outputs.files }}
+
+      - name: Package and verify Windows zip bundle
+        shell: pwsh
+        env:
+          IS_RELEASE: ${{ inputs.is_final }}
+          REQUIRE_SIGNATURES: 'true'
+          EXPECTED_SIGNER_SUBJECT: ${{ vars.WINDOWS_SIGNING_SIGNER_SUBJECT }}
+          EXPECTED_SIGNER_THUMBPRINT: ${{ vars.WINDOWS_SIGNING_SIGNER_THUMBPRINT }}
+          EXPECTED_VENDOR_SUBJECT: ${{ vars.WINDOWS_SIGNING_VENDOR_SUBJECT }}
+        run: ./scripts/package-windows-bundle.ps1 -Action Package
+
+      - name: Upload Windows bundle artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-amd64-bundle
+          if-no-files-found: error
+          path: |
+            dist/windows/*.zip
+            dist/windows/*.sha256

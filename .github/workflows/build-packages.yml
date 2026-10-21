@@ -115,7 +115,7 @@ jobs:
       - name: Download macOS bundles
         uses: actions/download-artifact@v8
         with:
-          pattern: macos-*-brew-bundle
+          pattern: macos-*-bundle
           path: release-assets/macos
           merge-multiple: true
 

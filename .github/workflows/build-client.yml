@@ -67,7 +67,9 @@ jobs:
 
       - name: Test macOS bundle packaging scripts
         if: matrix.os == 'ubuntu-latest' && matrix.config == 'optimized=1'
-        run: bash tests/test_macos_bundle_dylibs.sh
+        run: |
+          bash tests/test_macos_bundle_dylibs.sh
+          bash tests/test_macos_pkg.sh
 
       - name: Test for Apple signing secrets
         if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
@@ -76,28 +78,48 @@ jobs:
         run: |
           unset HAS_APPLE_SECRET
           unset HAS_NOTARIZE_SECRETS
+          unset HAS_INSTALLER_SECRET
           if [ -n "$APPLE_SECRET" ]; then HAS_APPLE_SECRET='true'; fi
           if [ -n "$APPLE_NOTARIZE_USERNAME" ] && [ -n "$APPLE_NOTARIZE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
             HAS_NOTARIZE_SECRETS='true'
           fi
+          if [ -n "$APPLE_INSTALLER_SECRET" ] && [ -n "$APPLE_INSTALLER_SECRET_PASS" ]; then
+            HAS_INSTALLER_SECRET='true'
+          fi
           echo "HAS_APPLE_SECRET=${HAS_APPLE_SECRET}" >> "$GITHUB_OUTPUT"
           echo "HAS_NOTARIZE_SECRETS=${HAS_NOTARIZE_SECRETS}" >> "$GITHUB_OUTPUT"
+          echo "HAS_INSTALLER_SECRET=${HAS_INSTALLER_SECRET}" >> "$GITHUB_OUTPUT"
         env:
           APPLE_SECRET: "${{ secrets.APPLE_DEV_ID_APP }}"
           APPLE_NOTARIZE_USERNAME: "${{ secrets.APPLE_NOTARIZE_USERNAME }}"
           APPLE_NOTARIZE_PASSWORD: "${{ secrets.APPLE_NOTARIZE_PASSWORD }}"
           APPLE_TEAM_ID: "${{ secrets.APPLE_TEAM_ID }}"
+          APPLE_INSTALLER_SECRET: "${{ secrets.APPLE_DEV_ID_INSTALLER }}"
+          APPLE_INSTALLER_SECRET_PASS: "${{ secrets.APPLE_DEV_ID_INSTALLER_PASS }}"
 
       - name: Delete keychain if it already exists
         if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1' && (inputs.notarize_macos == 'true' || inputs.is_final == 'true') && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true'
         run: security delete-keychain signing_temp.keychain || true
 
       - name: Import Apple app signing certificate
+        id: import_app_cert
         if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1' && (inputs.notarize_macos == 'true' || inputs.is_final == 'true') && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true'
         uses: Apple-Actions/import-codesign-certs@v7.1.0
         with:
           p12-file-base64: ${{ secrets.APPLE_DEV_ID_APP }}
           p12-password: ${{ secrets.APPLE_DEV_ID_APP_PASS }}
+
+      # The .pkg needs a second, separate identity. Developer ID Application
+      # cannot sign an installer package.
+      - name: Import Apple installer signing certificate
+        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1' && (inputs.notarize_macos == 'true' || inputs.is_final == 'true') && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true' && steps.check_secrets.outputs.HAS_INSTALLER_SECRET == 'true'
+        uses: Apple-Actions/import-codesign-certs@v7.1.0
+        with:
+          keychain: signing_temp
+          create-keychain: false
+          keychain-password: ${{ steps.import_app_cert.outputs.keychain-password }}
+          p12-file-base64: ${{ secrets.APPLE_DEV_ID_INSTALLER }}
+          p12-password: ${{ secrets.APPLE_DEV_ID_INSTALLER_PASS }}
 
       - name: Install macOS deps (build + runtime)
         if: startsWith(matrix.os, 'macos')
@@ -484,7 +506,7 @@ jobs:
           REQUEST_WINDOWS_SIGNING: ${{ inputs.sign_windows }}
         run: ./scripts/package-windows-bundle.ps1 -Action Package
 
-      - name: Assemble macOS brew bundle
+      - name: Assemble macOS bundle and installer package
         if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
         env:
           RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}
@@ -492,6 +514,7 @@ jobs:
           REQUEST_NOTARIZE: ${{ inputs.notarize_macos }}
           HAS_APPLE_SECRET: ${{ steps.check_secrets.outputs.HAS_APPLE_SECRET || '' }}
           HAS_NOTARIZE_SECRETS: ${{ steps.check_secrets.outputs.HAS_NOTARIZE_SECRETS || '' }}
+          HAS_INSTALLER_SECRET: ${{ steps.check_secrets.outputs.HAS_INSTALLER_SECRET || '' }}
           APPLE_NOTARIZE_USERNAME: "${{ secrets.APPLE_NOTARIZE_USERNAME }}"
           APPLE_NOTARIZE_PASSWORD: "${{ secrets.APPLE_NOTARIZE_PASSWORD }}"
           APPLE_TEAM_ID: "${{ secrets.APPLE_TEAM_ID }}"
@@ -514,6 +537,10 @@ jobs:
               echo "Release builds require notarization secrets (APPLE_NOTARIZE_USERNAME/APPLE_NOTARIZE_PASSWORD/APPLE_TEAM_ID)." >&2
               exit 1
             fi
+            if [ "$HAS_INSTALLER_SECRET" != "true" ]; then
+              echo "Release builds require the macOS installer identity (APPLE_DEV_ID_INSTALLER/APPLE_DEV_ID_INSTALLER_PASS)." >&2
+              exit 1
+            fi
           fi
           if [ "$REQUEST_NOTARIZE" = "true" ] && [ "$HAS_APPLE_SECRET" != "true" ]; then
             echo "Notarization requires Apple signing certificate secrets (APPLE_DEV_ID_APP/APPLE_DEV_ID_APP_PASS)." >&2
@@ -521,6 +548,10 @@ jobs:
           fi
           if [ "$REQUEST_NOTARIZE" = "true" ] && [ "$HAS_NOTARIZE_SECRETS" != "true" ]; then
             echo "Notarization requires secrets (APPLE_NOTARIZE_USERNAME/APPLE_NOTARIZE_PASSWORD/APPLE_TEAM_ID)." >&2
+            exit 1
+          fi
+          if [ "$REQUEST_NOTARIZE" = "true" ] && [ "$HAS_INSTALLER_SECRET" != "true" ]; then
+            echo "Notarization requires the macOS installer identity (APPLE_DEV_ID_INSTALLER/APPLE_DEV_ID_INSTALLER_PASS)." >&2
             exit 1
           fi
           BUNDLE_ROOT="dist/macos/${BASE_NAME}"
@@ -648,6 +679,25 @@ jobs:
           # validation only on a user's machine.
           scripts/verify-macos-bundle.sh "dist/macos/${ASSET_NAME}"
 
+          # Build the installer package from the same staged tree the zip was
+          # verified from. Installer writes payload files without the
+          # quarantine attribute, so first launch needs no Gatekeeper lookup.
+          # The package is also the only supported format here that can carry
+          # a stapled notarization ticket.
+          PKG_NAME="${ASSET_NAME%.zip}.pkg"
+          PKG_PATH="dist/macos/${PKG_NAME}"
+          PKG_STATUS="unsigned (no Developer ID Installer; not for distribution)"
+          INSTALLER_IDENTITY=""
+          if [ "$REQUEST_NOTARIZE" = "true" ] || [ "$IS_RELEASE" = "true" ]; then
+            INSTALLER_IDENTITY="$(security find-identity -v -p basic 2>/dev/null | grep 'Developer ID Installer' | awk -F\" 'NR==1{print $2}' || true)"
+            if [ -z "$INSTALLER_IDENTITY" ]; then
+              echo "No Developer ID Installer identity found after certificate import." >&2
+              exit 1
+            fi
+            PKG_STATUS="signed (Developer ID Installer; notarization not requested)"
+          fi
+          scripts/package-macos-pkg.sh "$BUNDLE_ROOT" "$PKG_PATH" "$RELEASE_TAG" "$INSTALLER_IDENTITY"
+
           if [ "$REQUEST_NOTARIZE" = "true" ] || [ "$IS_RELEASE" = "true" ]; then
             if [ "${NOTARIZE}" = "true" ]; then
               # stapler staple/validate accepts an app, a disk image, or an
@@ -657,7 +707,15 @@ jobs:
                 echo "Notarization failed for dist/macos/${ASSET_NAME}" >&2
                 exit 1
               fi
-              SIGNING_STATUS="signed + notarized (notarytool accepted; a zip cannot be stapled)"
+              if ! xcrun notarytool submit "$PKG_PATH" --apple-id "$APPLE_NOTARIZE_USERNAME" --password "$APPLE_NOTARIZE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait; then
+                echo "Notarization failed for $PKG_PATH" >&2
+                exit 1
+              fi
+              xcrun stapler staple "$PKG_PATH"
+              xcrun stapler validate "$PKG_PATH"
+              spctl -a -vv -t install "$PKG_PATH"
+              SIGNING_STATUS="zip: signed + notarized (a zip cannot be stapled); pkg: signed + notarized + stapled"
+              PKG_STATUS="signed + notarized + stapled (Developer ID Installer)"
             else
               if [ "$REQUEST_NOTARIZE" = "true" ]; then
                 echo "Build reached unexpected state: notarization was requested but not enabled." >&2
@@ -667,8 +725,12 @@ jobs:
             fi
           fi
 
-          printf "macOS %s release bundle status: %s\n" "$MACOS_ARCH" "$SIGNING_STATUS" > "dist/macos/${BASE_NAME}.signing-status.txt"
+          {
+            printf "macOS %s release bundle status: %s\n" "$MACOS_ARCH" "$SIGNING_STATUS"
+            printf "macOS %s installer package status: %s\n" "$MACOS_ARCH" "$PKG_STATUS"
+          } > "dist/macos/${BASE_NAME}.signing-status.txt"
           shasum -a 256 "dist/macos/${ASSET_NAME}" | awk '{print $1}' > "dist/macos/${ASSET_NAME}.sha256"
+          shasum -a 256 "$PKG_PATH" | awk '{print $1}' > "${PKG_PATH}.sha256"
           if [ "$IS_RELEASE" = "true" ]; then
             if [ "$MACOS_ARCH" = "arm64" ]; then
               BREW_ARCH="arm64"
@@ -694,13 +756,14 @@ jobs:
             scripts/verify-macos-bundle.sh "$zip"
           done
 
-      - name: Upload macOS brew bundle artifact
+      - name: Upload macOS bundle artifact
         if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.os == 'macos-15' && 'macos-arm64-brew-bundle' || 'macos-intel-brew-bundle' }}
+          name: ${{ matrix.os == 'macos-15' && 'macos-arm64-bundle' || 'macos-intel-bundle' }}
           path: |
             dist/macos/*.zip
+            dist/macos/*.pkg
             dist/macos/*.sha256
             dist/macos/*.signing-status.txt
             dist/macos/*.codesign-summary.txt

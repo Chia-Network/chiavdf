@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       macos_notarize:
-        description: "Notarize macOS bundles (requires Apple signing + notarization secrets)"
+        description: "Notarize macOS bundles (requires Apple app, notarization, and installer secrets)"
         required: false
         default: false
         type: boolean
@@ -109,7 +109,7 @@ jobs:
       - name: Download macOS bundles
         uses: actions/download-artifact@v8
         with:
-          pattern: macos-*-brew-bundle
+          pattern: macos-*-bundle
           path: release-assets/macos
           merge-multiple: true
 

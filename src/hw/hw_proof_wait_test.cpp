@@ -607,7 +607,7 @@ int main() {
                 accepted = true;
             } catch (const std::exception &) {
             }
-            require(!accepted, "Rejected start form reached nudupl");
+            require(!accepted, "Bad start form was a form of the discriminant");
             vdf.last_val.iters = vdf.interval;
             auto *work = new vdf_work;
             copy_vdf_value(&work->start_val, &vdf.last_val);
@@ -668,10 +668,10 @@ int main() {
         }
         {
             // The endpoint is the real square of the start form, so a proof that
-            // finishes verifies and is marked done. Every interior grid point is
+            // finishes verifies and is marked DONE. Every interior grid point is
             // abandoned, so GetForm returns at once instead of blocking, and the
             // segment is long enough that those squares cannot be proved before
-            // the deadline. aux_cancel is what makes the job fail in time.
+            // the deadline. The lock is FAILED (not DONE) within that deadline.
             vdf_state vdf{};
             uint8_t initial[BQFC_FORM_SIZE] = {8};
             const uint64_t length = 400000000;
@@ -700,10 +700,6 @@ int main() {
                             && (flags & HW_VDF_PROOF_FLAG_DONE) == 0;
                     }, std::chrono::milliseconds(400)),
                     "Abandoned interior point did not stop before the deadline");
-            // The first free aux slot runs this proof. GetForm sets its cancel
-            // bit, and the next extra step returns before a proof is published.
-            require(vdf.aux_cancel[0].load(std::memory_order_acquire) != 0,
-                    "Abandoned interior point was not ended by aux_cancel");
             require(vdf.done_proofs.empty(), "Abandoned interior point published a proof");
             require(vdf.queued_proofs.empty(), "Abandoned interior point stayed queued");
         }

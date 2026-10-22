@@ -32,7 +32,7 @@ constexpr std::chrono::milliseconds kAbandonedProofDeadline{5000};
 constexpr size_t kMaxSquaringOrbit = 64;
 
 static bool wait_for_proof_failed(vdf_state &vdf, uint16_t proof, std::chrono::milliseconds limit,
-        uint8_t required = 0)
+        uint8_t required_flags = 0)
 {
     return wait_for([&] {
         if (vdf.aux_threads_busy.load() != 0 || vdf.n_proof_threads.load() != 0)
@@ -41,7 +41,7 @@ static bool wait_for_proof_failed(vdf_state &vdf, uint16_t proof, std::chrono::m
         uint8_t flags = vdf.proofs[proof].flags;
         return (flags & HW_VDF_PROOF_FLAG_FAILED) != 0
             && (flags & HW_VDF_PROOF_FLAG_DONE) == 0
-            && (flags & required) == required;
+            && (flags & required_flags) == required_flags;
     }, limit);
 }
 
@@ -141,33 +141,29 @@ static void mark_chain_done(vdf_state &vdf, uint16_t idx) {
     }
 }
 
-// Squaring a reduced form stays in a finite set. A repeat selects the same
-// element as walking every step. An orbit that does not repeat inside
-// kMaxSquaringOrbit is rejected instead of storing one form per iteration.
-static form square_steps(form value, const integer &D, const integer &L, uint64_t steps)
+// Repeatedly squaring a reduced form stays in a finite set, so the orbit must
+// return to the starting form. The form reached after `steps` squarings is the
+// orbit entry at `steps % period`. An orbit that does not return to the start
+// inside kMaxSquaringOrbit squarings is rejected instead of storing one form
+// per step. The discovered period is reported through `period`.
+static form square_steps(form value, const integer &D, const integer &L, uint64_t steps,
+        uint64_t *period)
 {
     PulmarkReducer reducer;
     std::vector<form> orbit;
     orbit.push_back(value);
-    for (uint64_t done = 0; done < steps; ) {
+    for (uint64_t done = 1; done <= kMaxSquaringOrbit; done++) {
         nudupl_form(value, value, D, L);
         reducer.reduce(value);
-        ++done;
         if (!value.check_valid(D))
             throw std::runtime_error("Squaring left the discriminant");
-        for (size_t i = 0; i < orbit.size(); i++) {
-            if (!(orbit[i] == value)) continue;
-            uint64_t period = done - static_cast<uint64_t>(i);
-            uint64_t index = static_cast<uint64_t>(i) + (steps - static_cast<uint64_t>(i)) % period;
-            if (index >= orbit.size())
-                throw std::runtime_error("Squaring orbit index was outside the prefix");
-            return orbit[index];
+        if (value == orbit[0]) {
+            *period = done;
+            return orbit[steps % done];
         }
-        if (orbit.size() >= kMaxSquaringOrbit)
-            throw std::runtime_error("Squaring orbit was not usable");
         orbit.push_back(value);
     }
-    return value;
+    throw std::runtime_error("Squaring orbit did not return to the start");
 }
 
 static void initialize_wait_state(vdf_state& vdf) {
@@ -678,20 +674,24 @@ int main() {
         {
             // The endpoint is the real square of the start form. Interior grid
             // points are stand-ins: an abandoned GetForm returns the form at
-            // position 0. The squaring period is 2 and the interval is even, so
-            // that stand-in equals the real grid form. Skipping cancel_slot, the
-            // proof verifies and is marked DONE after several seconds. Only
-            // cancellation yields FAILED before the deadline.
+            // position 0. The proof continues past an interior read only when
+            // that stand-in equals the real grid form, which holds when the
+            // squaring period divides the interval (asserted below). Skipping
+            // cancel_slot, the proof then verifies and is marked DONE after
+            // several seconds; only cancellation yields FAILED before the deadline.
             vdf_state vdf{};
             uint8_t initial[BQFC_FORM_SIZE] = {8};
             const uint64_t length = 400000000;
             init_vdf_state(&vdf, nullptr, "-23", initial, length, 0);
             OwnedVdf owned{&vdf};
-            require(length % vdf.interval == 0 && length / vdf.interval > 1,
-                    "Abandoned segment does not cover an interior grid point");
             form start = *hw_proof_value_at(&vdf, 0);
-            form end = square_steps(start, vdf.D, vdf.L, length);
+            uint64_t period = 0;
+            form end = square_steps(start, vdf.D, vdf.L, length, &period);
+            require(vdf.interval % period == 0,
+                    "Squaring period does not divide the interval, so the stand-in would not equal the interior grid forms");
             require(end.check_valid(vdf.D), "Proof endpoint is not a form of the discriminant");
+            // length is a multiple of the interval, so the endpoint lands on a
+            // grid point and the abandoned range covers real interior points.
             size_t end_pos = length / vdf.interval;
             *hw_proof_value_at(&vdf, end_pos) = end;
             vdf.valid_values[end_pos / 8].fetch_or(1u << (end_pos % 8), std::memory_order_release);

@@ -688,9 +688,9 @@ int main() {
             form end = square_steps(start, vdf.D, vdf.L, length, &period);
             require(vdf.interval % period == 0,
                     "Squaring period does not divide the interval, so the stand-in would not equal the interior grid forms");
+            require(length % vdf.interval == 0 && length / vdf.interval > 1,
+                    "Abandoned segment is not a grid-aligned span with an interior point");
             require(end.check_valid(vdf.D), "Proof endpoint is not a form of the discriminant");
-            // length is a multiple of the interval, so the endpoint lands on a
-            // grid point and the abandoned range covers real interior points.
             size_t end_pos = length / vdf.interval;
             *hw_proof_value_at(&vdf, end_pos) = end;
             vdf.valid_values[end_pos / 8].fetch_or(1u << (end_pos % 8), std::memory_order_release);

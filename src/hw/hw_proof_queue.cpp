@@ -149,8 +149,30 @@ static void hw_proof_queue_request(struct vdf_state *vdf, uint16_t prev, uint64_
         hw_queue_proof(vdf, span, prev, HW_VDF_PROOF_FLAG_IS_REQ);
         return;
     }
-    if (prev != HW_VDF_PROOF_NONE)
-        vdf->proofs[prev].flags |= HW_VDF_PROOF_FLAG_EXACT_REQ;
+    if (prev != HW_VDF_PROOF_NONE) {
+        auto &checkpoint = vdf->proofs[prev];
+        checkpoint.flags |= HW_VDF_PROOF_FLAG_EXACT_REQ;
+        // A completed checkpoint will not publish again to enqueue this request.
+        if ((checkpoint.flags & HW_VDF_PROOF_FLAG_DONE)
+                && std::find(vdf->done_proofs.begin(), vdf->done_proofs.end(), prev)
+                    == vdf->done_proofs.end())
+            vdf->done_proofs.push_back(prev);
+    }
+}
+
+// Called under proofs_resize_mtx. Recovery can invalidate an ancestor after its
+// descendant was computed, so eligibility covers the whole checkpoint chain.
+static uint8_t hw_reusable_checkpoint_depth(const struct vdf_state *vdf, uint16_t idx)
+{
+    uint8_t depth = 0;
+    while (idx != HW_VDF_PROOF_NONE) {
+        if (idx >= vdf->proofs.size()
+                || (vdf->proofs[idx].flags & HW_VDF_PROOF_FLAG_FAILED)
+                || ++depth > HW_VDF_MAX_CHKP_SEGMENTS)
+            return 0;
+        idx = vdf->proofs[idx].prev;
+    }
+    return depth;
 }
 
 void hw_proof_process_req(struct vdf_state *vdf)
@@ -184,21 +206,41 @@ void hw_proof_process_req(struct vdf_state *vdf)
 
     for (i = vdf->queued_proofs.size() - 1; i >= 0; i--) {
         uint16_t idx = vdf->queued_proofs[i];
-        uint8_t n_segments;
         if (vdf->proofs[idx].flags & HW_VDF_PROOF_FLAG_IS_REQ) {
             continue;
         }
         iters = vdf->proofs[idx].iters;
-        n_segments = hw_proof_cnt_segments(vdf, idx);
-        if (iters <= req_iters && n_segments <= max_chkp_segments) {
+        if (iters <= req_iters && hw_reusable_checkpoint_depth(vdf, idx)) {
             base_iters = iters;
             prev = idx;
-            hw_proof_inc_ref(vdf, prev);
             break;
-        } else if (iters <= req_iters) {
-            LOG_INFO("VDF %d: Max seg triggered at req_iters=%lu", vdf->idx, req_iters);
         }
     }
+
+    // Dispatch removes checkpoints from queued_proofs. Reuse their owned proof
+    // objects while they are running or completed, within this native session.
+    // Do not spend the wire checkpoint budget on a prefix that would make the
+    // new tail larger than a fresh partition; long chains must still coarsen.
+    uint64_t fresh_chunk = hw_proof_segment_chunk(req_iters,
+            vdf->checkpoint_threshold, vdf->interval, max_chkp_segments);
+    for (size_t pos = vdf->proofs.size(); pos-- > 0; ) {
+        const auto &checkpoint = vdf->proofs[pos];
+        if (checkpoint.iters <= base_iters || checkpoint.iters > req_iters
+                || (checkpoint.flags & HW_VDF_PROOF_FLAG_IS_REQ)
+                || !(checkpoint.flags & (HW_VDF_PROOF_FLAG_STARTED | HW_VDF_PROOF_FLAG_DONE)))
+            continue;
+        uint8_t depth = hw_reusable_checkpoint_depth(vdf, static_cast<uint16_t>(pos));
+        if (!depth) continue;
+        uint64_t tail = req_iters - checkpoint.iters;
+        uint8_t room = max_chkp_segments - depth;
+        if (hw_proof_segment_chunk(tail, vdf->checkpoint_threshold, vdf->interval, room)
+                > fresh_chunk)
+            continue;
+        base_iters = checkpoint.iters;
+        prev = static_cast<uint16_t>(pos);
+    }
+    if (prev != HW_VDF_PROOF_NONE)
+        hw_proof_inc_ref(vdf, prev);
 
     hw_proof_queue_request(vdf, prev, req_iters - base_iters);
 

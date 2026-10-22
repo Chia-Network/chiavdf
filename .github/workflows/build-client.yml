@@ -15,14 +15,17 @@ on:
         description: release-policy output is_final
         required: true
         type: string
-      sign_windows:
-        description: release-policy output sign_windows
-        required: true
-        type: string
       notarize_macos:
         description: release-policy output notarize_macos
         required: true
         type: string
+    secrets:
+      AZURE_SIGNING_CLIENT_ID:
+        description: Azure Artifact Signing Entra application client ID
+        required: false
+      AZURE_SIGNING_TENANT_ID:
+        description: Azure Artifact Signing Entra tenant ID
+        required: false
 
 env:
   CHIAVDF_LOG_AVX: "1"
@@ -40,6 +43,7 @@ jobs:
       CHIA_ENABLE_AVX512_IFMA: "1"
       # On release workflows, pin embedded CLI version to the tag.
       RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
+      INSTALLER_VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}
     strategy:
       fail-fast: false
       matrix:
@@ -67,7 +71,11 @@ jobs:
 
       - name: Test macOS bundle packaging scripts
         if: matrix.os == 'ubuntu-latest' && matrix.config == 'optimized=1'
-        run: bash tests/test_macos_bundle_dylibs.sh
+        run: |
+          bash tests/test_macos_bundle_dylibs.sh
+          bash tests/test_macos_pkg.sh
+          bash tests/test_macos_bundle_plan.sh
+          bash tests/test_macos_select_signing_identities.sh
 
       - name: Test for Apple signing secrets
         if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
@@ -76,28 +84,72 @@ jobs:
         run: |
           unset HAS_APPLE_SECRET
           unset HAS_NOTARIZE_SECRETS
+          unset HAS_INSTALLER_SECRET
           if [ -n "$APPLE_SECRET" ]; then HAS_APPLE_SECRET='true'; fi
           if [ -n "$APPLE_NOTARIZE_USERNAME" ] && [ -n "$APPLE_NOTARIZE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
             HAS_NOTARIZE_SECRETS='true'
           fi
+          if [ -n "$APPLE_INSTALLER_SECRET" ] && [ -n "$APPLE_INSTALLER_SECRET_PASS" ]; then
+            HAS_INSTALLER_SECRET='true'
+          fi
           echo "HAS_APPLE_SECRET=${HAS_APPLE_SECRET}" >> "$GITHUB_OUTPUT"
           echo "HAS_NOTARIZE_SECRETS=${HAS_NOTARIZE_SECRETS}" >> "$GITHUB_OUTPUT"
+          echo "HAS_INSTALLER_SECRET=${HAS_INSTALLER_SECRET}" >> "$GITHUB_OUTPUT"
         env:
           APPLE_SECRET: "${{ secrets.APPLE_DEV_ID_APP }}"
           APPLE_NOTARIZE_USERNAME: "${{ secrets.APPLE_NOTARIZE_USERNAME }}"
           APPLE_NOTARIZE_PASSWORD: "${{ secrets.APPLE_NOTARIZE_PASSWORD }}"
           APPLE_TEAM_ID: "${{ secrets.APPLE_TEAM_ID }}"
+          APPLE_INSTALLER_SECRET: "${{ secrets.APPLE_DEV_ID_INSTALLER }}"
+          APPLE_INSTALLER_SECRET_PASS: "${{ secrets.APPLE_DEV_ID_INSTALLER_PASS }}"
+
+      - name: Determine macOS signing request
+        id: macos_signing
+        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
+        shell: bash
+        env:
+          IS_RELEASE: ${{ inputs.is_final }}
+          REQUEST_NOTARIZE: ${{ inputs.notarize_macos }}
+        run: |
+          if [ "$IS_RELEASE" = "true" ] || [ "$REQUEST_NOTARIZE" = "true" ]; then
+            echo "requested=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "requested=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Delete keychain if it already exists
-        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1' && (inputs.notarize_macos == 'true' || inputs.is_final == 'true') && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true'
+        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1' && steps.macos_signing.outputs.requested == 'true' && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true'
         run: security delete-keychain signing_temp.keychain || true
 
       - name: Import Apple app signing certificate
-        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1' && (inputs.notarize_macos == 'true' || inputs.is_final == 'true') && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true'
+        id: import_app_cert
+        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1' && steps.macos_signing.outputs.requested == 'true' && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true'
         uses: Apple-Actions/import-codesign-certs@v7.1.0
         with:
           p12-file-base64: ${{ secrets.APPLE_DEV_ID_APP }}
           p12-password: ${{ secrets.APPLE_DEV_ID_APP_PASS }}
+
+      # The .pkg needs a second, separate identity. Developer ID Application
+      # cannot sign an installer package.
+      - name: Import Apple installer signing certificate
+        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1' && steps.macos_signing.outputs.requested == 'true' && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true' && steps.check_secrets.outputs.HAS_INSTALLER_SECRET == 'true'
+        uses: Apple-Actions/import-codesign-certs@v7.1.0
+        with:
+          keychain: signing_temp
+          create-keychain: false
+          keychain-password: ${{ steps.import_app_cert.outputs.keychain-password }}
+          p12-file-base64: ${{ secrets.APPLE_DEV_ID_INSTALLER }}
+          p12-password: ${{ secrets.APPLE_DEV_ID_INSTALLER_PASS }}
+
+      - name: Select Apple signing identities
+        id: signing_identities
+        if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1' && steps.macos_signing.outputs.requested == 'true' && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true' && steps.check_secrets.outputs.HAS_INSTALLER_SECRET == 'true'
+        shell: bash
+        env:
+          APP_IDENTITIES: ${{ steps.import_app_cert.outputs.identities }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          KEYCHAIN_NAME: signing_temp
+        run: scripts/select-macos-signing-identities.sh
 
       - name: Install macOS deps (build + runtime)
         if: startsWith(matrix.os, 'macos')
@@ -227,45 +279,13 @@ jobs:
 
       - name: Set up MSVC environment (Windows SDK + CRT libs)
         if: matrix.os == 'windows-latest'
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: step-security/msvc-dev-cmd@v1.13.1
         with:
           arch: x64
 
       - name: Download USB drivers (FT4222H) on Windows
         if: matrix.os == 'windows-latest'
         run: powershell -ExecutionPolicy Bypass -File scripts/get-libft4222.ps1 install
-
-      - name: Test for Windows signing secrets
-        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
-        id: check_windows_signing_secrets
-        shell: pwsh
-        env:
-          SM_CLIENT_CERT_FILE_B64: "${{ secrets.SM_CLIENT_CERT_FILE_B64 }}"
-          SM_API_KEY: "${{ secrets.SM_API_KEY }}"
-          SM_CLIENT_CERT_PASSWORD: "${{ secrets.SM_CLIENT_CERT_PASSWORD }}"
-          SM_CODE_SIGNING_CERT_SHA1_HASH: "${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }}"
-          SM_CERTKEY_ALIAS: "${{ secrets.SM_CERTKEY_ALIAS }}"
-        run: |
-          $required = @(
-            "SM_CLIENT_CERT_FILE_B64",
-            "SM_API_KEY",
-            "SM_CLIENT_CERT_PASSWORD",
-            "SM_CODE_SIGNING_CERT_SHA1_HASH",
-            "SM_CERTKEY_ALIAS"
-          )
-          $missing = @()
-          foreach ($name in $required) {
-            $value = [Environment]::GetEnvironmentVariable($name)
-            if ([string]::IsNullOrWhiteSpace($value)) {
-              $missing += $name
-            }
-          }
-          if ($missing.Count -eq 0) {
-            "HAS_WINDOWS_SIGNING_SECRET=true" | Out-File -Append -FilePath $env:GITHUB_OUTPUT
-          } else {
-            Write-Host "Windows signing disabled. Missing secrets: $($missing -join ', ')"
-            "HAS_WINDOWS_SIGNING_SECRET=false" | Out-File -Append -FilePath $env:GITHUB_OUTPUT
-          }
 
       - name: Build on Windows
         if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
@@ -447,238 +467,22 @@ jobs:
           .\vdf_bench.exe square_asm 2000000
           if ($LASTEXITCODE -ne 0) { throw "vdf_bench failed with exit code $LASTEXITCODE" }
 
-      - name: Assemble Windows zip bundle
-        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
-        shell: pwsh
-        env:
-          INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
-          REQUEST_WINDOWS_SIGNING: ${{ inputs.sign_windows }}
-          HAS_WINDOWS_SIGNING_SECRET: ${{ steps.check_windows_signing_secrets.outputs.HAS_WINDOWS_SIGNING_SECRET || '' }}
-        run: ./scripts/package-windows-bundle.ps1 -Action Assemble
-
-      - name: Setup Windows signer tooling
-        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1' && steps.check_windows_signing_secrets.outputs.HAS_WINDOWS_SIGNING_SECRET == 'true' && inputs.sign_windows == 'true'
-        uses: chia-network/actions/digicert/windows-sign@main
-        with:
-          sm_certkey_alias: ${{ secrets.SM_CERTKEY_ALIAS }}
-          sm_api_key: ${{ secrets.SM_API_KEY }}
-          sm_client_cert_file_b64: ${{ secrets.SM_CLIENT_CERT_FILE_B64 }}
-          sm_client_cert_password: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
-          sm_code_signing_cert_sha1_hash: ${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }}
-          sign: "false"
-
-      - name: Sign Windows chiavdf executables and MPIR DLLs
-        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1' && steps.check_windows_signing_secrets.outputs.HAS_WINDOWS_SIGNING_SECRET == 'true' && inputs.sign_windows == 'true'
-        shell: pwsh
-        env:
-          INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
-          SM_CODE_SIGNING_CERT_SHA1_HASH: "${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }}"
-        run: ./scripts/package-windows-bundle.ps1 -Action Sign
-
-      - name: Package and verify Windows zip bundle
-        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
-        shell: pwsh
-        env:
-          INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
-          IS_RELEASE: ${{ inputs.is_final }}
-          REQUEST_WINDOWS_SIGNING: ${{ inputs.sign_windows }}
-        run: ./scripts/package-windows-bundle.ps1 -Action Package
-
-      - name: Assemble macOS brew bundle
+      - name: Package macOS bundle and installer
         if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
         env:
+          MACOS_ARCH: ${{ matrix.os == 'macos-15' && 'arm64' || 'intel' }}
           RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}
           IS_RELEASE: ${{ inputs.is_final }}
           REQUEST_NOTARIZE: ${{ inputs.notarize_macos }}
           HAS_APPLE_SECRET: ${{ steps.check_secrets.outputs.HAS_APPLE_SECRET || '' }}
           HAS_NOTARIZE_SECRETS: ${{ steps.check_secrets.outputs.HAS_NOTARIZE_SECRETS || '' }}
+          HAS_INSTALLER_SECRET: ${{ steps.check_secrets.outputs.HAS_INSTALLER_SECRET || '' }}
+          APP_SIGNING_IDENTITY: ${{ steps.signing_identities.outputs.app_identity_hash || '' }}
+          INSTALLER_SIGNING_IDENTITY: ${{ steps.signing_identities.outputs.installer_identity_name || '' }}
           APPLE_NOTARIZE_USERNAME: "${{ secrets.APPLE_NOTARIZE_USERNAME }}"
           APPLE_NOTARIZE_PASSWORD: "${{ secrets.APPLE_NOTARIZE_PASSWORD }}"
           APPLE_TEAM_ID: "${{ secrets.APPLE_TEAM_ID }}"
-          NOTARIZE: ${{ (inputs.notarize_macos == 'true' && steps.check_secrets.outputs.HAS_APPLE_SECRET == 'true' && steps.check_secrets.outputs.HAS_NOTARIZE_SECRETS == 'true') && 'true' || 'false' }}
-        run: |
-          set -euo pipefail
-
-          if [ "${{ matrix.os }}" = "macos-15" ]; then
-            MACOS_ARCH="arm64"
-          else
-            MACOS_ARCH="intel"
-          fi
-          BASE_NAME="chiavdf-${RELEASE_TAG}-macos-${MACOS_ARCH}"
-          if [ "$IS_RELEASE" = "true" ]; then
-            if [ "$HAS_APPLE_SECRET" != "true" ]; then
-              echo "Release builds require Apple signing certificate secrets (APPLE_DEV_ID_APP/APPLE_DEV_ID_APP_PASS)." >&2
-              exit 1
-            fi
-            if [ "$HAS_NOTARIZE_SECRETS" != "true" ]; then
-              echo "Release builds require notarization secrets (APPLE_NOTARIZE_USERNAME/APPLE_NOTARIZE_PASSWORD/APPLE_TEAM_ID)." >&2
-              exit 1
-            fi
-          fi
-          if [ "$REQUEST_NOTARIZE" = "true" ] && [ "$HAS_APPLE_SECRET" != "true" ]; then
-            echo "Notarization requires Apple signing certificate secrets (APPLE_DEV_ID_APP/APPLE_DEV_ID_APP_PASS)." >&2
-            exit 1
-          fi
-          if [ "$REQUEST_NOTARIZE" = "true" ] && [ "$HAS_NOTARIZE_SECRETS" != "true" ]; then
-            echo "Notarization requires secrets (APPLE_NOTARIZE_USERNAME/APPLE_NOTARIZE_PASSWORD/APPLE_TEAM_ID)." >&2
-            exit 1
-          fi
-          BUNDLE_ROOT="dist/macos/${BASE_NAME}"
-          BIN_DIR="${BUNDLE_ROOT}/bin"
-          LIBEXEC_DIR="${BUNDLE_ROOT}/libexec/chiavdf"
-          mkdir -p "$BIN_DIR" "$LIBEXEC_DIR"
-
-          cp src/hw_vdf_client "$BIN_DIR/"
-          cp src/emu_hw_vdf_client "$BIN_DIR/"
-          cp src/hw_test "$BIN_DIR/"
-          cp src/emu_hw_test "$BIN_DIR/"
-          cp src/vdf_client "$BIN_DIR/"
-          cp src/vdf_bench "$BIN_DIR/"
-
-          # FTDI and Homebrew GMP share one libexec directory. The staging
-          # script rewrites install names and the executable rpath in one
-          # install_name_tool pass, before the codesign pass below.
-          scripts/stage-macos-bundle-dylibs.sh "$BIN_DIR" "$LIBEXEC_DIR"
-
-          dylib_files=()
-          for dylib in "$LIBEXEC_DIR"/*; do
-            if [ -L "$dylib" ] || [ ! -f "$dylib" ]; then
-              continue
-            fi
-            dylib_files+=("$dylib")
-          done
-          if [ "${#dylib_files[@]}" -eq 0 ]; then
-            echo "No dylibs staged into ${LIBEXEC_DIR}" >&2
-            exit 1
-          fi
-          sign_targets=()
-          for exe in "$BIN_DIR/"*; do
-            if [ ! -f "$exe" ] || [ -L "$exe" ]; then
-              echo "Unexpected bundle entry: $exe" >&2
-              exit 1
-            fi
-            sign_targets+=("$exe")
-          done
-          for dylib in "${dylib_files[@]}"; do
-            sign_targets+=("$dylib")
-          done
-
-          # Developer ID signing follows inputs.notarize_macos and inputs.is_final.
-          # Every other run ad-hoc signs so arm64 can launch after install_name_tool.
-          if [ "$REQUEST_NOTARIZE" = "true" ] || [ "$IS_RELEASE" = "true" ]; then
-            ASSET_NAME="${BASE_NAME}.zip"
-          else
-            ASSET_NAME="${BASE_NAME}-unsigned.zip"
-          fi
-
-          SIGNING_STATUS="ad-hoc signed (no Developer ID; codesign -s - after install_name_tool)"
-          CODESIGN_SUMMARY_PATH="dist/macos/${BASE_NAME}.codesign-summary.txt"
-          if [ "$REQUEST_NOTARIZE" = "true" ] || [ "$IS_RELEASE" = "true" ]; then
-            SIGNING_IDENTITY="$(security find-identity -v -p codesigning | grep 'Developer ID Application' | awk -F\" 'NR==1{print $2}')"
-            if [ -z "$SIGNING_IDENTITY" ]; then
-              echo "No Developer ID Application identity found after certificate import." >&2
-              exit 1
-            fi
-
-            is_valid_dev_id_signature() {
-              local path="$1"
-              local details
-              if ! codesign --verify --strict --verbose=2 "$path" >/dev/null 2>&1; then
-                return 1
-              fi
-              details="$(codesign -dv "$path" 2>&1 || true)"
-              if printf '%s\n' "$details" | grep -Fq "Authority=Developer ID Application"; then
-                return 0
-              fi
-              # Some runners may omit Authority lines in codesign -dv output.
-              # Treat a strict-valid signature with a populated TeamIdentifier
-              # as acceptable for Developer ID verification.
-              if printf '%s\n' "$details" | grep -Eq '^TeamIdentifier=[^[:space:]]+' && ! printf '%s\n' "$details" | grep -Fq 'TeamIdentifier=not set'; then
-                return 0
-              fi
-              return 1
-            }
-
-            echo "Checking bundled dylib signatures before signing..."
-            for dylib in "${dylib_files[@]}"; do
-              if is_valid_dev_id_signature "$dylib"; then
-                echo "Dylib already has a valid Developer ID signature: $dylib"
-              else
-                echo "Dylib needs signing: $dylib"
-              fi
-            done
-
-            for target in "${sign_targets[@]}"; do
-              if is_valid_dev_id_signature "$target"; then
-                echo "Already signed with Developer ID: $target"
-                continue
-              fi
-              codesign --force --timestamp --options runtime --sign "$SIGNING_IDENTITY" "$target"
-            done
-
-            echo "Verifying all bundled Mach-O binaries are signed..."
-            for target in "${sign_targets[@]}"; do
-              if ! is_valid_dev_id_signature "$target"; then
-                echo "Unsigned or invalid Developer ID signature: $target" >&2
-                codesign -dv "$target" 2>&1 || true
-                exit 1
-              fi
-            done
-            : > "$CODESIGN_SUMMARY_PATH"
-            printf "codesign -dv summary for %s\n\n" "$BASE_NAME" >> "$CODESIGN_SUMMARY_PATH"
-            echo "codesign -dv summary (post-sign verification):"
-            for target in "${sign_targets[@]}"; do
-              printf "==== %s ====\n" "$target" | tee -a "$CODESIGN_SUMMARY_PATH"
-              codesign -dv "$target" 2>&1 | grep -E '^(Identifier=|Format=|CodeDirectory v=|Authority=|TeamIdentifier=|Timestamp=)' | tee -a "$CODESIGN_SUMMARY_PATH"
-              echo | tee -a "$CODESIGN_SUMMARY_PATH"
-            done
-
-          else
-            # install_name_tool breaks the linker signature. arm64 will not
-            # execute that Mach-O until it is signed again. This path has no
-            # Developer ID, so re-sign ad-hoc.
-            for target in "${sign_targets[@]}"; do
-              codesign -s - --force "$target"
-            done
-          fi
-
-          (cd dist/macos && ditto -c -k --keepParent "${BASE_NAME}" "${ASSET_NAME}")
-          # Launch the zip that will be published. Notarization does not run it,
-          # and a signed binary with a Homebrew absolute path fails library
-          # validation only on a user's machine.
-          scripts/verify-macos-bundle.sh "dist/macos/${ASSET_NAME}"
-
-          if [ "$REQUEST_NOTARIZE" = "true" ] || [ "$IS_RELEASE" = "true" ]; then
-            if [ "${NOTARIZE}" = "true" ]; then
-              # stapler staple/validate accepts an app, a disk image, or an
-              # installer package. It rejects a bare zip, so there is no ticket
-              # to attach to this archive. notarytool --wait is the gate.
-              if ! xcrun notarytool submit "dist/macos/${ASSET_NAME}" --apple-id "$APPLE_NOTARIZE_USERNAME" --password "$APPLE_NOTARIZE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait; then
-                echo "Notarization failed for dist/macos/${ASSET_NAME}" >&2
-                exit 1
-              fi
-              SIGNING_STATUS="signed + notarized (notarytool accepted; a zip cannot be stapled)"
-            else
-              if [ "$REQUEST_NOTARIZE" = "true" ]; then
-                echo "Build reached unexpected state: notarization was requested but not enabled." >&2
-                exit 1
-              fi
-              SIGNING_STATUS="signed (notarization not requested)"
-            fi
-          fi
-
-          printf "macOS %s release bundle status: %s\n" "$MACOS_ARCH" "$SIGNING_STATUS" > "dist/macos/${BASE_NAME}.signing-status.txt"
-          shasum -a 256 "dist/macos/${ASSET_NAME}" | awk '{print $1}' > "dist/macos/${ASSET_NAME}.sha256"
-          if [ "$IS_RELEASE" = "true" ]; then
-            if [ "$MACOS_ARCH" = "arm64" ]; then
-              BREW_ARCH="arm64"
-            else
-              BREW_ARCH="amd64"
-            fi
-            BREW_ASSET_NAME="chiavdf-darwin-${BREW_ARCH}.zip"
-            cp "dist/macos/${ASSET_NAME}" "dist/macos/${BREW_ASSET_NAME}"
-            cp "dist/macos/${ASSET_NAME}.sha256" "dist/macos/${BREW_ASSET_NAME}.sha256"
-          fi
+        run: scripts/package-macos-bundle.sh
 
       - name: Verify shipped macOS zip launches without Homebrew
         if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
@@ -694,13 +498,14 @@ jobs:
             scripts/verify-macos-bundle.sh "$zip"
           done
 
-      - name: Upload macOS brew bundle artifact
+      - name: Upload macOS bundle artifact
         if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.os == 'macos-15' && 'macos-arm64-brew-bundle' || 'macos-intel-brew-bundle' }}
+          name: ${{ matrix.os == 'macos-15' && 'macos-arm64-bundle' || 'macos-intel-bundle' }}
           path: |
             dist/macos/*.zip
+            dist/macos/*.pkg
             dist/macos/*.sha256
             dist/macos/*.signing-status.txt
             dist/macos/*.codesign-summary.txt
@@ -739,11 +544,13 @@ jobs:
             src/hw_vdf_client
             src/hw/libft4222/*.dylib
 
+      # sign-windows downloads this into the workspace root and expects the
+      # build/, src/hw/libft4222/, and mpir_gc_x64/ paths to be preserved.
       - name: Upload binaries artifact (Windows)
         if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
         uses: actions/upload-artifact@v7
         with:
-          name: binaries-${{ matrix.config }}-${{ matrix.os }}
+          name: windows-amd64-binaries
           path: |
             build/vdf_client.exe
             build/vdf_bench.exe
@@ -758,19 +565,9 @@ jobs:
             src/hw/libft4222/*.lib
             mpir_gc_x64/*.dll
 
-      - name: Upload Windows bundle artifact
-        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
-        uses: actions/upload-artifact@v7
-        with:
-          name: windows-amd64-bundle
-          path: |
-            dist/windows/*.zip
-            dist/windows/*.sha256
-
       - name: Assemble Ubuntu .deb (same runner as build)
         if: startsWith(matrix.os, 'ubuntu') && matrix.config == 'optimized=1'
         env:
-          INSTALLER_VERSION: "${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}"
           PLATFORM: ${{ matrix.os == 'ubuntu-24.04-arm' && 'arm64' || 'amd64' }}
           LIBFT4222_DIR: ${{ matrix.os == 'ubuntu-24.04-arm' && 'build-arm-v8' || 'build-x86_64' }}
         run: |
@@ -798,3 +595,103 @@ jobs:
         with:
           name: installer-${{ matrix.os }}
           path: dist/*.deb
+
+  # Every optimized Windows build outside a pull request is signed. The job
+  # enters the windows-code-signing environment, so the Azure credentials are
+  # scoped here and the OIDC subject includes the environment. The environment
+  # secrets are assumed to exist; the shared signing action fails if they are
+  # missing. PR builds compile/test Windows without entering the environment.
+  sign-windows:
+    name: Sign Windows bundle
+    needs: [build]
+    if: contains(inputs.configs, 'optimized=1') && github.event_name != 'pull_request'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    # Federated credential subject:
+    # repo:Chia-Network/chiavdf:environment:windows-code-signing
+    environment: windows-code-signing
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      INSTALLER_VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Download Windows binaries
+        uses: actions/download-artifact@v8
+        with:
+          name: windows-amd64-binaries
+          path: .
+
+      - name: Verify downloaded Windows build inputs
+        shell: pwsh
+        run: |
+          $required = @(
+            'build/vdf_client.exe',
+            'build/vdf_bench.exe',
+            'build/emu_hw_test.exe',
+            'build/hw_test.exe',
+            'build/emu_hw_vdf_client.exe',
+            'build/hw_vdf_client.exe',
+            'mpir_gc_x64/mpir.dll',
+            'src/hw/libft4222'
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path -LiteralPath $path)) {
+              throw "Missing Windows build input: $path"
+            }
+          }
+
+      - name: Set up MSVC environment (Windows SDK + CRT libs)
+        uses: step-security/msvc-dev-cmd@v1.13.1
+        with:
+          arch: x64
+
+      - name: Assemble Windows zip bundle
+        shell: pwsh
+        run: ./scripts/package-windows-bundle.ps1 -Action Assemble
+
+      - name: List Windows files to sign
+        id: sign_files
+        shell: pwsh
+        run: |
+          $files = @(./scripts/package-windows-bundle.ps1 -Action ListSignFiles)
+          if ($files.Count -eq 0) {
+            throw "No Windows files were selected for signing"
+          }
+          foreach ($file in $files) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+              throw "Selected signing file is missing: $file"
+            }
+          }
+          "files<<EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8NoBOM
+          $files | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8NoBOM
+          "EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8NoBOM
+
+      - name: Sign Windows chiavdf executables and MPIR DLLs
+        uses: Chia-Network/actions/sign/azure-windows@main
+        with:
+          azure_tenant_id: ${{ secrets.AZURE_SIGNING_TENANT_ID }}
+          azure_client_id: ${{ secrets.AZURE_SIGNING_CLIENT_ID }}
+          file: ${{ steps.sign_files.outputs.files }}
+
+      - name: Package and verify Windows zip bundle
+        shell: pwsh
+        env:
+          IS_RELEASE: ${{ inputs.is_final }}
+          REQUIRE_SIGNATURES: 'true'
+          EXPECTED_SIGNER_SUBJECT: ${{ vars.WINDOWS_SIGNING_SIGNER_SUBJECT }}
+          EXPECTED_SIGNER_THUMBPRINT: ${{ vars.WINDOWS_SIGNING_SIGNER_THUMBPRINT }}
+          EXPECTED_VENDOR_SUBJECT: ${{ vars.WINDOWS_SIGNING_VENDOR_SUBJECT }}
+        run: ./scripts/package-windows-bundle.ps1 -Action Package
+
+      - name: Upload Windows bundle artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-amd64-bundle
+          if-no-files-found: error
+          path: |
+            dist/windows/*.zip
+            dist/windows/*.sha256

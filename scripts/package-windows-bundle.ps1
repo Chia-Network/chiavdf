@@ -10,13 +10,22 @@
 # mpir.dll, so the other native DLLs in that directory ship with it. The VC++
 # runtime is copied from the MSVC redist and is part of the closure. The zip
 # is launched from an empty directory with a PATH that contains only the
-# system directories. Signing covers the six chiavdf executables and the
-# MPIR DLLs. The VC++ runtime and the FTDI DLLs keep their vendor signatures.
+# system directories. ListSignFiles reports the six chiavdf executables and the
+# MPIR DLLs for Chia-Network/actions/sign/azure-windows; the VC++ runtime and
+# the FTDI DLLs keep their vendor signatures. Package verifies every shipped
+# Authenticode signature, requires a timestamp and the expected Chia signer for
+# our signed files, and accepts the vendor chain for the remaining DLLs.
+#
+# EXPECTED_SIGNER_SUBJECT (regex) and EXPECTED_SIGNER_THUMBPRINT optionally pin
+# the publisher for our signed files. When both are unset, the subject must
+# contain "Chia Network" (the Artifact Signing certificate profile).
+# EXPECTED_VENDOR_SUBJECT optionally pins the vendor DLLs; the default accepts
+# Microsoft and FTDI signatures.
 
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('Assemble', 'Sign', 'Package')]
+    [ValidateSet('Assemble', 'ListSignFiles', 'Package')]
     [string]$Action
 )
 
@@ -357,34 +366,43 @@ function Get-BinariesWeSign {
     return @($paths.ToArray())
 }
 
-function Sign-OurBinaries {
-    param([Parameter(Mandatory = $true)][string]$BinDir)
-    $thumbprint = Require-Text 'SM_CODE_SIGNING_CERT_SHA1_HASH'
-    if (-not (Get-Command signtool.exe -ErrorAction SilentlyContinue)) {
-        throw 'signtool.exe is not on PATH.'
-    }
-    foreach ($path in @(Get-BinariesWeSign $BinDir)) {
-        & signtool.exe sign /sha1 $thumbprint /tr http://timestamp.digicert.com /td SHA256 /fd SHA256 $path
-        if ($LASTEXITCODE -ne 0) {
-            throw "signtool sign failed for $path with exit code $LASTEXITCODE"
-        }
-        & signtool.exe verify /v /pa $path
-        if ($LASTEXITCODE -ne 0) {
-            throw "signtool verify failed for $path with exit code $LASTEXITCODE"
-        }
-        Write-Host "Signed $([System.IO.Path]::GetFileName($path))"
-    }
-}
-
 function Assert-Authenticode {
     param([Parameter(Mandatory = $true)][string]$BinDir)
-    if (-not (Get-Command signtool.exe -ErrorAction SilentlyContinue)) {
-        throw 'Signing was requested, but signtool.exe is not on PATH. Refusing to publish the zip.'
+    $expectedSubject = [Environment]::GetEnvironmentVariable('EXPECTED_SIGNER_SUBJECT')
+    $expectedThumbprint = [Environment]::GetEnvironmentVariable('EXPECTED_SIGNER_THUMBPRINT')
+    $expectedVendorSubject = [Environment]::GetEnvironmentVariable('EXPECTED_VENDOR_SUBJECT')
+    if ([string]::IsNullOrWhiteSpace($expectedSubject) -and [string]::IsNullOrWhiteSpace($expectedThumbprint)) {
+        $expectedSubject = '(?i)Chia ?Network'
     }
+    if ([string]::IsNullOrWhiteSpace($expectedVendorSubject)) {
+        $expectedVendorSubject = '(?i)Microsoft|FTDI|Future Technology'
+    }
+    $signedNames = @(Get-BinariesWeSign -BinDir $BinDir | ForEach-Object { [System.IO.Path]::GetFileName($_) })
     foreach ($binary in @(Get-ShippedBinaries $BinDir)) {
-        & signtool.exe verify /v /pa $binary.FullName
-        if ($LASTEXITCODE -ne 0) {
-            throw "$($binary.Name) has no valid Authenticode signature. Vendor DLLs are left with the signature they shipped with."
+        $signature = Get-AuthenticodeSignature -LiteralPath $binary.FullName
+        if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
+            throw "$($binary.Name) has no valid Authenticode signature: $($signature.StatusMessage)"
+        }
+        if ($null -eq $signature.SignerCertificate) {
+            throw "$($binary.Name) has no signer certificate."
+        }
+        if ($signedNames -contains $binary.Name) {
+            if ($null -eq $signature.TimeStamperCertificate) {
+                throw "$($binary.Name) has no timestamp."
+            }
+            if (-not [string]::IsNullOrWhiteSpace($expectedThumbprint)) {
+                $actual = ($signature.SignerCertificate.Thumbprint -replace '\s', '').ToUpperInvariant()
+                $wanted = ($expectedThumbprint -replace '\s', '').ToUpperInvariant()
+                if ($actual -ne $wanted) {
+                    throw "$($binary.Name) signer thumbprint $actual does not match $wanted."
+                }
+            }
+            if (-not [string]::IsNullOrWhiteSpace($expectedSubject) -and
+                $signature.SignerCertificate.Subject -notmatch $expectedSubject) {
+                throw "$($binary.Name) signer subject '$($signature.SignerCertificate.Subject)' does not match '$expectedSubject'."
+            }
+        } elseif ($signature.SignerCertificate.Subject -notmatch $expectedVendorSubject) {
+            throw "$($binary.Name) vendor signer '$($signature.SignerCertificate.Subject)' does not match '$expectedVendorSubject'."
         }
     }
 }
@@ -554,6 +572,8 @@ function Publish-BundleZip {
     $hash = (Get-FileHash -LiteralPath $Paths.AssetPath -Algorithm SHA256).Hash.ToLowerInvariant()
     Set-Content -LiteralPath "$($Paths.AssetPath).sha256" -Value $hash -NoNewline
     if (-not $IsRelease) {
+        Remove-Item -LiteralPath $Paths.WingetAssetPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath "$($Paths.WingetAssetPath).sha256" -Force -ErrorAction SilentlyContinue
         return
     }
     Copy-Item -LiteralPath $Paths.AssetPath -Destination $Paths.WingetAssetPath -Force
@@ -598,14 +618,6 @@ function Invoke-ExtractedZip {
 }
 
 function Invoke-Assemble {
-    $signingRequested = Require-Flag 'REQUEST_WINDOWS_SIGNING'
-    if ($signingRequested) {
-        if (-not (Require-Flag 'HAS_WINDOWS_SIGNING_SECRET')) {
-            throw 'Windows signing was requested but signing secrets (SM_*) are not configured.'
-        }
-    } else {
-        Write-Host 'Windows signing not requested; the bundle will be published unsigned.'
-    }
     $paths = Get-BundlePaths (Require-Text 'INSTALLER_VERSION')
     if (Test-Path -LiteralPath $paths.BundleRoot) {
         Remove-Item -LiteralPath $paths.BundleRoot -Recurse -Force
@@ -623,11 +635,11 @@ function Get-RuntimeDllNames {
     return @((Get-RequiredRuntimeDlls (Get-BuildExePaths)) | ForEach-Object { $_.Name })
 }
 
-function Invoke-Sign {
+function Invoke-ListSignFiles {
     $paths = Get-BundlePaths (Require-Text 'INSTALLER_VERSION')
     Assert-BundleRoot -BundleRoot $paths.BundleRoot -DllNames (Get-RuntimeDllNames)
     Assert-ImportClosure -BinDir $paths.BinDir
-    Sign-OurBinaries -BinDir $paths.BinDir
+    return @(Get-BinariesWeSign -BinDir $paths.BinDir)
 }
 
 function Invoke-Package {
@@ -636,14 +648,14 @@ function Invoke-Package {
     Assert-BundleRoot -BundleRoot $paths.BundleRoot -DllNames $dllNames
     Assert-ImportClosure -BinDir $paths.BinDir
     Publish-BundleZip -Paths $paths -IsRelease (Require-Flag 'IS_RELEASE')
-    Invoke-ExtractedZip -Paths $paths -DllNames $dllNames -RequireSignatures (Require-Flag 'REQUEST_WINDOWS_SIGNING')
+    Invoke-ExtractedZip -Paths $paths -DllNames $dllNames -RequireSignatures (Require-Flag 'REQUIRE_SIGNATURES')
     Write-Host "Verified $($paths.AssetPath)"
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
     switch ($Action) {
         'Assemble' { Invoke-Assemble }
-        'Sign' { Invoke-Sign }
+        'ListSignFiles' { Invoke-ListSignFiles }
         'Package' { Invoke-Package }
     }
 }

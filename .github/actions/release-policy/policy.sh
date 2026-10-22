@@ -7,7 +7,6 @@ set -euo pipefail
 event_name=${EVENT_NAME:-}
 event_action=${EVENT_ACTION:-}
 prerelease_json=${PRERELEASE_JSON:-null}
-windows_sign_json=${WINDOWS_SIGN_JSON:-null}
 macos_notarize_json=${MACOS_NOTARIZE_JSON:-null}
 
 is_final=false
@@ -20,17 +19,12 @@ json_true() {
   [ "$1" = "true" ] || [ "$1" = '"true"' ]
 }
 
-sign_windows=false
 notarize_macos=false
 if [ "$is_final" = "true" ]; then
-  sign_windows=true
   notarize_macos=true
 fi
-# Manual runs can rehearse signing. A release event cannot: prereleases stay off
-# even if an input is present, and final releases are already on above.
-if [ "$event_name" = "workflow_dispatch" ] && json_true "$windows_sign_json"; then
-  sign_windows=true
-fi
+# A release event cannot be rehearsed: prereleases stay off even if an input is
+# present, and final releases are already on above.
 if [ "$event_name" = "workflow_dispatch" ] && json_true "$macos_notarize_json"; then
   notarize_macos=true
 fi
@@ -42,6 +36,5 @@ fi
 
 {
   printf 'is_final=%s\n' "$is_final"
-  printf 'sign_windows=%s\n' "$sign_windows"
   printf 'notarize_macos=%s\n' "$notarize_macos"
 } >> "$GITHUB_OUTPUT"

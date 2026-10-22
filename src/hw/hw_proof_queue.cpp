@@ -175,12 +175,28 @@ static uint8_t hw_reusable_checkpoint_depth(const struct vdf_state *vdf, uint16_
     return depth;
 }
 
+// Estimate the critical path in iteration units for equal-sized independent
+// segments on the configured proof slots. A full checkpoint chain has only one
+// tail; an earlier prefix can be faster because it leaves room for parallel work.
+static uint64_t hw_proof_tail_cost(const struct vdf_state *vdf,
+        uint64_t span, uint8_t depth)
+{
+    if (!span) return 0;
+    uint8_t room = HW_VDF_MAX_CHKP_SEGMENTS - depth;
+    uint64_t chunk = hw_proof_segment_chunk(span, vdf->checkpoint_threshold,
+            vdf->interval, room);
+    uint64_t workers = std::max<uint64_t>(1, std::min<uint64_t>(vdf->max_aux_threads,
+            (vdf->max_proof_threads + PARALLEL_PROVER_N_THREADS - 1)
+                / PARALLEL_PROVER_N_THREADS));
+    uint64_t full = span / chunk;
+    return full / workers * chunk + (full % workers ? chunk : span % chunk);
+}
+
 void hw_proof_process_req(struct vdf_state *vdf)
 {
     uint64_t iters;
     uint64_t req_iters;
     uint64_t base_iters = 0;
-    uint8_t max_chkp_segments = HW_VDF_MAX_CHKP_SEGMENTS;
     int i;
     uint16_t prev = HW_VDF_PROOF_NONE;
 
@@ -219,23 +235,20 @@ void hw_proof_process_req(struct vdf_state *vdf)
 
     // Dispatch removes checkpoints from queued_proofs. Reuse their owned proof
     // objects while they are running or completed, within this native session.
-    // Do not spend the wire checkpoint budget on a prefix that would make the
-    // new tail larger than a fresh partition; long chains must still coarsen.
-    uint64_t fresh_chunk = hw_proof_segment_chunk(req_iters,
-            vdf->checkpoint_threshold, vdf->interval, max_chkp_segments);
+    uint8_t depth = prev == HW_VDF_PROOF_NONE ? 0 : hw_reusable_checkpoint_depth(vdf, prev);
+    uint64_t best_cost = hw_proof_tail_cost(vdf, req_iters - base_iters, depth);
     for (size_t pos = vdf->proofs.size(); pos-- > 0; ) {
         const auto &checkpoint = vdf->proofs[pos];
-        if (checkpoint.iters <= base_iters || checkpoint.iters > req_iters
+        if (checkpoint.iters > req_iters
                 || (checkpoint.flags & HW_VDF_PROOF_FLAG_IS_REQ)
                 || !(checkpoint.flags & (HW_VDF_PROOF_FLAG_STARTED | HW_VDF_PROOF_FLAG_DONE)))
             continue;
-        uint8_t depth = hw_reusable_checkpoint_depth(vdf, static_cast<uint16_t>(pos));
-        if (!depth) continue;
-        uint64_t tail = req_iters - checkpoint.iters;
-        uint8_t room = max_chkp_segments - depth;
-        if (hw_proof_segment_chunk(tail, vdf->checkpoint_threshold, vdf->interval, room)
-                > fresh_chunk)
+        uint8_t checkpoint_depth = hw_reusable_checkpoint_depth(vdf, static_cast<uint16_t>(pos));
+        if (!checkpoint_depth) continue;
+        uint64_t cost = hw_proof_tail_cost(vdf, req_iters - checkpoint.iters, checkpoint_depth);
+        if (cost > best_cost || (cost == best_cost && checkpoint.iters <= base_iters))
             continue;
+        best_cost = cost;
         base_iters = checkpoint.iters;
         prev = static_cast<uint16_t>(pos);
     }

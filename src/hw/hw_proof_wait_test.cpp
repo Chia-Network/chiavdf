@@ -197,7 +197,7 @@ static void check_completed_checkpoint_reuse() {
         require(hw_retrieve_proof(&vdf, &delivery) < 0 && vdf.done_proofs.empty(),
                 "Failure after reuse allowed an invalid checkpoint chain to be delivered");
     }
-    {
+    for (uint8_t proof_limit : {1, 3}) {
         vdf_state vdf{};
         vdf.interval = HW_VDF_VALUE_INTERVAL;
         vdf.checkpoint_threshold = 8000;
@@ -206,11 +206,16 @@ static void check_completed_checkpoint_reuse() {
             tip = hw_queue_proof(&vdf, 8000, tip, 0);
         mark_chain_done(vdf, tip);
         vdf.queued_proofs.clear();
+        vdf.max_aux_threads = 4;
+        vdf.max_proof_threads = proof_limit;
         hw_request_proof(&vdf, 2000000, false);
         hw_proof_process_req(&vdf);
         const auto &proof = vdf.proofs.back();
-        require(proof.seg_iters <= 36000,
-                "Completed-checkpoint reuse grew a large tail at the wire limit");
+        if (proof_limit == 1)
+            require(proof.prev == tip, "Single proof slot discarded the longest cached prefix");
+        else
+            require(proof.prev != tip && proof.seg_iters < 2000000 - vdf.proofs[tip].iters,
+                    "Full checkpoint chain forced a serial tail despite available proof workers");
         size_t count = 0;
         for (uint16_t idx = static_cast<uint16_t>(vdf.proofs.size() - 1);
                 idx != HW_VDF_PROOF_NONE; idx = vdf.proofs[idx].prev) ++count;

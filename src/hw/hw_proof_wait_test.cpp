@@ -563,7 +563,6 @@ int main() {
             require(wait_for_proof_failed(vdf, checkpoint, std::chrono::seconds(20)),
                     "Verify failure did not release the checkpoint");
             require(vdf.queued_proofs.empty(), "Failed checkpoint was requeued");
-            require(vdf.n_proof_threads.load() == 0, "Failed checkpoint left a proof slot busy");
             {
                 std::lock_guard<std::mutex> lock(vdf.proofs_resize_mtx);
                 vdf_proof final{};

@@ -26,13 +26,12 @@ def test_bqfc_deserialize_returns_signed_big_endian_bytes():
     assert b[0] in (0, 1)
 
 
-def test_bqfc_deserialize_strict_rejects_inflated_b0_by_default():
+@pytest.mark.parametrize("strict", [None, True, False])
+@pytest.mark.parametrize("inflation", [0x04, 0x08])
+def test_bqfc_deserialize_rejects_inflated_b0(strict, inflation):
     mutated = bytearray(B0_CANONICAL_FORM)
-    mutated[99] ^= 0x04
+    mutated[99] ^= inflation
+    kwargs = {} if strict is None else {"strict": strict}
 
     with pytest.raises(RuntimeError):
-        bqfc_deserialize(B0_DISCRIMINANT, bytes(mutated))
-
-    a, b = bqfc_deserialize(B0_DISCRIMINANT, bytes(mutated), strict=False)
-    assert isinstance(a, bytes)
-    assert isinstance(b, bytes)
+        bqfc_deserialize(B0_DISCRIMINANT, bytes(mutated), **kwargs)

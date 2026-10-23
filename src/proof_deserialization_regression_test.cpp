@@ -98,7 +98,7 @@ TEST(ProofDeserializationRegressionTest, StrictRejectsInflatedB0Field) {
                  std::runtime_error);
 }
 
-TEST(ProofDeserializationRegressionTest, LenientAcceptsInflatedB0Field) {
+TEST(ProofDeserializationRegressionTest, LenientRejectsInflatedB0Field) {
     integer d = get_b0_discriminant();
     auto canonical = get_b0_canonical_form();
     ASSERT_EQ(canonical.size(), static_cast<size_t>(BQFC_FORM_SIZE));
@@ -107,9 +107,10 @@ TEST(ProofDeserializationRegressionTest, LenientAcceptsInflatedB0Field) {
 
     std::vector<uint8_t> mutated = canonical;
     mutated[99] ^= 0x04;
-    EXPECT_NO_THROW((void)DeserializeForm(d, mutated.data(), mutated.size(), false));
-
+    EXPECT_THROW((void)DeserializeForm(d, mutated.data(), mutated.size(), false),
+                 std::runtime_error);
     mutated = canonical;
     mutated[99] ^= 0x08;
-    EXPECT_NO_THROW((void)DeserializeForm(d, mutated.data(), mutated.size(), false));
+    EXPECT_THROW((void)DeserializeForm(d, mutated.data(), mutated.size(), false),
+                 std::runtime_error);
 }

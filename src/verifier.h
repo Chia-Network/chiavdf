@@ -9,7 +9,7 @@
 #include "proof_common.h"
 #include "create_discriminant.h"
 
-const uint8_t DEFAULT_ELEMENT[] = { 0x08 };
+const uint8_t DEFAULT_ELEMENT[BQFC_FORM_SIZE] = { 0x08 };
 
 inline bool IsDiscSizeBitsInRange(const uint64_t disc_size_bits)
 {
@@ -59,7 +59,7 @@ bool CheckProofOfTimeNWesolowski(integer D, const uint8_t* x_s, const uint8_t* p
     const size_t form_size = BQFC_FORM_SIZE;
     const size_t segment_len = 8 + B_bytes + form_size;
     const size_t base_len = 2 * form_size;
-    // Enforce all invariants and bounds before the loop        
+    // Enforce all invariants and bounds before the loop
     if (form_size == 0) return false;
     const uint64_t max_depth = static_cast<uint64_t>((std::numeric_limits<size_t>::max() - base_len) / segment_len);
     if (depth > max_depth)
@@ -106,7 +106,7 @@ bool CheckProofOfTimeNWesolowskiCommon(integer& D, form& x, const uint8_t* proof
     if (proof_blob == nullptr) return false;
     if (proof_blob_len < last_segment) return false;
     if ((proof_blob_len - last_segment) % segment_len != 0)
-        return false;    
+        return false;
     size_t i = proof_blob_len;
     PulmarkReducer reducer;
 
@@ -194,6 +194,6 @@ bool CreateDiscriminantAndCheckProofOfTimeNWesolowski(std::vector<uint8_t> seed,
         return false;
 
     return CheckProofOfTimeNWesolowski(D, x_s, proof_blob, proof_blob_len, iterations, disc_size_bits, depth);
-} 
+}
 
 #endif // VERIFIER_H

@@ -647,6 +647,10 @@ jobs:
         with:
           arch: x64
 
+      - name: Test installer version parser
+        shell: pwsh
+        run: ./tests/test_windows_installer_version.ps1
+
       - name: Assemble Windows zip bundle
         shell: pwsh
         run: ./scripts/package-windows-bundle.ps1 -Action Assemble

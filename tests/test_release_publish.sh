@@ -445,6 +445,9 @@ assert_windows_signing_wiring() {
     printf '%s\n' "$test_installer_block" | grep -Fq 'environment: windows-code-signing'; then
     fail "PR installer job must not enter the signing environment"
   fi
+  if ! printf '%s\n' "$test_installer_block" | grep -Fq 'tests/test_windows_installer_version.ps1'; then
+    fail "PR installer job does not run the installer version regression test"
+  fi
   if ! printf '%s\n' "$build_block" | grep -Fq 'step-security/msvc-dev-cmd@v1.13.1'; then
     fail "Windows build job does not set up the MSVC environment"
   fi

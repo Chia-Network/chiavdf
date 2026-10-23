@@ -609,11 +609,13 @@ function Get-InstallerVersionInfoVersion {
     $parts = @()
     for ($i = 1; $i -le 4; $i++) {
         if ($match.Groups[$i].Success -and $match.Groups[$i].Value -ne '') {
-            $value = [int]$match.Groups[$i].Value
+            # GitHub run IDs are now larger than Int32. Parse as Int64 first,
+            # then cap to the Inno Setup per-component limit.
+            $value = [long]$match.Groups[$i].Value
             if ($value -gt 65535) {
                 $value = 65535
             }
-            $parts += $value
+            $parts += [int]$value
         } else {
             $parts += 0
         }

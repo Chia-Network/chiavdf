@@ -529,9 +529,11 @@ TLACK 1 1 1880.000000 1.000000
 The fields are protocol version, a strictly increasing positive request ID,
 frequency in MHz, and requested voltage in V. Frames are bounded to 256 input
 bytes. The live-control limits are 200–2200 MHz and 0.7–1.0 V. The selected PLL
-entry must be within 1 MHz of the request; unsupported requests are rejected.
-The standalone probes `--control-version` and `--control-frequencies` print the
-protocol identifier and JSON frequency list respectively, before opening USB.
+entry uses the same ceiling selection as startup and must be within 1 MHz of the
+request; unsupported requests are rejected. The bounds and tolerances are defined
+in `timelord_control::Limits`.
+The probes `--control-version` and `--control-frequencies` use the regular option
+parser and print the protocol identifier and JSON frequency list respectively, before opening USB.
 These control options are unavailable on Windows; `--live-control` fails there.
 
 Before a change, the client requires a valid temperature below 55°C, pauses the
@@ -544,10 +546,17 @@ clock-register values and individual register-read errors. These bounds are
 software guardrails, not a characterization of the silicon's operating limits.
 
 A hardware rejection returns `TLERR 1 ID reason` when the reply pipe remains
-writable. Missing temperature is reported as `temperature_unavailable`, separately
-from `temperature_limit`. Invalid commands, failed operations, controller EOF,
-a closed reply pipe or reply backpressure cause a best-effort stop of every selected
-engine and immediate exit with status 70. The supervisor owns any delayed restart
+writable. Failed temperature reads are reported as `temperature_unavailable`,
+separately from `temperature_limit`; valid zero or subzero readings are not read
+errors. Invalid commands, failed operations, controller EOF,
+a closed reply pipe or reply backpressure enter the same failure path as node
+socket errors: attempt to pause every selected engine, check the result, restore
+a low operating point (200 MHz / requested 0.7 V) without resuming engines, stop
+proof workers, close USB and exit with status 70. Failed pause writes fall back
+to board reset. The shutdown log reports whether quiescence and restoration were
+confirmed; a failed USB link cannot guarantee either. SIGPIPE is suppressed only
+for the writing thread during individual pipe/socket writes, without changing
+the process signal handler. The supervisor owns any delayed restart
 policy. Both pipes are nonblocking so a supervisor that stops reading replies
 cannot stall the USB owner. A startup failure to establish the channel exits before
 USB initialization.
@@ -567,7 +576,7 @@ engines or deserialize VDF values. This keeps supervisors informed while an infu
 chain has no work. Ordinary clients retain their existing polling behavior.
 
 The `HardwareLiveControl` and `HardwareTelemetry` regression tests use fake register
-callbacks and local pipes, without a node or USB device:
+adapters and local pipes, without a node or USB device:
 
 ```sh
 cmake -S src -B build-tests -DBUILD_PYTHON=OFF -DBUILD_VDF_TESTS=ON

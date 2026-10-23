@@ -134,8 +134,13 @@ glue_chiavdfc=""
 for name in "${manifest_names[@]}"; do
   case "$name" in
     chiavdf)
-      glue_chiavdf=$(jq -nc --arg release_version "$RELEASE_TAG" --arg windows_amd64 "chiavdf-win64.zip" \
-        '{release_version:$release_version,windows_amd64:$windows_amd64}')
+      # Keep windows_amd64 as the portable zip for existing consumers. The
+      # installer field lets the external Glue template update the winget
+      # manifest to InstallerType inno without changing the portable contract.
+      glue_chiavdf=$(jq -nc --arg release_version "$RELEASE_TAG" \
+        --arg windows_amd64 "chiavdf-win64.zip" \
+        --arg windows_amd64_installer "chiavdf-win64-setup.exe" \
+        '{release_version:$release_version,windows_amd64:$windows_amd64,windows_amd64_installer:$windows_amd64_installer}')
       ;;
     chiavdfc)
       glue_chiavdfc=$(jq -nc --arg release_version "$RELEASE_TAG" '{release_version:$release_version}')

@@ -50,13 +50,19 @@ Install through winget:
 winget install --id Chia.chiavdf --exact
 ```
 
-winget installs `vdf_client.exe` and puts `vdf_client` on `PATH`. For
-`vdf_bench`, `hw_vdf_client`, `hw_test`, and the emulators, download
+The winget package is a machine-scope Inno Setup installer. It installs all
+six tools (`vdf_client`, `vdf_bench`, `hw_vdf_client`, `hw_test`,
+`emu_hw_vdf_client`, and `emu_hw_test`) under
+`%ProgramFiles%\Chia\chiavdf\bin`, adds that directory to the system `PATH`,
+and stages the FTDI CDM driver (`ftdibus.inf` and `ftdiport.inf`) with
+`pnputil`. One install therefore covers software timelords and ASIC hosts.
+The installer requires x64 Windows 10 version 2004 or newer and will show a
+UAC prompt. If you cannot elevate, use the portable
 `chiavdf-<version>-windows-amd64.zip` from a
-[release](https://github.com/Chia-Network/chiavdf/releases) and run the
-binaries from the extracted `bin\` directory. The FTDI D2XX driver is
-required for the ASIC tools; see
-[README_ASIC.md](README_ASIC.md).
+[release](https://github.com/Chia-Network/chiavdf/releases) instead. The
+shared FTDI driver is left installed when chiavdf is uninstalled. Open a new
+terminal after installation so the updated `PATH` is visible. See
+[README_ASIC.md](README_ASIC.md) and `assets/windows-installer.md`.
 
 ### Linux
 

@@ -158,7 +158,10 @@ for name in "${asset_names[@]}"; do
   fi
 done
 if ! grep -F -q '"windows_amd64":"chiavdf-win64.zip"' "$output"; then
-  fail "chiavdf glue payload missing: $(cat "$output")"
+  fail "chiavdf glue payload missing the portable zip: $(cat "$output")"
+fi
+if ! grep -F -q '"windows_amd64_installer":"chiavdf-win64-setup.exe"' "$output"; then
+  fail "chiavdf glue payload missing the installer: $(cat "$output")"
 fi
 if ! grep -F -q "glue_chiavdfc={\"release_version\":\"${tag}\"}" "$output"; then
   fail "chiavdfc glue payload missing: $(cat "$output")"
@@ -323,7 +326,10 @@ assert_windows_signing_wiring() {
   client="${root}/.github/workflows/build-client.yml"
   packages="${root}/.github/workflows/build-packages.yml"
   script="${root}/scripts/package-windows-bundle.ps1"
+  installer="${root}/installer/windows/chiavdf.iss"
+  driver_script="${root}/scripts/get-libft4222.ps1"
   build_block="$(job_block "$client" build)"
+  test_installer_block="$(job_block "$client" test-windows-installer)"
   sign_block="$(job_block "$client" sign-windows)"
   publish_block="$(job_block "$packages" publish-release)"
 
@@ -369,8 +375,9 @@ assert_windows_signing_wiring() {
   if ! printf '%s\n' "$sign_block" | grep -Fq 'name: windows-amd64-bundle'; then
     fail "sign job does not upload the signed windows-amd64-bundle"
   fi
-  if grep -Fq "REQUIRE_SIGNATURES: 'false'" "$client"; then
-    fail "unsigned Windows packaging path still exists"
+  if printf '%s\n' "$build_block" | grep -Fq "REQUIRE_SIGNATURES: 'false'" ||
+    printf '%s\n' "$sign_block" | grep -Fq "REQUIRE_SIGNATURES: 'false'"; then
+    fail "unsigned Windows release packaging path still exists"
   fi
   if ! printf '%s\n' "$sign_block" | grep -Fq "REQUIRE_SIGNATURES: 'true'"; then
     fail "signed Windows packaging does not require signature verification"
@@ -384,8 +391,59 @@ assert_windows_signing_wiring() {
   if ! printf '%s\n' "$sign_block" | grep -Fq 'file: ${{ steps.sign_files.outputs.files }}'; then
     fail "Windows signing action does not receive the selected file list"
   fi
+  if ! printf '%s\n' "$sign_block" | grep -Fq 'file: ${{ steps.installer_sign_files.outputs.files }}'; then
+    fail "Windows installer signing action does not receive the selected file list"
+  fi
   if ! printf '%s\n' "$sign_block" | grep -Fq -- '-Action ListSignFiles'; then
     fail "Windows signing does not list files with ListSignFiles"
+  fi
+  if ! printf '%s\n' "$sign_block" | grep -Fq -- '-Action BuildInstaller'; then
+    fail "Windows signing does not build the installer"
+  fi
+  if ! printf '%s\n' "$sign_block" | grep -Fq -- '-Action ListInstallerSignFile'; then
+    fail "Windows signing does not list the installer for signing"
+  fi
+  if ! printf '%s\n' "$sign_block" | grep -Fq -- '-Action FinalizeInstaller'; then
+    fail "Windows signing does not finalize the signed installer"
+  fi
+  if ! printf '%s\n' "$sign_block" | grep -Fq -- '-Action VerifyInstaller'; then
+    fail "Windows signing does not verify the installer"
+  fi
+  if ! printf '%s\n' "$sign_block" | grep -Fq -- '-Action TestInstaller'; then
+    fail "Windows signing does not smoke-test the installer"
+  fi
+  if ! printf '%s\n' "$sign_block" | grep -Fq 'choco install innosetup'; then
+    fail "Windows signing does not install Inno Setup"
+  fi
+  if [ "$(printf '%s\n' "$sign_block" | grep -Fc 'Chia-Network/actions/sign/azure-windows@main')" -lt 2 ]; then
+    fail "Windows signing does not sign both the binaries and the installer"
+  fi
+  build_line=$(printf '%s\n' "$sign_block" | grep -n -F 'name: Build Windows installer' | cut -d: -f1)
+  sign_installer_line=$(printf '%s\n' "$sign_block" | grep -n -F 'name: Sign Windows installer' | cut -d: -f1)
+  finalize_line=$(printf '%s\n' "$sign_block" | grep -n -F 'name: Finalize signed Windows installer' | cut -d: -f1)
+  verify_line=$(printf '%s\n' "$sign_block" | grep -n -F 'name: Verify Windows installer' | cut -d: -f1)
+  if [ -z "$build_line" ] || [ -z "$sign_installer_line" ] || [ -z "$finalize_line" ] || [ -z "$verify_line" ] ||
+    [ "$build_line" -ge "$sign_installer_line" ] || [ "$sign_installer_line" -ge "$finalize_line" ] ||
+    [ "$finalize_line" -ge "$verify_line" ]; then
+    fail "Windows installer build/sign/finalize/verify steps are out of order"
+  fi
+  if ! printf '%s\n' "$build_block" | grep -Fq 'src/hw/libft4222/driver/**'; then
+    fail "Windows build artifact does not upload the staged FTDI driver"
+  fi
+  if ! printf '%s\n' "$sign_block" | grep -Fq 'src/hw/libft4222/driver/ftdibus.inf'; then
+    fail "Windows signing does not verify the staged FTDI driver"
+  fi
+  if [ -z "$test_installer_block" ]; then
+    fail "Windows workflow does not smoke-test the installer on pull requests"
+  fi
+  if ! printf '%s\n' "$test_installer_block" | grep -Fq -- '-Action Assemble' ||
+    ! printf '%s\n' "$test_installer_block" | grep -Fq -- '-Action BuildInstaller' ||
+    ! printf '%s\n' "$test_installer_block" | grep -Fq -- '-Action TestInstaller'; then
+    fail "PR installer job does not assemble, build, and smoke-test the installer"
+  fi
+  if printf '%s\n' "$test_installer_block" | grep -Fq 'AZURE_SIGNING' ||
+    printf '%s\n' "$test_installer_block" | grep -Fq 'environment: windows-code-signing'; then
+    fail "PR installer job must not enter the signing environment"
   fi
   if ! printf '%s\n' "$build_block" | grep -Fq 'step-security/msvc-dev-cmd@v1.13.1'; then
     fail "Windows build job does not set up the MSVC environment"
@@ -412,8 +470,15 @@ assert_windows_signing_wiring() {
     fail "publish-release does not download windows-amd64-bundle"
   fi
 
-  if ! grep -Fq "ValidateSet('Assemble', 'ListSignFiles', 'Package')" "$script"; then
-    fail "Windows script does not expose the ListSignFiles action"
+  if ! grep -Fq "ValidateSet('Assemble', 'ListSignFiles', 'Package', 'BuildInstaller', 'ListInstallerSignFile', 'FinalizeInstaller', 'VerifyInstaller', 'TestInstaller')" "$script"; then
+    fail "Windows script does not expose the installer actions"
+  fi
+  if ! grep -Fq 'ftdibus.inf' "$installer" || ! grep -Fq 'pnputil.exe' "$installer"; then
+    fail "Inno Setup script does not stage the FTDI driver"
+  fi
+  if ! grep -Fq 'Install-Ftd2xxDriver' "$driver_script" ||
+    ! grep -Fq 'ftdibus.inf' "$driver_script"; then
+    fail "FT4222 fetch script does not stage the FTDI driver"
   fi
   if ! grep -Fq "Require-Flag 'REQUIRE_SIGNATURES'" "$script"; then
     fail "Windows script does not require REQUIRE_SIGNATURES for Package"
@@ -441,6 +506,15 @@ assert_windows_signing_wiring() {
   if grep -Eq 'SM_(API_KEY|CLIENT_CERT_FILE_B64|CODE_SIGNING_CERT_SHA1_HASH|CERTKEY_ALIAS)' "$client"; then
     fail "client workflow still references DigiCert SM_* secrets"
   fi
+  for asset in \
+    'chiavdf-{tag}-windows-amd64-setup.exe' \
+    'chiavdf-{tag}-windows-amd64-setup.exe.sha256' \
+    'chiavdf-win64-setup.exe' \
+    'chiavdf-win64-setup.exe.sha256'; do
+    if ! grep -Fq "$asset" "${manifest_dir}/chiavdf.txt"; then
+      fail "release manifest is missing ${asset}"
+    fi
+  done
 }
 
 assert_publish_dependencies

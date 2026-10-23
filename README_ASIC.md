@@ -561,9 +561,10 @@ read iteration counters and add no USB reads. They exclude proof construction an
 must not be interpreted as verified proof throughput or summed across independent
 chains. Ordinary clients do not emit these extra raw-speed records unless requested.
 
-Temperature polling also has a monotonic five-second deadline, including when all
-engines are idle. Temperature-only reads do not start engines or deserialize VDF
-values. This keeps supervisors informed while an infused chain has no work.
+In live-control mode, temperature polling also has a monotonic five-second
+deadline, including when all engines are idle. Temperature-only reads do not start
+engines or deserialize VDF values. This keeps supervisors informed while an infused
+chain has no work. Ordinary clients retain their existing polling behavior.
 
 The `HardwareLiveControl` and `HardwareTelemetry` regression tests use fake register
 callbacks and local pipes, without a node or USB device:

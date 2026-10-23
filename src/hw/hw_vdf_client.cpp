@@ -103,7 +103,7 @@ static timelord_control::Point live_set(struct vdf_client *client, timelord_cont
             throw std::runtime_error("pll_write");
     };
     auto pause = [&](bool resume) {
-        if (!hw_vdf_control_checked(client->drv, mask, resume ? 1 : 0))
+        if (!hw_vdf_control(client->drv, mask, resume ? 1 : 0))
             throw std::runtime_error("engine_control");
     };
     auto diagnostics = [&]() {
@@ -424,7 +424,9 @@ void event_loop(struct vdf_client *client)
     timelord_telemetry::Speed raw_speeds[N_HW_VDFS];
     while(true) {
         uint8_t running_mask = 0;
-        uint8_t temp_flag = telemetry.due(!(loop_cnt % temp_period)) ? HW_VDF_TEMP_FLAG : 0;
+        bool sample_temperature = !(loop_cnt % temp_period);
+        if (client->opts.live_control) sample_temperature = telemetry.due(sample_temperature);
+        uint8_t temp_flag = sample_temperature ? HW_VDF_TEMP_FLAG : 0;
 
         for (uint8_t i = 0; i < N_HW_VDFS; i++) {
             if (!(client->opts.vdfs_mask & (1 << i))) {
@@ -436,7 +438,7 @@ void event_loop(struct vdf_client *client)
             }
         }
 
-        if (running_mask || temp_flag) {
+        if (running_mask || (client->opts.live_control && temp_flag)) {
             read_hw_status(client->drv, running_mask | temp_flag, client->values);
         } else if (g_stopping) {
             uint8_t n_closed = 0;
@@ -492,7 +494,7 @@ void event_loop(struct vdf_client *client)
 #ifndef _WIN32
         if (client->opts.live_control && !(loop_cnt % 256)) {
             if (!live_control.poll([&](timelord_control::Point p) { return live_set(client,p); })) {
-                hw_vdf_control_checked(client->drv, client->opts.vdfs_mask, 0);
+                hw_vdf_control(client->drv, client->opts.vdfs_mask, 0);
                 LOG_ERROR("Live control failed; engines paused, client exiting");
                 _exit(70);
             }
@@ -829,16 +831,14 @@ int hw_vdf_client_main(int argc, char **argv)
         return ret;
     }
 
-    if (client.opts.live_control) {
 #ifndef _WIN32
+    if (client.opts.live_control) {
         if (client.opts.auto_freq || !live_control.start()) {
             LOG_SIMPLE("Live control requires stdin/stdout pipes and no --auto-freq-period");
             return 1;
         }
-#else
-        return 1;
-#endif
     }
+#endif
     client.drv = init_hw(client.opts.freq, client.opts.voltage, client.opts.device_loc);
     if (!client.drv) {
         return 1;

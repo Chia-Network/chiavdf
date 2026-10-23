@@ -256,6 +256,14 @@ iteration cap to avoid out-of-memory conditions in CI. If you want deeper
 iteration coverage, raise the cap in `rust_bindings/fuzz/fuzz_targets/prove.rs`
 after validating memory usage and exec/s on your runner.
 
+## Debug builds
+
+To build and install a debug build of the python module, run:
+
+```bash
+python setup.py build_ext --debug install
+```
+
 ## Contributing and workflow
 
 Contributions are welcome. More details are available in chia-blockchain's

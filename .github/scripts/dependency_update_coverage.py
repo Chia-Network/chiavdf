@@ -6,6 +6,7 @@ to_tag are set. Anything else makes the group inconclusive.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -13,6 +14,7 @@ import runpy
 import shutil
 import subprocess
 import sys
+import tempfile
 import uuid
 from pathlib import Path
 
@@ -21,17 +23,17 @@ _FINDING_KEYS = ("unicode", "confusable", "ioc", "heuristic")
 
 
 def scannable(update: dict) -> bool:
-    """A destination version is enough to read that tree. An empty from stays inconclusive."""
+    """An explicit GitHub repository and an exact destination version. An empty from stays inconclusive.
+
+    Both versions are read in the "dependabot" mode: a range, wildcard, tag
+    name, operator or bare major could resolve to a tree other than the one installed.
+    """
     repo = str(update.get("upstreamRepo") or "")
     from_version = str(update.get("fromVersion") or "")
     to_version = str(update.get("toVersion") or "")
-    if not _REPO_RE.fullmatch(repo):
+    if not _REPO_RE.fullmatch(repo) or not _versions._exact_body(to_version, mode="dependabot"):
         return False
-    if not to_version:
-        return False
-    if any(char in from_version + to_version for char in "\n\r\x00"):
-        return False
-    return True
+    return not from_version or bool(_versions._exact_body(from_version, mode="dependabot"))
 
 
 def _label(update: dict) -> str:
@@ -292,8 +294,17 @@ def any_read(report: dict) -> bool:
     return int(report.get("materialized_count") or 0) > 0
 
 
-def _load_manifest_diff():
-    """Load the manifest grammar beside this file under python3 -I.
+# Grammars dependency_manifest_diff imports, in dependency order.
+_MANIFEST_GRAMMARS = (
+    "dependency_manifest_versions",
+    "dependency_manifest_go",
+    "dependency_manifest_npm",
+    "dependency_manifest_python",
+)
+
+
+def _load_manifest_modules():
+    """Load the manifest grammars beside this file under python3 -I; return the diff and version modules.
 
     The cold-start spine is the only bootstrap. It path-filters the sibling,
     so this script never imports it and never puts the scripts directory on sys.path.
@@ -302,14 +313,14 @@ def _load_manifest_diff():
     cold = runpy.run_path(str(script_dir / "trusted_formatter_loader_cold_start.py"))
     cold["resolve_loader_for_dir"](script_dir)
     scrub = sys.modules["scripts_dir_path_scrub"]
-    return scrub.bootstrap_module_from_scripts_dir(
-        script_dir,
-        "dependency_manifest_diff.py",
-        "dependency_manifest_diff",
-    )
+    loaded = {
+        name: scrub.bootstrap_module_from_scripts_dir(script_dir, f"{name}.py", name)
+        for name in (*_MANIFEST_GRAMMARS, "dependency_manifest_diff")
+    }
+    return loaded["dependency_manifest_diff"], loaded["dependency_manifest_versions"]
 
 
-_diff = _load_manifest_diff()
+_diff, _versions = _load_manifest_modules()
 _BASE_REF_RE = re.compile(r"\A[A-Za-z0-9._/-]+\Z")
 
 
@@ -338,83 +349,162 @@ def _verify_commit(rev: str) -> str:
     return proc.stdout.strip()
 
 
-def _fetch_commit(sha: str) -> str:
+# The workflow passes a read-only token here because checkout runs with
+# persist-credentials: false. main() removes it from the environment so no
+# child process inherits it.
+FETCH_AUTH_VARIABLE = "DCR_FETCH_TOKEN"
+
+
+def _fetch_env(token: str) -> dict[str, str]:
+    """Environment for one authenticated fetch.
+
+    The Basic auth header goes in through GIT_CONFIG_* variables, the same
+    one-time header the trusted checkout action uses, so the token is never
+    in argv or in the persisted git config.
+    """
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    if not token:
+        return env
+    try:
+        index = int(env.get("GIT_CONFIG_COUNT", "0"))
+    except ValueError:
+        index = 0
+    basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+    env[f"GIT_CONFIG_KEY_{index}"] = "http.extraheader"
+    env[f"GIT_CONFIG_VALUE_{index}"] = f"AUTHORIZATION: basic {basic}"
+    env["GIT_CONFIG_COUNT"] = str(index + 1)
+    return env
+
+
+def _fetch_commit(sha: str, token: str = "") -> str:
     found = _verify_commit(sha)
     if found:
         return found
+    # Output is discarded rather than logged.
     subprocess.run(
         ["git", "fetch", "--no-tags", "--depth=1", "origin", sha],
         check=False,
         capture_output=True,
         text=True,
+        env=_fetch_env(token),
     )
     return _verify_commit(sha)
 
 
-def _base_commit() -> str | None:
-    """Resolved base commit, '' when a named base cannot be read, None when unnamed."""
-    if not Path(".git").is_dir():
-        return None
+def _base_commit(token: str = "") -> str:
+    """Resolved base commit, or '' when no base is named or the named one cannot be read."""
+    if not Path(".git").exists():
+        return ""
     sha = os.environ.get("PR_BASE_SHA", "").strip()
     if sha:
         if not re.fullmatch(r"[0-9a-fA-F]{7,64}", sha):
             return ""
-        return _fetch_commit(sha)
+        return _fetch_commit(sha, token)
     ref = os.environ.get("GITHUB_BASE_REF", "").strip()
-    if not ref:
-        return None
     if not _BASE_REF_RE.fullmatch(ref):
         return ""
     return _verify_commit(ref) or _verify_commit(f"origin/{ref}") or ""
 
 
-# Lockfiles whose extra names are transitive residue once a listed bump is explained.
-_TRANSITIVE_LOCKS = frozenset({"package-lock.json", "npm-shrinkwrap.json", "yarn.lock"})
-
-
-def manifest_gaps(updates: list[dict]) -> list[dict]:
-    """Direct manifest bumps missing from the parsed list.
-
-    An unreadable base ref, when one was named, is itself unresolved.
-    An entry is explained only when its package moved to the listed version.
-    Anything else in the file stays unresolved under the path. A listed
-    package with that path as its name does not hide the path. A dependency
-    with more than one unexplained entry is named as well.
-
-    An opaque lockfile cannot name a package, so it is not a gap. Unlisted
-    names in a npm or Yarn lock are transitive residue when every listed
-    name in that lock moved to its listed version. Both stay inputs to the
-    review instead of uncovered dependencies.
-    """
-    base = _base_commit()
-    if base is None:
-        return []
-    if not base:
-        return [uncovered({"packageName": "manifest-diff"}, "unresolved")]
-    listed = {str(item.get("packageName") or "").strip() for item in updates}
+def _changed_paths(base: str) -> list[tuple[str, str, str]] | None:
+    """(before path, after path, status letter) for each file changed since base, deletions included."""
     diff = subprocess.run(
-        ["git", "diff", "--name-only", "--diff-filter=AM", base, "HEAD"],
+        ["git", "diff", "--name-status", "-z", "-M", "--diff-filter=AMRCTD", base, "HEAD"],
         check=False,
         capture_output=True,
         text=True,
     )
     if diff.returncode != 0:
+        return None
+    fields = diff.stdout.split("\0")
+    changed: list[tuple[str, str, str]] = []
+    index = 0
+    while index + 1 < len(fields):
+        status = fields[index][:1]
+        if status in {"R", "C"}:
+            changed.append((fields[index + 1], fields[index + 2], status))
+            index += 3
+        else:
+            changed.append((fields[index + 1], fields[index + 1], status))
+            index += 2
+    return changed
+
+
+# Lockfiles that can witness the version a package.json range resolves to.
+_RANGE_WITNESS_LOCKS = (("package-lock.json", "json"), ("npm-shrinkwrap.json", "json"), ("yarn.lock", "yarn"))
+
+
+def _head_locked_versions(path: str) -> dict[str, frozenset[str]]:
+    """Versions the npm or Yarn locks beside a package.json or lockfile path in HEAD resolve each spec to.
+
+    A lockfile is beside itself, so the root specs a lock records are
+    witnessed by that lock in HEAD. Only the top-level `node_modules/<name>`
+    copy or the Yarn stanza for the exact spec witnesses a range, so a nested,
+    workspace or other-range copy never confirms a bump.
+    """
+    if Path(path).name not in {"package.json", *_diff.TRANSITIVE_LOCK_NAMES}:
+        return {}
+    found: dict[str, frozenset[str]] = {}
+    for lock_name, kind in _RANGE_WITNESS_LOCKS:
+        lock_path = str(Path(path).with_name(lock_name))
+        for name, versions in _diff._locked_versions(kind, _git_text("HEAD", lock_path)).items():
+            found[name] = found.get(name, frozenset()) | versions
+    return found
+
+
+def manifest_gaps(updates: list[dict], token: str = "") -> list[dict]:
+    """Direct manifest bumps missing from the parsed list.
+
+    A base that is unnamed or unreadable is itself unresolved: the workflow
+    only runs this for a pull request, so a missing base never means "no
+    changes". An entry is explained only when its package moved to the
+    listed version. Anything else in the file stays unresolved under the
+    path. A listed package with that path as its name does not hide the
+    path. A dependency with more than one unexplained entry is named as well.
+
+    An opaque lockfile, a deleted path, and any changed path this grammar does
+    not parse are unresolved under their path; a changed path that is a
+    manifest we have no parser for (see _diff._unparsed_manifest: a workflow,
+    composite action, Dockerfile, Cargo, Swift, Terraform or NuGet file) is
+    reported as `unparsed_manifest`. A shared `^` or `~`
+    package.json bump is explained only when a lockfile beside it in HEAD
+    resolves the new spec to the listed version: the top-level npm copy, or
+    the Yarn stanza for that exact descriptor. Unlisted names in a npm
+    or Yarn lock are transitive residue when every listed name in that lock
+    moved to its listed version and each unlisted entry was bumped, added or
+    removed as a registry tarball.
+    """
+    base = _base_commit(token)
+    if not base:
+        return [uncovered({"packageName": "manifest-diff"}, "unresolved")]
+    listed = {str(item.get("packageName") or "").strip() for item in updates}
+    changed = _changed_paths(base)
+    if changed is None:
         return [uncovered({"packageName": "manifest-diff"}, "unresolved")]
     gaps: list[dict] = []
     seen = set(listed)
-    for path in diff.stdout.splitlines():
+    for old_path, path, status in changed:
         kind = _diff._manifest_kind(path)
-        if not kind or kind == "opaque":
+        if status in {"D", "T"}:
+            for label in dict.fromkeys((old_path, path)):
+                gaps.append(uncovered({"packageName": label}, "unresolved"))
             continue
-        before = _git_text(base, path)
+        if not kind or kind == "opaque":
+            reason = "unparsed_manifest" if _diff._unparsed_manifest(path) else "unresolved"
+            for label in dict.fromkeys((old_path, path)):
+                gaps.append(uncovered({"packageName": label}, reason))
+            continue
+        before = _git_text(base, old_path)
         after = _git_text("HEAD", path)
         names = _diff._changed_names(kind, before, after)
-        explained = names is not None and _diff._entries_explain(kind, before, after, updates)
+        locked = _head_locked_versions(path)
+        explained = names is not None and _diff._entries_explain(kind, before, after, updates, locked)
         file_unresolved = names is None or (before != after and not explained)
         if (
-            Path(path).name in _TRANSITIVE_LOCKS
+            Path(path).name in _diff.TRANSITIVE_LOCK_NAMES
             and names
-            and _diff._lock_covers_listed(kind, before, after, updates, names)
+            and _diff._lock_covers_listed(kind, before, after, updates, names, locked)
         ):
             continue
         if file_unresolved and (names is None or _diff._names_listed(kind, names, listed)):
@@ -426,7 +516,7 @@ def manifest_gaps(updates: list[dict]) -> list[dict]:
                 gaps.append(uncovered({"packageName": label}, "unresolved"))
                 seen.add(label)
         if names is not None and file_unresolved:
-            for label in sorted(_diff._multi_entry_names(kind, before, after, updates)):
+            for label in sorted(_diff._multi_entry_names(kind, before, after, updates, locked)):
                 if _diff._names_listed(kind, {label}, seen):
                     continue
                 gaps.append(uncovered({"packageName": label}, "unresolved"))
@@ -448,9 +538,25 @@ def _has_upstream_link(updates: list[dict]) -> bool:
     return any(_REPO_RE.fullmatch(str(item.get("upstreamRepo") or "")) for item in updates)
 
 
+def publish_text(path: Path, text: str) -> None:
+    """Replace the entry at path with a new file, so a link there is replaced, not followed."""
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(text)
+    os.replace(tmp, path)
+
+
+def remove_entry(path: Path) -> None:
+    """Remove the entry at path; a link is unlinked, never followed."""
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    else:
+        path.unlink(missing_ok=True)
+
+
 def _write_report(report: dict, summary: str) -> None:
-    Path("malware_scan_report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    Path("malware_scan_summary.md").write_text(summary, encoding="utf-8")
+    publish_text(Path("malware_scan_report.json"), json.dumps(report, indent=2) + "\n")
+    publish_text(Path("malware_scan_summary.md"), summary)
 
 
 def _clone(repo: str, dest: Path) -> bool:
@@ -468,7 +574,7 @@ def _clone(repo: str, dest: Path) -> bool:
 def _scan_one(update: dict, dest: Path, scan_script: Path) -> dict:
     if not scannable(update):
         return uncovered(update, "unresolved")
-    dest = dest.resolve()
+    dest = dest.absolute()
     checkout = dest / ".upstream-dependency"
     if not _clone(str(update["upstreamRepo"]), checkout):
         return uncovered(update, "unresolved")
@@ -551,9 +657,8 @@ def _emit(report: dict, summary: str) -> None:
 
 def _keep_checkout(records: list[dict], scans: list[tuple[dict, Path]]) -> None:
     target = agent_target(records)
-    kept = Path.cwd() / ".upstream-dependency"
-    if kept.exists():
-        shutil.rmtree(kept)
+    kept = Path(".upstream-dependency")
+    remove_entry(kept)
     if target is None:
         return
     for record, dest in scans:
@@ -566,6 +671,7 @@ def _keep_checkout(records: list[dict], scans: list[tuple[dict, Path]]) -> None:
 
 
 def main() -> None:
+    fetch_token = os.environ.pop(FETCH_AUTH_VARIABLE, "")
     scan_script = Path(__file__).resolve().parent / "upstream_malware_scan.sh"
     updates = _load_updates(Path("dependency_updates.json"))
     if updates and not _has_upstream_link(updates):
@@ -574,10 +680,9 @@ def main() -> None:
         _write_report(report, summary)
         _emit(report, summary)
         return
-    gaps = manifest_gaps(updates)
-    work = Path(".dcr-dependency-scans").resolve()
-    if work.exists():
-        shutil.rmtree(work)
+    gaps = manifest_gaps(updates, fetch_token)
+    work = Path(".dcr-dependency-scans")
+    remove_entry(work)
     work.mkdir()
     records: list[dict] = list(gaps)
     scans: list[tuple[dict, Path]] = []

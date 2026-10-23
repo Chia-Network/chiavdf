@@ -12,42 +12,61 @@ function escapeRegex(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function extractDetailsSection(text, summaryLabel) {
-  const summaryRe = new RegExp(`<details[^>]*>\\s*<summary>\\s*${escapeRegex(summaryLabel)}[^<]*</summary>`, 'i');
-  const summaryMatch = summaryRe.exec(text);
-  if (!summaryMatch) return '';
-
-  const start = summaryMatch.index;
+// [start, end) of each top-level <details> block. An unclosed block runs to the end.
+function detailsSpans(text) {
   const tagRe = /<details\b[^>]*>|<\/details>/gi;
-  tagRe.lastIndex = start;
+  const spans = [];
   let depth = 0;
-  let end = -1;
+  let start = 0;
   let tag;
-
   while ((tag = tagRe.exec(text)) !== null) {
-    if (tag[0].toLowerCase().startsWith('<details')) {
-      depth += 1;
-    } else {
-      depth -= 1;
-    }
-    if (depth === 0) {
-      end = tagRe.lastIndex;
-      break;
-    }
+    const opens = tag[0].toLowerCase().startsWith('<details');
+    if (!opens && depth === 0) continue; // a close with no open block hides nothing
+    if (opens && depth === 0) start = tag.index;
+    depth += opens ? 1 : -1;
+    if (!opens && depth === 0) spans.push([start, tagRe.lastIndex, true]);
   }
-
-  if (end === -1) return '';
-  const block = text.slice(start, end);
-  return block
-    .replace(summaryRe, '')
-    .replace(/<\/details>\s*$/i, '')
-    .trim();
+  if (depth > 0) spans.push([start, text.length, false]);
+  return spans;
 }
 
-function stripLeadingV(version) {
+function extractDetailsSection(text, summaryLabel) {
+  const summaryRe = new RegExp(`^<details[^>]*>\\s*<summary>\\s*${escapeRegex(summaryLabel)}[^<]*</summary>`, 'i');
+  for (const [start, end, closed] of detailsSpans(text)) {
+    const block = text.slice(start, end);
+    if (closed && summaryRe.test(block)) {
+      return block
+        .replace(summaryRe, '')
+        .replace(/<\/details>\s*$/i, '')
+        .trim();
+    }
+  }
+  return '';
+}
+
+// The body outside every top-level <details> block. Release notes and commit
+// lists live there and must not add packages or versions; text after a block still counts.
+function withoutDetails(text) {
+  let kept = '';
+  let from = 0;
+  for (const [start, end] of detailsSpans(text)) {
+    kept += text.slice(from, start);
+    from = end;
+  }
+  return kept + text.slice(from);
+}
+
+// Only an exact pin (`==` or `===`) loses its operator. Range operators stay so a
+// range is never taken for a scannable version; a leading v or V stays because tags are looked up as written.
+function normalizeVersion(version) {
   return String(version || '')
     .trim()
-    .replace(/^v/i, '');
+    .replace(/^(?:===|==)\s*/, '');
+}
+
+function sameValue(key, left, right) {
+  if (key === 'upstreamRepo') return left === right;
+  return left.replace(/^v/i, '') === right.replace(/^v/i, '');
 }
 
 function githubRepoFromText(text) {
@@ -58,13 +77,14 @@ function githubRepoFromText(text) {
   return moduleName ? moduleName[1] : '';
 }
 
+// A table Package cell: `name`, `[name](url)`, or Renovate's `[name](url) ([source](repo))`.
 function packageCell(cell) {
-  const trimmed = cell.trim();
-  const link = trimmed.match(/^\[([^\]]*)\]\(([^)]*)\)$/);
-  if (!link) return { name: trimmed, repo: githubRepoFromText(trimmed) };
+  const links = [...cell.matchAll(/\[([^\]]*)\]\(([^)]*)\)/g)];
+  if (links.length === 0) return { name: cell.trim(), repo: githubRepoFromText(cell.trim()) };
+  const source = links.find((link) => link[1].trim().toLowerCase() === 'source');
   return {
-    name: link[1].trim(),
-    repo: githubRepoFromText(link[2]) || githubRepoFromText(link[1]),
+    name: links[0][1].trim(),
+    repo: githubRepoFromText(source?.[2]) || githubRepoFromText(links[0][2]) || githubRepoFromText(links[0][1]),
   };
 }
 
@@ -72,7 +92,7 @@ function agree(record, key, incoming) {
   if (record.disputed[key]) return '';
   if (!incoming) return record[key];
   if (!record[key]) return incoming;
-  if (record[key] === incoming) return record[key];
+  if (sameValue(key, record[key], incoming)) return record[key];
   record.disputed[key] = true;
   return '';
 }
@@ -80,8 +100,8 @@ function agree(record, key, incoming) {
 function rememberUpdate(byName, name, fromVersion, toVersion, repo) {
   const packageName = String(name || '').trim();
   if (!packageName || packageName.toLowerCase() === 'package') return;
-  const from = stripLeadingV(fromVersion);
-  const to = stripLeadingV(toVersion);
+  const from = normalizeVersion(fromVersion);
+  const to = normalizeVersion(toVersion);
   const repoName = String(repo || '')
     .trim()
     .replace(/\.git$/i, '');
@@ -101,42 +121,59 @@ function rememberUpdate(byName, name, fromVersion, toVersion, repo) {
   existing.upstreamRepo = agree(existing, 'upstreamRepo', repoName);
 }
 
-function groupPreamble(body) {
-  if (/^(?:Updates |<details|\|)/i.test(body)) return '';
-  const marks = ['\nUpdates ', '\n|', '\n<details', '\n### '];
-  let cut = body.length;
-  for (const mark of marks) {
-    const index = body.indexOf(mark);
-    if (index >= 0 && index < cut) cut = index;
-  }
-  return body.slice(0, cut);
+// The opening paragraph that names the packages. It ends at the first blank
+// line, bullet list (Release notes, Changelog, Commits), table, or heading.
+function groupPreamble(visible) {
+  if (visible.trimStart().startsWith('|')) return '';
+  return visible.trimStart().split(/\n\s*\n|\n\s*[-*] |\n\||\n### |\nUpdates `/)[0];
 }
 
-// The Dependabot update table only. Release-note tables sit later, often inside
-// <details>, and a row there must not invent a package or clear a real version.
-function dependabotUpdateTable(body) {
-  const source = String(body || '');
-  const detailsAt = source.search(/<details\b/i);
-  const region = detailsAt === -1 ? source : source.slice(0, detailsAt);
-  const header = /^\|\s*Package\s*\|\s*From\s*\|\s*To\s*\|/im.exec(region);
-  if (!header) return '';
-  const kept = [];
-  for (const line of region.slice(header.index).split('\n')) {
-    if (!line.trim()) {
-      if (kept.length > 0) break;
-      continue;
-    }
+function tableCells(line) {
+  return line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((cell) => cell.trim());
+}
+
+const BACKTICKS_RE = /^`([^`]+)`$/;
+const CHANGE_RE = /`([^`]+)`\s*(?:->|→)\s*`([^`]+)`/;
+
+// Rows of the update table: Dependabot's `Package | From | To` or Renovate's
+// `Package | ... | Change`. Release-note tables live inside <details>, which is already gone.
+function updateTableRows(visible) {
+  const lines = visible.split('\n');
+  const start = lines.findIndex((line) => /^\|\s*Package\s*\|/i.test(line.trim()));
+  if (start === -1) return [];
+  const columns = tableCells(lines[start]).map((cell) => cell.toLowerCase());
+  const rows = [];
+  for (const line of lines.slice(start + 2)) {
     if (!line.trim().startsWith('|')) break;
-    kept.push(line);
+    const cell = Object.fromEntries(tableCells(line).map((value, index) => [columns[index], value]));
+    const change = CHANGE_RE.exec(cell.change || '');
+    const from = change ? change[1] : (BACKTICKS_RE.exec(cell.from || '') || [])[1];
+    const to = change ? change[2] : (BACKTICKS_RE.exec(cell.to || '') || [])[1];
+    if (from && to) rows.push({ ...packageCell(cell.package || ''), from, to });
   }
-  return kept.join('\n');
+  return rows;
+}
+
+// The repository of the `Bumps [x](github)` link. Any other GitHub URL may name an unrelated project.
+function upstreamRepoFromBody(text) {
+  const dependencyRepoMatch = text.match(
+    /^\s*(?:Bumps|Update(?:s|d)?)\s+(?:the\s+requirements\s+on\s+)?\[[^\]]+\]\(\s*https?:\/\/(?:redirect\.)?github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)(?:[\/#?][^)\s]*)?\s*\)/im,
+  );
+  return dependencyRepoMatch ? dependencyRepoMatch[1].replace(/\.git$/i, '') : '';
 }
 
 // One map. Intro links, table rows, Updates lines, and the title all write it.
 // A second non-empty repository or version that differs clears that field.
+// Only the body outside <details> is read.
 function collectPackageUpdates(title, body) {
   const byName = new Map();
-  const preamble = groupPreamble(body);
+  const visible = withoutDetails(body);
+  const preamble = groupPreamble(visible);
   const linkRe = /\[([^\]]+)\]\(\s*(https?:\/\/[^)\s]+)[^)]*\)/gi;
   let link;
   while ((link = linkRe.exec(preamble)) !== null) {
@@ -153,16 +190,13 @@ function collectPackageUpdates(title, body) {
       githubRepoFromText(bumps[2]),
     );
   }
-  const tableRe = /^\|\s*([^|\n]+?)\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|/gm;
-  const table = dependabotUpdateTable(body);
-  let row;
-  while ((row = tableRe.exec(table)) !== null) {
-    const cell = packageCell(row[1]);
-    rememberUpdate(byName, cell.name, row[2], row[3], cell.repo);
+  const tableRows = updateTableRows(visible);
+  for (const row of tableRows) {
+    rememberUpdate(byName, row.name, row.from, row.to, row.repo);
   }
   const lineRe = /^Updates\s+`([^`]+)`\s+from\s+(\S+)\s+to\s+(\S+)/gm;
   let line;
-  while ((line = lineRe.exec(body)) !== null) {
+  while ((line = lineRe.exec(visible)) !== null) {
     rememberUpdate(
       byName,
       line[1].trim(),
@@ -172,15 +206,18 @@ function collectPackageUpdates(title, body) {
     );
   }
 
+  // A table names every package; the title would add a second, differently spelled one.
   const titleMatch =
-    title.match(/[Uu]pdate\s+(.+?)\s+requirement\s+from\s+([^\s]+)\s+to\s+([^\s]+)/) ||
-    title.match(/[Bb]ump\s+(.+?)\s+from\s+([^\s]+)\s+to\s+([^\s]+)/) ||
-    title.match(/[Uu]pdate\s+(.+?)\s+from\s+([^\s]+)\s+to\s+([^\s]+)/);
+    tableRows.length === 0 &&
+    (title.match(/[Uu]pdate\s+(.+?)\s+requirement\s+from\s+([^\s]+)\s+to\s+([^\s]+)/) ||
+      title.match(/[Bb]ump\s+(.+?)\s+from\s+([^\s]+)\s+to\s+([^\s]+)/) ||
+      title.match(/[Uu]pdate\s+(.+?)\s+from\s+([^\s]+)\s+to\s+([^\s]+)/));
   const renovateTitleMatch =
+    tableRows.length === 0 &&
     !titleMatch &&
-    (title.match(/(?:update|pin)\s+dependency\s+(.+?)\s+to\s+v?([^\s]+)/i) ||
-      title.match(/(?:update|pin)\s+(.+?)\s+(?:action|digest|docker\s+tag)\s+to\s+v?([^\s]+)/i) ||
-      title.match(/(?:update|pin)\s+(.+?)\s+to\s+v?([^\s]+)/i));
+    (title.match(/(?:update|pin)\s+dependency\s+(.+?)\s+to\s+([^\s]+)/i) ||
+      title.match(/(?:update|pin)\s+(.+?)\s+(?:action|digest|docker\s+tag)\s+to\s+([^\s]+)/i) ||
+      title.match(/(?:update|pin)\s+(.+?)\s+to\s+([^\s]+)/i));
   if (titleMatch) {
     rememberUpdate(byName, titleMatch[1], titleMatch[2], titleMatch[3], '');
   } else if (renovateTitleMatch) {
@@ -190,7 +227,7 @@ function collectPackageUpdates(title, body) {
   if (byName.size === 1) {
     const only = [...byName.values()][0];
     if (!only.fromVersion || !only.toVersion) {
-      const arrow = body.match(/`([^`\s]+)`\s*(?:->|→)\s*`([^`\s]+)`/);
+      const arrow = visible.match(/`([^`\s]+)`\s*(?:->|→)\s*`([^`\s]+)`/);
       if (arrow) {
         rememberUpdate(
           byName,
@@ -206,13 +243,7 @@ function collectPackageUpdates(title, body) {
 }
 
 function parseDependencyUpdate(title, body) {
-  const dependencyRepoMatch = body.match(
-    /^\s*(?:Bumps|Update(?:s|d)?)\s+\[[^\]]+\]\(\s*https?:\/\/(?:redirect\.)?github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)(?:[\/#?][^)\s]*)?\s*\)/im,
-  );
-  const repoMatch =
-    dependencyRepoMatch ||
-    body.match(/https?:\/\/(?:redirect\.)?github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)(?=\/|$|[)\]>\s"'?#])/i);
-  const upstreamRepo = repoMatch ? repoMatch[1].replace(/\.git$/i, '') : '';
+  const upstreamRepo = upstreamRepoFromBody(body);
 
   let releaseNotes = extractDetailsSection(body, 'Release notes');
   if (!releaseNotes && upstreamRepo) {
@@ -311,12 +342,24 @@ function isActionsBotMarkerComment(comment) {
   return /^<!-- cursor-dependabot-review patch-id:[0-9a-f]{40}(?: resolved:[0-9a-f]{40})? -->$/.test(line);
 }
 
+// Replace the entry at name with a new file, so a link there is replaced, not followed.
+function publishText(name, text) {
+  const dir = fs.mkdtempSync('.dcr-publish-');
+  const tmp = `${dir}/out`;
+  try {
+    fs.writeFileSync(tmp, text, { flag: 'wx' });
+    fs.renameSync(tmp, name);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 async function runDependabotContext({ core }) {
   const body = process.env.PR_BODY || '';
   const title = process.env.PR_TITLE || '';
   const prNumber = Number(process.env.PR_NUMBER || '0');
   const parsed = parseDependencyUpdate(title, body);
-  fs.writeFileSync('dependency_updates.json', JSON.stringify(parsed.updates, null, 2));
+  publishText('dependency_updates.json', JSON.stringify(parsed.updates, null, 2));
 
   if (!parsed.updates.some((item) => item.upstreamRepo)) {
     core.warning('PR body is missing an upstream GitHub repository link; the scan will record no_upstream_link.');
@@ -334,9 +377,9 @@ async function runDependabotContext({ core }) {
     releaseNotes: normalizedReleaseNotes,
     commits: normalizedCommits,
   };
-  fs.writeFileSync('dependabot_comment_context.json', JSON.stringify(out, null, 2));
-  fs.writeFileSync('dependabot_release_notes.md', normalizedReleaseNotes);
-  fs.writeFileSync('dependabot_commits.md', normalizedCommits);
+  publishText('dependabot_comment_context.json', JSON.stringify(out, null, 2));
+  publishText('dependabot_release_notes.md', normalizedReleaseNotes);
+  publishText('dependabot_commits.md', normalizedCommits);
   core.setOutput('upstream_repo', parsed.upstreamRepo);
   core.setOutput('package_name', parsed.packageName);
   core.setOutput('from_version', parsed.fromVersion);

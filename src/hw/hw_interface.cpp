@@ -136,6 +136,18 @@ void hw_vdf_control(ChiaDriver *drv, uint8_t idx_mask, uint32_t value)
     }
 }
 
+bool hw_vdf_control_checked(ChiaDriver *drv, uint8_t mask, uint32_t value)
+{
+    bool success = true;
+    for (int i = 0; i < N_HW_VDFS; ++i) {
+        if ((mask & (1 << i)) &&
+                drv->RegWrite(CHIA_VDF_CONTROL_REG_OFFSET + CHIA_VDF_JOB_CSR_MULT * i, value)) {
+            success = false;
+        }
+    }
+    return success;
+}
+
 void adjust_hw_freq(ChiaDriver *drv, uint8_t idx_mask, int direction)
 {
     double freq;

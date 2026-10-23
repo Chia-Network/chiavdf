@@ -44,26 +44,64 @@ The boards are passively air cooled. The client writes 100 °C external and engi
 
 ## Install a published build
 
-### Linux (amd64 package)
+The easiest install path on each platform is the package manager: Homebrew on
+macOS, winget on Windows, and apt on Debian and Ubuntu. Release archives are
+also attached to each GitHub release.
 
-The apt repository `https://repo.chia.net/chiavdf-hw/debian/` is the published `amd64` index (`Architectures: amd64` in the `stable` Release file). Its package name is still `chiavdf-hw`. A `.deb` built by this tree is `chiavdf_<version>-1_<arch>.deb` with `Package: chiavdf`. The package built by this tree installs:
+### Linux (apt)
 
-- `/usr/bin/vdf_client`, `vdf_bench`, `hw_vdf_client`, `hw_test`, `emu_hw_vdf_client`, `emu_hw_test`
-- `/usr/lib/libft4222.so` (SONAME `libft4222.so`)
-- `/etc/udev/rules.d/99-chiavdf.rules`
+Add the Chia apt repository and install the package:
 
 ```bash
 sudo apt-get update
 sudo apt-get install ca-certificates curl gnupg
 curl -sL https://repo.chia.net/FD39E6D3.pubkey.asc | sudo gpg --dearmor -o /usr/share/keyrings/chia.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/chia.gpg] https://repo.chia.net/chiavdf-hw/debian/ stable main" | sudo tee /etc/apt/sources.list.d/chiavdf-hw.list
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/chia.gpg] https://repo.chia.net/chiavdf/debian/ stable main" | sudo tee /etc/apt/sources.list.d/chiavdf.list
 sudo apt-get update
-sudo apt-get install chiavdf-hw
+sudo apt-get install chiavdf
 ```
 
-The package depends on `libgmp-dev` and `libboost-system-dev`. The apt index is amd64-only; final GitHub releases also attach `chiavdf_<version>-1_arm64.deb`. Other architectures build from source.
+The package installs:
 
-The package workflow (`.github/workflows/build-packages.yml` calling `build-client.yml`) runs `dpkg-deb` on that tree. The apt package name in the published index is `chiavdf-hw`; release assets produced here use `chiavdf`.
+- `/usr/bin/vdf_client`, `vdf_bench`, `hw_vdf_client`, `hw_test`, `emu_hw_vdf_client`, `emu_hw_test`
+- `/usr/lib/libft4222.so` (SONAME `libft4222.so`)
+- `/etc/udev/rules.d/99-chiavdf.rules`
+
+The package depends on `libgmp-dev` and `libboost-system-dev`. The apt index
+publishes `amd64` and `arm64`; other architectures build from source. A
+`.deb` built by this tree is `chiavdf_<version>-1_<arch>.deb` with
+`Package: chiavdf`. The `chiavdf-hw` package in the
+`https://repo.chia.net/chiavdf-hw/debian/` repository is an amd64-only ASIC
+index that installs the same binaries.
+
+The package workflow (`.github/workflows/build-packages.yml` calling
+`build-client.yml`) runs `dpkg-deb` on that tree.
+
+### macOS (Homebrew)
+
+Install through the [Chia Homebrew tap](https://github.com/Chia-Network/homebrew-chia):
+
+```bash
+brew install chia-network/chia/chiavdf
+```
+
+This installs `hw_vdf_client`, `hw_test`, and the emulators alongside
+`vdf_client` and `vdf_bench`. The bundled FTDI libraries are installed under
+`libexec/chiavdf`. Install the FTDI D2XX driver from
+https://ftdichip.com/products/ft4222h/ before connecting a board.
+
+### Windows (winget)
+
+```powershell
+winget install --id Chia.chiavdf --exact
+```
+
+winget installs `vdf_client.exe` and puts `vdf_client` on `PATH`. For
+`hw_vdf_client.exe`, `hw_test.exe`, and the emulators, download
+`chiavdf-<version>-windows-amd64.zip` from a
+[release](https://github.com/Chia-Network/chiavdf/releases) and run the
+binaries from the extracted `bin\` directory. Install the FTDI D2XX driver
+before using the ASIC tools.
 
 ### macOS release archive and package
 

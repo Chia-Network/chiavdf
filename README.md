@@ -24,6 +24,60 @@ Windows (x64), and produces:
 CI builds the CPU and ASIC binaries on all of those platforms. The ASIC
 emulator tests run without a board.
 
+## Install a published build
+
+Release binaries are available through Homebrew, winget, and apt. These
+channels install the same binaries as the GitHub release archives.
+
+### macOS
+
+Install through the [Chia Homebrew tap](https://github.com/Chia-Network/homebrew-chia):
+
+```bash
+brew install chia-network/chia/chiavdf
+```
+
+This installs `vdf_client`, `vdf_bench`, `hw_vdf_client`, `hw_test`, and the
+emulators. The bundled FTDI libraries are installed under `libexec/chiavdf`.
+Install the FTDI D2XX driver before using the ASIC tools with a board; see
+[README_ASIC.md](README_ASIC.md).
+
+### Windows
+
+Install through winget:
+
+```powershell
+winget install --id Chia.chiavdf --exact
+```
+
+winget installs `vdf_client.exe` and puts `vdf_client` on `PATH`. For
+`vdf_bench`, `hw_vdf_client`, `hw_test`, and the emulators, download
+`chiavdf-<version>-windows-amd64.zip` from a
+[release](https://github.com/Chia-Network/chiavdf/releases) and run the
+binaries from the extracted `bin\` directory. The FTDI D2XX driver is
+required for the ASIC tools; see
+[README_ASIC.md](README_ASIC.md).
+
+### Linux
+
+Add the Chia apt repository and install `chiavdf`:
+
+```bash
+sudo apt-get update
+sudo apt-get install ca-certificates curl gnupg
+curl -sL https://repo.chia.net/FD39E6D3.pubkey.asc | sudo gpg --dearmor -o /usr/share/keyrings/chia.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/chia.gpg] https://repo.chia.net/chiavdf/debian/ stable main" | sudo tee /etc/apt/sources.list.d/chiavdf.list
+sudo apt-get update
+sudo apt-get install chiavdf
+```
+
+The package installs `vdf_client`, `vdf_bench`, `hw_vdf_client`, `hw_test`,
+and the emulators under `/usr/bin`, plus `libft4222.so` and the udev rule for
+the ASIC board.
+
+The Python bindings are installed separately with `pip install chiavdf`; see
+[Building the Python wheel](#building-the-python-wheel).
+
 ## Run a timelord
 
 A timelord needs a synced Chia full node and one or more VDF clients connected

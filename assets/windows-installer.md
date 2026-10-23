@@ -1,0 +1,168 @@
+# Windows installer
+
+winget does not install kernel INF drivers itself; it runs a vendor installer.
+The Windows release therefore ships an installer that stages the FTDI driver,
+plus a portable zip for users who cannot elevate.
+
+The Windows release ships two installation paths:
+
+- `chiavdf-<version>-windows-amd64-setup.exe` (stable alias
+  `chiavdf-win64-setup.exe`) is the machine-scope installer used by the winget
+  package `Chia.chiavdf`.
+- `chiavdf-<version>-windows-amd64.zip` (stable alias `chiavdf-win64.zip`) is the
+  portable fallback for users who cannot elevate or prefer no system changes.
+
+## Why Inno Setup 6
+
+We use Inno Setup 6, not WiX Burn/MSI. The deciding requirements are:
+
+1. **One signed artifact.** Inno produces a single setup EXE that can be signed
+   with the existing Azure Artifact Signing action. A WiX Burn bundle would add an
+   MSI plus a bundle EXE, both of which need signing and verification.
+2. **Small, direct driver hook.** The driver installation is two `pnputil`
+   commands. Inno's Pascal `[Code]` section runs them, inspects the exit code,
+   and turns `3010` into a pending-reboot result without a custom MSI action or a
+   bootstrapper application.
+3. **Machine `PATH` is straightforward.** The installer writes the machine
+   `Environment\Path` value, broadcasts the environment change through Inno's
+   `ChangesEnvironment=yes`, and removes its entry on uninstall.
+4. **winget support.** winget accepts `InstallerType: inno` and its silent
+   switches. The manifest can use the stable `chiavdf-win64-setup.exe` URL and
+   list `3010` in `InstallerSuccessCodes`.
+5. **Lower CI cost.** The sign job installs Inno Setup with Chocolatey and runs
+   `ISCC.exe`. WiX would require the WiX SDK, MSI authoring, Burn authoring, and
+   custom-action plumbing for the same result.
+
+WiX remains the better choice if this project later needs a first-class MSI for
+enterprise deployment. That can be added as a second package without changing
+the winget `inno` installer.
+
+## What it installs
+
+The installer requires x64 Windows 10 version 2004 (build 19041) or newer,
+because it uses `pnputil /scan-devices` and installs an x64 kernel driver. It
+does not support ARM64 Windows. The default directory is
+`%ProgramFiles%\Chia\chiavdf`:
+
+```text
+bin\vdf_client.exe
+bin\vdf_bench.exe
+bin\hw_vdf_client.exe
+bin\hw_test.exe
+bin\emu_hw_vdf_client.exe
+bin\emu_hw_test.exe
+bin\LibFT4222-64.dll
+bin\FTD2XX.dll
+bin\mpir.dll
+bin\<MPIR CPU variants>
+bin\<VC++ 2015-2022 runtime DLLs>
+driver\ftdibus.inf
+driver\ftdibus.cat
+driver\ftdiport.inf
+driver\ftdiport.cat
+driver\amd64\...
+driver\i386\...
+driver\SOURCE.txt
+LICENSE.txt
+```
+
+The setup exe embeds the **already signed** `bin\` tree. It does not download
+anything at install time. The driver files are the unmodified FTDI CDM
+2.12.36.20 package that `scripts/get-libft4222.ps1` stages under
+`src/hw/libft4222/driver`; the catalog signatures are validated before the
+installer is compiled. The INF files are copied byte-for-byte, including
+FTDI's license text, which keeps the package within FTDI's redistribution
+terms. `driver\SOURCE.txt` records the source URL and SHA-256.
+
+## Driver installation
+
+After copying files, the installer runs:
+
+```text
+pnputil.exe /add-driver "%ProgramFiles%\Chia\chiavdf\driver\ftdibus.inf" /install
+pnputil.exe /add-driver "%ProgramFiles%\Chia\chiavdf\driver\ftdiport.inf" /install
+pnputil.exe /scan-devices
+```
+
+`ftdibus.inf` declares `USB\VID_0403&PID_601C` and the FT4222H interfaces.
+`ftdiport.inf` is the VCP child driver from the same CDM package. Installing
+both matches the FTDI CDM package and keeps the ASIC D2XX path and any VCP use
+consistent.
+
+Exit codes `0`, `259`, `3010`, and `1641` are treated as success. `259` means the
+package was staged but no device matched, or a newer driver is already active;
+that is normal for a software-only timelord host. `3010`/`1641` set the
+installer's pending-reboot state, and `GetCustomSetupExitCode` returns `3010`;
+the winget manifest must list it in `InstallerSuccessCodes`. Any other nonzero
+code fails setup with a diagnostic in the setup log.
+
+The driver is **not removed on uninstall**. It is shared with other FTDI devices
+and may be in use by a device that is not part of this package. Removing it would
+be a surprising, system-wide change.
+
+## `PATH` and uninstall
+
+The installer appends `%ProgramFiles%\Chia\chiavdf\bin` to the machine
+`PATH` only if an equivalent entry is not already present. `ChangesEnvironment`
+broadcasts the update so new shells see it without a logout; already-open
+terminals must be restarted. The uninstaller removes exactly that entry and
+leaves other `PATH` components alone.
+
+## Signing and verification
+
+The release flow is:
+
+1. Build and test Windows; upload `windows-amd64-binaries`, including the staged
+   driver directory.
+2. Sign the six executables and MPIR DLLs.
+3. Package and verify the portable zip.
+4. Build the setup exe from the signed bundle and driver files.
+5. Sign the setup exe in a second signing call.
+6. Finalize the hash and stable alias from the signed EXE, then verify its
+   checksum, Authenticode chain, timestamp, and expected signer.
+7. Run a silent install with `/DRIVER=0`, check all six `--version` probes, and
+   uninstall.
+
+`TestInstaller` intentionally skips driver installation so CI does not modify
+the runner's driver store. Driver installation is exercised on a disposable
+Windows VM or a real ASIC host before release.
+
+## winget manifest
+
+The manifest is maintained outside this repository. The package should use:
+
+```yaml
+InstallerType: inno
+Scope: machine
+Architecture: x64
+MinimumOSVersion: 10.0.19041.0
+InstallerUrl: https://github.com/Chia-Network/chiavdf/releases/download/<tag>/chiavdf-win64-setup.exe
+InstallerSha256: <sha256 of the stable alias>
+InstallerSuccessCodes:
+  - 3010
+InstallerSwitches:
+  Silent: /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /RESTARTEXITCODE=3010
+  SilentWithProgress: /SILENT /SUPPRESSMSGBOXES /NORESTART /RESTARTEXITCODE=3010
+UpgradeBehavior: install
+InstallModes:
+  - interactive
+  - silent
+  - silentWithProgress
+```
+
+The explicit `/RESTARTEXITCODE=3010` makes a pending driver reboot visible to
+winget even if Inno's own restart handling differs between versions.
+
+Use the stable `chiavdf-win64-setup.exe` URL for upgrades. It is produced only
+when `IS_RELEASE=true`; manual dispatch and pre-release builds have the versioned
+setup exe only. Keep the versioned
+`chiavdf-<version>-windows-amd64-setup.exe` and its `.sha256` alongside it for
+auditing and direct downloads. The portable zip remains published for users who
+cannot elevate.
+
+The release action's Glue payload now exposes both
+`windows_amd64: "chiavdf-win64.zip"` and
+`windows_amd64_installer: "chiavdf-win64-setup.exe"`. The external Glue template
+and winget manifest must consume the installer field (or use the stable URL
+directly) to make `winget install Chia.chiavdf` install the driver. Keeping the
+zip field preserves existing consumers that still expect the portable asset.

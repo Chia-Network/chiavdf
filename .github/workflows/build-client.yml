@@ -545,7 +545,8 @@ jobs:
             src/hw/libft4222/*.dylib
 
       # sign-windows downloads this into the workspace root and expects the
-      # build/, src/hw/libft4222/, and mpir_gc_x64/ paths to be preserved.
+      # build/, src/hw/libft4222/ (including the staged FTDI driver), and
+      # mpir_gc_x64/ paths to be preserved.
       - name: Upload binaries artifact (Windows)
         if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
         uses: actions/upload-artifact@v7
@@ -563,6 +564,7 @@ jobs:
             build/hw_vdf_client.exe
             src/hw/libft4222/*.dll
             src/hw/libft4222/*.lib
+            src/hw/libft4222/driver/**
             mpir_gc_x64/*.dll
 
       - name: Assemble Ubuntu .deb (same runner as build)
@@ -595,6 +597,89 @@ jobs:
         with:
           name: installer-${{ matrix.os }}
           path: dist/*.deb
+
+  # Compile and smoke-test the installer on pull requests without signing it.
+  # This catches Inno Setup script, packaging, PATH, and uninstall regressions
+  # before they reach main; sign-windows covers the signed release path.
+  test-windows-installer:
+    name: Test Windows installer (PR)
+    needs: [build]
+    if: contains(inputs.configs, 'optimized=1') && github.event_name == 'pull_request'
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      INSTALLER_VERSION: ${{ format('0.0.1-{0}', github.run_id) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Download Windows binaries
+        uses: actions/download-artifact@v8
+        with:
+          name: windows-amd64-binaries
+          path: .
+
+      - name: Verify downloaded Windows build inputs
+        shell: pwsh
+        run: |
+          $required = @(
+            'build/vdf_client.exe',
+            'build/vdf_bench.exe',
+            'build/emu_hw_test.exe',
+            'build/hw_test.exe',
+            'build/emu_hw_vdf_client.exe',
+            'build/hw_vdf_client.exe',
+            'mpir_gc_x64/mpir.dll',
+            'src/hw/libft4222',
+            'src/hw/libft4222/driver/ftdibus.inf',
+            'src/hw/libft4222/driver/amd64/ftdibus.sys'
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path -LiteralPath $path)) {
+              throw "Missing Windows build input: $path"
+            }
+          }
+
+      - name: Set up MSVC environment (Windows SDK + CRT libs)
+        uses: step-security/msvc-dev-cmd@v1.13.1
+        with:
+          arch: x64
+
+      - name: Test installer version parser
+        shell: pwsh
+        run: ./tests/test_windows_installer_version.ps1
+
+      - name: Assemble Windows zip bundle
+        shell: pwsh
+        run: ./scripts/package-windows-bundle.ps1 -Action Assemble
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          $candidates = @()
+          foreach ($base in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+            if ([string]::IsNullOrWhiteSpace($base)) { continue }
+            $candidates += @(Get-ChildItem -Path (Join-Path $base 'Inno Setup *\ISCC.exe') -ErrorAction SilentlyContinue)
+          }
+          if ($candidates.Count -eq 0) {
+            throw "Inno Setup ISCC.exe was not found after installation."
+          }
+
+      - name: Build unsigned Windows installer
+        shell: pwsh
+        env:
+          IS_RELEASE: 'false'
+          REQUIRE_SIGNATURES: 'false'
+        run: ./scripts/package-windows-bundle.ps1 -Action BuildInstaller
+
+      - name: Smoke-test Windows installer
+        shell: pwsh
+        env:
+          IS_RELEASE: 'false'
+        run: ./scripts/package-windows-bundle.ps1 -Action TestInstaller
 
   # Every optimized Windows build outside a pull request is signed. The job
   # enters the windows-code-signing environment, so the Azure credentials are
@@ -636,7 +721,13 @@ jobs:
             'build/emu_hw_vdf_client.exe',
             'build/hw_vdf_client.exe',
             'mpir_gc_x64/mpir.dll',
-            'src/hw/libft4222'
+            'src/hw/libft4222',
+            'src/hw/libft4222/driver/ftdibus.inf',
+            'src/hw/libft4222/driver/ftdibus.cat',
+            'src/hw/libft4222/driver/ftdiport.inf',
+            'src/hw/libft4222/driver/ftdiport.cat',
+            'src/hw/libft4222/driver/amd64/ftdibus.sys',
+            'src/hw/libft4222/driver/amd64/ftd2xx64.dll'
           )
           foreach ($path in $required) {
             if (-not (Test-Path -LiteralPath $path)) {
@@ -687,6 +778,77 @@ jobs:
           EXPECTED_VENDOR_SUBJECT: ${{ vars.WINDOWS_SIGNING_VENDOR_SUBJECT }}
         run: ./scripts/package-windows-bundle.ps1 -Action Package
 
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          $candidates = @()
+          foreach ($base in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+            if ([string]::IsNullOrWhiteSpace($base)) { continue }
+            $candidates += @(Get-ChildItem -Path (Join-Path $base 'Inno Setup *\ISCC.exe') -ErrorAction SilentlyContinue)
+          }
+          if ($candidates.Count -eq 0) {
+            throw "Inno Setup ISCC.exe was not found after installation."
+          }
+
+      - name: Build Windows installer
+        shell: pwsh
+        env:
+          IS_RELEASE: ${{ inputs.is_final }}
+          REQUIRE_SIGNATURES: 'true'
+          EXPECTED_SIGNER_SUBJECT: ${{ vars.WINDOWS_SIGNING_SIGNER_SUBJECT }}
+          EXPECTED_SIGNER_THUMBPRINT: ${{ vars.WINDOWS_SIGNING_SIGNER_THUMBPRINT }}
+          EXPECTED_VENDOR_SUBJECT: ${{ vars.WINDOWS_SIGNING_VENDOR_SUBJECT }}
+        run: ./scripts/package-windows-bundle.ps1 -Action BuildInstaller
+
+      - name: List Windows installer to sign
+        id: installer_sign_files
+        shell: pwsh
+        run: |
+          $files = @(./scripts/package-windows-bundle.ps1 -Action ListInstallerSignFile)
+          if ($files.Count -eq 0) {
+            throw "No Windows installer was selected for signing"
+          }
+          foreach ($file in $files) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+              throw "Selected signing file is missing: $file"
+            }
+          }
+          "files<<EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8NoBOM
+          $files | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8NoBOM
+          "EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8NoBOM
+
+      - name: Sign Windows installer
+        uses: Chia-Network/actions/sign/azure-windows@main
+        with:
+          azure_tenant_id: ${{ secrets.AZURE_SIGNING_TENANT_ID }}
+          azure_client_id: ${{ secrets.AZURE_SIGNING_CLIENT_ID }}
+          file: ${{ steps.installer_sign_files.outputs.files }}
+
+      - name: Finalize signed Windows installer
+        shell: pwsh
+        env:
+          IS_RELEASE: ${{ inputs.is_final }}
+          REQUIRE_SIGNATURES: 'true'
+          EXPECTED_SIGNER_SUBJECT: ${{ vars.WINDOWS_SIGNING_SIGNER_SUBJECT }}
+          EXPECTED_SIGNER_THUMBPRINT: ${{ vars.WINDOWS_SIGNING_SIGNER_THUMBPRINT }}
+        run: ./scripts/package-windows-bundle.ps1 -Action FinalizeInstaller
+
+      - name: Verify Windows installer
+        shell: pwsh
+        env:
+          IS_RELEASE: ${{ inputs.is_final }}
+          REQUIRE_SIGNATURES: 'true'
+          EXPECTED_SIGNER_SUBJECT: ${{ vars.WINDOWS_SIGNING_SIGNER_SUBJECT }}
+          EXPECTED_SIGNER_THUMBPRINT: ${{ vars.WINDOWS_SIGNING_SIGNER_THUMBPRINT }}
+        run: ./scripts/package-windows-bundle.ps1 -Action VerifyInstaller
+
+      - name: Smoke-test Windows installer
+        shell: pwsh
+        env:
+          IS_RELEASE: ${{ inputs.is_final }}
+        run: ./scripts/package-windows-bundle.ps1 -Action TestInstaller
+
       - name: Upload Windows bundle artifact
         uses: actions/upload-artifact@v7
         with:
@@ -694,4 +856,5 @@ jobs:
           if-no-files-found: error
           path: |
             dist/windows/*.zip
+            dist/windows/*setup.exe
             dist/windows/*.sha256

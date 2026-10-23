@@ -23,11 +23,24 @@ $ExtractDir = Join-Path $WorkDir "extract"
 # FTDI CDM 2.12.36.20, which stores it as amd64/FTD2XX64.dll. ftdichip.com
 # answers the runner with a Cloudflare challenge, so this is FTDI's mirror
 # of that same archive. The SHA-256 is the pin for the bytes.
+#
+# The same CDM archive supplies the installer's unmodified ftdibus.inf/
+# ftdiport.inf driver package. Staging it here keeps the DLL and driver from
+# the same pinned archive and lets the signing job consume both from the build
+# artifact instead of downloading the driver again.
 $D2xxUrl = "https://ftdichip.cn/Drivers/CDM/CDM-v2.12.36.20-WHQL-Certified.zip"
 $D2xxSha256 = "e8ebf401d06994183694d78e5855ed5ab026bdfa8c3d4e4ccde09ec238a0eaf1"
 $D2xxZipPath = Join-Path $WorkDir "CDM-v2.12.36.20-WHQL-Certified.zip"
 $D2xxEntry = "amd64/FTD2XX64.dll"
 $D2xxStagedName = "FTD2XX.dll"
+$D2xxDriverExtractDir = Join-Path $WorkDir "cdm-extract"
+$D2xxDriverFiles = @(
+    "ftdibus.inf",
+    "ftdibus.cat",
+    "ftdiport.inf",
+    "ftdiport.cat"
+)
+$D2xxDriverArchDirs = @("amd64", "i386")
 
 $LibFt4222Dll = "imports\LibFT4222\dll\amd64\LibFT4222-64.dll"
 $LibFt4222Lib = "imports\LibFT4222\dll\amd64\LibFT4222-64.lib"
@@ -135,6 +148,82 @@ function Install-Ftd2xxDll {
     Assert-NativeAmd64Dll (Join-Path $WorkDir $D2xxStagedName) | Out-Null
 }
 
+function Install-Ftd2xxDriver {
+    param([string]$Destination)
+
+    if (Test-Path $D2xxDriverExtractDir) {
+        Remove-Item $D2xxDriverExtractDir -Recurse -Force
+    }
+    Expand-Archive -Path $D2xxZipPath -DestinationPath $D2xxDriverExtractDir -Force
+    if (Test-Path $Destination) {
+        Remove-Item $Destination -Recurse -Force
+    }
+    Ensure-Dir $Destination
+
+    foreach ($name in $D2xxDriverFiles) {
+        $source = Join-Path $D2xxDriverExtractDir $name
+        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+            throw "CDM archive is missing $name."
+        }
+        Copy-Item -LiteralPath $source -Destination (Join-Path $Destination $name) -Force
+    }
+    foreach ($arch in $D2xxDriverArchDirs) {
+        $source = Join-Path $D2xxDriverExtractDir $arch
+        if (-not (Test-Path -LiteralPath $source -PathType Container)) {
+            throw "CDM archive is missing the $arch driver directory."
+        }
+        $target = Join-Path $Destination $arch
+        Ensure-Dir $target
+        # The driver package needs the DLL/SYS payloads, not the import
+        # libraries that live beside them in the CDM archive.
+        Get-ChildItem -LiteralPath $source -File |
+            Where-Object { $_.Extension -ne '.lib' } |
+            ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $target -Force }
+    }
+
+    foreach ($relative in @(
+            "amd64\ftdibus.sys",
+            "amd64\ftbusui.dll",
+            "amd64\ftd2xx64.dll",
+            "amd64\ftlang.dll",
+            "amd64\ftser2k.sys",
+            "amd64\ftserui2.dll",
+            "amd64\ftcserco.dll",
+            "i386\ftd2xx.dll",
+            "i386\ftdibus.sys",
+            "i386\ftbusui.dll",
+            "i386\ftlang.dll",
+            "i386\ftser2k.sys",
+            "i386\ftserui2.dll",
+            "i386\ftcserco.dll"
+        )) {
+        if (-not (Test-Path -LiteralPath (Join-Path $Destination $relative) -PathType Leaf)) {
+            throw "CDM archive is missing $relative."
+        }
+    }
+
+    $busInf = Join-Path $Destination "ftdibus.inf"
+    $infText = Get-Content -LiteralPath $busInf -Raw
+    if ($infText -notmatch [regex]::Escape('USB\VID_0403&PID_601C')) {
+        throw "ftdibus.inf does not declare the FT4222H VID/PID (0403:601c)."
+    }
+    foreach ($catalog in @("ftdibus.cat", "ftdiport.cat")) {
+        $signature = Get-AuthenticodeSignature -LiteralPath (Join-Path $Destination $catalog)
+        if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
+            throw "$catalog has no valid Authenticode signature: $($signature.StatusMessage)"
+        }
+    }
+
+    @"
+FTDI CDM 2.12.36.20 (WHQL Certified)
+Source: $D2xxUrl
+SHA-256: $D2xxSha256
+License: see the unmodified ftdibus.inf and ftdiport.inf headers.
+"@ | Set-Content -LiteralPath (Join-Path $Destination "SOURCE.txt") -Encoding ASCII
+
+    Remove-Item $D2xxDriverExtractDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 function Install-LibFT4222 {
     Ensure-Dir $WorkDir
     if (Test-Path $ExtractDir) {
@@ -177,6 +266,7 @@ function Install-LibFT4222 {
         Remove-Item $HwDir -Recurse -Force
     }
     Ensure-Dir $HwDir
+    Install-Ftd2xxDriver -Destination (Join-Path $HwDir "driver")
 
     foreach ($name in @(
             "libft4222.h",

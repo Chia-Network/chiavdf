@@ -182,8 +182,7 @@ begin
     // already active. This is normal for a software-only timelord install.
     Log('No matching device or a newer driver is already active for ' + Description + '.')
   else if ResultCode <> 0 then
-    RaiseException(Format('pnputil.exe failed for %s with exit code %d.',
-      [Description, ResultCode]));
+    RaiseException(Format('pnputil.exe failed for %s with exit code %d.', [Description, ResultCode]));
 end;
 
 procedure InstallDriverPackage(const InfName: string);

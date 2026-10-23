@@ -479,6 +479,12 @@ assert_windows_signing_wiring() {
   if ! grep -Fq 'ftdibus.inf' "$installer" || ! grep -Fq 'pnputil.exe' "$installer"; then
     fail "Inno Setup script does not stage the FTDI driver"
   fi
+  # Inno treats any line that starts with '[' as a section tag. A wrapped
+  # Pascal array literal at the start of a line therefore aborts compilation.
+  if grep -nE '^[[:space:]]*\[' "$installer" |
+    grep -vE ':[[:space:]]*\[(Setup|InstallDelete|Files|Code)\]$' >/dev/null; then
+    fail "Inno Setup script has a line that will be parsed as an invalid section tag"
+  fi
   if ! grep -Fq 'Install-Ftd2xxDriver' "$driver_script" ||
     ! grep -Fq 'ftdibus.inf' "$driver_script"; then
     fail "FT4222 fetch script does not stage the FTDI driver"

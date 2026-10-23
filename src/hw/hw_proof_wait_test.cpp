@@ -141,6 +141,111 @@ static void mark_chain_done(vdf_state &vdf, uint16_t idx) {
     }
 }
 
+static void check_completed_checkpoint_reuse() {
+    {
+        vdf_state vdf{};
+        vdf.interval = HW_VDF_VALUE_INTERVAL;
+        vdf.checkpoint_threshold = 8000;
+        uint16_t root = hw_queue_proof(&vdf, 8000, HW_VDF_PROOF_NONE, 0);
+        uint16_t tip = hw_queue_proof(&vdf, 8000, root, 0);
+        mark_chain_done(vdf, tip);
+        vdf.queued_proofs.clear(); // Both checkpoints have left the dispatch queue.
+        hw_request_proof(&vdf, 18000, false);
+        hw_proof_process_req(&vdf);
+        require(vdf.proofs.size() == 3 && vdf.proofs.back().prev == tip
+                && vdf.proofs.back().seg_iters == 2000,
+                "Completed checkpoint prefix was reconstructed");
+        require(vdf.proofs[root].ref_cnt == 2 && vdf.proofs[tip].ref_cnt == 2,
+                "Reused checkpoint chain did not retain its references");
+        hw_request_proof(&vdf, 12000, false); // Earlier than the completed tip.
+        hw_proof_process_req(&vdf);
+        bool earlier = false;
+        for (const auto &proof : vdf.proofs)
+            if (proof.iters == 12000 && (proof.flags & HW_VDF_PROOF_FLAG_IS_REQ))
+                earlier = proof.prev == root && proof.seg_iters == 4000;
+        require(earlier, "Out-of-order request used a checkpoint beyond its target");
+    }
+    {
+        vdf_state vdf{};
+        vdf.interval = HW_VDF_VALUE_INTERVAL;
+        vdf.checkpoint_threshold = 8000;
+        uint16_t checkpoint = hw_queue_proof(&vdf, 8000, HW_VDF_PROOF_NONE, 0);
+        mark_chain_done(vdf, checkpoint);
+        vdf.queued_proofs.clear();
+        for (int repeat = 0; repeat < 2; ++repeat) {
+            hw_request_proof(&vdf, 8000, false);
+            hw_proof_process_req(&vdf);
+            require(vdf.proofs.size() == 1 && vdf.done_proofs.size() == 1,
+                    "Exact completed checkpoint was not queued for delivery");
+            vdf_proof_delivery delivery;
+            require(hw_retrieve_proof(&vdf, &delivery) == 0 && delivery.final.iters == 8000,
+                    "Exact cached checkpoint stalled waiting for another publication");
+            check_frame(delivery);
+            require(vdf.done_proofs.empty(), "Cached checkpoint was delivered twice");
+        }
+    }
+    {
+        vdf_state vdf{};
+        vdf.interval = HW_VDF_VALUE_INTERVAL;
+        vdf.checkpoint_threshold = 8000;
+        uint16_t root = hw_queue_proof(&vdf, 8000, HW_VDF_PROOF_NONE, 0);
+        uint16_t tip = hw_queue_proof(&vdf, 8000, root, 0);
+        mark_chain_done(vdf, tip);
+        vdf.proofs[root].flags |= HW_VDF_PROOF_FLAG_FAILED;
+        vdf.queued_proofs.clear();
+        hw_request_proof(&vdf, 18000, false);
+        hw_proof_process_req(&vdf);
+        uint16_t idx = static_cast<uint16_t>(vdf.proofs.size() - 1);
+        while (idx != HW_VDF_PROOF_NONE) {
+            require(idx != root && idx != tip, "Reused a completed chain with a failed ancestor");
+            idx = vdf.proofs[idx].prev;
+        }
+    }
+    {
+        vdf_state vdf{};
+        vdf.interval = HW_VDF_VALUE_INTERVAL;
+        vdf.checkpoint_threshold = 8000;
+        uint16_t running = hw_queue_proof(&vdf, 8000, HW_VDF_PROOF_NONE,
+                HW_VDF_PROOF_FLAG_STARTED);
+        vdf.queued_proofs.clear();
+        hw_request_proof(&vdf, 12000, false);
+        hw_proof_process_req(&vdf);
+        require(vdf.proofs.size() == 2 && vdf.proofs.back().prev == running,
+                "In-flight checkpoint was duplicated after dispatch");
+        mark_chain_done(vdf, 1);
+        vdf.proofs[running].flags |= HW_VDF_PROOF_FLAG_FAILED;
+        vdf.done_proofs.push_back(1);
+        vdf_proof_delivery delivery;
+        require(hw_retrieve_proof(&vdf, &delivery) < 0 && vdf.done_proofs.empty(),
+                "Failure after reuse allowed an invalid checkpoint chain to be delivered");
+    }
+    for (uint8_t proof_limit : {1, 3}) {
+        vdf_state vdf{};
+        vdf.interval = HW_VDF_VALUE_INTERVAL;
+        vdf.checkpoint_threshold = 8000;
+        uint16_t tip = HW_VDF_PROOF_NONE;
+        for (int i = 0; i < HW_VDF_MAX_CHKP_SEGMENTS; ++i)
+            tip = hw_queue_proof(&vdf, 8000, tip, 0);
+        mark_chain_done(vdf, tip);
+        vdf.queued_proofs.clear();
+        vdf.max_aux_threads = 4;
+        vdf.max_proof_threads = proof_limit;
+        hw_request_proof(&vdf, 2000000, false);
+        hw_proof_process_req(&vdf);
+        const auto &proof = vdf.proofs.back();
+        if (proof_limit == 1)
+            require(proof.prev == tip, "Single proof slot discarded the longest cached prefix");
+        else
+            require(proof.prev != tip && proof.seg_iters < 2000000 - vdf.proofs[tip].iters,
+                    "Full checkpoint chain forced a serial tail despite available proof workers");
+        size_t count = 0;
+        for (uint16_t idx = static_cast<uint16_t>(vdf.proofs.size() - 1);
+                idx != HW_VDF_PROOF_NONE; idx = vdf.proofs[idx].prev) ++count;
+        require(count <= HW_VDF_MAX_CHKP_SEGMENTS + 1,
+                "Completed-checkpoint reuse exceeded the wire checkpoint limit");
+    }
+}
+
 // Repeatedly squaring a reduced form stays in a finite set, so the orbit must
 // return to the starting form. The form reached after `steps` squarings is the
 // orbit entry at `steps % period`. An orbit that does not return to the start
@@ -181,6 +286,7 @@ int main() {
     try {
         VdfBaseInit();
         check_pll_bounds();
+        check_completed_checkpoint_reuse();
         {
             vdf_state vdf{};
             initialize_wait_state(vdf);

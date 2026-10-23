@@ -1,48 +1,64 @@
 #pragma once
-// Optional POSIX anonymous-pipe control on the client's USB owner thread.
+// Platform-independent operating-point transaction and control protocol.
+#include "hw_util.hpp"
 #include <cerrno>
+#include <charconv>
 #include <cmath>
-#include <csignal>
 #include <cstdint>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
-#include <fcntl.h>
+#include <functional>
 #include <initializer_list>
+#include <optional>
 #include <stdexcept>
 #include <string>
-#include <sys/stat.h>
-#include <unistd.h>
+#include <string_view>
+
 namespace timelord_control {
+struct Limits {
+    static constexpr double min_frequency = 200., max_frequency = 2200.;
+    static constexpr double min_voltage = .7, max_voltage = 1.;
+    static constexpr double max_temperature = 55.;
+    static constexpr double frequency_tolerance = 1., voltage_tolerance = .0063;
+    static constexpr unsigned readback_attempts = 3;
+    static constexpr uint64_t settle_us = 20000;
+    static constexpr size_t frame_bytes = 256;
+    static constexpr int failure_exit = 70;
+};
 struct Point {
     double frequency;
     double voltage;
 };
-inline bool valid(Point p) {
-    return std::isfinite(p.frequency) && std::isfinite(p.voltage) && p.frequency >= 200 &&
-           p.frequency <= 2200 && p.voltage >= .7 && p.voltage <= 1.;
+inline bool readable(Point p) {
+    return std::isfinite(p.frequency) && std::isfinite(p.voltage) && p.frequency > 0 &&
+           p.voltage >= Limits::min_voltage && p.voltage <= Limits::max_voltage;
 }
-// A missing sensor read must stop this client, but is not proof of overheating.
-inline void check_temperature(double temperature) {
-    if (!std::isfinite(temperature) || temperature <= 0.)
+inline bool valid(Point p) {
+    return readable(p) && p.frequency >= Limits::min_frequency &&
+           p.frequency <= Limits::max_frequency;
+}
+inline void check_temperature(std::optional<double> temperature) {
+    if (!temperature || !std::isfinite(*temperature))
         throw std::runtime_error("temperature_unavailable");
-    if (temperature >= 55.)
+    if (*temperature >= Limits::max_temperature)
         throw std::runtime_error("temperature_limit");
 }
-// Return the same floor entry used for live PLL writes.
+// One ceiling rule for startup, live changes and capability advertising.
 template <class Entry> size_t frequency_index(double target, const Entry *entries, size_t count) {
     size_t index = 0;
-    while (index + 1 < count && entries[index + 1].freq <= target)
+    while (index < count && entries[index].freq < target)
         ++index;
     return index;
 }
 template <class Entry> bool supported_frequency(double target, const Entry *entries, size_t count) {
-    return count && std::abs(entries[frequency_index(target, entries, count)].freq - target) <= 1.;
+    const auto index = frequency_index(target, entries, count);
+    return index < count && std::abs(entries[index].freq - target) <= Limits::frequency_tolerance;
 }
 template <class Entry> void print_frequencies(const Entry *entries, size_t count) {
     bool first = true;
     fputs("[", stdout);
-    for (int f = 200; f <= 2200; f += 10) {
+    for (int f = int(Limits::min_frequency); f <= int(Limits::max_frequency); f += 10) {
         if (!supported_frequency(f, entries, count))
             continue;
         printf("%s%d", first ? "" : ",", f);
@@ -50,7 +66,38 @@ template <class Entry> void print_frequencies(const Entry *entries, size_t count
     }
     puts("]");
 }
-// Read-only diagnostics are a separate snapshot, never a substitute for readback.
+struct Request {
+    uint64_t id;
+    Point target;
+};
+// Parsing is pure: sequence/replay checks belong to the channel.
+inline std::optional<Request> parse_tlset(std::string_view line) {
+    constexpr std::string_view prefix = "TLSET 1 ";
+    if (line.size() > Limits::frame_bytes || line.substr(0, prefix.size()) != prefix ||
+        line.find('\0') != line.npos || line.find('\n') != line.npos ||
+        line.find('\r') != line.npos)
+        return std::nullopt;
+    line.remove_prefix(prefix.size());
+    Request request{};
+    const char *end = line.data() + line.size();
+    auto id = std::from_chars(line.data(), end, request.id);
+    if (id.ec != std::errc{} || !request.id || id.ptr == end || *id.ptr != ' ')
+        return std::nullopt;
+    std::string fields(id.ptr + 1, end);
+    char *next = nullptr;
+    errno = 0;
+    request.target.frequency = std::strtod(fields.c_str(), &next);
+    if (errno == ERANGE || next == fields.c_str() || *next != ' ')
+        return std::nullopt;
+    const char *voltage = next + 1;
+    errno = 0;
+    request.target.voltage = std::strtod(voltage, &next);
+    if (errno == ERANGE || next == voltage || *next || !valid(request.target))
+        return std::nullopt;
+    return request;
+}
+// Read-only diagnostics are a separate snapshot, never a substitute for
+// readback.
 struct Register {
     const char *name;
     uint32_t address;
@@ -72,139 +119,101 @@ std::string clock_registers(ReadRegister read, std::initializer_list<Register> r
     }
     return result;
 }
-struct NoDiagnostics {
-    std::string operator()() const { return {}; }
-};
-struct RetryDelay {
-    void operator()() const { usleep(20000); }
-};
-constexpr unsigned READBACK_ATTEMPTS = 3;
-template <class Read, class Accept, class Diagnostics, class Delay>
-Point checked_readback(const char *phase, Read read, Accept accept, Diagnostics diagnostics,
-                       Delay delay) {
-    for (unsigned attempt = 1; attempt <= READBACK_ATTEMPTS; ++attempt) {
-        const Point actual = read();
-        if (accept(actual)) {
-            if (attempt > 1)
-                fprintf(stderr,
-                        "Live control readback recovered phase=%s attempt=%u frequency=%.6f "
-                        "voltage=%.6f\n",
-                        phase, attempt, actual.frequency, actual.voltage);
+
+template <class Hardware, class Accept>
+Point checked_readback(const char *phase, Hardware &hardware, Accept accept) {
+    for (unsigned attempt = 1; attempt <= Limits::readback_attempts; ++attempt) {
+        const Point actual = hardware.read();
+        if (accept(actual))
             return actual;
-        }
-        const auto registers = diagnostics();
+        const auto registers = hardware.diagnostics();
         fprintf(stderr,
-                "Live control readback rejected phase=%s attempt=%u/%u frequency=%.6f voltage=%.6f "
-                "registers=[%s]\n",
-                phase, attempt, READBACK_ATTEMPTS, actual.frequency, actual.voltage,
+                "Live control readback rejected phase=%s attempt=%u/%u "
+                "frequency=%.6f voltage=%.6f registers=[%s]\n",
+                phase, attempt, Limits::readback_attempts, actual.frequency, actual.voltage,
                 registers.c_str());
-        if (attempt == READBACK_ATTEMPTS)
+        if (attempt == Limits::readback_attempts)
             throw std::runtime_error(std::string(phase) + " attempts=" + std::to_string(attempt) +
                                      " frequency=" + std::to_string(actual.frequency) +
                                      " voltage=" + std::to_string(actual.voltage) + " registers=[" +
                                      registers + "]");
-        delay();
+        hardware.delay();
     }
     throw std::runtime_error("readback_unreachable");
 }
-// The caller must leave engines paused on any exception and terminate the client.
-// Retry reads only: never repeat a PLL/voltage write or resume after failed readback.
-template <class Read, class Voltage, class Frequency, class Pause,
-          class Diagnostics = NoDiagnostics, class Delay = RetryDelay>
-Point apply(Point target, Read read, Voltage voltage, Frequency frequency, Pause pause,
-            Diagnostics diagnostics = {}, Delay delay = {}) {
-    if (!valid(target))
+// Both legacy auto-frequency and supervised control use this transaction.
+// Legacy auto-frequency retains its existing full PLL-table range.
+template <class Hardware>
+Point apply(Point target, Hardware &hardware, uint8_t mask, bool supervised = true) {
+    auto acceptable = [supervised](Point p) { return supervised ? valid(p) : readable(p); };
+    if (!acceptable(target))
         throw std::runtime_error("limits");
-    pause(false);
-    const Point old = checked_readback(
-        "initial_readback", read, [](Point p) { return valid(p); }, diagnostics, delay);
+    hardware.control(mask, false);
+    const Point old = checked_readback("initial_readback", hardware, acceptable);
     if (target.voltage > old.voltage)
-        voltage(target.voltage);
-    frequency(target.frequency);
+        hardware.voltage(target.voltage);
+    hardware.frequency(target.frequency);
     if (target.voltage < old.voltage)
-        voltage(target.voltage);
-    const Point actual = checked_readback(
-        "readback", read,
-        [&](Point p) {
-            return valid(p) && std::abs(p.frequency - target.frequency) <= 1. &&
-                   std::abs(p.voltage - target.voltage) <= .0063;
-        },
-        diagnostics, delay);
-    pause(true);
+        hardware.voltage(target.voltage);
+    const Point actual = checked_readback("readback", hardware, [&](Point p) {
+        return acceptable(p) &&
+               std::abs(p.frequency - target.frequency) <= Limits::frequency_tolerance &&
+               std::abs(p.voltage - target.voltage) <= Limits::voltage_tolerance;
+    });
+    hardware.control(mask, true);
     return actual;
 }
-class Channel {
-    int input, output;
-    std::string pending;
-    uint64_t last_id = 0;
-
-  public:
-    Channel(int in = STDIN_FILENO, int out = STDOUT_FILENO) : input(in), output(out) {}
-    bool start() {
-        struct stat a{}, b{};
-        if (fstat(input, &a) || fstat(output, &b) || !S_ISFIFO(a.st_mode) || !S_ISFIFO(b.st_mode))
-            return false;
-        // A parent disappearing during acknowledgement must return EPIPE so
-        // the event-loop failure path can quiesce engines before exiting.
-        if (std::signal(SIGPIPE, SIG_IGN) == SIG_ERR)
-            return false;
-        const int flags = fcntl(input, F_GETFL);
-        const int output_flags = fcntl(output, F_GETFL);
-        return flags >= 0 && output_flags >= 0 && !fcntl(input, F_SETFL, flags | O_NONBLOCK) &&
-               !fcntl(output, F_SETFL, output_flags | O_NONBLOCK);
+struct ShutdownResult {
+    bool paused = false;
+    bool restored = false;
+};
+// Failure recovery never resumes engines and never raises the clock. If USB is
+// unavailable, report the failure rather than claim that shutdown was
+// confirmed.
+template <class Hardware> ShutdownResult shutdown(Hardware &hardware, uint8_t mask) noexcept {
+    ShutdownResult result;
+    try {
+        hardware.control(mask, false);
+        result.paused = true;
+    } catch (...) {
     }
-    template <class Apply> bool poll(Apply apply) {
-        // Bounded input and one command per event-loop turn. No network listener.
-        char data[256];
-        const ssize_t n = read(input, data, sizeof(data));
-        if (!n)
-            return false;
-        if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
-            return false;
-        if (n > 0)
-            pending.append(data, static_cast<size_t>(n));
-        const auto end = pending.find('\n');
-        if (pending.size() > 256)
-            return false;
-        if (end == std::string::npos)
-            return true;
-        const auto line = pending.substr(0, end);
-        pending.erase(0, end + 1);
-        if (line.rfind("TLSET 1 ", 0) || line.size() <= 8 || line[8] < '0' || line[8] > '9' ||
-            line.find('\0') != std::string::npos)
-            return false;
-        char *id_end = nullptr;
-        errno = 0;
-        const auto parsed_id = std::strtoull(line.c_str() + 8, &id_end, 10);
-        if (errno == ERANGE || !id_end || *id_end != ' ')
-            return false;
-        unsigned long long id = 0;
-        Point target{};
-        char extra = 0;
-        if (sscanf(line.c_str(), "TLSET 1 %llu %lf %lf %c", &id, &target.frequency, &target.voltage,
-                   &extra) != 3 ||
-            !id || id != parsed_id || id <= last_id || !valid(target))
-            return false;
-        last_id = id;
+    if (!result.paused) {
         try {
-            const Point actual = apply(target);
-            char response[128];
-            const int size = snprintf(response, sizeof(response), "TLACK 1 %llu %.6f %.6f\n", id,
-                                      actual.frequency, actual.voltage);
-            return size > 0 && write(output, response, static_cast<size_t>(size)) == size;
-        } catch (const std::exception &error) {
-            // Carry the operation failure over the control pipe before closing it.
-            // The coordinator may be awaiting this reply and unable to drain stderr.
-            char response[512];
-            const int size =
-                snprintf(response, sizeof(response), "TLERR 1 %llu %.400s\n", id, error.what());
-            if (size > 0 && static_cast<size_t>(size) < sizeof(response))
-                (void)write(output, response, static_cast<size_t>(size));
-            fprintf(stderr, "Live control rejected request %llu: %s\n", id, error.what());
-            return false;
+            result.paused = hardware.reset();
         } catch (...) {
-            return false;
         }
     }
+    try {
+        hardware.frequency(Limits::min_frequency);
+        hardware.voltage(Limits::min_voltage);
+        checked_readback("safe_readback", hardware, [](Point p) {
+            return valid(p) &&
+                   std::abs(p.frequency - Limits::min_frequency) <= Limits::frequency_tolerance &&
+                   std::abs(p.voltage - Limits::min_voltage) <= Limits::voltage_tolerance;
+        });
+        result.restored = true;
+    } catch (...) {
+        // The clock/voltage state is uncertain. Assert board reset as a last
+        // resort.
+        try {
+            result.paused = hardware.reset() || result.paused;
+        } catch (...) {
+        }
+    }
+    return result;
+}
+// SIGPIPE is masked only on the writing thread and only for this write.
+std::ptrdiff_t write_no_sigpipe(int fd, const void *data, size_t size);
+class Channel {
+    int input_, output_;
+    std::string pending_;
+    uint64_t last_id_ = 0;
+    bool reply(uint64_t id, const char *error, Point actual = {});
+
+  public:
+    explicit Channel(int input = 0, int output = 1) : input_(input), output_(output) {}
+    static bool supported();
+    bool start();
+    bool poll(const std::function<Point(Point)> &apply);
 };
 } // namespace timelord_control

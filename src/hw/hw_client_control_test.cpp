@@ -2,11 +2,12 @@
 #include <gtest/gtest.h>
 
 #include <limits>
+#include <cstring>
 
 TEST(HardwareTelemetry, IdleTemperaturePollingKeepsFiveSecondDeadline) {
     using Poll = timelord_telemetry::Poll;
     const auto start = Poll::Clock::time_point{};
-    Poll poll(start);
+    Poll poll(true, 1, start);
     int samples = 0;
     for (int second = 0; second <= 180; ++second) {
         if (poll.due(false, start + std::chrono::seconds(second)))
@@ -20,54 +21,78 @@ TEST(HardwareTelemetry, IdleTemperaturePollingKeepsFiveSecondDeadline) {
 
 TEST(HardwareTelemetry, RawRatesResetAcrossIdleRollbackAndNewSessions) {
     timelord_telemetry::Speed speed;
-    EXPECT_FALSE(speed.update(false, 0, 0, 0));
-    EXPECT_EQ(speed.update(true, 100, 100, 1), -1.);
-    EXPECT_FALSE(speed.update(true, 500100, 500100, 1));
-    EXPECT_EQ(speed.update(true, 1000100, 1000100, 1), 1000000.);
-    EXPECT_EQ(speed.update(true, 500, 2000100, 1), -1.);
-    EXPECT_EQ(speed.update(true, 600, 100, 1), -1.);
+    EXPECT_FALSE(speed.update({false, 0, 0, 0}));
+    EXPECT_EQ(speed.update({true, 100, 100, 1}), -1.);
+    EXPECT_FALSE(speed.update({true, 500100, 500100, 1}));
+    EXPECT_EQ(speed.update({true, 1000100, 1000100, 1}), 1000000.);
+    EXPECT_EQ(speed.update({true, 500, 2000100, 1}), -1.);
+    EXPECT_EQ(speed.update({true, 600, 100, 1}), -1.);
     // Both counters can be larger after a challenge switch between polls.
-    EXPECT_EQ(speed.update(true, 2000000, 3000000, 2), -1.);
-    EXPECT_EQ(speed.update(true, 3000000, 4000000, 2), 1000000.);
-    EXPECT_EQ(speed.update(false, 0, 0, 0), -1.);
-    EXPECT_FALSE(speed.update(false, 0, 0, 0));
+    EXPECT_EQ(speed.update({true, 2000000, 3000000, 2}), -1.);
+    EXPECT_EQ(speed.update({true, 3000000, 4000000, 2}), 1000000.);
+    EXPECT_EQ(speed.update({false, 0, 0, 0}), -1.);
+    EXPECT_FALSE(speed.update({false, 0, 0, 0}));
 }
 
-#ifndef _WIN32
 #include "timelord_live_control.hpp"
 #include <vector>
+#ifndef _WIN32
+#include <csignal>
+#include <fcntl.h>
+#include <pthread.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
 
 namespace {
 using timelord_control::Point;
 struct HardwareControlFixture {
     Point current{1450., .95};
     std::vector<std::string> actions;
-    unsigned reads = 0, diagnostics = 0, waits = 0;
-    template <class Read> Point apply(Point target, Read read) {
-        return timelord_control::apply(
-            target, read,
-            [&](double voltage) {
-                actions.push_back("voltage");
-                current.voltage = voltage;
-            },
-            [&](double frequency) {
-                actions.push_back("frequency");
-                current.frequency = frequency;
-            },
-            [&](bool resume) { actions.push_back(resume ? "resume" : "pause"); },
-            [&] {
-                ++diagnostics;
-                return std::string("control=0x00000008");
-            },
-            [&] { ++waits; });
+    unsigned reads = 0, diagnostics_count = 0, waits = 0;
+    bool fail_voltage = false, fail_frequency = false, fail_control = false, fail_reset = false;
+    uint8_t selected_mask = 0;
+    std::function<Point()> reader;
+    Point read() {
+        if (reader)
+            return reader();
+        ++reads;
+        return current;
     }
-    Point apply(Point target) {
-        return apply(target, [&] {
-            ++reads;
-            return current;
-        });
+    void control(uint8_t mask, bool resume) {
+        selected_mask = mask;
+        actions.push_back(resume ? "resume" : "pause");
+        if (fail_control)
+            throw std::runtime_error("engine_control");
+    }
+    void voltage(double value) {
+        actions.push_back("voltage");
+        if (fail_voltage)
+            throw std::runtime_error("voltage_write");
+        current.voltage = value;
+    }
+    void frequency(double value) {
+        actions.push_back("frequency");
+        if (fail_frequency)
+            throw std::runtime_error("pll_write");
+        current.frequency = value;
+    }
+    std::string diagnostics() {
+        ++diagnostics_count;
+        return "control=0x00000008";
+    }
+    void delay() { ++waits; }
+    bool reset() {
+        actions.push_back("reset");
+        return !fail_reset;
+    }
+    Point apply(Point target) { return timelord_control::apply(target, *this, 7); }
+    template <class Read> Point apply(Point target, Read read) {
+        reader = read;
+        return apply(target);
     }
 };
+#ifndef _WIN32
 struct HardwareControlPipes {
     int input[2]{-1, -1}, output[2]{-1, -1};
     HardwareControlPipes() {
@@ -91,12 +116,16 @@ struct HardwareControlPipes {
         return size > 0 ? std::string(buffer, static_cast<size_t>(size)) : std::string{};
     }
 };
+#endif
 } // namespace
 
 TEST(HardwareLiveControl, DistinguishesMissingSensorFromTemperatureLimit) {
     EXPECT_NO_THROW(timelord_control::check_temperature(40.));
-    for (double value : {0., -1., std::numeric_limits<double>::quiet_NaN(),
-                         std::numeric_limits<double>::infinity()}) {
+    EXPECT_NO_THROW(timelord_control::check_temperature(0.));
+    EXPECT_NO_THROW(timelord_control::check_temperature(-10.));
+    EXPECT_THROW(timelord_control::check_temperature(std::nullopt), std::runtime_error);
+    for (double value :
+         {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity()}) {
         try {
             timelord_control::check_temperature(value);
             FAIL() << "Missing temperature was accepted";
@@ -114,13 +143,16 @@ TEST(HardwareLiveControl, DistinguishesMissingSensorFromTemperatureLimit) {
     }
 }
 
-TEST(HardwareLiveControl, AdvertisesOnlySupportedFloorPllEntries) {
+TEST(HardwareLiveControl, UsesTheSameCeilingRuleAsStartup) {
     struct Entry {
         double freq;
     };
     const Entry entries[]{{1490.}, {1500.}, {1511.111111}, {1520.},       {1525.}, {1533.333333},
                           {1540.}, {1560.}, {1566.666667}, {1571.428571}, {1580.}, {1600.}};
-    EXPECT_EQ(entries[timelord_control::frequency_index(1510., entries, 12)].freq, 1500.);
+    EXPECT_EQ(entries[timelord_control::frequency_index(1510., entries, 12)].freq, 1511.111111);
+    EXPECT_EQ(timelord_control::frequency_index(100., entries, 12), 0u);
+    EXPECT_EQ(timelord_control::frequency_index(1601., entries, 12), 12u);
+    EXPECT_TRUE(timelord_control::supported_frequency(1511., entries, 12));
     for (double frequency : {1510., 1530., 1570., 1590.})
         EXPECT_FALSE(timelord_control::supported_frequency(frequency, entries, 12));
     for (double frequency : {1500., 1520., 1540., 1560., 1580., 1600.})
@@ -159,7 +191,7 @@ TEST(HardwareLiveControl, InitialReadbackRetriesBeforeAnyWrite) {
     });
     EXPECT_EQ(result.frequency, 1880.);
     EXPECT_EQ(fixture.reads, 3u);
-    EXPECT_EQ(fixture.diagnostics, 1u);
+    EXPECT_EQ(fixture.diagnostics_count, 1u);
     EXPECT_EQ(fixture.waits, 1u);
     EXPECT_EQ(fixture.actions, (std::vector<std::string>{"pause", "frequency", "resume"}));
 }
@@ -203,19 +235,16 @@ TEST(HardwareLiveControl, PersistentFinalReadbackNeverResumes) {
                       [&] { return ++fixture.reads == 1 ? fixture.current : Point{1800., 1.}; }),
         std::runtime_error);
     EXPECT_EQ(fixture.reads, 4u);
-    EXPECT_EQ(fixture.diagnostics, 3u);
+    EXPECT_EQ(fixture.diagnostics_count, 3u);
     EXPECT_EQ(fixture.waits, 2u);
     EXPECT_EQ(fixture.actions, (std::vector<std::string>{"pause", "frequency"}));
 }
 
 TEST(HardwareLiveControl, HardwareWriteFailureNeverResumes) {
-    std::vector<bool> pauses;
-    EXPECT_THROW(timelord_control::apply(
-                     Point{1460., 1.}, [] { return Point{1450., .95}; },
-                     [](double) { throw std::runtime_error("write failed"); }, [](double) {},
-                     [&](bool resume) { pauses.push_back(resume); }),
-                 std::runtime_error);
-    EXPECT_EQ(pauses, std::vector<bool>{false});
+    HardwareControlFixture fixture;
+    fixture.fail_voltage = true;
+    EXPECT_THROW(fixture.apply({1460., 1.}), std::runtime_error);
+    EXPECT_EQ(fixture.actions, (std::vector<std::string>{"pause", "voltage"}));
 }
 
 TEST(HardwareLiveControl, RegisterDiagnosticsDistinguishErrorsFromZero) {
@@ -233,19 +262,12 @@ TEST(HardwareLiveControl, RejectsMalformedFramesBeforeHardwareWrites) {
          {"TLSET 1 -1 1450 1\n", "TLSET 1 1 1450 1.1\n", "TLSET 1 1 nan 1\n", "TLSET 1 1 2201 1\n",
           "TLSET 1 1 1450 1 extra\n", "TLSET 1 18446744073709551616 1450 1\n", "TLSET 2 1 1450 1\n",
           "TLSET 1 0 1450 1\n"}) {
-        HardwareControlPipes pipes;
-        timelord_control::Channel channel(pipes.input[0], pipes.output[1]);
-        ASSERT_TRUE(channel.start());
-        pipes.send(request);
-        int writes = 0;
-        EXPECT_FALSE(channel.poll([&](Point point) {
-            ++writes;
-            return point;
-        }));
-        EXPECT_EQ(writes, 0);
+        EXPECT_FALSE(
+            timelord_control::parse_tlset(std::string(request).substr(0, strlen(request) - 1)));
     }
 }
 
+#ifndef _WIN32
 TEST(HardwareLiveControl, FragmentedFramesAcknowledgeOnceAndRejectDuplicateIds) {
     HardwareControlPipes pipes;
     timelord_control::Channel channel(pipes.input[0], pipes.output[1]);
@@ -314,3 +336,102 @@ TEST(HardwareLiveControl, ReturnsBoundedHardwareFailureToParent) {
     EXPECT_EQ(pipes.reply(), "TLERR 1 1 pll_write\n");
 }
 #endif
+
+TEST(HardwareLiveControl, PureParserPreservesFullRequestIdsAndRejectsTrailingData) {
+    const auto request = timelord_control::parse_tlset("TLSET 1 18446744073709551615 1450 1");
+    ASSERT_TRUE(request);
+    EXPECT_EQ(request->id, UINT64_MAX);
+    EXPECT_EQ(request->target.frequency, 1450.);
+    for (const auto &line : {"TLSET 1 +1 1450 1", "TLSET 1 1 1450 1 tail", "TLSET 1 1 1450 inf",
+                             "TLSET 1 1 1450 1e400", "TLSET 1 1 1450 1\n"})
+        EXPECT_FALSE(timelord_control::parse_tlset(line));
+}
+#ifndef _WIN32
+TEST(HardwareLiveControl, UnknownExceptionsReturnAnErrorReply) {
+    HardwareControlPipes pipes;
+    timelord_control::Channel channel(pipes.input[0], pipes.output[1]);
+    ASSERT_TRUE(channel.start());
+    pipes.send("TLSET 1 12 1450 1\n");
+    EXPECT_FALSE(channel.poll([](Point) -> Point { throw 42; }));
+    EXPECT_EQ(pipes.reply(), "TLERR 1 12 unknown\n");
+}
+TEST(HardwareLiveControl, BrokenPipesAndSocketsDoNotChangeTheProcessSignalHandler) {
+    struct sigaction before{}, after{};
+    ASSERT_EQ(sigaction(SIGPIPE, nullptr, &before), 0);
+    HardwareControlPipes pipes;
+    timelord_control::Channel channel(pipes.input[0], pipes.output[1]);
+    ASSERT_TRUE(channel.start());
+    close(pipes.output[0]);
+    pipes.output[0] = -1;
+    pipes.send("TLSET 1 1 1450 1\n");
+    EXPECT_FALSE(channel.poll([](Point p) { return p; }));
+    int sockets[2];
+    ASSERT_EQ(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets), 0);
+    close(sockets[1]);
+    EXPECT_EQ(timelord_control::write_no_sigpipe(sockets[0], "x", 1), -1);
+    EXPECT_EQ(errno, EPIPE);
+    close(sockets[0]);
+    ASSERT_EQ(sigaction(SIGPIPE, nullptr, &after), 0);
+    EXPECT_EQ(before.sa_handler, after.sa_handler);
+}
+TEST(HardwareLiveControl, BrokenPipePreservesAnAlreadyPendingSignal) {
+    sigset_t mask, previous, pending;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGPIPE);
+    ASSERT_EQ(pthread_sigmask(SIG_BLOCK, &mask, &previous), 0);
+    raise(SIGPIPE);
+    int descriptors[2];
+    ASSERT_EQ(pipe(descriptors), 0);
+    close(descriptors[0]);
+    EXPECT_EQ(timelord_control::write_no_sigpipe(descriptors[1], "x", 1), -1);
+    sigpending(&pending);
+    EXPECT_EQ(sigismember(&pending, SIGPIPE), 1);
+    int signal;
+    sigwait(&mask, &signal);
+    close(descriptors[1]);
+    EXPECT_EQ(pthread_sigmask(SIG_SETMASK, &previous, nullptr), 0);
+}
+#endif
+TEST(HardwareLiveControl, FailureShutdownRestoresSafePointWithoutResuming) {
+    HardwareControlFixture fixture;
+    fixture.current = {1900., 1.};
+    const auto result = timelord_control::shutdown(fixture, 5);
+    EXPECT_TRUE(result.paused);
+    EXPECT_TRUE(result.restored);
+    EXPECT_EQ(fixture.selected_mask, 5);
+    EXPECT_EQ(fixture.current.frequency, timelord_control::Limits::min_frequency);
+    EXPECT_EQ(fixture.current.voltage, timelord_control::Limits::min_voltage);
+    EXPECT_EQ(fixture.actions, (std::vector<std::string>{"pause", "frequency", "voltage"}));
+}
+TEST(HardwareLiveControl, FailureShutdownChecksPauseAndFallsBackToBoardReset) {
+    HardwareControlFixture fixture;
+    fixture.fail_control = true;
+    const auto result = timelord_control::shutdown(fixture, 7);
+    EXPECT_TRUE(result.paused);
+    EXPECT_TRUE(result.restored);
+    EXPECT_EQ(fixture.actions,
+              (std::vector<std::string>{"pause", "reset", "frequency", "voltage"}));
+}
+TEST(HardwareLiveControl, FailureShutdownReportsUnconfirmedHardwareState) {
+    HardwareControlFixture fixture;
+    fixture.fail_control = fixture.fail_reset = fixture.fail_frequency = true;
+    const auto result = timelord_control::shutdown(fixture, 7);
+    EXPECT_FALSE(result.paused);
+    EXPECT_FALSE(result.restored);
+    EXPECT_EQ(fixture.actions, (std::vector<std::string>{"pause", "reset", "frequency", "reset"}));
+}
+TEST(HardwareTelemetry, IdleCadenceIgnoresIterationSchedulingAndLegacyPollingStaysUnchanged) {
+    using Poll = timelord_telemetry::Poll;
+    const auto start = Poll::Clock::time_point{};
+    Poll idle(true, 1, start); // The iteration trigger fires on every turn.
+    for (int millisecond = 0; millisecond < 5000; ++millisecond)
+        EXPECT_FALSE(idle.due(false, start + std::chrono::milliseconds(millisecond)));
+    EXPECT_TRUE(idle.due(false, start + std::chrono::seconds(5)));
+    EXPECT_FALSE(idle.due(false, start + std::chrono::milliseconds(5001)));
+    Poll legacy(false, 2, start);
+    EXPECT_TRUE(legacy.due(true, start));
+    EXPECT_FALSE(legacy.due(true, start));
+    EXPECT_TRUE(legacy.due(true, start));
+    EXPECT_FALSE(legacy.due(false, start + std::chrono::seconds(60)));
+    EXPECT_FALSE(legacy.due(false, start + std::chrono::seconds(120)));
+}

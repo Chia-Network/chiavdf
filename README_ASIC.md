@@ -510,6 +510,70 @@ Install the plist as a LaunchAgent for the logged-in user; a LaunchDaemon runs i
 
 This repo does not ship a Windows service. Run `hw_vdf_client.exe` in a console that will not sleep, or register that command with Task Scheduler at logon. A release zip has every DLL in `bin\`, so no `PATH` change is needed.
 
+## Supervisor control and telemetry
+
+On macOS and Linux, `hw_vdf_client --live-control PORT [N_VDFS]` lets a supervisor
+change clock and voltage without replacing the client. This mode requires anonymous
+or named pipes on stdin and stdout and cannot be combined with `--auto-freq-period`.
+It uses the existing USB owner thread; it opens no control socket. Human-readable
+logs and raw telemetry remain on stderr. The supervisor should keep draining stderr
+and wait for each acknowledgement before sending another command.
+
+Commands and replies are newline-delimited ASCII:
+
+```text
+TLSET 1 1 1880 1.0
+TLACK 1 1 1880.000000 1.000000
+```
+
+The fields are protocol version, a strictly increasing positive request ID,
+frequency in MHz, and requested voltage in V. Frames are bounded to 256 input
+bytes. The live-control limits are 200–2200 MHz and 0.7–1.0 V. The selected PLL
+entry must be within 1 MHz of the request; unsupported requests are rejected.
+The standalone probes `--control-version` and `--control-frequencies` print the
+protocol identifier and JSON frequency list respectively, before opening USB.
+These control options are unavailable on Windows; `--live-control` fails there.
+
+Before a change, the client requires a valid temperature below 55°C, pauses the
+running engines and reads the current clock/voltage. It raises voltage before
+changing clock and lowers voltage afterward, then checks actual readback before
+resuming the previously running engines. Both readback stages permit three reads,
+20 ms apart; only reads are retried, never PLL or voltage writes. Frequency tolerance
+is 1 MHz and voltage tolerance is 0.0063 V. Failed samples log the stage, attempt,
+clock-register values and individual register-read errors. These bounds are
+software guardrails, not a characterization of the silicon's operating limits.
+
+A hardware rejection returns `TLERR 1 ID reason` when the reply pipe remains
+writable. Missing temperature is reported as `temperature_unavailable`, separately
+from `temperature_limit`. Invalid commands, failed operations, controller EOF,
+a closed reply pipe or reply backpressure cause a best-effort stop of every selected
+engine and immediate exit with status 70. The supervisor owns any delayed restart
+policy. Both pipes are nonblocking so a supervisor that stops reading replies
+cannot stall the USB owner. A startup failure to establish the channel exits before
+USB initialization.
+
+`--raw-speed` enables `TLRAW 2 ENGINE IPS STATE` records on stderr, approximately
+once a second per running engine. `--live-control` enables these records too.
+`ENGINE` is the zero-based physical engine number. `STATE` is `running`, `sampling`
+or `idle`; the latter two use `IPS=-1`. Counter rollback, a new challenge session
+or return from idle resets the rate baseline. Rates use differences between already
+read iteration counters and add no USB reads. They exclude proof construction and
+must not be interpreted as verified proof throughput or summed across independent
+chains. Ordinary clients do not emit these extra raw-speed records unless requested.
+
+Temperature polling also has a monotonic five-second deadline, including when all
+engines are idle. Temperature-only reads do not start engines or deserialize VDF
+values. This keeps supervisors informed while an infused chain has no work.
+
+The `HardwareLiveControl` and `HardwareTelemetry` regression tests use fake register
+callbacks and local pipes, without a node or USB device:
+
+```sh
+cmake -S src -B build-tests -DBUILD_PYTHON=OFF -DBUILD_VDF_TESTS=ON
+cmake --build build-tests --target regression_unit_tests
+ctest --test-dir build-tests --output-on-failure -R 'regression.unit.Hardware'
+```
+
 ## Troubleshooting
 
 **`libft4222.so: cannot open shared object file`.** Linux source build with no rpath. Export `LD_LIBRARY_PATH` to `hw/libft4222/build-x86_64` or `build-arm-v8` before starting the binary. The apt package's copy lives in `/usr/lib`.

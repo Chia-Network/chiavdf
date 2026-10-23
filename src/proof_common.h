@@ -65,6 +65,11 @@ form DeserializeForm(const integer &D, const uint8_t *bytes, size_t size,
     if (!f.is_reduced()) {
         throw std::runtime_error("Form is not reduced");
     }
+    std::vector<unsigned char> canonical = SerializeForm(f, D.num_bits());
+    if (canonical.size() != size ||
+        !std::equal(canonical.begin(), canonical.end(), bytes)) {
+        throw std::runtime_error("Form is not canonically encoded");
+    }
     return f;
 }
 

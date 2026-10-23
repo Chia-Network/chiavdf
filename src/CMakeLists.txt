@@ -415,7 +415,7 @@ if(BUILD_VDF_TESTS)
   add_executable(regression_unit_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/regression_unit_tests.cpp
   )
-  target_sources(regression_unit_tests PRIVATE ${VDF_COMMON_SOURCES} ${VDF_ASM_SOURCES})
+  target_sources(regression_unit_tests PRIVATE ${VDF_COMMON_SOURCES} ${VDF_ASM_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/hw/timelord_live_control.cpp)
   target_compile_definitions(regression_unit_tests PRIVATE ${VDF_COMMON_DEFINITIONS})
   vdf_add_boost_includes(regression_unit_tests)
   target_link_libraries(
@@ -460,6 +460,8 @@ if(BUILD_HW_TOOLS)
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_proof_queue.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_timelord_frame.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_interface.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_live_control.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/hw/timelord_live_control.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/chia_driver.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/ftdi_driver.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/vdf_driver.cpp

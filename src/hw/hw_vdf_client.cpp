@@ -437,6 +437,7 @@ void event_loop(struct vdf_client *client, HardwareLiveControl &control)
                 if (client->conns[i].vdf.completed) {
                     stop_hw_vdf(client->drv, i);
                     client->conns[i].state = IDLING;
+                    running_mask &= ~(1U << i);
                 }
             }
         }

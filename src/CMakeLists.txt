@@ -556,10 +556,14 @@ if(BUILD_HW_TOOLS)
   add_executable(hw_proof_wait_test
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_proof_wait_test.cpp
   )
-  target_sources(hw_proof_wait_test PRIVATE ${HW_COMMON_SOURCES} ${EMU_SOURCES} ${HW_VDF_ASM_SOURCES} ${VDF_COMMON_SOURCES})
+  # The loop fixture substitutes only the supervisor boundary; all polling,
+  # completion handling and emulated USB/proof code remain the production code.
+  set(HW_PROOF_TEST_SOURCES ${HW_COMMON_SOURCES})
+  list(REMOVE_ITEM HW_PROOF_TEST_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_live_control.cpp)
+  target_sources(hw_proof_wait_test PRIVATE ${HW_PROOF_TEST_SOURCES} ${EMU_SOURCES} ${HW_VDF_ASM_SOURCES} ${VDF_COMMON_SOURCES})
   target_compile_definitions(hw_proof_wait_test PRIVATE ${VDF_COMMON_DEFINITIONS})
   target_include_directories(hw_proof_wait_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/hw ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222)
-  target_link_libraries(hw_proof_wait_test PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
+  target_link_libraries(hw_proof_wait_test PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads ${HW_SOCKET_LIBS})
   vdf_add_windows_clang_opts(hw_proof_wait_test)
   if(UNIX AND NOT APPLE)
     # Generated asm objects use absolute relocations; disable PIE for this target.

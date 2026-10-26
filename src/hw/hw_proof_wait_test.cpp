@@ -9,6 +9,8 @@
 #include <stdexcept>
 #include <vector>
 
+#include "hw_client_loop_test.cpp"
+
 int hw_proof_wait_value(struct vdf_state *vdf, size_t pos);
 form *hw_proof_value_at(struct vdf_state *vdf, size_t pos);
 void hw_proof_process_work(struct vdf_state *vdf);
@@ -181,6 +183,7 @@ int main() {
     try {
         VdfBaseInit();
         check_pll_bounds();
+        check_completed_engine_control_mask();
         {
             vdf_state vdf{};
             initialize_wait_state(vdf);

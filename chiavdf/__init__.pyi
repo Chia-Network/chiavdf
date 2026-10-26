@@ -40,6 +40,14 @@ def prove(
     num_iterations: int,
     shutdown_file_path: str,
 ) -> bytes: ...
+def prove_low_memory(
+    challenge_hash: bytes,
+    x_s: bytes | str,
+    discriminant_size_bits: int,
+    num_iterations: int,
+    shutdown_file_path: str = "",
+    checkpoint_interval: int = 0,
+) -> bytes: ...
 def verify_n_wesolowski_with_b(
     discriminant: str,
     B: str,

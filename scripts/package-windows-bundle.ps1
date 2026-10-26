@@ -1,4 +1,4 @@
-# Build the Windows release zip so it starts on a machine that has never
+# Build the Windows release assets so they start on a machine that has never
 # seen this checkout.
 #
 # Windows loads a DLL from the directory containing the executable, then
@@ -16,6 +16,15 @@
 # Authenticode signature, requires a timestamp and the expected Chia signer for
 # our signed files, and accepts the vendor chain for the remaining DLLs.
 #
+# BuildInstaller turns the signed bundle and the staged FTDI CDM driver into a
+# machine-scope Inno Setup installer. The installer puts all six tools on the
+# system PATH and stages ftdibus.inf/ftdiport.inf with pnputil, so one winget
+# install covers both software timelords and ASIC hosts. The portable zip
+# remains available for users who cannot elevate. The installer actions live in
+# windows-installer.ps1; FinalizeInstaller, VerifyInstaller, and TestInstaller
+# cover the installer's signature, signed hash/stable alias, and an
+# install/reinstall/uninstall smoke test.
+#
 # EXPECTED_SIGNER_SUBJECT (regex) and EXPECTED_SIGNER_THUMBPRINT optionally pin
 # the publisher for our signed files. When both are unset, the subject must
 # contain "Chia Network" (the Artifact Signing certificate profile).
@@ -25,7 +34,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('Assemble', 'ListSignFiles', 'Package')]
+    [ValidateSet('Assemble', 'ListSignFiles', 'Package', 'BuildInstaller', 'FinalizeInstaller', 'VerifyInstaller', 'TestInstaller')]
     [string]$Action
 )
 
@@ -33,8 +42,11 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 . (Join-Path $PSScriptRoot 'windows-pe.ps1')
+. (Join-Path $PSScriptRoot 'windows-ftdi-driver.ps1')
+. (Join-Path $PSScriptRoot 'windows-installer.ps1')
 
 $RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
+$InstallerScript = Join-Path $RepoRoot 'installer/windows/chiavdf.iss'
 
 $BundleExes = @(
     'vdf_client.exe',
@@ -93,13 +105,19 @@ function Get-BundlePaths {
     $baseName = "chiavdf-$Version-windows-amd64"
     $distDir = Join-Path $RepoRoot 'dist/windows'
     $bundleRoot = Join-Path $distDir $baseName
+    $setupName = "$baseName-setup"
     [pscustomobject]@{
-        BaseName        = $baseName
-        DistDir         = $distDir
-        BundleRoot      = $bundleRoot
-        BinDir          = Join-Path $bundleRoot 'bin'
-        AssetPath       = Join-Path $distDir "$baseName.zip"
-        WingetAssetPath = Join-Path $distDir 'chiavdf-win64.zip'
+        BaseName         = $baseName
+        DistDir          = $distDir
+        BundleRoot       = $bundleRoot
+        BinDir           = Join-Path $bundleRoot 'bin'
+        AssetPath        = Join-Path $distDir "$baseName.zip"
+        WingetAssetPath  = Join-Path $distDir 'chiavdf-win64.zip'
+        DriverDir        = Join-Path $RepoRoot 'src/hw/libft4222/driver'
+        InstallerScript  = $InstallerScript
+        SetupBaseName    = $setupName
+        SetupPath        = Join-Path $distDir "$setupName.exe"
+        WingetSetupPath  = Join-Path $distDir 'chiavdf-win64-setup.exe'
     }
 }
 
@@ -367,7 +385,14 @@ function Get-BinariesWeSign {
 }
 
 function Assert-Authenticode {
-    param([Parameter(Mandatory = $true)][string]$BinDir)
+    param(
+        [string]$BinDir,
+        [string]$Path
+    )
+    if (([string]::IsNullOrWhiteSpace($BinDir) -and [string]::IsNullOrWhiteSpace($Path)) -or
+        (-not [string]::IsNullOrWhiteSpace($BinDir) -and -not [string]::IsNullOrWhiteSpace($Path))) {
+        throw 'Specify exactly one of -BinDir or -Path.'
+    }
     $expectedSubject = [Environment]::GetEnvironmentVariable('EXPECTED_SIGNER_SUBJECT')
     $expectedThumbprint = [Environment]::GetEnvironmentVariable('EXPECTED_SIGNER_THUMBPRINT')
     $expectedVendorSubject = [Environment]::GetEnvironmentVariable('EXPECTED_VENDOR_SUBJECT')
@@ -377,8 +402,17 @@ function Assert-Authenticode {
     if ([string]::IsNullOrWhiteSpace($expectedVendorSubject)) {
         $expectedVendorSubject = '(?i)Microsoft|FTDI|Future Technology'
     }
-    $signedNames = @(Get-BinariesWeSign -BinDir $BinDir | ForEach-Object { [System.IO.Path]::GetFileName($_) })
-    foreach ($binary in @(Get-ShippedBinaries $BinDir)) {
+    if (-not [string]::IsNullOrWhiteSpace($Path)) {
+        if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+            throw "Signed file does not exist: $Path"
+        }
+        $binaries = @(Get-Item -LiteralPath $Path)
+        $signedNames = @([System.IO.Path]::GetFileName($Path))
+    } else {
+        $binaries = @(Get-ShippedBinaries $BinDir)
+        $signedNames = @(Get-BinariesWeSign -BinDir $BinDir | ForEach-Object { [System.IO.Path]::GetFileName($_) })
+    }
+    foreach ($binary in $binaries) {
         $signature = Get-AuthenticodeSignature -LiteralPath $binary.FullName
         if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
             throw "$($binary.Name) has no valid Authenticode signature: $($signature.StatusMessage)"
@@ -551,6 +585,27 @@ function Assert-ZipRoot {
     return $top[0].FullName
 }
 
+function Publish-ReleaseAlias {
+    param(
+        [Parameter(Mandatory = $true)][string]$SourcePath,
+        [Parameter(Mandatory = $true)][string]$AliasPath,
+        [Parameter(Mandatory = $true)][bool]$IsRelease,
+        [Parameter(Mandatory = $true)][string]$Hash,
+        [Parameter(Mandatory = $true)][string]$MismatchMessage
+    )
+    if (-not $IsRelease) {
+        Remove-Item -LiteralPath $AliasPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath "$AliasPath.sha256" -Force -ErrorAction SilentlyContinue
+        return
+    }
+    Copy-Item -LiteralPath $SourcePath -Destination $AliasPath -Force
+    Set-Content -LiteralPath "$AliasPath.sha256" -Value $Hash -NoNewline
+    $aliasHash = (Get-FileHash -LiteralPath $AliasPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($aliasHash -ne $Hash) {
+        throw $MismatchMessage
+    }
+}
+
 function Publish-BundleZip {
     param(
         [Parameter(Mandatory = $true)]$Paths,
@@ -571,17 +626,9 @@ function Publish-BundleZip {
     }
     $hash = (Get-FileHash -LiteralPath $Paths.AssetPath -Algorithm SHA256).Hash.ToLowerInvariant()
     Set-Content -LiteralPath "$($Paths.AssetPath).sha256" -Value $hash -NoNewline
-    if (-not $IsRelease) {
-        Remove-Item -LiteralPath $Paths.WingetAssetPath -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath "$($Paths.WingetAssetPath).sha256" -Force -ErrorAction SilentlyContinue
-        return
-    }
-    Copy-Item -LiteralPath $Paths.AssetPath -Destination $Paths.WingetAssetPath -Force
-    Set-Content -LiteralPath "$($Paths.WingetAssetPath).sha256" -Value $hash -NoNewline
-    $aliasHash = (Get-FileHash -LiteralPath $Paths.WingetAssetPath -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($aliasHash -ne $hash) {
-        throw 'chiavdf-win64.zip does not match the versioned Windows zip.'
-    }
+    Publish-ReleaseAlias -SourcePath $Paths.AssetPath -AliasPath $Paths.WingetAssetPath `
+        -IsRelease $IsRelease -Hash $hash `
+        -MismatchMessage 'chiavdf-win64.zip does not match the versioned Windows zip.'
 }
 
 function Invoke-ExtractedZip {
@@ -657,5 +704,9 @@ if ($MyInvocation.InvocationName -ne '.') {
         'Assemble' { Invoke-Assemble }
         'ListSignFiles' { Invoke-ListSignFiles }
         'Package' { Invoke-Package }
+        'BuildInstaller' { Invoke-BuildInstaller }
+        'FinalizeInstaller' { Invoke-FinalizeInstaller }
+        'VerifyInstaller' { Invoke-VerifyInstaller }
+        'TestInstaller' { Invoke-TestInstaller }
     }
 }

@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
-$scriptPath = Join-Path $root 'scripts/package-windows-bundle.ps1'
+$scriptPath = Join-Path $root 'scripts/windows-installer.ps1'
 
 $tokens = $null
 $errors = $null
@@ -20,7 +20,7 @@ $functionAst = $ast.Find({
         $node.Name -eq 'Get-InstallerVersionInfoVersion'
     }, $true)
 if ($null -eq $functionAst) {
-    throw 'Get-InstallerVersionInfoVersion was not found in package-windows-bundle.ps1'
+    throw 'Get-InstallerVersionInfoVersion was not found in windows-installer.ps1'
 }
 Invoke-Expression $functionAst.Extent.Text
 
@@ -40,4 +40,54 @@ foreach ($case in $cases) {
     }
 }
 
-Write-Host "Windows installer version checks passed ($($cases.Count) cases)"
+. (Join-Path $root 'scripts/windows-ftdi-driver.ps1')
+
+$required = @(Get-FtdiDriverRequiredFiles)
+if ($required.Count -ne 18) {
+    throw "FTDI driver required-file list has $($required.Count) entries, expected 18"
+}
+foreach ($name in @(
+        'ftdibus.inf',
+        'ftdiport.cat',
+        'amd64\ftdibus.sys',
+        'i386\ftcserco.dll'
+    )) {
+    if ($required -notcontains $name) {
+        throw "FTDI driver required-file list is missing $name"
+    }
+}
+
+$expectedCn = 'Microsoft Windows Hardware Compatibility Publisher'
+foreach ($subject in @(
+        "CN=$expectedCn, OU=Windows, O=Microsoft Corporation, C=US",
+        "CN=`"$expectedCn`", O=Microsoft Corporation"
+    )) {
+    $actual = Get-CertificateSubjectCommonName -Subject $subject
+    if ($actual -ne $expectedCn) {
+        throw "Get-CertificateSubjectCommonName('$subject') returned '$actual'"
+    }
+}
+$loose = Get-CertificateSubjectCommonName -Subject "CN=Not $expectedCn"
+if ($loose -eq $expectedCn) {
+    throw 'Get-CertificateSubjectCommonName accepted a loose substring match'
+}
+
+$tempInf = [System.IO.Path]::GetTempFileName()
+try {
+    Set-Content -LiteralPath $tempInf -Value 'USB\VID_0403&PID_601C' -Encoding ASCII
+    Assert-FtdiDriverInfVidPid -Path $tempInf
+    Set-Content -LiteralPath $tempInf -Value 'USB\VID_1234&PID_5678' -Encoding ASCII
+    $threw = $false
+    try {
+        Assert-FtdiDriverInfVidPid -Path $tempInf
+    } catch {
+        $threw = $true
+    }
+    if (-not $threw) {
+        throw 'Assert-FtdiDriverInfVidPid accepted a non-FT4222H VID/PID'
+    }
+} finally {
+    Remove-Item -LiteralPath $tempInf -Force -ErrorAction SilentlyContinue
+}
+
+Write-Host "Windows installer checks passed ($($cases.Count) version cases plus driver helper checks)"

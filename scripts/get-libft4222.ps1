@@ -7,6 +7,7 @@ Param(
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "windows-pe.ps1")
+. (Join-Path $PSScriptRoot "windows-ftdi-driver.ps1")
 
 $RootDir = Resolve-Path (Join-Path $PSScriptRoot "..")
 $SrcDir = Join-Path $RootDir "src"
@@ -34,13 +35,6 @@ $D2xxZipPath = Join-Path $WorkDir "CDM-v2.12.36.20-WHQL-Certified.zip"
 $D2xxEntry = "amd64/FTD2XX64.dll"
 $D2xxStagedName = "FTD2XX.dll"
 $D2xxDriverExtractDir = Join-Path $WorkDir "cdm-extract"
-$D2xxDriverFiles = @(
-    "ftdibus.inf",
-    "ftdibus.cat",
-    "ftdiport.inf",
-    "ftdiport.cat"
-)
-$D2xxDriverArchDirs = @("amd64", "i386")
 
 $LibFt4222Dll = "imports\LibFT4222\dll\amd64\LibFT4222-64.dll"
 $LibFt4222Lib = "imports\LibFT4222\dll\amd64\LibFT4222-64.lib"
@@ -160,14 +154,14 @@ function Install-Ftd2xxDriver {
     }
     Ensure-Dir $Destination
 
-    foreach ($name in $D2xxDriverFiles) {
+    foreach ($name in $FtdiDriverTopLevelFiles) {
         $source = Join-Path $D2xxDriverExtractDir $name
         if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
             throw "CDM archive is missing $name."
         }
         Copy-Item -LiteralPath $source -Destination (Join-Path $Destination $name) -Force
     }
-    foreach ($arch in $D2xxDriverArchDirs) {
+    foreach ($arch in $FtdiDriverArchDirs) {
         $source = Join-Path $D2xxDriverExtractDir $arch
         if (-not (Test-Path -LiteralPath $source -PathType Container)) {
             throw "CDM archive is missing the $arch driver directory."
@@ -181,38 +175,7 @@ function Install-Ftd2xxDriver {
             ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $target -Force }
     }
 
-    foreach ($relative in @(
-            "amd64\ftdibus.sys",
-            "amd64\ftbusui.dll",
-            "amd64\ftd2xx64.dll",
-            "amd64\ftlang.dll",
-            "amd64\ftser2k.sys",
-            "amd64\ftserui2.dll",
-            "amd64\ftcserco.dll",
-            "i386\ftd2xx.dll",
-            "i386\ftdibus.sys",
-            "i386\ftbusui.dll",
-            "i386\ftlang.dll",
-            "i386\ftser2k.sys",
-            "i386\ftserui2.dll",
-            "i386\ftcserco.dll"
-        )) {
-        if (-not (Test-Path -LiteralPath (Join-Path $Destination $relative) -PathType Leaf)) {
-            throw "CDM archive is missing $relative."
-        }
-    }
-
-    $busInf = Join-Path $Destination "ftdibus.inf"
-    $infText = Get-Content -LiteralPath $busInf -Raw
-    if ($infText -notmatch [regex]::Escape('USB\VID_0403&PID_601C')) {
-        throw "ftdibus.inf does not declare the FT4222H VID/PID (0403:601c)."
-    }
-    foreach ($catalog in @("ftdibus.cat", "ftdiport.cat")) {
-        $signature = Get-AuthenticodeSignature -LiteralPath (Join-Path $Destination $catalog)
-        if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
-            throw "$catalog has no valid Authenticode signature: $($signature.StatusMessage)"
-        }
-    }
+    Assert-FtdiDriverSource -DriverDir $Destination
 
     @"
 FTDI CDM 2.12.36.20 (WHQL Certified)

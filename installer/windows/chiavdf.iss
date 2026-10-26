@@ -46,9 +46,8 @@ AppPublisherURL=https://github.com/Chia-Network/chiavdf
 AppSupportURL=https://github.com/Chia-Network/chiavdf/issues
 AppUpdatesURL=https://github.com/Chia-Network/chiavdf/releases
 DefaultDirName={autopf}\Chia\chiavdf
-DefaultGroupName=Chia\chiavdf
 DisableProgramGroupPage=yes
-DisableDirPage=no
+DisableDirPage=auto
 UsePreviousAppDir=yes
 OutputDir={#MyOutputDir}
 OutputBaseFilename={#MyOutputBaseFilename}
@@ -56,15 +55,13 @@ Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
-PrivilegesRequiredOverridesAllowed=
 ; x64 is the accepted alias for x64os; kernel drivers cannot use ARM64/x64
 ; emulation, so do not broaden this to x64compatible.
 ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
 MinVersion=10.0.19041
 ChangesEnvironment=yes
-RestartIfNeededByRun=no
-UninstallDisplayName=chiavdf {#MyAppVersion}
+UninstallDisplayName=chiavdf
 UninstallDisplayIcon={app}\bin\vdf_client.exe
 LicenseFile={#MyRepoRoot}\LICENSE
 VersionInfoVersion={#MyVersionInfoVersion}
@@ -72,11 +69,19 @@ VersionInfoProductVersion={#MyVersionInfoVersion}
 VersionInfoCompany=Chia Network, Inc.
 VersionInfoDescription=chiavdf installer
 VersionInfoProductName=chiavdf
+; The release workflow supplies a SignTool through ISCC /S and defines
+; MySignTool. SignedUninstaller signs unins000.exe during compilation.
+#ifdef MySignTool
+SignTool={#MySignTool}
+SignedUninstaller=yes
+#endif
 
 [InstallDelete]
-; Remove stale binaries from an older release before laying down the new set.
-Type: filesandordirs; Name: "{app}\bin"
-Type: filesandordirs; Name: "{app}\driver"
+; Remove stale binaries only when upgrading the same directory. A fresh install
+; or an install to a different directory must not delete files the user put in
+; a directory they chose.
+Type: filesandordirs; Name: "{app}\bin"; Check: IsSameDirectoryUpgrade
+Type: filesandordirs; Name: "{app}\driver"; Check: IsSameDirectoryUpgrade
 
 [Files]
 Source: "{#MyBundleDir}\bin\*"; DestDir: "{app}\bin"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -86,77 +91,143 @@ Source: "{#MyRepoRoot}\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flag
 [Code]
 const
   EnvironmentKey = 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment';
+  UninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{48EFE738-4652-4CA6-B908-3D5317CE7C84}_is1';
+  DriverInstallFailedExitCode = 1603;
 
 var
   DriverRebootRequired: Boolean;
-
-function NormalizePath(const Value: string): string;
-begin
-  Result := RemoveBackslashUnlessRoot(Value);
-end;
+  DriverInstallFailed: Boolean;
 
 function PathEntryEquals(const A, B: string): Boolean;
 begin
-  Result := CompareText(NormalizePath(A), NormalizePath(B)) = 0;
+  Result := CompareText(RemoveBackslashUnlessRoot(A), RemoveBackslashUnlessRoot(B)) = 0;
 end;
 
-procedure AddToSystemPath(const Dir: string);
+function IsSameDirectoryUpgrade: Boolean;
 var
-  Paths, NormalizedDir: string;
+  PreviousDir: string;
 begin
-  NormalizedDir := NormalizePath(Dir);
-  if not RegQueryStringValue(HKEY_LOCAL_MACHINE, EnvironmentKey, 'Path', Paths) then
-    Paths := '';
-  if Pos(';' + Uppercase(NormalizedDir) + ';', ';' + Uppercase(Paths) + ';') > 0 then
-  begin
-    Log('PATH already contains ' + NormalizedDir);
+  Result := False;
+  if not RegQueryStringValue(HKEY_LOCAL_MACHINE, UninstallKey, 'Inno Setup: App Path', PreviousDir) then
     exit;
+  Result := PathEntryEquals(PreviousDir, ExpandConstant('{app}'));
+end;
+
+function IsAllowedInstallDir(const Dir: string): Boolean;
+var
+  Candidate, Allowed: string;
+begin
+  Candidate := RemoveBackslashUnlessRoot(ExpandFileName(Dir));
+  Allowed := RemoveBackslashUnlessRoot(ExpandConstant('{autopf}'));
+  Result := (CompareText(Candidate, Allowed) = 0) or
+    (Pos(UpperCase(Allowed) + '\', UpperCase(Candidate)) = 1);
+end;
+
+function InitializeSetup(): Boolean;
+var
+  RequestedDir: string;
+begin
+  Result := True;
+  RequestedDir := ExpandConstant('{param:DIR|}');
+  if (RequestedDir <> '') and not IsAllowedInstallDir(RequestedDir) then
+  begin
+    MsgBox('chiavdf must be installed under ' + ExpandConstant('{autopf}') + '.',
+      mbError, MB_OK);
+    Result := False;
   end;
-  if Paths = '' then
-    Paths := NormalizedDir
-  else
-    Paths := Paths + ';' + NormalizedDir;
-  if not RegWriteExpandStringValue(HKEY_LOCAL_MACHINE, EnvironmentKey, 'Path', Paths) then
-    RaiseException('Could not add ' + NormalizedDir + ' to the system PATH.');
-  Log('Added to system PATH: ' + NormalizedDir);
 end;
 
-procedure RemoveFromSystemPath(const Dir: string);
-var
-  Paths, NewPaths, Part: string;
-  P, Start: Integer;
+function NextButtonClick(CurPageID: Integer): Boolean;
 begin
-  if not RegQueryStringValue(HKEY_LOCAL_MACHINE, EnvironmentKey, 'Path', Paths) then
-    exit;
-  NewPaths := '';
-  Start := 1;
-  for P := 1 to Length(Paths) do
+  Result := True;
+  if CurPageID = wpSelectDir then
   begin
-    if Paths[P] = ';' then
+    if not IsAllowedInstallDir(WizardDirValue) then
+    begin
+      MsgBox('chiavdf must be installed under ' + ExpandConstant('{autopf}') + '.',
+        mbError, MB_OK);
+      Result := False;
+    end;
+  end;
+end;
+
+function UpdateSystemPath(const Paths, Dir: string; Add: Boolean; var NewPaths: string): Boolean;
+var
+  Part, NormalizedDir: string;
+  P, Start: Integer;
+  Found: Boolean;
+begin
+  NewPaths := '';
+  Found := False;
+  NormalizedDir := RemoveBackslashUnlessRoot(Dir);
+  Start := 1;
+  for P := 1 to Length(Paths) + 1 do
+  begin
+    if (P > Length(Paths)) or (Paths[P] = ';') then
     begin
       Part := Copy(Paths, Start, P - Start);
-      if (Part <> '') and not PathEntryEquals(Part, Dir) then
+      if Part <> '' then
       begin
-        if NewPaths <> '' then
-          NewPaths := NewPaths + ';';
-        NewPaths := NewPaths + Part;
+        if PathEntryEquals(Part, Dir) then
+        begin
+          Found := True;
+          if Add then
+          begin
+            if NewPaths <> '' then
+              NewPaths := NewPaths + ';';
+            NewPaths := NewPaths + Part;
+          end;
+        end
+        else
+        begin
+          if NewPaths <> '' then
+            NewPaths := NewPaths + ';';
+          NewPaths := NewPaths + Part;
+        end;
       end;
       Start := P + 1;
     end;
   end;
-  Part := Copy(Paths, Start, Length(Paths) - Start + 1);
-  if (Part <> '') and not PathEntryEquals(Part, Dir) then
+  if Add and not Found then
   begin
     if NewPaths <> '' then
       NewPaths := NewPaths + ';';
-    NewPaths := NewPaths + Part;
+    NewPaths := NewPaths + NormalizedDir;
   end;
-  if NewPaths <> Paths then
+  Result := NewPaths <> Paths;
+end;
+
+procedure AddToSystemPath(const Dir: string);
+var
+  Paths, NewPaths: string;
+begin
+  if not RegQueryStringValue(HKEY_LOCAL_MACHINE, EnvironmentKey, 'Path', Paths) then
+    RaiseException('Could not read the system PATH from the registry.');
+  if not UpdateSystemPath(Paths, Dir, True, NewPaths) then
+  begin
+    Log('PATH already contains ' + RemoveBackslashUnlessRoot(Dir));
+    exit;
+  end;
+  if not RegWriteExpandStringValue(HKEY_LOCAL_MACHINE, EnvironmentKey, 'Path', NewPaths) then
+    RaiseException('Could not add ' + RemoveBackslashUnlessRoot(Dir) + ' to the system PATH.');
+  Log('Added to system PATH: ' + RemoveBackslashUnlessRoot(Dir));
+end;
+
+procedure RemoveFromSystemPath(const Dir: string);
+var
+  Paths, NewPaths: string;
+begin
+  if not RegQueryStringValue(HKEY_LOCAL_MACHINE, EnvironmentKey, 'Path', Paths) then
+  begin
+    Log('Could not read the system PATH from the registry; leaving it unchanged.');
+    exit;
+  end;
+  if UpdateSystemPath(Paths, Dir, False, NewPaths) then
   begin
     if RegWriteExpandStringValue(HKEY_LOCAL_MACHINE, EnvironmentKey, 'Path', NewPaths) then
-      Log('Removed from system PATH: ' + NormalizePath(Dir))
+      Log('Removed from system PATH: ' + RemoveBackslashUnlessRoot(Dir))
     else
-      Log('Could not remove from system PATH: ' + NormalizePath(Dir));
+      Log('Could not remove from system PATH: ' + RemoveBackslashUnlessRoot(Dir));
   end;
 end;
 
@@ -171,18 +242,23 @@ var
 begin
   if not Exec(ExpandConstant('{sys}\pnputil.exe'), Arguments, '', SW_HIDE,
     ewWaitUntilTerminated, ResultCode) then
-    RaiseException('Could not run pnputil.exe for ' + Description + '.');
+  begin
+    DriverInstallFailed := True;
+    Log('Could not run pnputil.exe for ' + Description + '.');
+    exit;
+  end;
   Log(Format('pnputil.exe %s exited with code %d', [Description, ResultCode]));
-  if ResultCode = 3010 then
-    DriverRebootRequired := True
-  else if ResultCode = 1641 then
+  if (ResultCode = 3010) or (ResultCode = 1641) then
     DriverRebootRequired := True
   else if ResultCode = 259 then
     // The package was staged, but no device matched or a better driver is
     // already active. This is normal for a software-only timelord install.
     Log('No matching device or a newer driver is already active for ' + Description + '.')
   else if ResultCode <> 0 then
-    RaiseException(Format('pnputil.exe failed for %s with exit code %d.', [Description, ResultCode]));
+  begin
+    DriverInstallFailed := True;
+    Log(Format('pnputil.exe failed for %s with exit code %d.', [Description, ResultCode]));
+  end;
 end;
 
 procedure InstallDriverPackage(const InfName: string);
@@ -191,40 +267,28 @@ var
 begin
   InfPath := ExpandConstant('{app}\driver\') + InfName;
   if not FileExists(InfPath) then
-    RaiseException('The FTDI driver package is missing: ' + InfPath);
-  RunPnPUtil('/add-driver ' + AddQuotes(InfPath) + ' /install', InfName);
-end;
-
-procedure RescanDevices;
-var
-  ResultCode: Integer;
-begin
-  if not Exec(ExpandConstant('{sys}\pnputil.exe'), '/scan-devices', '', SW_HIDE,
-    ewWaitUntilTerminated, ResultCode) then
   begin
-    Log('Could not run pnputil.exe /scan-devices.');
+    DriverInstallFailed := True;
+    Log('The FTDI driver package is missing: ' + InfPath);
     exit;
   end;
-  Log(Format('pnputil.exe /scan-devices exited with code %d', [ResultCode]));
-  if ResultCode = 3010 then
-    DriverRebootRequired := True
-  else if ResultCode <> 0 then
-    Log(Format('pnputil.exe /scan-devices failed with code %d', [ResultCode]));
+  RunPnPUtil('/add-driver ' + AddQuotes(InfPath) + ' /install', InfName);
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
   begin
+    // Add PATH before the driver so a driver failure cannot leave a usable
+    // install without a PATH entry.
+    AddToSystemPath(ExpandConstant('{app}\bin'));
     if DriverInstallEnabled then
     begin
       InstallDriverPackage('ftdibus.inf');
       InstallDriverPackage('ftdiport.inf');
-      RescanDevices;
     end
     else
       Log('FTDI driver installation skipped because /DRIVER=0 was supplied.');
-    AddToSystemPath(ExpandConstant('{app}\bin'));
   end;
 end;
 
@@ -243,7 +307,9 @@ end;
 
 function GetCustomSetupExitCode: Integer;
 begin
-  if DriverRebootRequired then
+  if DriverInstallFailed then
+    Result := DriverInstallFailedExitCode
+  else if DriverRebootRequired then
     Result := 3010
   else
     Result := 0;

@@ -29,9 +29,10 @@ We use Inno Setup 6, not WiX Burn/MSI. The deciding requirements are:
 4. **winget support.** winget accepts `InstallerType: inno` and its silent
    switches. The manifest can use the stable `chiavdf-win64-setup.exe` URL and
    list `3010` in `InstallerSuccessCodes`.
-5. **Lower CI cost.** The sign job installs Inno Setup with Chocolatey and runs
-   `ISCC.exe`. WiX would require the WiX SDK, MSI authoring, Burn authoring, and
-   custom-action plumbing for the same result.
+5. **Lower CI cost.** The Windows jobs download the pinned Inno Setup 6.7.3
+   installer, verify its SHA-256, and run `ISCC.exe`. WiX would require the WiX
+   SDK, MSI authoring, Burn authoring, and custom-action plumbing for the same
+   result.
 
 WiX remains the better choice if this project later needs a first-class MSI for
 enterprise deployment. That can be added as a second package without changing
@@ -40,9 +41,11 @@ the winget `inno` installer.
 ## What it installs
 
 The installer requires x64 Windows 10 version 2004 (build 19041) or newer,
-because it uses `pnputil /scan-devices` and installs an x64 kernel driver. It
-does not support ARM64 Windows. The default directory is
-`%ProgramFiles%\Chia\chiavdf`:
+because it stages an x64 kernel driver with `pnputil`. It does not support
+ARM64 Windows. The default directory is `%ProgramFiles%\Chia\chiavdf`.
+`DisableDirPage=auto` hides the directory page on an upgrade, and the installer
+refuses a directory outside `{autopf}` both for the interactive page and for
+`/DIR`.
 
 ```text
 bin\vdf_client.exe
@@ -76,12 +79,12 @@ terms. `driver\SOURCE.txt` records the source URL and SHA-256.
 
 ## Driver installation
 
-After copying files, the installer runs:
+After copying files, the installer adds the `bin` directory to the machine
+`PATH` and then runs:
 
 ```text
 pnputil.exe /add-driver "%ProgramFiles%\Chia\chiavdf\driver\ftdibus.inf" /install
 pnputil.exe /add-driver "%ProgramFiles%\Chia\chiavdf\driver\ftdiport.inf" /install
-pnputil.exe /scan-devices
 ```
 
 `ftdibus.inf` declares `USB\VID_0403&PID_601C` and the FT4222H interfaces.
@@ -96,6 +99,12 @@ installer's pending-reboot state, and `GetCustomSetupExitCode` returns `3010`;
 the winget manifest must list it in `InstallerSuccessCodes`. Any other nonzero
 code fails setup with a diagnostic in the setup log.
 
+A driver staging failure is logged and returns exit code `1603` instead of
+raising an exception. The `PATH` entry is written before the driver runs, so a
+driver failure does not leave the installed files without a usable `PATH`.
+`/DRIVER=0` skips driver staging for software-only installs and for tests that
+must not change the driver store.
+
 The driver is **not removed on uninstall**. It is shared with other FTDI devices
 and may be in use by a device that is not part of this package. Removing it would
 be a surprising, system-wide change.
@@ -103,10 +112,17 @@ be a surprising, system-wide change.
 ## `PATH` and uninstall
 
 The installer appends `%ProgramFiles%\Chia\chiavdf\bin` to the machine
-`PATH` only if an equivalent entry is not already present. `ChangesEnvironment`
-broadcasts the update so new shells see it without a logout; already-open
-terminals must be restarted. The uninstaller removes exactly that entry and
-leaves other `PATH` components alone.
+`PATH` only if an equivalent entry is not already present. Add and remove use
+the same comparison, which ignores case and a trailing backslash, so a
+reinstall does not create a duplicate. `ChangesEnvironment` broadcasts the
+update so new shells see it without a logout; already-open terminals must be
+restarted. The uninstaller removes every equivalent entry and leaves other
+`PATH` components alone. A failed registry read aborts the add instead of
+writing a `PATH` that contains only the new directory.
+
+`[InstallDelete]` removes the old `bin` and `driver` directories only when the
+new install directory matches the previous install directory. A fresh install,
+or an upgrade to a different directory, does not delete user files.
 
 ## Signing and verification
 
@@ -114,18 +130,24 @@ The release flow is:
 
 1. Build and test Windows; upload `windows-amd64-binaries`, including the staged
    driver directory.
-2. Sign the six executables and MPIR DLLs.
-3. Package and verify the portable zip.
-4. Build the setup exe from the signed bundle and driver files.
-5. Sign the setup exe in a second signing call.
-6. Finalize the hash and stable alias from the signed EXE, then verify its
+2. Install the pinned Inno Setup 6.7.3 release after verifying its SHA-256, then
+   install the Azure signing client.
+3. Sign the six executables and MPIR DLLs.
+4. Package and verify the portable zip.
+5. Build the setup exe from the signed bundle and driver files. `ISCC` receives
+   a `SignTool` through `/S`, so `SignedUninstaller=yes` signs `unins000.exe`
+   during compilation.
+6. Sign the setup exe in a second signing call.
+7. Finalize the hash and stable alias from the signed EXE, then verify its
    checksum, Authenticode chain, timestamp, and expected signer.
-7. Run a silent install with `/DRIVER=0`, check all six `--version` probes, and
-   uninstall.
+8. Run a silent install with `/DRIVER=1`, accept exit codes `0`, `259`, and
+   `3010`, check all six `--version` probes, confirm `pnputil /enum-drivers`
+   lists the driver, reinstall to confirm `PATH` contains the entry exactly
+   once, and uninstall.
 
-`TestInstaller` intentionally skips driver installation so CI does not modify
-the runner's driver store. Driver installation is exercised on a disposable
-Windows VM or a real ASIC host before release.
+`TestInstaller` runs on the ephemeral CI runner. The PR job compiles the
+installer without signing and runs the same smoke test; a non-elevated process
+fails in CI instead of skipping the test.
 
 ## winget manifest
 

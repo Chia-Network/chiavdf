@@ -37,10 +37,10 @@ shows up as a 403 / `SignerSign()` failure.
 Pull requests still build and test Windows, but do not enter the signing
 environment and do not produce a signed Windows bundle. A PR-only
 `test-windows-installer` job compiles the unsigned installer and runs the same
-silent install/uninstall smoke test with driver staging disabled, so Inno Setup
-script or PATH regressions fail before merge. Optimized builds on pushes,
-releases, and manual dispatches sign in `sign-windows`; the build job uploads
-only the raw `windows-amd64-binaries` artifact.
+silent install/reinstall/uninstall smoke test with driver staging enabled, so
+Inno Setup script, driver, or PATH regressions fail before merge. Optimized
+builds on pushes, releases, and manual dispatches sign in `sign-windows`; the
+build job uploads only the raw `windows-amd64-binaries` artifact.
 
 ## What gets signed
 
@@ -66,18 +66,22 @@ contain `Chia Network`. If both are set, both must match. Vendor DLLs must match
 those values from repository variables to pin the publishers exactly.
 
 After the zip is verified, the job builds
-`chiavdf-<version>-windows-amd64-setup.exe` with Inno Setup 6. The installer
-embeds the already-signed `bin\` tree and the unmodified FTDI CDM driver package.
-It is signed in a second call to `Chia-Network/actions/sign/azure-windows@main`
-using `ListInstallerSignFile`. `FinalizeInstaller` then hashes the signed EXE and
-creates the stable alias, so neither the sidecar nor the alias predates the
-signature. `VerifyInstaller` checks the checksum, Authenticode chain, timestamp,
-and expected signer. `TestInstaller` runs it
-silently with `/DRIVER=0` against a temporary install directory, checks all six
-executables, then runs the uninstaller; the driver flag keeps the runner's driver
-store unchanged. The binary signing list is 15 files; the installer is a separate
-one-file signing call, so the shared action's single OIDC token is not stretched
-across a larger list.
+`chiavdf-<version>-windows-amd64-setup.exe` with Inno Setup 6.7.3, installed
+from the pinned official installer after a SHA-256 check. The installer embeds
+the already-signed `bin\` tree and the unmodified FTDI CDM driver package.
+`ISCC` receives a `SignTool` through `/S`, so `SignedUninstaller=yes` signs
+`unins000.exe` during compilation. The setup exe is signed in a second call to
+the pinned `Chia-Network/actions/sign/azure-windows` action; the workflow passes
+the deterministic setup path directly. `FinalizeInstaller` then hashes the
+signed EXE and creates the stable alias, so neither the sidecar nor the alias
+predates the signature. `VerifyInstaller` checks the checksum, Authenticode
+chain, timestamp, and expected signer. `TestInstaller` runs it silently with
+`/DRIVER=1` in a directory under `%ProgramFiles%`, accepts exit codes `0`, `259`,
+and `3010`, checks all six executables, confirms `pnputil /enum-drivers` lists
+the driver, reinstalls to confirm the `PATH` entry appears exactly once, then
+runs the uninstaller. The binary signing list is 15 files; the installer is a
+separate one-file signing call, so the shared action's single OIDC token is not
+stretched across a larger list.
 
 ## How auth works
 
@@ -86,10 +90,15 @@ The `sign-windows` job in `.github/workflows/build-client.yml`:
 - Declares `environment: windows-code-signing` and `permissions.id-token: write`.
 - Assumes `AZURE_SIGNING_CLIENT_ID` and `AZURE_SIGNING_TENANT_ID` are configured
   on that environment; the shared signing action fails if either is missing.
-- Assembles the bundle, lists the files to sign, then calls
-  `Chia-Network/actions/sign/azure-windows@main` with the file list and secrets.
-- After packaging the zip, installs Inno Setup, builds the installer, lists that
-  one file, and calls the same signing action a second time.
+- Installs the pinned Inno Setup 6.7.3 release before any step that can request
+  an Azure/OIDC token.
+- Installs the signing client with the pinned
+  `Chia-Network/actions/sign/azure-windows` action and `sign: 'false'`, then
+  lists the files to sign and calls the same action with the file list and
+  secrets.
+- After packaging the zip, builds the installer (whose uninstaller is signed
+  during compilation), then calls the same signing action a second time with
+  the deterministic setup path.
 - The shared action installs `Microsoft.ArtifactSigning.Client` from NuGet,
   writes `metadata.json`, and adds the Windows App Certification Kit to `PATH`
   for `signtool.exe`.
@@ -120,9 +129,11 @@ The script exposes these actions:
   `EXPECTED_SIGNER_THUMBPRINT`, or `EXPECTED_VENDOR_SUBJECT` to pin the
   publishers.
 - `BuildInstaller` requires `INSTALLER_VERSION` and `REQUIRE_SIGNATURES`, plus
-  Inno Setup 6, the signed bundle, and `src/hw/libft4222/driver`. It writes the
-  unsigned versioned setup exe; sign it before the next step.
-- `ListInstallerSignFile` prints the installer path for the second signing call.
+  Inno Setup 6, the signed bundle, and `src/hw/libft4222/driver`. When
+  `REQUIRE_SIGNATURES=true` it also requires `INSTALLER_SIGNTOOL`, the command
+  passed to `ISCC` with `/SChiaSignTool=...`, so `SignedUninstaller=yes` can
+  sign `unins000.exe` during compilation. It writes the versioned setup exe;
+  sign it before the next step.
 - `FinalizeInstaller` requires `INSTALLER_VERSION`, `IS_RELEASE`, and
   `REQUIRE_SIGNATURES`; after signing it verifies the signature, writes the
   `.sha256` from the signed EXE, and creates the stable
@@ -130,17 +141,21 @@ The script exposes these actions:
 - `VerifyInstaller` requires `INSTALLER_VERSION`, `IS_RELEASE`, and
   `REQUIRE_SIGNATURES`; it checks the sidecar, signature, and release alias.
 - `TestInstaller` requires `INSTALLER_VERSION` and performs the silent
-  install/version/uninstall smoke test with `/DRIVER=0`.
+  install/reinstall/version/uninstall smoke test with `/DRIVER=1`.
 
-The `Sign` action is intentionally not local: it is provided by
-`Chia-Network/actions/sign/azure-windows@main` and needs GitHub OIDC variables.
+The `Sign` action is intentionally not local: it is provided by the pinned
+`Chia-Network/actions/sign/azure-windows` commit and needs GitHub OIDC
+variables. The installer SignTool helper in `scripts/sign-windows-file.ps1`
+uses the same client and flags.
 
 `scripts/get-libft4222.ps1 install` stages the FTDI CDM files under
 `src/hw/libft4222/driver`. `BuildInstaller` refuses to run if `ftdibus.inf`,
 `ftdibus.cat`, `ftdiport.inf`, `ftdiport.cat`, the amd64/i386 payloads, or the
-FT4222H VID/PID declaration are missing. The catalogs must have valid
-Authenticode signatures matching `EXPECTED_VENDOR_SUBJECT`; the default accepts
-Microsoft's WHQL publisher because the FTDI catalogs are Microsoft-signed.
+FT4222H VID/PID declaration are missing. The catalog signer must be the exact
+common name `Microsoft Windows Hardware Compatibility Publisher` by default;
+set `EXPECTED_DRIVER_SIGNER_CN` to override it. The file list, VID/PID check,
+and catalog signer check live in `scripts/windows-ftdi-driver.ps1` and are
+shared with the staging script.
 
 ## GitHub secrets (environment `windows-code-signing`)
 
@@ -179,9 +194,9 @@ old DigiCert `SM_*` secrets are no longer read and can be removed.
    for optimized Windows builds on pushes, releases, and manual dispatches, so
    make sure the environment allows those branches and tags.
 5. Copy the `build-client.yml` signing pattern: a dedicated Windows job with the
-   environment and `id-token: write`, using
-   `Chia-Network/actions/sign/azure-windows@main` for the NuGet client, late OIDC
-   token, `signtool` with `/dlib` and `/dmdf`, and `signtool verify /pa`.
+   environment and `id-token: write`, using the pinned
+   `Chia-Network/actions/sign/azure-windows` commit for the NuGet client, late
+   OIDC token, `signtool` with `/dlib` and `/dmdf`, and `signtool verify /pa`.
 
 ## Testing before enabling releases
 
@@ -217,8 +232,8 @@ environment's deployment rules, or merge and dispatch the workflow from `main`.
 - **Token expired mid-job:** the shared action requests one token before the
   signing loop. If the file list grows, request a token per file or per batch in
   the shared action rather than relying on the late single request.
-- **`ISCC.exe` not found:** install Inno Setup 6 on the runner
-  (`choco install innosetup -y`) or set `INNO_SETUP_ISCC` to the compiler path.
+- **`ISCC.exe` not found:** use the pinned `install-inno-setup` action on the
+  runner or set `INNO_SETUP_ISCC` to the compiler path.
 - **Missing FTDI driver inputs:** the build job must upload
   `src/hw/libft4222/driver/**`; run `scripts/get-libft4222.ps1 install` there.
   `BuildInstaller` checks the INF/CAT files, the amd64/i386 payloads, and the
@@ -227,7 +242,9 @@ environment's deployment rules, or merge and dispatch the workflow from `main`.
   installer returns 3010, and the winget manifest must list 3010 in
   `InstallerSuccessCodes`. `259` is also accepted because it means the package
   was staged but no device matched or a newer driver is already active. Any
-  other nonzero `pnputil` code fails setup.
+  other nonzero `pnputil` code fails setup; `[Code]` logs it and returns exit
+  code `1603`.
 - **Installer smoke test skipped:** `TestInstaller` skips when the PowerShell
-  process is not elevated. The release runner is elevated; a local non-elevated
-  shell should test on a disposable Windows VM instead.
+  process is not elevated and CI is not set. In CI it fails instead of
+  skipping, because a skipped test would hide installer regressions. A local
+  non-elevated shell should test on a disposable Windows VM instead.

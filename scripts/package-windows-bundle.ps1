@@ -20,10 +20,10 @@
 # machine-scope Inno Setup installer. The installer puts all six tools on the
 # system PATH and stages ftdibus.inf/ftdiport.inf with pnputil, so one winget
 # install covers both software timelords and ASIC hosts. The portable zip
-# remains available for users who cannot elevate. ListInstallerSignFile,
-# FinalizeInstaller, VerifyInstaller, and TestInstaller cover the installer's
-# signature, signed hash/stable alias, and an install/uninstall smoke test with
-# driver staging disabled.
+# remains available for users who cannot elevate. The installer actions live in
+# windows-installer.ps1; FinalizeInstaller, VerifyInstaller, and TestInstaller
+# cover the installer's signature, signed hash/stable alias, and an
+# install/reinstall/uninstall smoke test.
 #
 # EXPECTED_SIGNER_SUBJECT (regex) and EXPECTED_SIGNER_THUMBPRINT optionally pin
 # the publisher for our signed files. When both are unset, the subject must
@@ -34,7 +34,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('Assemble', 'ListSignFiles', 'Package', 'BuildInstaller', 'ListInstallerSignFile', 'FinalizeInstaller', 'VerifyInstaller', 'TestInstaller')]
+    [ValidateSet('Assemble', 'ListSignFiles', 'Package', 'BuildInstaller', 'FinalizeInstaller', 'VerifyInstaller', 'TestInstaller')]
     [string]$Action
 )
 
@@ -42,6 +42,8 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 . (Join-Path $PSScriptRoot 'windows-pe.ps1')
+. (Join-Path $PSScriptRoot 'windows-ftdi-driver.ps1')
+. (Join-Path $PSScriptRoot 'windows-installer.ps1')
 
 $RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $InstallerScript = Join-Path $RepoRoot 'installer/windows/chiavdf.iss'
@@ -383,7 +385,14 @@ function Get-BinariesWeSign {
 }
 
 function Assert-Authenticode {
-    param([Parameter(Mandatory = $true)][string]$BinDir)
+    param(
+        [string]$BinDir,
+        [string]$Path
+    )
+    if (([string]::IsNullOrWhiteSpace($BinDir) -and [string]::IsNullOrWhiteSpace($Path)) -or
+        (-not [string]::IsNullOrWhiteSpace($BinDir) -and -not [string]::IsNullOrWhiteSpace($Path))) {
+        throw 'Specify exactly one of -BinDir or -Path.'
+    }
     $expectedSubject = [Environment]::GetEnvironmentVariable('EXPECTED_SIGNER_SUBJECT')
     $expectedThumbprint = [Environment]::GetEnvironmentVariable('EXPECTED_SIGNER_THUMBPRINT')
     $expectedVendorSubject = [Environment]::GetEnvironmentVariable('EXPECTED_VENDOR_SUBJECT')
@@ -393,8 +402,17 @@ function Assert-Authenticode {
     if ([string]::IsNullOrWhiteSpace($expectedVendorSubject)) {
         $expectedVendorSubject = '(?i)Microsoft|FTDI|Future Technology'
     }
-    $signedNames = @(Get-BinariesWeSign -BinDir $BinDir | ForEach-Object { [System.IO.Path]::GetFileName($_) })
-    foreach ($binary in @(Get-ShippedBinaries $BinDir)) {
+    if (-not [string]::IsNullOrWhiteSpace($Path)) {
+        if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+            throw "Signed file does not exist: $Path"
+        }
+        $binaries = @(Get-Item -LiteralPath $Path)
+        $signedNames = @([System.IO.Path]::GetFileName($Path))
+    } else {
+        $binaries = @(Get-ShippedBinaries $BinDir)
+        $signedNames = @(Get-BinariesWeSign -BinDir $BinDir | ForEach-Object { [System.IO.Path]::GetFileName($_) })
+    }
+    foreach ($binary in $binaries) {
         $signature = Get-AuthenticodeSignature -LiteralPath $binary.FullName
         if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
             throw "$($binary.Name) has no valid Authenticode signature: $($signature.StatusMessage)"
@@ -567,6 +585,27 @@ function Assert-ZipRoot {
     return $top[0].FullName
 }
 
+function Publish-ReleaseAlias {
+    param(
+        [Parameter(Mandatory = $true)][string]$SourcePath,
+        [Parameter(Mandatory = $true)][string]$AliasPath,
+        [Parameter(Mandatory = $true)][bool]$IsRelease,
+        [Parameter(Mandatory = $true)][string]$Hash,
+        [Parameter(Mandatory = $true)][string]$MismatchMessage
+    )
+    if (-not $IsRelease) {
+        Remove-Item -LiteralPath $AliasPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath "$AliasPath.sha256" -Force -ErrorAction SilentlyContinue
+        return
+    }
+    Copy-Item -LiteralPath $SourcePath -Destination $AliasPath -Force
+    Set-Content -LiteralPath "$AliasPath.sha256" -Value $Hash -NoNewline
+    $aliasHash = (Get-FileHash -LiteralPath $AliasPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($aliasHash -ne $Hash) {
+        throw $MismatchMessage
+    }
+}
+
 function Publish-BundleZip {
     param(
         [Parameter(Mandatory = $true)]$Paths,
@@ -587,347 +626,9 @@ function Publish-BundleZip {
     }
     $hash = (Get-FileHash -LiteralPath $Paths.AssetPath -Algorithm SHA256).Hash.ToLowerInvariant()
     Set-Content -LiteralPath "$($Paths.AssetPath).sha256" -Value $hash -NoNewline
-    if (-not $IsRelease) {
-        Remove-Item -LiteralPath $Paths.WingetAssetPath -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath "$($Paths.WingetAssetPath).sha256" -Force -ErrorAction SilentlyContinue
-        return
-    }
-    Copy-Item -LiteralPath $Paths.AssetPath -Destination $Paths.WingetAssetPath -Force
-    Set-Content -LiteralPath "$($Paths.WingetAssetPath).sha256" -Value $hash -NoNewline
-    $aliasHash = (Get-FileHash -LiteralPath $Paths.WingetAssetPath -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($aliasHash -ne $hash) {
-        throw 'chiavdf-win64.zip does not match the versioned Windows zip.'
-    }
-}
-
-function Get-InstallerVersionInfoVersion {
-    param([Parameter(Mandatory = $true)][string]$Version)
-    $match = [regex]::Match($Version, '^[vV]?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:[.-](\d+))?')
-    if (-not $match.Success) {
-        return '0.0.0.0'
-    }
-    $parts = @()
-    for ($i = 1; $i -le 4; $i++) {
-        if ($match.Groups[$i].Success -and $match.Groups[$i].Value -ne '') {
-            # GitHub run IDs are now larger than Int32. Parse as Int64 first,
-            # then cap to the Inno Setup per-component limit.
-            $value = [long]$match.Groups[$i].Value
-            if ($value -gt 65535) {
-                $value = 65535
-            }
-            $parts += [int]$value
-        } else {
-            $parts += 0
-        }
-    }
-    return ($parts -join '.')
-}
-
-function Get-IsccPath {
-    $candidates = [System.Collections.Generic.List[string]]::new()
-    if (-not [string]::IsNullOrWhiteSpace($env:INNO_SETUP_ISCC)) {
-        $candidates.Add($env:INNO_SETUP_ISCC.Trim())
-    }
-    $command = Get-Command 'ISCC.exe' -ErrorAction SilentlyContinue
-    if ($command) {
-        $candidates.Add($command.Source)
-    }
-    foreach ($base in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
-        if ([string]::IsNullOrWhiteSpace($base)) {
-            continue
-        }
-        foreach ($match in @(Get-ChildItem -Path (Join-Path $base 'Inno Setup *\ISCC.exe') -ErrorAction SilentlyContinue)) {
-            $candidates.Add($match.FullName)
-        }
-    }
-    foreach ($candidate in $candidates) {
-        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
-            return (Resolve-Path -LiteralPath $candidate).Path
-        }
-    }
-    throw 'Inno Setup 6 ISCC.exe was not found. Install it (choco install innosetup -y) or set INNO_SETUP_ISCC.'
-}
-
-function Assert-DriverSource {
-    param([Parameter(Mandatory = $true)][string]$DriverDir)
-    if (-not (Test-Path -LiteralPath $DriverDir -PathType Container)) {
-        throw "FTDI driver directory is missing: $DriverDir. Run scripts/get-libft4222.ps1 install."
-    }
-    $required = @(
-        'ftdibus.inf',
-        'ftdibus.cat',
-        'ftdiport.inf',
-        'ftdiport.cat',
-        'amd64\ftdibus.sys',
-        'amd64\ftbusui.dll',
-        'amd64\ftd2xx64.dll',
-        'amd64\ftlang.dll',
-        'amd64\ftser2k.sys',
-        'amd64\ftserui2.dll',
-        'amd64\ftcserco.dll',
-        'i386\ftd2xx.dll',
-        'i386\ftdibus.sys',
-        'i386\ftbusui.dll',
-        'i386\ftlang.dll',
-        'i386\ftser2k.sys',
-        'i386\ftserui2.dll',
-        'i386\ftcserco.dll'
-    )
-    foreach ($relative in $required) {
-        $path = Join-Path $DriverDir $relative
-        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-            throw "FTDI driver file is missing: $path"
-        }
-    }
-    $inf = Get-Content -LiteralPath (Join-Path $DriverDir 'ftdibus.inf') -Raw
-    if ($inf -notmatch [regex]::Escape('USB\VID_0403&PID_601C')) {
-        throw 'ftdibus.inf does not declare the FT4222H VID/PID (0403:601c).'
-    }
-    $expectedVendor = [Environment]::GetEnvironmentVariable('EXPECTED_VENDOR_SUBJECT')
-    if ([string]::IsNullOrWhiteSpace($expectedVendor)) {
-        # WHQL-certified FTDI catalogs are normally signed by Microsoft's
-        # Windows Hardware Compatibility Publisher, not by FTDI itself.
-        $expectedVendor = '(?i)Microsoft|FTDI|Future Technology'
-    }
-    foreach ($catalog in @('ftdibus.cat', 'ftdiport.cat')) {
-        $signature = Get-AuthenticodeSignature -LiteralPath (Join-Path $DriverDir $catalog)
-        if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
-            throw "$catalog has no valid Authenticode signature: $($signature.StatusMessage)"
-        }
-        if ($null -eq $signature.SignerCertificate) {
-            throw "$catalog has no signer certificate."
-        }
-        if ($signature.SignerCertificate.Subject -notmatch $expectedVendor) {
-            throw "$catalog signer '$($signature.SignerCertificate.Subject)' does not match '$expectedVendor'."
-        }
-    }
-}
-
-function Publish-InstallerAlias {
-    param(
-        [Parameter(Mandatory = $true)]$Paths,
-        [Parameter(Mandatory = $true)][bool]$IsRelease,
-        [Parameter(Mandatory = $true)][string]$Hash
-    )
-    if (-not $IsRelease) {
-        Remove-Item -LiteralPath $Paths.WingetSetupPath -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath "$($Paths.WingetSetupPath).sha256" -Force -ErrorAction SilentlyContinue
-        return
-    }
-    Copy-Item -LiteralPath $Paths.SetupPath -Destination $Paths.WingetSetupPath -Force
-    Set-Content -LiteralPath "$($Paths.WingetSetupPath).sha256" -Value $Hash -NoNewline
-    $aliasHash = (Get-FileHash -LiteralPath $Paths.WingetSetupPath -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($aliasHash -ne $Hash) {
-        throw 'chiavdf-win64-setup.exe does not match the versioned installer.'
-    }
-}
-
-function Invoke-BuildInstaller {
-    $version = Require-Text 'INSTALLER_VERSION'
-    $paths = Get-BundlePaths $version
-    Assert-BundleRoot -BundleRoot $paths.BundleRoot -DllNames (Get-RuntimeDllNames)
-    Assert-ImportClosure -BinDir $paths.BinDir
-    if (Require-Flag 'REQUIRE_SIGNATURES') {
-        Assert-Authenticode -BinDir $paths.BinDir
-    }
-    Assert-DriverSource -DriverDir $paths.DriverDir
-    if (-not (Test-Path -LiteralPath $paths.InstallerScript -PathType Leaf)) {
-        throw "Installer script is missing: $($paths.InstallerScript)"
-    }
-    $iscc = Get-IsccPath
-    New-Item -ItemType Directory -Force -Path $paths.DistDir | Out-Null
-    foreach ($stale in @(
-            $paths.SetupPath,
-            "$($paths.SetupPath).sha256",
-            $paths.WingetSetupPath,
-            "$($paths.WingetSetupPath).sha256"
-        )) {
-        Remove-Item -LiteralPath $stale -Force -ErrorAction SilentlyContinue
-    }
-    $arguments = @(
-        "/DMyAppVersion=$version",
-        "/DMyVersionInfoVersion=$(Get-InstallerVersionInfoVersion $version)",
-        "/DMyBundleDir=$($paths.BundleRoot)",
-        "/DMyDriverDir=$($paths.DriverDir)",
-        "/DMyOutputDir=$($paths.DistDir)",
-        "/DMyOutputBaseFilename=$($paths.SetupBaseName)",
-        "/DMyRepoRoot=$RepoRoot",
-        $paths.InstallerScript
-    )
-    Write-Host "Compiling installer with $iscc"
-    & $iscc @arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "Inno Setup compiler failed with exit code $LASTEXITCODE."
-    }
-    if (-not (Test-Path -LiteralPath $paths.SetupPath -PathType Leaf)) {
-        throw "Installer was not created: $($paths.SetupPath)"
-    }
-    Write-Host "Built unsigned $($paths.SetupPath); sign it before FinalizeInstaller."
-}
-
-function Invoke-ListInstallerSignFile {
-    $paths = Get-BundlePaths (Require-Text 'INSTALLER_VERSION')
-    if (-not (Test-Path -LiteralPath $paths.SetupPath -PathType Leaf)) {
-        throw "Installer does not exist: $($paths.SetupPath)"
-    }
-    return @($paths.SetupPath)
-}
-
-function Invoke-FinalizeInstaller {
-    $paths = Get-BundlePaths (Require-Text 'INSTALLER_VERSION')
-    if (-not (Test-Path -LiteralPath $paths.SetupPath -PathType Leaf)) {
-        throw "Installer does not exist: $($paths.SetupPath)"
-    }
-    if (Require-Flag 'REQUIRE_SIGNATURES') {
-        Assert-InstallerSignature -Path $paths.SetupPath
-    }
-    $hash = (Get-FileHash -LiteralPath $paths.SetupPath -Algorithm SHA256).Hash.ToLowerInvariant()
-    Set-Content -LiteralPath "$($paths.SetupPath).sha256" -Value $hash -NoNewline
-    Publish-InstallerAlias -Paths $paths -IsRelease (Require-Flag 'IS_RELEASE') -Hash $hash
-    Write-Host "Finalized signed $($paths.SetupPath)"
-}
-
-function Assert-InstallerSignature {
-    param([Parameter(Mandatory = $true)][string]$Path)
-    $expectedSubject = [Environment]::GetEnvironmentVariable('EXPECTED_SIGNER_SUBJECT')
-    $expectedThumbprint = [Environment]::GetEnvironmentVariable('EXPECTED_SIGNER_THUMBPRINT')
-    if ([string]::IsNullOrWhiteSpace($expectedSubject) -and [string]::IsNullOrWhiteSpace($expectedThumbprint)) {
-        $expectedSubject = '(?i)Chia ?Network'
-    }
-    $signature = Get-AuthenticodeSignature -LiteralPath $Path
-    if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
-        throw "$Path has no valid Authenticode signature: $($signature.StatusMessage)"
-    }
-    if ($null -eq $signature.SignerCertificate) {
-        throw "$Path has no signer certificate."
-    }
-    if ($null -eq $signature.TimeStamperCertificate) {
-        throw "$Path has no timestamp."
-    }
-    if (-not [string]::IsNullOrWhiteSpace($expectedThumbprint)) {
-        $actual = ($signature.SignerCertificate.Thumbprint -replace '\s', '').ToUpperInvariant()
-        $wanted = ($expectedThumbprint -replace '\s', '').ToUpperInvariant()
-        if ($actual -ne $wanted) {
-            throw "$Path signer thumbprint $actual does not match $wanted."
-        }
-    }
-    if (-not [string]::IsNullOrWhiteSpace($expectedSubject) -and
-        $signature.SignerCertificate.Subject -notmatch $expectedSubject) {
-        throw "$Path signer subject '$($signature.SignerCertificate.Subject)' does not match '$expectedSubject'."
-    }
-}
-
-function Invoke-VerifyInstaller {
-    $paths = Get-BundlePaths (Require-Text 'INSTALLER_VERSION')
-    if (-not (Test-Path -LiteralPath $paths.SetupPath -PathType Leaf)) {
-        throw "Installer does not exist: $($paths.SetupPath)"
-    }
-    $hash = (Get-FileHash -LiteralPath $paths.SetupPath -Algorithm SHA256).Hash.ToLowerInvariant()
-    $sidecarPath = "$($paths.SetupPath).sha256"
-    if (-not (Test-Path -LiteralPath $sidecarPath -PathType Leaf)) {
-        throw "Installer checksum is missing: $sidecarPath"
-    }
-    $recorded = (Get-Content -LiteralPath $sidecarPath -Raw).Trim().ToLowerInvariant()
-    if ($recorded -ne $hash) {
-        throw "Installer checksum does not match: $sidecarPath"
-    }
-    if (Require-Flag 'REQUIRE_SIGNATURES') {
-        Assert-InstallerSignature -Path $paths.SetupPath
-    }
-    if (Require-Flag 'IS_RELEASE') {
-        if (-not (Test-Path -LiteralPath $paths.WingetSetupPath -PathType Leaf)) {
-            throw "Winget installer alias is missing: $($paths.WingetSetupPath)"
-        }
-        $aliasHash = (Get-FileHash -LiteralPath $paths.WingetSetupPath -Algorithm SHA256).Hash.ToLowerInvariant()
-        if ($aliasHash -ne $hash) {
-            throw 'chiavdf-win64-setup.exe does not match the versioned installer.'
-        }
-        $aliasSidecar = "$($paths.WingetSetupPath).sha256"
-        if (-not (Test-Path -LiteralPath $aliasSidecar -PathType Leaf)) {
-            throw "Winget installer checksum is missing: $aliasSidecar"
-        }
-        $recordedAlias = (Get-Content -LiteralPath $aliasSidecar -Raw).Trim().ToLowerInvariant()
-        if ($recordedAlias -ne $hash) {
-            throw "Winget installer checksum does not match: $aliasSidecar"
-        }
-    }
-    Write-Host "Verified $($paths.SetupPath)"
-}
-
-function Invoke-TestInstaller {
-    $paths = Get-BundlePaths (Require-Text 'INSTALLER_VERSION')
-    if (-not (Test-Path -LiteralPath $paths.SetupPath -PathType Leaf)) {
-        throw "Installer does not exist: $($paths.SetupPath)"
-    }
-    $principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
-    if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-        Write-Warning 'Skipping installer smoke test because this process is not elevated.'
-        return
-    }
-    $tempRoot = New-ProbeDirectory
-    $installDir = Join-Path $tempRoot 'install'
-    $installed = $false
-    try {
-        $installLog = Join-Path $tempRoot 'install.log'
-        $arguments = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DRIVER=0 /DIR=""$installDir"" /LOG=""$installLog"""
-        Write-Host "Running $($paths.SetupPath) $arguments"
-        $process = Start-Process -FilePath $paths.SetupPath -ArgumentList $arguments -Wait -PassThru
-        if ($process.ExitCode -notin @(0, 3010)) {
-            throw "Installer failed with exit code $($process.ExitCode). See $installLog"
-        }
-        $installed = $true
-        $binDir = Join-Path $installDir 'bin'
-        foreach ($exe in $BundleExes) {
-            $path = Join-Path $binDir $exe
-            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-                throw "Installer did not install $path"
-            }
-        }
-        foreach ($driverFile in @('driver\ftdibus.inf', 'driver\ftdiport.inf', 'driver\amd64\ftdibus.sys')) {
-            $path = Join-Path $installDir $driverFile
-            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-                throw "Installer did not install $path"
-            }
-        }
-        $environmentKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment'
-        $machinePath = (Get-ItemProperty -LiteralPath $environmentKey -Name Path).Path
-        $normalizedBin = $binDir.TrimEnd('\')
-        if (-not (@($machinePath -split ';') | Where-Object { $_.TrimEnd('\') -ieq $normalizedBin })) {
-            throw "Installer did not add $normalizedBin to the machine PATH."
-        }
-        Enable-FailFastLoaderErrors
-        $forbidden = @($RepoRoot, $installDir, $binDir, $tempRoot)
-        foreach ($exe in $BundleExes) {
-            Invoke-VersionProbe -ExePath (Join-Path $binDir $exe) -WorkDir $tempRoot -ForbiddenRoots $forbidden
-        }
-        $uninstaller = Join-Path $installDir 'unins000.exe'
-        if (-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)) {
-            throw "Installer did not create $uninstaller"
-        }
-        $uninstallProcess = Start-Process -FilePath $uninstaller -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -Wait -PassThru
-        if ($uninstallProcess.ExitCode -notin @(0, 3010)) {
-            throw "Uninstaller failed with exit code $($uninstallProcess.ExitCode)"
-        }
-        $installed = $false
-        if (Test-Path -LiteralPath $binDir) {
-            throw "Uninstaller left $binDir behind."
-        }
-        $machinePath = (Get-ItemProperty -LiteralPath $environmentKey -Name Path).Path
-        if (@($machinePath -split ';') | Where-Object { $_.TrimEnd('\') -ieq $normalizedBin }) {
-            throw "Uninstaller did not remove $normalizedBin from the machine PATH."
-        }
-    } finally {
-        if ($installed) {
-            $uninstaller = Join-Path $installDir 'unins000.exe'
-            if (Test-Path -LiteralPath $uninstaller) {
-                Write-Warning 'Cleaning up a failed installer smoke test.'
-                Start-Process -FilePath $uninstaller -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -Wait | Out-Null
-            }
-        }
-        if (Test-Path -LiteralPath $tempRoot) {
-            Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
-        }
-    }
+    Publish-ReleaseAlias -SourcePath $Paths.AssetPath -AliasPath $Paths.WingetAssetPath `
+        -IsRelease $IsRelease -Hash $hash `
+        -MismatchMessage 'chiavdf-win64.zip does not match the versioned Windows zip.'
 }
 
 function Invoke-ExtractedZip {
@@ -1004,7 +705,6 @@ if ($MyInvocation.InvocationName -ne '.') {
         'ListSignFiles' { Invoke-ListSignFiles }
         'Package' { Invoke-Package }
         'BuildInstaller' { Invoke-BuildInstaller }
-        'ListInstallerSignFile' { Invoke-ListInstallerSignFile }
         'FinalizeInstaller' { Invoke-FinalizeInstaller }
         'VerifyInstaller' { Invoke-VerifyInstaller }
         'TestInstaller' { Invoke-TestInstaller }

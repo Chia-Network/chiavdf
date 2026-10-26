@@ -656,17 +656,7 @@ jobs:
         run: ./scripts/package-windows-bundle.ps1 -Action Assemble
 
       - name: Install Inno Setup
-        shell: pwsh
-        run: |
-          choco install innosetup --no-progress -y
-          $candidates = @()
-          foreach ($base in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
-            if ([string]::IsNullOrWhiteSpace($base)) { continue }
-            $candidates += @(Get-ChildItem -Path (Join-Path $base 'Inno Setup *\ISCC.exe') -ErrorAction SilentlyContinue)
-          }
-          if ($candidates.Count -eq 0) {
-            throw "Inno Setup ISCC.exe was not found after installation."
-          }
+        uses: ./.github/actions/install-inno-setup
 
       - name: Build unsigned Windows installer
         shell: pwsh
@@ -700,6 +690,12 @@ jobs:
       id-token: write
     env:
       INSTALLER_VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}
+      IS_RELEASE: ${{ inputs.is_final }}
+      REQUIRE_SIGNATURES: 'true'
+      EXPECTED_SIGNER_SUBJECT: ${{ vars.WINDOWS_SIGNING_SIGNER_SUBJECT }}
+      EXPECTED_SIGNER_THUMBPRINT: ${{ vars.WINDOWS_SIGNING_SIGNER_THUMBPRINT }}
+      EXPECTED_VENDOR_SUBJECT: ${{ vars.WINDOWS_SIGNING_VENDOR_SUBJECT }}
+      INSTALLER_SIGNTOOL: 'pwsh -NoProfile -ExecutionPolicy Bypass -File "${{ github.workspace }}/scripts/sign-windows-file.ps1" $f'
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -744,6 +740,19 @@ jobs:
         shell: pwsh
         run: ./scripts/package-windows-bundle.ps1 -Action Assemble
 
+      # Install Inno before any step that can request an Azure/OIDC token. The
+      # installer is compiled with a signed uninstaller, so compilation itself
+      # uses the signing client, but the pinned Inno install does not.
+      - name: Install Inno Setup
+        uses: ./.github/actions/install-inno-setup
+
+      - name: Install Azure signing client
+        uses: Chia-Network/actions/sign/azure-windows@b2a0d3030aa5d5c8f9b8f3b8d1e4bda2d09bf916 # main
+        with:
+          azure_tenant_id: ${{ secrets.AZURE_SIGNING_TENANT_ID }}
+          azure_client_id: ${{ secrets.AZURE_SIGNING_CLIENT_ID }}
+          sign: 'false'
+
       - name: List Windows files to sign
         id: sign_files
         shell: pwsh
@@ -762,7 +771,7 @@ jobs:
           "EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8NoBOM
 
       - name: Sign Windows chiavdf executables and MPIR DLLs
-        uses: Chia-Network/actions/sign/azure-windows@main
+        uses: Chia-Network/actions/sign/azure-windows@b2a0d3030aa5d5c8f9b8f3b8d1e4bda2d09bf916 # main
         with:
           azure_tenant_id: ${{ secrets.AZURE_SIGNING_TENANT_ID }}
           azure_client_id: ${{ secrets.AZURE_SIGNING_CLIENT_ID }}
@@ -770,83 +779,32 @@ jobs:
 
       - name: Package and verify Windows zip bundle
         shell: pwsh
-        env:
-          IS_RELEASE: ${{ inputs.is_final }}
-          REQUIRE_SIGNATURES: 'true'
-          EXPECTED_SIGNER_SUBJECT: ${{ vars.WINDOWS_SIGNING_SIGNER_SUBJECT }}
-          EXPECTED_SIGNER_THUMBPRINT: ${{ vars.WINDOWS_SIGNING_SIGNER_THUMBPRINT }}
-          EXPECTED_VENDOR_SUBJECT: ${{ vars.WINDOWS_SIGNING_VENDOR_SUBJECT }}
         run: ./scripts/package-windows-bundle.ps1 -Action Package
-
-      - name: Install Inno Setup
-        shell: pwsh
-        run: |
-          choco install innosetup --no-progress -y
-          $candidates = @()
-          foreach ($base in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
-            if ([string]::IsNullOrWhiteSpace($base)) { continue }
-            $candidates += @(Get-ChildItem -Path (Join-Path $base 'Inno Setup *\ISCC.exe') -ErrorAction SilentlyContinue)
-          }
-          if ($candidates.Count -eq 0) {
-            throw "Inno Setup ISCC.exe was not found after installation."
-          }
 
       - name: Build Windows installer
         shell: pwsh
         env:
-          IS_RELEASE: ${{ inputs.is_final }}
-          REQUIRE_SIGNATURES: 'true'
-          EXPECTED_SIGNER_SUBJECT: ${{ vars.WINDOWS_SIGNING_SIGNER_SUBJECT }}
-          EXPECTED_SIGNER_THUMBPRINT: ${{ vars.WINDOWS_SIGNING_SIGNER_THUMBPRINT }}
-          EXPECTED_VENDOR_SUBJECT: ${{ vars.WINDOWS_SIGNING_VENDOR_SUBJECT }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_SIGNING_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_SIGNING_CLIENT_ID }}
         run: ./scripts/package-windows-bundle.ps1 -Action BuildInstaller
 
-      - name: List Windows installer to sign
-        id: installer_sign_files
-        shell: pwsh
-        run: |
-          $files = @(./scripts/package-windows-bundle.ps1 -Action ListInstallerSignFile)
-          if ($files.Count -eq 0) {
-            throw "No Windows installer was selected for signing"
-          }
-          foreach ($file in $files) {
-            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
-              throw "Selected signing file is missing: $file"
-            }
-          }
-          "files<<EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8NoBOM
-          $files | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8NoBOM
-          "EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8NoBOM
-
       - name: Sign Windows installer
-        uses: Chia-Network/actions/sign/azure-windows@main
+        uses: Chia-Network/actions/sign/azure-windows@b2a0d3030aa5d5c8f9b8f3b8d1e4bda2d09bf916 # main
         with:
           azure_tenant_id: ${{ secrets.AZURE_SIGNING_TENANT_ID }}
           azure_client_id: ${{ secrets.AZURE_SIGNING_CLIENT_ID }}
-          file: ${{ steps.installer_sign_files.outputs.files }}
+          file: ${{ github.workspace }}/dist/windows/chiavdf-${{ env.INSTALLER_VERSION }}-windows-amd64-setup.exe
 
       - name: Finalize signed Windows installer
         shell: pwsh
-        env:
-          IS_RELEASE: ${{ inputs.is_final }}
-          REQUIRE_SIGNATURES: 'true'
-          EXPECTED_SIGNER_SUBJECT: ${{ vars.WINDOWS_SIGNING_SIGNER_SUBJECT }}
-          EXPECTED_SIGNER_THUMBPRINT: ${{ vars.WINDOWS_SIGNING_SIGNER_THUMBPRINT }}
         run: ./scripts/package-windows-bundle.ps1 -Action FinalizeInstaller
 
       - name: Verify Windows installer
         shell: pwsh
-        env:
-          IS_RELEASE: ${{ inputs.is_final }}
-          REQUIRE_SIGNATURES: 'true'
-          EXPECTED_SIGNER_SUBJECT: ${{ vars.WINDOWS_SIGNING_SIGNER_SUBJECT }}
-          EXPECTED_SIGNER_THUMBPRINT: ${{ vars.WINDOWS_SIGNING_SIGNER_THUMBPRINT }}
         run: ./scripts/package-windows-bundle.ps1 -Action VerifyInstaller
 
       - name: Smoke-test Windows installer
         shell: pwsh
-        env:
-          IS_RELEASE: ${{ inputs.is_final }}
         run: ./scripts/package-windows-bundle.ps1 -Action TestInstaller
 
       - name: Upload Windows bundle artifact

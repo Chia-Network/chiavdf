@@ -40,6 +40,7 @@ foreach ($case in $cases) {
     }
 }
 
+. (Join-Path $root 'scripts/windows-installer.ps1')
 . (Join-Path $root 'scripts/windows-ftdi-driver.ps1')
 
 $required = @(Get-FtdiDriverRequiredFiles)
@@ -90,4 +91,69 @@ try {
     Remove-Item -LiteralPath $tempInf -Force -ErrorAction SilentlyContinue
 }
 
-Write-Host "Windows installer checks passed ($($cases.Count) version cases plus driver helper checks)"
+$isccDir = Join-Path ([System.IO.Path]::GetTempPath()) ('chiavdf-iscc-' + [guid]::NewGuid().ToString('n'))
+New-Item -ItemType Directory -Path $isccDir | Out-Null
+$savedIscc = $env:INNO_SETUP_ISCC
+try {
+    $env:INNO_SETUP_ISCC = Join-Path $isccDir 'ISCC.exe'
+    Set-Content -LiteralPath $env:INNO_SETUP_ISCC -Value 'stub'
+    $actual = Get-IsccPath
+    if ((Resolve-Path -LiteralPath $actual).Path -ne (Resolve-Path -LiteralPath $env:INNO_SETUP_ISCC).Path) {
+        throw "Get-IsccPath returned '$actual' instead of INNO_SETUP_ISCC"
+    }
+} finally {
+    $env:INNO_SETUP_ISCC = $savedIscc
+    Remove-Item -LiteralPath $isccDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+$signTestRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('chiavdf-sign-' + [guid]::NewGuid().ToString('n'))
+New-Item -ItemType Directory -Path $signTestRoot | Out-Null
+$fakeTemp = Join-Path $signTestRoot 'temp'
+$fakeRunnerTemp = Join-Path $signTestRoot 'runner-temp'
+New-Item -ItemType Directory -Path $fakeTemp, $fakeRunnerTemp | Out-Null
+$fakeDlib = Join-Path $signTestRoot 'dlib.dll'
+$fakeMetadata = Join-Path $signTestRoot 'metadata.json'
+Set-Content -LiteralPath $fakeDlib -Value 'stub'
+Set-Content -LiteralPath $fakeMetadata -Value '{}'
+$savedEnv = @{}
+foreach ($name in @(
+        'GITHUB_WORKSPACE', 'RUNNER_TEMP', 'TMPDIR', 'TMP', 'TEMP',
+        'ACTIONS_ID_TOKEN_REQUEST_URL', 'ACTIONS_ID_TOKEN_REQUEST_TOKEN',
+        'AZURE_TENANT_ID', 'AZURE_CLIENT_ID',
+        'AZURE_CODE_SIGNING_DLIB', 'AZURE_CODE_SIGNING_METADATA'
+    )) {
+    $savedEnv[$name] = [Environment]::GetEnvironmentVariable($name)
+}
+try {
+    # Point the temporary roots at directories that do not contain the repo so
+    # the helper's path restriction, not the token code, rejects this file.
+    $env:GITHUB_WORKSPACE = $root
+    $env:RUNNER_TEMP = $fakeRunnerTemp
+    $env:TMPDIR = $fakeTemp
+    $env:TMP = $fakeTemp
+    $env:TEMP = $fakeTemp
+    $env:ACTIONS_ID_TOKEN_REQUEST_URL = 'http://127.0.0.1:1/'
+    $env:ACTIONS_ID_TOKEN_REQUEST_TOKEN = 'test'
+    $env:AZURE_TENANT_ID = 'tenant'
+    $env:AZURE_CLIENT_ID = 'client'
+    $env:AZURE_CODE_SIGNING_DLIB = $fakeDlib
+    $env:AZURE_CODE_SIGNING_METADATA = $fakeMetadata
+
+    $signScript = Join-Path $root 'scripts/sign-windows-file.ps1'
+    $thrown = $null
+    try {
+        & $signScript -Path $signScript
+    } catch {
+        $thrown = $_.Exception.Message
+    }
+    if (-not $thrown -or $thrown -notmatch 'Refusing to sign') {
+        throw "sign-windows-file.ps1 did not reject a path outside the build outputs before requesting a token: $thrown"
+    }
+} finally {
+    foreach ($name in $savedEnv.Keys) {
+        [Environment]::SetEnvironmentVariable($name, $savedEnv[$name])
+    }
+    Remove-Item -LiteralPath $signTestRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+Write-Host "Windows installer checks passed ($($cases.Count) version cases plus driver, ISCC, and signing-path checks)"

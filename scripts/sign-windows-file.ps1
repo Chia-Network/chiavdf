@@ -4,6 +4,8 @@
 # compiled with a signed uninstaller. The release workflow installs the Azure
 # signing client first (Chia-Network/actions/sign/azure-windows with
 # sign: "false"), then passes this script to ISCC as /SChiaSignTool=... $f.
+# Signing is restricted to build outputs: files under the workspace dist
+# directory or the Inno Setup temporary directory.
 
 [CmdletBinding()]
 param(
@@ -14,9 +16,55 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+function Test-PathUnder {
+    param(
+        [Parameter(Mandatory = $true)][string]$Candidate,
+        [Parameter(Mandatory = $true)][string]$Root
+    )
+    if ([string]::IsNullOrWhiteSpace($Root)) {
+        return $false
+    }
+    $separators = [char[]]@(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar
+    )
+    $rootPath = [System.IO.Path]::GetFullPath($Root).TrimEnd($separators)
+    $candidatePath = [System.IO.Path]::GetFullPath($Candidate)
+    if ($candidatePath.Equals($rootPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $true
+    }
+    foreach ($separator in $separators) {
+        if ($candidatePath.StartsWith($rootPath + $separator, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+    }
+    return $false
+}
+
+$resolvedPath = (Resolve-Path -LiteralPath $Path -ErrorAction Stop).ProviderPath
+if (-not (Test-Path -LiteralPath $resolvedPath -PathType Leaf)) {
     throw "File to sign does not exist: $Path"
 }
+
+$allowedRoots = @()
+if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_WORKSPACE)) {
+    $allowedRoots += (Join-Path $env:GITHUB_WORKSPACE 'dist')
+}
+$allowedRoots += [System.IO.Path]::GetTempPath()
+if (-not [string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)) {
+    $allowedRoots += $env:RUNNER_TEMP
+}
+$allowed = $false
+foreach ($root in $allowedRoots) {
+    if (Test-PathUnder -Candidate $resolvedPath -Root $root) {
+        $allowed = $true
+        break
+    }
+}
+if (-not $allowed) {
+    throw "Refusing to sign a file outside the build output directories: $resolvedPath"
+}
+$Path = $resolvedPath
 if (-not $env:ACTIONS_ID_TOKEN_REQUEST_URL -or -not $env:ACTIONS_ID_TOKEN_REQUEST_TOKEN) {
     throw 'ACTIONS_ID_TOKEN_REQUEST_URL/TOKEN not available; ensure permissions.id-token: write is set.'
 }

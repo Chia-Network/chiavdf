@@ -40,12 +40,21 @@ the winget `inno` installer.
 
 ## What it installs
 
-The installer requires x64 Windows 10 version 2004 (build 19041) or newer,
-because it stages an x64 kernel driver with `pnputil`. It does not support
-ARM64 Windows. The default directory is `%ProgramFiles%\Chia\chiavdf`.
-`DisableDirPage=auto` hides the directory page on an upgrade, and the installer
-refuses a directory outside `{autopf}` both for the interactive page and for
-`/DIR`.
+The installer requires x64 Windows 10 version 2004 (build 19041) or newer.
+That is the tested baseline and matches the winget manifest
+`MinimumOSVersion`; `pnputil /add-driver` and the x64 kernel driver package
+also require 64-bit Windows 10 or newer. It does not support ARM64 Windows.
+The default directory is `%ProgramFiles%\Chia\chiavdf`. `DisableDirPage=auto`
+hides the directory page on an upgrade.
+
+The install directory must be strictly under `{autopf}` (`%ProgramFiles%`).
+`PrepareToInstall` checks the final `{app}` value, so this applies to the
+interactive directory page, `/DIR=...`, and a reused previous directory alike.
+The bare `{autopf}` directory itself is rejected. Installations outside
+Program Files, including `winget --location` and any directory on another
+drive, are not supported; setup stops with an error instead of adding a
+user-writable directory to the system `PATH`. A disallowed directory fails
+cleanly in silent mode instead of waiting on a message box.
 
 ```text
 bin\vdf_client.exe
@@ -92,18 +101,22 @@ pnputil.exe /add-driver "%ProgramFiles%\Chia\chiavdf\driver\ftdiport.inf" /insta
 both matches the FTDI CDM package and keeps the ASIC D2XX path and any VCP use
 consistent.
 
-Exit codes `0`, `259`, `3010`, and `1641` are treated as success. `259` means the
-package was staged but no device matched, or a newer driver is already active;
-that is normal for a software-only timelord host. `3010`/`1641` set the
-installer's pending-reboot state, and `GetCustomSetupExitCode` returns `3010`;
-the winget manifest must list it in `InstallerSuccessCodes`. Any other nonzero
-code fails setup with a diagnostic in the setup log.
+`pnputil` exit codes `0`, `259`, `3010`, and `1641` are treated as success.
+`259` means the package was staged but no device matched, or a newer driver is
+already active; that is normal for a software-only timelord host. `3010`/`1641`
+set the installer's pending-reboot state, and `GetCustomSetupExitCode` returns
+`3010`; the winget manifest must list it in `InstallerSuccessCodes`. Any other
+nonzero `pnputil` code fails setup with a diagnostic in the setup log.
 
 A driver staging failure is logged and returns exit code `1603` instead of
 raising an exception. The `PATH` entry is written before the driver runs, so a
 driver failure does not leave the installed files without a usable `PATH`.
-`/DRIVER=0` skips driver staging for software-only installs and for tests that
-must not change the driver store.
+Exit code `1603` therefore means the files and PATH entry were installed but
+the driver failed. Interactive users see the failure on the finish page and in
+a suppressible message box; silent users see the exit code and the setup log.
+The setup exit code is otherwise `0` or `3010`. `/DRIVER=0` skips driver
+staging for software-only installs and for tests that must not change the
+driver store.
 
 The driver is **not removed on uninstall**. It is shared with other FTDI devices
 and may be in use by a device that is not part of this package. Removing it would
@@ -135,15 +148,15 @@ The release flow is:
 3. Sign the six executables and MPIR DLLs.
 4. Package and verify the portable zip.
 5. Build the setup exe from the signed bundle and driver files. `ISCC` receives
-   a `SignTool` through `/S`, so `SignedUninstaller=yes` signs `unins000.exe`
-   during compilation.
-6. Sign the setup exe in a second signing call.
-7. Finalize the hash and stable alias from the signed EXE, then verify its
+   a `SignTool` through `/S`, so Inno signs the setup exe and, with
+   `SignedUninstaller=yes`, `unins000.exe` during compilation. There is no
+   separate installer-signing step.
+6. Finalize the hash and stable alias from the signed EXE, then verify its
    checksum, Authenticode chain, timestamp, and expected signer.
-8. Run a silent install with `/DRIVER=1`, accept exit codes `0`, `259`, and
-   `3010`, check all six `--version` probes, confirm `pnputil /enum-drivers`
-   lists the driver, reinstall to confirm `PATH` contains the entry exactly
-   once, and uninstall.
+7. Run a silent install with `/DRIVER=1`, accept exit codes `0` and `3010`,
+   check all six `--version` probes, confirm `pnputil /enum-drivers` lists the
+   driver, reinstall to confirm `PATH` contains the entry exactly once, and
+   uninstall.
 
 `TestInstaller` runs on the ephemeral CI runner. The PR job compiles the
 installer without signing and runs the same smoke test; a non-elevated process

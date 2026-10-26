@@ -29,25 +29,25 @@ function Get-InstallerVersionInfoVersion {
 }
 
 function Get-IsccPath {
-    $candidates = [System.Collections.Generic.List[string]]::new()
     if (-not [string]::IsNullOrWhiteSpace($env:INNO_SETUP_ISCC)) {
-        $candidates.Add($env:INNO_SETUP_ISCC.Trim())
+        $configured = $env:INNO_SETUP_ISCC.Trim()
+        if (Test-Path -LiteralPath $configured -PathType Leaf) {
+            return (Resolve-Path -LiteralPath $configured).Path
+        }
+        throw "INNO_SETUP_ISCC does not point to ISCC.exe: $configured"
     }
     $command = Get-Command 'ISCC.exe' -ErrorAction SilentlyContinue
     if ($command) {
-        $candidates.Add($command.Source)
+        return $command.Source
     }
     foreach ($base in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
         if ([string]::IsNullOrWhiteSpace($base)) {
             continue
         }
         foreach ($match in @(Get-ChildItem -Path (Join-Path $base 'Inno Setup *\ISCC.exe') -ErrorAction SilentlyContinue)) {
-            $candidates.Add($match.FullName)
-        }
-    }
-    foreach ($candidate in $candidates) {
-        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
-            return (Resolve-Path -LiteralPath $candidate).Path
+            if (Test-Path -LiteralPath $match.FullName -PathType Leaf) {
+                return $match.FullName
+            }
         }
     }
     throw 'Inno Setup 6 ISCC.exe was not found. Install it with the pinned install-inno-setup action or set INNO_SETUP_ISCC.'
@@ -189,7 +189,7 @@ function Invoke-TestInstaller {
         $arguments = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DRIVER=1 /DIR=""$installDir"" /LOG=""$installLog"""
         Write-Host "Running $($paths.SetupPath) $arguments"
         $process = Start-Process -FilePath $paths.SetupPath -ArgumentList $arguments -Wait -PassThru
-        if ($process.ExitCode -notin @(0, 259, 3010)) {
+        if ($process.ExitCode -notin @(0, 3010)) {
             throw "Installer failed with exit code $($process.ExitCode). See $installLog"
         }
         $binDir = Join-Path $installDir 'bin'
@@ -226,7 +226,7 @@ function Invoke-TestInstaller {
         $arguments = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DRIVER=0 /DIR=""$installDir"" /LOG=""$installLog"""
         Write-Host "Reinstalling $($paths.SetupPath) $arguments"
         $process = Start-Process -FilePath $paths.SetupPath -ArgumentList $arguments -Wait -PassThru
-        if ($process.ExitCode -notin @(0, 259, 3010)) {
+        if ($process.ExitCode -notin @(0, 3010)) {
             throw "Installer reinstall failed with exit code $($process.ExitCode). See $installLog"
         }
         if ((Get-MachinePathEntryCount -Entry $binDir) -ne 1) {

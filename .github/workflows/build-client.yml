@@ -695,7 +695,7 @@ jobs:
       EXPECTED_SIGNER_SUBJECT: ${{ vars.WINDOWS_SIGNING_SIGNER_SUBJECT }}
       EXPECTED_SIGNER_THUMBPRINT: ${{ vars.WINDOWS_SIGNING_SIGNER_THUMBPRINT }}
       EXPECTED_VENDOR_SUBJECT: ${{ vars.WINDOWS_SIGNING_VENDOR_SUBJECT }}
-      INSTALLER_SIGNTOOL: 'pwsh -NoProfile -ExecutionPolicy Bypass -File "${{ github.workspace }}/scripts/sign-windows-file.ps1" $f'
+      INSTALLER_SIGNTOOL: 'pwsh -NoProfile -ExecutionPolicy Bypass -File $q${{ github.workspace }}/scripts/sign-windows-file.ps1$q $f'
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -787,13 +787,6 @@ jobs:
           AZURE_TENANT_ID: ${{ secrets.AZURE_SIGNING_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_SIGNING_CLIENT_ID }}
         run: ./scripts/package-windows-bundle.ps1 -Action BuildInstaller
-
-      - name: Sign Windows installer
-        uses: Chia-Network/actions/sign/azure-windows@b2a0d3030aa5d5c8f9b8f3b8d1e4bda2d09bf916 # main
-        with:
-          azure_tenant_id: ${{ secrets.AZURE_SIGNING_TENANT_ID }}
-          azure_client_id: ${{ secrets.AZURE_SIGNING_CLIENT_ID }}
-          file: ${{ github.workspace }}/dist/windows/chiavdf-${{ env.INSTALLER_VERSION }}-windows-amd64-setup.exe
 
       - name: Finalize signed Windows installer
         shell: pwsh

@@ -55,10 +55,13 @@ Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
-; x64 is the accepted alias for x64os; kernel drivers cannot use ARM64/x64
-; emulation, so do not broaden this to x64compatible.
-ArchitecturesAllowed=x64
-ArchitecturesInstallIn64BitMode=x64
+; x64os is explicit; "x64" is its deprecated alias. Kernel drivers cannot use
+; ARM64/x64 emulation, so do not broaden this to x64compatible.
+ArchitecturesAllowed=x64os
+ArchitecturesInstallIn64BitMode=x64os
+; Windows 10 2004 is the tested baseline and matches the winget manifest
+; MinimumOSVersion. pnputil /add-driver and the x64 kernel driver package also
+; require 64-bit Windows 10 or newer.
 MinVersion=10.0.19041
 ChangesEnvironment=yes
 UninstallDisplayName=chiavdf
@@ -70,7 +73,8 @@ VersionInfoCompany=Chia Network, Inc.
 VersionInfoDescription=chiavdf installer
 VersionInfoProductName=chiavdf
 ; The release workflow supplies a SignTool through ISCC /S and defines
-; MySignTool. SignedUninstaller signs unins000.exe during compilation.
+; MySignTool. Inno signs the setup exe and, with SignedUninstaller, unins000.exe
+; during compilation.
 #ifdef MySignTool
 SignTool={#MySignTool}
 SignedUninstaller=yes
@@ -91,7 +95,6 @@ Source: "{#MyRepoRoot}\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flag
 [Code]
 const
   EnvironmentKey = 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment';
-  UninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{48EFE738-4652-4CA6-B908-3D5317CE7C84}_is1';
   DriverInstallFailedExitCode = 1603;
 
 var
@@ -104,50 +107,23 @@ begin
 end;
 
 function IsSameDirectoryUpgrade: Boolean;
-var
-  PreviousDir: string;
 begin
-  Result := False;
-  if not RegQueryStringValue(HKEY_LOCAL_MACHINE, UninstallKey, 'Inno Setup: App Path', PreviousDir) then
-    exit;
-  Result := PathEntryEquals(PreviousDir, ExpandConstant('{app}'));
+  Result := (WizardForm.PrevAppDir <> '') and
+    PathEntryEquals(WizardForm.PrevAppDir, ExpandConstant('{app}'));
 end;
 
-function IsAllowedInstallDir(const Dir: string): Boolean;
+function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   Candidate, Allowed: string;
 begin
-  Candidate := RemoveBackslashUnlessRoot(ExpandFileName(Dir));
+  Result := '';
+  Candidate := RemoveBackslashUnlessRoot(ExpandFileName(ExpandConstant('{app}')));
   Allowed := RemoveBackslashUnlessRoot(ExpandConstant('{autopf}'));
-  Result := (CompareText(Candidate, Allowed) = 0) or
-    (Pos(UpperCase(Allowed) + '\', UpperCase(Candidate)) = 1);
-end;
-
-function InitializeSetup(): Boolean;
-var
-  RequestedDir: string;
-begin
-  Result := True;
-  RequestedDir := ExpandConstant('{param:DIR|}');
-  if (RequestedDir <> '') and not IsAllowedInstallDir(RequestedDir) then
+  if (Length(Candidate) <= Length(Allowed) + 1) or
+    (CompareText(Copy(Candidate, 1, Length(Allowed) + 1), Allowed + '\') <> 0) then
   begin
-    MsgBox('chiavdf must be installed under ' + ExpandConstant('{autopf}') + '.',
-      mbError, MB_OK);
-    Result := False;
-  end;
-end;
-
-function NextButtonClick(CurPageID: Integer): Boolean;
-begin
-  Result := True;
-  if CurPageID = wpSelectDir then
-  begin
-    if not IsAllowedInstallDir(WizardDirValue) then
-    begin
-      MsgBox('chiavdf must be installed under ' + ExpandConstant('{autopf}') + '.',
-        mbError, MB_OK);
-      Result := False;
-    end;
+    Result := 'chiavdf must be installed under ' + ExpandConstant('{autopf}') + '.';
+    Log('Rejected install directory: ' + Candidate);
   end;
 end;
 
@@ -194,7 +170,10 @@ begin
       NewPaths := NewPaths + ';';
     NewPaths := NewPaths + NormalizedDir;
   end;
-  Result := NewPaths <> Paths;
+  if Add and Found then
+    Result := False
+  else
+    Result := NewPaths <> Paths;
 end;
 
 procedure AddToSystemPath(const Dir: string);
@@ -289,6 +268,17 @@ begin
     end
     else
       Log('FTDI driver installation skipped because /DRIVER=0 was supplied.');
+    if DriverInstallFailed then
+    begin
+      WizardForm.FinishedLabel.Caption :=
+        'chiavdf was installed, but the FTDI driver could not be staged. ' +
+        'The files and PATH entry are in place; see the setup log for details.';
+      if not WizardSilent then
+        SuppressibleMsgBox(
+          'chiavdf was installed, but the FTDI driver could not be staged. ' +
+          'The files and PATH entry are in place; see the setup log for details.',
+          mbError, MB_OK, IDOK);
+    end;
   end;
 end;
 

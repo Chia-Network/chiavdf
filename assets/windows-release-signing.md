@@ -69,19 +69,16 @@ After the zip is verified, the job builds
 `chiavdf-<version>-windows-amd64-setup.exe` with Inno Setup 6.7.3, installed
 from the pinned official installer after a SHA-256 check. The installer embeds
 the already-signed `bin\` tree and the unmodified FTDI CDM driver package.
-`ISCC` receives a `SignTool` through `/S`, so `SignedUninstaller=yes` signs
-`unins000.exe` during compilation. The setup exe is signed in a second call to
-the pinned `Chia-Network/actions/sign/azure-windows` action; the workflow passes
-the deterministic setup path directly. `FinalizeInstaller` then hashes the
-signed EXE and creates the stable alias, so neither the sidecar nor the alias
-predates the signature. `VerifyInstaller` checks the checksum, Authenticode
-chain, timestamp, and expected signer. `TestInstaller` runs it silently with
-`/DRIVER=1` in a directory under `%ProgramFiles%`, accepts exit codes `0`, `259`,
-and `3010`, checks all six executables, confirms `pnputil /enum-drivers` lists
-the driver, reinstalls to confirm the `PATH` entry appears exactly once, then
-runs the uninstaller. The binary signing list is 15 files; the installer is a
-separate one-file signing call, so the shared action's single OIDC token is not
-stretched across a larger list.
+`ISCC` receives a `SignTool` through `/S`, so Inno signs the setup exe and, with
+`SignedUninstaller=yes`, `unins000.exe` during compilation. There is no
+separate installer-signing call. `FinalizeInstaller` then hashes the signed EXE
+and creates the stable alias, so neither the sidecar nor the alias predates the
+signature. `VerifyInstaller` checks the checksum, Authenticode chain, timestamp,
+and expected signer. `TestInstaller` runs it silently with `/DRIVER=1` in a
+directory under `%ProgramFiles%`, accepts exit codes `0` and `3010`, checks all
+six executables, confirms `pnputil /enum-drivers` lists the driver, reinstalls
+to confirm the `PATH` entry appears exactly once, then runs the uninstaller.
+The binary signing list is 15 files.
 
 ## How auth works
 
@@ -96,9 +93,8 @@ The `sign-windows` job in `.github/workflows/build-client.yml`:
   `Chia-Network/actions/sign/azure-windows` action and `sign: 'false'`, then
   lists the files to sign and calls the same action with the file list and
   secrets.
-- After packaging the zip, builds the installer (whose uninstaller is signed
-  during compilation), then calls the same signing action a second time with
-  the deterministic setup path.
+- After packaging the zip, builds the installer; ISCC signs the setup exe and
+  its uninstaller during compilation through `INSTALLER_SIGNTOOL`.
 - The shared action installs `Microsoft.ArtifactSigning.Client` from NuGet,
   writes `metadata.json`, and adds the Windows App Certification Kit to `PATH`
   for `signtool.exe`.
@@ -131,9 +127,9 @@ The script exposes these actions:
 - `BuildInstaller` requires `INSTALLER_VERSION` and `REQUIRE_SIGNATURES`, plus
   Inno Setup 6, the signed bundle, and `src/hw/libft4222/driver`. When
   `REQUIRE_SIGNATURES=true` it also requires `INSTALLER_SIGNTOOL`, the command
-  passed to `ISCC` with `/SChiaSignTool=...`, so `SignedUninstaller=yes` can
-  sign `unins000.exe` during compilation. It writes the versioned setup exe;
-  sign it before the next step.
+  passed to `ISCC` with `/SChiaSignTool=...`, so Inno signs the setup exe and,
+  with `SignedUninstaller=yes`, `unins000.exe` during compilation. It writes
+  the signed versioned setup exe.
 - `FinalizeInstaller` requires `INSTALLER_VERSION`, `IS_RELEASE`, and
   `REQUIRE_SIGNATURES`; after signing it verifies the signature, writes the
   `.sha256` from the signed EXE, and creates the stable
@@ -146,7 +142,9 @@ The script exposes these actions:
 The `Sign` action is intentionally not local: it is provided by the pinned
 `Chia-Network/actions/sign/azure-windows` commit and needs GitHub OIDC
 variables. The installer SignTool helper in `scripts/sign-windows-file.ps1`
-uses the same client and flags.
+uses the same client and flags. It only signs files under the workspace `dist`
+directory or the Inno Setup temporary directory, so an unexpected caller
+cannot sign arbitrary files.
 
 `scripts/get-libft4222.ps1 install` stages the FTDI CDM files under
 `src/hw/libft4222/driver`. `BuildInstaller` refuses to run if `ftdibus.inf`,
@@ -240,10 +238,12 @@ environment's deployment rules, or merge and dispatch the workflow from `main`.
   catalog signatures before compiling.
 - **`pnputil` exit code 3010:** this is success with a pending reboot. The
   installer returns 3010, and the winget manifest must list 3010 in
-  `InstallerSuccessCodes`. `259` is also accepted because it means the package
-  was staged but no device matched or a newer driver is already active. Any
-  other nonzero `pnputil` code fails setup; `[Code]` logs it and returns exit
-  code `1603`.
+  `InstallerSuccessCodes`. A `pnputil` return code of `259` is handled normally
+  by setup because it means the package was staged but no device matched or a
+  newer driver is already active; setup itself does not exit with `259`. Any
+  other nonzero `pnputil` code fails setup; `[Code]` logs it, shows the failure
+  on the finish page for interactive installs, and returns exit code `1603`
+  after the files and PATH entry have been installed.
 - **Installer smoke test skipped:** `TestInstaller` skips when the PowerShell
   process is not elevated and CI is not set. In CI it fails instead of
   skipping, because a skipped test would hide installer regressions. A local

@@ -395,9 +395,6 @@ assert_windows_signing_wiring() {
   if ! printf '%s\n' "$sign_block" | grep -Fq 'file: ${{ steps.sign_files.outputs.files }}'; then
     fail "Windows signing action does not receive the selected file list"
   fi
-  if ! printf '%s\n' "$sign_block" | grep -Fq 'chiavdf-${{ env.INSTALLER_VERSION }}-windows-amd64-setup.exe'; then
-    fail "Windows installer signing action does not receive the installer path directly"
-  fi
   if printf '%s\n' "$sign_block" | grep -Fq 'ListInstallerSignFile'; then
     fail "Windows signing still lists the installer with ListInstallerSignFile"
   fi
@@ -436,20 +433,22 @@ assert_windows_signing_wiring() {
   if grep -Fq 'Get-ChildItem -Path (Join-Path $base' "$client"; then
     fail "Windows workflow still has the redundant ISCC lookup loop"
   fi
-  if [ "$(printf '%s\n' "$sign_block" | grep -Fc "Chia-Network/actions/sign/azure-windows@${sign_action_sha}")" -lt 2 ]; then
-    fail "Windows signing does not sign both the binaries and the installer"
+  if [ "$(printf '%s\n' "$sign_block" | grep -Fc "Chia-Network/actions/sign/azure-windows@${sign_action_sha}")" -ne 2 ]; then
+    fail "Windows signing should install the client and sign the binaries in one Azure signing call"
   fi
   if ! printf '%s\n' "$sign_block" | grep -Fq 'INSTALLER_SIGNTOOL'; then
     fail "Windows signing job does not pass an installer SignTool to ISCC"
   fi
+  signtool_line=$(printf '%s\n' "$sign_block" | grep -F 'INSTALLER_SIGNTOOL')
+  if ! printf '%s\n' "$signtool_line" | grep -Fq 'sign-windows-file.ps1$q $f'; then
+    fail "INSTALLER_SIGNTOOL does not quote the helper path with Inno's \$q placeholder"
+  fi
   build_line=$(printf '%s\n' "$sign_block" | grep -n -F 'name: Build Windows installer' | cut -d: -f1)
-  sign_installer_line=$(printf '%s\n' "$sign_block" | grep -n -F 'name: Sign Windows installer' | cut -d: -f1)
   finalize_line=$(printf '%s\n' "$sign_block" | grep -n -F 'name: Finalize signed Windows installer' | cut -d: -f1)
   verify_line=$(printf '%s\n' "$sign_block" | grep -n -F 'name: Verify Windows installer' | cut -d: -f1)
-  if [ -z "$build_line" ] || [ -z "$sign_installer_line" ] || [ -z "$finalize_line" ] || [ -z "$verify_line" ] ||
-    [ "$build_line" -ge "$sign_installer_line" ] || [ "$sign_installer_line" -ge "$finalize_line" ] ||
-    [ "$finalize_line" -ge "$verify_line" ]; then
-    fail "Windows installer build/sign/finalize/verify steps are out of order"
+  if [ -z "$build_line" ] || [ -z "$finalize_line" ] || [ -z "$verify_line" ] ||
+    [ "$build_line" -ge "$finalize_line" ] || [ "$finalize_line" -ge "$verify_line" ]; then
+    fail "Windows installer build/finalize/verify steps are out of order"
   fi
   if ! printf '%s\n' "$build_block" | grep -Fq 'src/hw/libft4222/driver/**'; then
     fail "Windows build artifact does not upload the staged FTDI driver"
@@ -528,47 +527,8 @@ assert_windows_signing_wiring() {
     grep -Eq 'UninstallDisplayName=chiavdf \{#' "$installer"; then
     fail "Inno Setup uninstall display name still contains the version"
   fi
-  if ! grep -Fq 'Check: IsSameDirectoryUpgrade' "$installer" ||
-    ! grep -Fq 'function IsSameDirectoryUpgrade' "$installer"; then
-    fail "Inno Setup InstallDelete is not limited to same-directory upgrades"
-  fi
-  if ! grep -Fq 'function InitializeSetup' "$installer" ||
-    ! grep -Fq 'function NextButtonClick' "$installer" ||
-    ! grep -Fq '{autopf}' "$installer"; then
-    fail "Inno Setup does not restrict the install directory to {autopf}"
-  fi
-  if grep -Fq 'RescanDevices' "$installer"; then
-    fail "Inno Setup still runs a redundant device rescan"
-  fi
-  if ! grep -Fq 'if (ResultCode = 3010) or (ResultCode = 1641) then' "$installer"; then
-    fail "Inno Setup does not merge the 3010/1641 reboot branches"
-  fi
-  if ! grep -Fq 'DriverInstallFailedExitCode = 1603' "$installer" ||
-    ! grep -Fq 'Result := DriverInstallFailedExitCode' "$installer"; then
-    fail "Inno Setup does not document and return the driver failure exit code"
-  fi
-  if grep -Fq 'NormalizePath' "$installer"; then
-    fail "Inno Setup still has the NormalizePath wrapper"
-  fi
-  if ! awk '/procedure AddToSystemPath/,/^end;/' "$installer" | grep -Fq 'UpdateSystemPath' ||
-    ! awk '/procedure RemoveFromSystemPath/,/^end;/' "$installer" | grep -Fq 'UpdateSystemPath'; then
-    fail "PATH add and remove do not share the UpdateSystemPath helper"
-  fi
-  if ! grep -Fq 'PathEntryEquals' "$installer" ||
-    ! grep -Fq 'Could not read the system PATH' "$installer"; then
-    fail "PATH handling does not normalize entries or fail closed on a registry read"
-  fi
-  add_line=$(awk '/procedure CurStepChanged/,/^end;/' "$installer" | grep -n -F 'AddToSystemPath' | cut -d: -f1)
-  driver_line=$(awk '/procedure CurStepChanged/,/^end;/' "$installer" | grep -n -F 'InstallDriverPackage' | head -1 | cut -d: -f1)
-  if [ -z "$add_line" ] || [ -z "$driver_line" ] || [ "$add_line" -ge "$driver_line" ]; then
-    fail "Inno Setup does not add PATH before installing the driver"
-  fi
-  # Inno treats any line that starts with '[' as a section tag. A wrapped
-  # Pascal array literal at the start of a line therefore aborts compilation.
-  if grep -nE '^[[:space:]]*\[' "$installer" |
-    grep -vE ':[[:space:]]*\[(Setup|InstallDelete|Files|Code)\]$' >/dev/null; then
-    fail "Inno Setup script has a line that will be parsed as an invalid section tag"
-  fi
+  # Installer behaviour is covered by compiling and running the .iss under a
+  # real Inno Setup, not by grepping its Pascal source in this test.
   if ! grep -Fq 'Install-Ftd2xxDriver' "$driver_script" ||
     ! grep -Fq 'windows-ftdi-driver.ps1' "$driver_script" ||
     ! grep -Fq 'Assert-FtdiDriverSource' "$driver_script"; then

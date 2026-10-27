@@ -7,6 +7,7 @@ Param(
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "windows-pe.ps1")
+. (Join-Path $PSScriptRoot "windows-ftdi-driver.ps1")
 
 $RootDir = Resolve-Path (Join-Path $PSScriptRoot "..")
 $SrcDir = Join-Path $RootDir "src"
@@ -23,11 +24,17 @@ $ExtractDir = Join-Path $WorkDir "extract"
 # FTDI CDM 2.12.36.20, which stores it as amd64/FTD2XX64.dll. ftdichip.com
 # answers the runner with a Cloudflare challenge, so this is FTDI's mirror
 # of that same archive. The SHA-256 is the pin for the bytes.
+#
+# The same CDM archive supplies the installer's unmodified ftdibus.inf/
+# ftdiport.inf driver package. Staging it here keeps the DLL and driver from
+# the same pinned archive and lets the signing job consume both from the build
+# artifact instead of downloading the driver again.
 $D2xxUrl = "https://ftdichip.cn/Drivers/CDM/CDM-v2.12.36.20-WHQL-Certified.zip"
 $D2xxSha256 = "e8ebf401d06994183694d78e5855ed5ab026bdfa8c3d4e4ccde09ec238a0eaf1"
 $D2xxZipPath = Join-Path $WorkDir "CDM-v2.12.36.20-WHQL-Certified.zip"
 $D2xxEntry = "amd64/FTD2XX64.dll"
 $D2xxStagedName = "FTD2XX.dll"
+$D2xxDriverExtractDir = Join-Path $WorkDir "cdm-extract"
 
 $LibFt4222Dll = "imports\LibFT4222\dll\amd64\LibFT4222-64.dll"
 $LibFt4222Lib = "imports\LibFT4222\dll\amd64\LibFT4222-64.lib"
@@ -135,6 +142,51 @@ function Install-Ftd2xxDll {
     Assert-NativeAmd64Dll (Join-Path $WorkDir $D2xxStagedName) | Out-Null
 }
 
+function Install-Ftd2xxDriver {
+    param([string]$Destination)
+
+    if (Test-Path $D2xxDriverExtractDir) {
+        Remove-Item $D2xxDriverExtractDir -Recurse -Force
+    }
+    Expand-Archive -Path $D2xxZipPath -DestinationPath $D2xxDriverExtractDir -Force
+    if (Test-Path $Destination) {
+        Remove-Item $Destination -Recurse -Force
+    }
+    Ensure-Dir $Destination
+
+    foreach ($name in $FtdiDriverTopLevelFiles) {
+        $source = Join-Path $D2xxDriverExtractDir $name
+        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+            throw "CDM archive is missing $name."
+        }
+        Copy-Item -LiteralPath $source -Destination (Join-Path $Destination $name) -Force
+    }
+    foreach ($arch in $FtdiDriverArchDirs) {
+        $source = Join-Path $D2xxDriverExtractDir $arch
+        if (-not (Test-Path -LiteralPath $source -PathType Container)) {
+            throw "CDM archive is missing the $arch driver directory."
+        }
+        $target = Join-Path $Destination $arch
+        Ensure-Dir $target
+        # The driver package needs the DLL/SYS payloads, not the import
+        # libraries that live beside them in the CDM archive.
+        Get-ChildItem -LiteralPath $source -File |
+            Where-Object { $_.Extension -ne '.lib' } |
+            ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $target -Force }
+    }
+
+    Assert-FtdiDriverSource -DriverDir $Destination
+
+    @"
+FTDI CDM 2.12.36.20 (WHQL Certified)
+Source: $D2xxUrl
+SHA-256: $D2xxSha256
+License: see the unmodified ftdibus.inf and ftdiport.inf headers.
+"@ | Set-Content -LiteralPath (Join-Path $Destination "SOURCE.txt") -Encoding ASCII
+
+    Remove-Item $D2xxDriverExtractDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 function Install-LibFT4222 {
     Ensure-Dir $WorkDir
     if (Test-Path $ExtractDir) {
@@ -177,6 +229,7 @@ function Install-LibFT4222 {
         Remove-Item $HwDir -Recurse -Force
     }
     Ensure-Dir $HwDir
+    Install-Ftd2xxDriver -Destination (Join-Path $HwDir "driver")
 
     foreach ($name in @(
             "libft4222.h",

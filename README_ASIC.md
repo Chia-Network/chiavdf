@@ -96,12 +96,19 @@ https://ftdichip.com/products/ft4222h/ before connecting a board.
 winget install --id Chia.chiavdf --exact
 ```
 
-winget installs `vdf_client.exe` and puts `vdf_client` on `PATH`. For
-`hw_vdf_client.exe`, `hw_test.exe`, and the emulators, download
-`chiavdf-<version>-windows-amd64.zip` from a
-[release](https://github.com/Chia-Network/chiavdf/releases) and run the
-binaries from the extracted `bin\` directory. Install the FTDI D2XX driver
-before using the ASIC tools.
+The winget package is a machine-scope Inno Setup installer. It installs
+`hw_vdf_client.exe`, `hw_test.exe`, and the emulators alongside
+`vdf_client.exe` and `vdf_bench.exe` in
+`%ProgramFiles%\Chia\chiavdf\bin`, adds that directory to the system `PATH`,
+and stages the FTDI CDM driver (`ftdibus.inf` and `ftdiport.inf`) with
+`pnputil`. It requires x64 Windows 10 version 2004 or newer and
+administrator/UAC. If you cannot elevate, use the
+portable `chiavdf-<version>-windows-amd64.zip` from a
+[release](https://github.com/Chia-Network/chiavdf/releases) and install the
+FTDI D2XX driver from https://ftdichip.com/products/ft4222h/ manually. The
+installer leaves the shared FTDI driver in the driver store on uninstall.
+Open a new terminal after installation so the updated `PATH` is visible.
+Details are in `assets/windows-installer.md`.
 
 ### macOS release archive and package
 
@@ -123,9 +130,9 @@ libexec/chiavdf/libgmpxx.<version>.dylib
 
 Run `bin/hw_vdf_client`. The bundle's rpath is `@loader_path/../libexec/chiavdf`, so the FTDI and GMP dylibs resolve next to `bin/` with no `DYLD_LIBRARY_PATH`. Release staging rewrites the Homebrew GMP install names to `@rpath/<basename>` and copies those dylibs into `libexec/chiavdf`. The `.pkg` installs the same tree under `/usr/local` (`/usr/local/bin`, `/usr/local/libexec/chiavdf`). Details of signing are in `assets/macos-release-bundle.md`.
 
-### Windows release zip
+### Windows release assets
 
-A release uploads `chiavdf-<version>-windows-amd64.zip` and a copy named `chiavdf-win64.zip` (the winget asset). Layout:
+A release uploads `chiavdf-<version>-windows-amd64.zip` and a copy named `chiavdf-win64.zip` (the portable winget fallback), plus `chiavdf-<version>-windows-amd64-setup.exe` and `chiavdf-win64-setup.exe` (the winget installer asset). The portable zip layout is:
 
 ```text
 bin\hw_vdf_client.exe
@@ -141,7 +148,12 @@ bin\<mpir cpu variants>
 bin\<VC++ 2015-2022 runtime DLLs, such as VCRUNTIME140.dll and MSVCP140.dll>
 ```
 
-Optimized Windows builds outside pull requests sign the six chiavdf executables and the MPIR DLLs with Azure Artifact Signing before the zip is uploaded or published; the FTDI and VC++ runtime DLLs keep their vendor signatures. Details are in `assets/windows-release-signing.md`.
+The setup exe installs that `bin\` tree under
+`%ProgramFiles%\Chia\chiavdf\bin`, plus the unmodified FTDI CDM package under
+`%ProgramFiles%\Chia\chiavdf\driver`, and adds the `bin` directory to the
+machine `PATH`.
+
+Optimized Windows builds outside pull requests sign the six chiavdf executables, the MPIR DLLs, and the setup exe with Azure Artifact Signing before the assets are uploaded or published; the FTDI and VC++ runtime DLLs keep their vendor signatures. Details are in `assets/windows-release-signing.md`.
 
 The zip has a flat `bin\` and no `lib\`. The loader looks in the executable's directory, then System32, the Windows directory, the current directory, and `PATH`; it does not search a sibling `lib\`. Every non-system import of every shipped executable and DLL is in `bin\` under the exact name in its import table. That includes the MPIR CPU variants beside `mpir.dll` and the VC++ 2015-2022 runtime copied from the MSVC redist. Run the extracted binaries directly:
 
@@ -149,7 +161,7 @@ The zip has a flat `bin\` and no `lib\`. The loader looks in the executable's di
 .\bin\hw_vdf_client.exe --list
 ```
 
-Install the FTDI D2XX driver before that. `scripts/get-libft4222.ps1` stages `LibFT4222-64.dll` plus the `ftd2xx.lib` import library, and fetches the native amd64 `FTD2XX.dll` from FTDI CDM 2.12.36.20. The kernel driver is the D2XX/CDM package from the FT4222H downloads page: https://ftdichip.com/products/ft4222h/
+For the portable zip, install the FTDI D2XX driver before running the ASIC tools. `scripts/get-libft4222.ps1` stages `LibFT4222-64.dll` plus the `ftd2xx.lib` import library, fetches the native amd64 `FTD2XX.dll` from FTDI CDM 2.12.36.20, and stages the unmodified CDM driver package under `src\hw\libft4222\driver` for the installer build. The kernel driver is the D2XX/CDM package from the FT4222H downloads page: https://ftdichip.com/products/ft4222h/
 
 ## Build from source
 
@@ -159,9 +171,9 @@ Versions pinned by the fetch scripts:
 | --- | --- | --- |
 | Linux x86_64 and aarch64/arm64 | `scripts/get-libft4222.sh` | libft4222 1.4.4.170 from `download.chia.net` |
 | macOS | same script | LibFT4222 1.4.4.190 plus `libftd2xx.dylib` |
-| Windows | `scripts/get-libft4222.ps1` | LibFT4222 1.4.8 plus native `FTD2XX.dll` from CDM 2.12.36.20 |
+| Windows | `scripts/get-libft4222.ps1` | LibFT4222 1.4.8 plus native `FTD2XX.dll` and the driver package from CDM 2.12.36.20 |
 
-`install` downloads and stages headers and libraries. `clean` removes them. Linux and macOS place a symlink at `src/hw/libft4222`. Windows copies headers, import libraries, and DLLs into `src\hw\libft4222`.
+`install` downloads and stages headers and libraries. `clean` removes them. Linux and macOS place a symlink at `src/hw/libft4222`. Windows copies headers, import libraries, and DLLs into `src\hw\libft4222` and stages the unmodified FTDI CDM package under `src\hw\libft4222\driver` for the installer build.
 
 ### Linux
 

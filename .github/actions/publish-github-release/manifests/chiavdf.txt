@@ -20,5 +20,9 @@ chiavdf-darwin-amd64.zip
 chiavdf-darwin-amd64.zip.sha256
 chiavdf-{tag}-windows-amd64.zip
 chiavdf-{tag}-windows-amd64.zip.sha256
+chiavdf-{tag}-windows-amd64-setup.exe
+chiavdf-{tag}-windows-amd64-setup.exe.sha256
 chiavdf-win64.zip
 chiavdf-win64.zip.sha256
+chiavdf-win64-setup.exe
+chiavdf-win64-setup.exe.sha256

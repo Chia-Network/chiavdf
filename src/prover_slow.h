@@ -7,6 +7,7 @@
 #include "proof_common.h"
 #include "checked_cast.h"
 #include <sys/stat.h>
+#include <algorithm>
 #include <limits>
 
 
@@ -108,17 +109,44 @@ form GenerateWesolowski(form &y, form &x_init,
     return x;
 }
 
-std::vector<uint8_t> ProveSlow(integer& D, form& x, uint64_t num_iterations, std::string shutdown_file_path) {
+// True when the shutdown file was given and no longer exists: the prover
+// then stops and returns an empty result.
+static bool ShutdownRequested(std::string const& shutdown_file_path) {
+    if (shutdown_file_path == "") return false;
+    struct stat buffer;
+    int statrst = stat(shutdown_file_path.c_str(), &buffer);
+    return (statrst != 0) && (errno != EINTR);
+}
+
+// The k and l that ProveSlow has always chosen for num_iterations.
+static void ProverParameters(uint64_t num_iterations, uint64_t& k, uint64_t& l) {
+    int k_int, l_int;
+    ApproximateParameters(num_iterations, l_int, k_int);
+    if (k_int <= 0) k_int = 1;
+    if (l_int <= 0) l_int = 1;
+    k = static_cast<uint64_t>(k_int);
+    l = static_cast<uint64_t>(l_int);
+}
+
+// y followed by the proof, as prove() returns them.
+static std::vector<uint8_t> SerializeProofResult(form& y, form& proof, int d_bits) {
+    std::vector<uint8_t> result = SerializeForm(y, d_bits);
+    std::vector<uint8_t> proof_bytes = SerializeForm(proof, d_bits);
+    result.insert(result.end(), proof_bytes.begin(), proof_bytes.end());
+    return result;
+}
+
+// ProveSlow with k and l given instead of chosen by ApproximateParameters.
+// The proof verifies for any k, l > 0; tests use this to reach l > 1 with
+// few iterations.
+std::vector<uint8_t> ProveSlowWithParameters(integer& D, form& x, uint64_t num_iterations,
+                                             std::string const& shutdown_file_path,
+                                             uint64_t k, uint64_t l) {
     integer L = root(-D, 4);
     PulmarkReducer reducer;
     form y = form::from_abd(x.a, x.b, D);
     int d_bits = D.num_bits();
-
-    int k, l;
-    ApproximateParameters(num_iterations, l, k);
-    if (k <= 0) k = 1;
-    if (l <= 0) l = 1;
-    int const kl = k * l;
+    uint64_t const kl = k * l;
 
     uint64_t const size_vec = (num_iterations + kl - 1) / kl;
     std::vector<form> intermediates(size_vec);
@@ -132,65 +160,34 @@ std::vector<uint8_t> ProveSlow(integer& D, form& x, uint64_t num_iterations, std
         reducer.reduce(y);
 
         // Check for cancellation every 65535 interations
-        if ((i&0xffff)==0) {
-            // Only if we have a shutdown path
-            if (shutdown_file_path!="") {
-                struct stat buffer;
-            
-                int statrst = stat(shutdown_file_path.c_str(), &buffer);
-                if ((statrst != 0) && (errno != EINTR)) {
-                    // shutdown file doesn't exist, abort out
-                    return {};
-                }
-            }
-        }
+        if ((i & 0xffff) == 0 && ShutdownRequested(shutdown_file_path)) return {};
     }
 
     form proof = GenerateWesolowski(y, x, D, reducer, intermediates, num_iterations, k, l);
-    std::vector<uint8_t> result = SerializeForm(y, d_bits);
-    std::vector<uint8_t> proof_bytes = SerializeForm(proof, d_bits);
-    result.insert(result.end(), proof_bytes.begin(), proof_bytes.end());
-    return result;
+    return SerializeProofResult(y, proof, d_bits);
 }
 
-// True when the shutdown file was given and no longer exists (see ProveSlow).
-static bool ShutdownRequested(std::string const& shutdown_file_path) {
-    if (shutdown_file_path == "") return false;
-    struct stat buffer;
-    int statrst = stat(shutdown_file_path.c_str(), &buffer);
-    return (statrst != 0) && (errno != EINTR);
+std::vector<uint8_t> ProveSlow(integer& D, form& x, uint64_t num_iterations, std::string shutdown_file_path) {
+    uint64_t k, l;
+    ProverParameters(num_iterations, k, l);
+    return ProveSlowWithParameters(D, x, num_iterations, shutdown_file_path, k, l);
 }
 
-// The same proof as ProveSlow, byte for byte, with memory that does not grow
-// with num_iterations.
-//
-// ProveSlow keeps every (k*l)-th form of the computation until the proof is
-// made: about num_iterations / (k*l) forms, some 3 GB for 2^32 iterations
-// with a 1024-bit discriminant. Instead, a first pass keeps one checkpoint
-// every `checkpoint_interval` iterations (rounded up to a multiple of k*l;
-// 0 means k*l * 2^16) and ends at y, which gives B. A second pass computes
-// the forms again from the checkpoints and adds each (k*l)-th one to the
-// buckets of all l rounds at once, in the order GenerateWesolowski does;
-// FoldWesolowskiBuckets then folds the rounds as it does. Memory:
-// l * 2^k + num_iterations / checkpoint_interval forms (about 73 MB at
-// 2^32); time: about twice ProveSlow's squarings.
-std::vector<uint8_t> ProveSlowLowMemory(integer& D, form& x, uint64_t num_iterations,
-                                        std::string shutdown_file_path,
-                                        uint64_t checkpoint_interval = 0) {
+// ProveSlowLowMemory with k and l given (see ProveSlowWithParameters).
+std::vector<uint8_t> ProveSlowLowMemoryWithParameters(integer& D, form& x, uint64_t num_iterations,
+                                                      std::string const& shutdown_file_path,
+                                                      uint64_t checkpoint_interval,
+                                                      uint64_t k, uint64_t l) {
     integer L = root(-D, 4);
     PulmarkReducer reducer;
     form y = form::from_abd(x.a, x.b, D);
     int d_bits = D.num_bits();
-
-    int k_int, l_int;
-    ApproximateParameters(num_iterations, l_int, k_int);
-    if (k_int <= 0) k_int = 1;
-    if (l_int <= 0) l_int = 1;
-    uint64_t const k = static_cast<uint64_t>(k_int);
-    uint64_t const l = static_cast<uint64_t>(l_int);
     uint64_t const kl = k * l;
+
+    // A multiple of k*l, at least k*l. Rounding down cannot overflow, so a
+    // caller-supplied value near 2^64 can never lead to a division by zero.
     if (checkpoint_interval == 0) checkpoint_interval = kl << 16;
-    checkpoint_interval = ((checkpoint_interval + kl - 1) / kl) * kl;
+    checkpoint_interval = std::max(kl, checkpoint_interval - checkpoint_interval % kl);
 
     // First pass: y, and a checkpoint every checkpoint_interval iterations.
     std::vector<form> checkpoints;
@@ -239,8 +236,26 @@ std::vector<uint8_t> ProveSlowLowMemory(integer& D, form& x, uint64_t num_iterat
     }
     reducer.reduce(proof);
 
-    std::vector<uint8_t> result = SerializeForm(y, d_bits);
-    std::vector<uint8_t> proof_bytes = SerializeForm(proof, d_bits);
-    result.insert(result.end(), proof_bytes.begin(), proof_bytes.end());
-    return result;
+    return SerializeProofResult(y, proof, d_bits);
+}
+
+// The same proof as ProveSlow, byte for byte, with memory that does not grow
+// with num_iterations.
+//
+// ProveSlow keeps every (k*l)-th form of the computation until the proof is
+// made: num_iterations / (k*l) forms. Instead, a first pass keeps one
+// checkpoint every `checkpoint_interval` iterations (rounded down to a
+// multiple of k*l, at least k*l; 0 means k*l * 2^16) and ends at y, which
+// gives B. A second pass computes the forms again from the checkpoints and
+// adds each (k*l)-th one to the buckets of all l rounds at once, in the order
+// GenerateWesolowski does; FoldWesolowskiBuckets then folds the rounds as it
+// does. Memory: l * 2^k + num_iterations / checkpoint_interval forms; time:
+// about twice ProveSlow's squarings.
+std::vector<uint8_t> ProveSlowLowMemory(integer& D, form& x, uint64_t num_iterations,
+                                        std::string shutdown_file_path,
+                                        uint64_t checkpoint_interval = 0) {
+    uint64_t k, l;
+    ProverParameters(num_iterations, k, l);
+    return ProveSlowLowMemoryWithParameters(D, x, num_iterations, shutdown_file_path,
+                                            checkpoint_interval, k, l);
 }

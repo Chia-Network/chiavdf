@@ -34,6 +34,14 @@ def test_from_a_later_form_and_with_keyword_arguments():
                             num_iterations=12345, checkpoint_interval=777) == expected
 
 
+def test_checkpoint_interval_near_2_to_the_64():
+    # Rounding the interval to a multiple of k*l must not wrap to 0.
+    challenge = secrets.token_bytes(10)
+    expected = prove(challenge, INITIAL, 1024, 3000, "")
+    for interval in (2**64 - 1, 2**64 - 2, 2**63):
+        assert prove_low_memory(challenge, INITIAL, 1024, 3000, "", interval) == expected
+
+
 def test_stops_when_the_shutdown_file_is_gone():
     challenge = secrets.token_bytes(10)
     with tempfile.TemporaryDirectory() as tmp:

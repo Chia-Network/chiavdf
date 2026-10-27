@@ -53,6 +53,17 @@ TEST(ProverSlowRegressionTest, ProveSlowSucceedsPastFiftyIterationsWithoutCoordi
     }
 }
 
+static uint64_t ReferenceCeilDiv(uint64_t n, uint64_t d) {
+    // 128-bit division needs the __udivti3 runtime routine, which the
+    // clang-cl/lld-link Windows build does not link, so Windows uses a 64-bit
+    // reference computed as (n - 1) / d + 1 for n > 0.
+#if !defined(_WIN32) && !defined(_MSC_VER) && defined(__SIZEOF_INT128__)
+    return static_cast<uint64_t>((static_cast<unsigned __int128>(n) + d - 1) / d);
+#else
+    return (n == 0) ? 0 : (n - 1) / d + 1;
+#endif
+}
+
 TEST(ProverSlowRegressionTest, CeilDivDoesNotWrap) {
     EXPECT_EQ(CeilDiv(UINT64_MAX, 360), UINT64_MAX / 360 + 1);
     EXPECT_EQ(CeilDiv(UINT64_MAX - 358, 360), UINT64_MAX / 360);
@@ -69,21 +80,16 @@ TEST(ProverSlowRegressionTest, CeilDivDoesNotWrap) {
     EXPECT_EQ(CeilDiv(UINT64_MAX, UINT64_MAX), 1u);
     EXPECT_EQ(CeilDiv(UINT64_MAX - 1, UINT64_MAX), 1u);
 
-#if defined(__SIZEOF_INT128__)
     const uint64_t numerators[] = {0, 1, 359, 360, 361,
                                    UINT64_MAX - 360, UINT64_MAX - 359,
                                    UINT64_MAX - 358, UINT64_MAX - 1, UINT64_MAX};
     const uint64_t denominators[] = {1, 2, 3, 359, 360, 361, UINT64_MAX};
     for (uint64_t n : numerators) {
         for (uint64_t d : denominators) {
-            uint64_t const expected =
-                static_cast<uint64_t>((static_cast<unsigned __int128>(n) + d - 1) / d);
+            uint64_t const expected = ReferenceCeilDiv(n, d);
             EXPECT_EQ(CeilDiv(n, d), expected) << "n=" << n << " d=" << d;
         }
     }
-#else
-    GTEST_SKIP() << "unsigned __int128 is not available";
-#endif
 }
 
 TEST(ProverSlowRegressionTest, ProveSlowLargeNumIterationsDoesNotWrapSizeVec) {

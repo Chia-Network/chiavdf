@@ -149,8 +149,47 @@ static void hw_proof_queue_request(struct vdf_state *vdf, uint16_t prev, uint64_
         hw_queue_proof(vdf, span, prev, HW_VDF_PROOF_FLAG_IS_REQ);
         return;
     }
-    if (prev != HW_VDF_PROOF_NONE)
-        vdf->proofs[prev].flags |= HW_VDF_PROOF_FLAG_EXACT_REQ;
+    if (prev != HW_VDF_PROOF_NONE) {
+        auto &checkpoint = vdf->proofs[prev];
+        checkpoint.flags |= HW_VDF_PROOF_FLAG_EXACT_REQ;
+        // A completed checkpoint will not publish again to enqueue this request.
+        if ((checkpoint.flags & HW_VDF_PROOF_FLAG_DONE)
+                && std::find(vdf->done_proofs.begin(), vdf->done_proofs.end(), prev)
+                    == vdf->done_proofs.end())
+            vdf->done_proofs.push_back(prev);
+    }
+}
+
+// Called under proofs_resize_mtx. Recovery can invalidate an ancestor after its
+// descendant was computed, so eligibility covers the whole checkpoint chain.
+static uint8_t hw_reusable_checkpoint_depth(const struct vdf_state *vdf, uint16_t idx)
+{
+    uint8_t depth = 0;
+    while (idx != HW_VDF_PROOF_NONE) {
+        if (idx >= vdf->proofs.size()
+                || (vdf->proofs[idx].flags & HW_VDF_PROOF_FLAG_FAILED)
+                || ++depth > HW_VDF_MAX_CHKP_SEGMENTS)
+            return 0;
+        idx = vdf->proofs[idx].prev;
+    }
+    return depth;
+}
+
+// Estimate the critical path in iteration units for equal-sized independent
+// segments on the configured proof slots. A full checkpoint chain has only one
+// tail; an earlier prefix can be faster because it leaves room for parallel work.
+static uint64_t hw_proof_tail_cost(const struct vdf_state *vdf,
+        uint64_t span, uint8_t depth)
+{
+    if (!span) return 0;
+    uint8_t room = HW_VDF_MAX_CHKP_SEGMENTS - depth;
+    uint64_t chunk = hw_proof_segment_chunk(span, vdf->checkpoint_threshold,
+            vdf->interval, room);
+    uint64_t workers = std::max<uint64_t>(1, std::min<uint64_t>(vdf->max_aux_threads,
+            (vdf->max_proof_threads + PARALLEL_PROVER_N_THREADS - 1)
+                / PARALLEL_PROVER_N_THREADS));
+    uint64_t full = span / chunk;
+    return full / workers * chunk + (full % workers ? chunk : span % chunk);
 }
 
 void hw_proof_process_req(struct vdf_state *vdf)
@@ -158,7 +197,6 @@ void hw_proof_process_req(struct vdf_state *vdf)
     uint64_t iters;
     uint64_t req_iters;
     uint64_t base_iters = 0;
-    uint8_t max_chkp_segments = HW_VDF_MAX_CHKP_SEGMENTS;
     int i;
     uint16_t prev = HW_VDF_PROOF_NONE;
 
@@ -184,21 +222,38 @@ void hw_proof_process_req(struct vdf_state *vdf)
 
     for (i = vdf->queued_proofs.size() - 1; i >= 0; i--) {
         uint16_t idx = vdf->queued_proofs[i];
-        uint8_t n_segments;
         if (vdf->proofs[idx].flags & HW_VDF_PROOF_FLAG_IS_REQ) {
             continue;
         }
         iters = vdf->proofs[idx].iters;
-        n_segments = hw_proof_cnt_segments(vdf, idx);
-        if (iters <= req_iters && n_segments <= max_chkp_segments) {
+        if (iters <= req_iters && hw_reusable_checkpoint_depth(vdf, idx)) {
             base_iters = iters;
             prev = idx;
-            hw_proof_inc_ref(vdf, prev);
             break;
-        } else if (iters <= req_iters) {
-            LOG_INFO("VDF %d: Max seg triggered at req_iters=%lu", vdf->idx, req_iters);
         }
     }
+
+    // Dispatch removes checkpoints from queued_proofs. Reuse their owned proof
+    // objects while they are running or completed, within this native session.
+    uint8_t depth = prev == HW_VDF_PROOF_NONE ? 0 : hw_reusable_checkpoint_depth(vdf, prev);
+    uint64_t best_cost = hw_proof_tail_cost(vdf, req_iters - base_iters, depth);
+    for (size_t pos = vdf->proofs.size(); pos-- > 0; ) {
+        const auto &checkpoint = vdf->proofs[pos];
+        if (checkpoint.iters > req_iters
+                || (checkpoint.flags & HW_VDF_PROOF_FLAG_IS_REQ)
+                || !(checkpoint.flags & (HW_VDF_PROOF_FLAG_STARTED | HW_VDF_PROOF_FLAG_DONE)))
+            continue;
+        uint8_t checkpoint_depth = hw_reusable_checkpoint_depth(vdf, static_cast<uint16_t>(pos));
+        if (!checkpoint_depth) continue;
+        uint64_t cost = hw_proof_tail_cost(vdf, req_iters - checkpoint.iters, checkpoint_depth);
+        if (cost > best_cost || (cost == best_cost && checkpoint.iters <= base_iters))
+            continue;
+        best_cost = cost;
+        base_iters = checkpoint.iters;
+        prev = static_cast<uint16_t>(pos);
+    }
+    if (prev != HW_VDF_PROOF_NONE)
+        hw_proof_inc_ref(vdf, prev);
 
     hw_proof_queue_request(vdf, prev, req_iters - base_iters);
 

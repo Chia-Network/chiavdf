@@ -25,6 +25,30 @@ static py::bytes to_signed_bytes_be(const integer& value) {
     return py::bytes(out);
 }
 
+// Shared by prove() and prove_low_memory(): creates the discriminant, reads
+// x and runs ProveSlow or ProveSlowLowMemory without the GIL.
+static py::bytes RunProver(const py::bytes& challenge_hash, const string& x_s, int discriminant_size_bits,
+                           uint64_t num_iterations, const string& shutdown_file_path,
+                           bool low_memory, uint64_t checkpoint_interval) {
+    std::string challenge_hash_str(challenge_hash);
+    std::string x_s_copy(x_s);
+    std::vector<uint8_t> result;
+    std::string shutdown_file_path_copy(shutdown_file_path);
+    {
+        py::gil_scoped_release release;
+        std::vector<uint8_t> challenge_hash_bytes(challenge_hash_str.begin(), challenge_hash_str.end());
+        integer D = CreateDiscriminant(
+                challenge_hash_bytes,
+                discriminant_size_bits
+        );
+        form x = DeserializeForm(D, (const uint8_t *) x_s_copy.data(), x_s_copy.size());
+        result = low_memory
+            ? ProveSlowLowMemory(D, x, num_iterations, shutdown_file_path_copy, checkpoint_interval)
+            : ProveSlow(D, x, num_iterations, shutdown_file_path_copy);
+    }
+    return py::bytes(reinterpret_cast<char*>(result.data()), result.size());
+}
+
 PYBIND11_MODULE(_chiavdf, m) {
     m.doc() = "Chia proof of time";
 
@@ -100,23 +124,18 @@ PYBIND11_MODULE(_chiavdf, m) {
     });
 
     m.def("prove", [] (const py::bytes& challenge_hash, const string& x_s, int discriminant_size_bits, uint64_t num_iterations, const string& shutdown_file_path) {
-        std::string challenge_hash_str(challenge_hash);
-        std::string x_s_copy(x_s);
-        std::vector<uint8_t> result;
-        std::string shutdown_file_path_copy(shutdown_file_path);
-        {
-            py::gil_scoped_release release;
-            std::vector<uint8_t> challenge_hash_bytes(challenge_hash_str.begin(), challenge_hash_str.end());
-            integer D = CreateDiscriminant(
-                    challenge_hash_bytes,
-                    discriminant_size_bits
-            );
-            form x = DeserializeForm(D, (const uint8_t *) x_s_copy.data(), x_s_copy.size());
-            result = ProveSlow(D, x, num_iterations, shutdown_file_path_copy);
-        }
-        py::bytes ret = py::bytes(reinterpret_cast<char*>(result.data()), result.size());
-        return ret;
+        return RunProver(challenge_hash, x_s, discriminant_size_bits, num_iterations, shutdown_file_path, false, 0);
     });
+
+    // The same proof as prove(), with memory that does not grow with the
+    // number of iterations (about twice the time): see ProveSlowLowMemory.
+    m.def("prove_low_memory", [] (const py::bytes& challenge_hash, const string& x_s, int discriminant_size_bits,
+                                  uint64_t num_iterations, const string& shutdown_file_path,
+                                  uint64_t checkpoint_interval) {
+        return RunProver(challenge_hash, x_s, discriminant_size_bits, num_iterations, shutdown_file_path,
+                         true, checkpoint_interval);
+    }, py::arg("challenge_hash"), py::arg("x_s"), py::arg("discriminant_size_bits"),
+       py::arg("num_iterations"), py::arg("shutdown_file_path") = "", py::arg("checkpoint_interval") = 0);
 
     // Checks an N wesolowski proof, given y is given by 'GetB()' instead of a form.
     m.def("verify_n_wesolowski_with_b", [] (const string& discriminant,

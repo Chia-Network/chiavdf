@@ -4,6 +4,7 @@ __all__ = [
     "create_discriminant_and_verify_n_wesolowski",
     "get_b_from_n_wesolowski",
     "prove",
+    "prove_low_memory",
     "verify_n_wesolowski",
     "verify_n_wesolowski_with_b",
     "verify_wesolowski",
@@ -39,6 +40,14 @@ def prove(
     discriminant_size_bits: int,
     num_iterations: int,
     shutdown_file_path: str,
+) -> bytes: ...
+def prove_low_memory(
+    challenge_hash: bytes,
+    x_s: bytes | str,
+    discriminant_size_bits: int,
+    num_iterations: int,
+    shutdown_file_path: str = "",
+    checkpoint_interval: int = 0,
 ) -> bytes: ...
 def verify_n_wesolowski_with_b(
     discriminant: str,

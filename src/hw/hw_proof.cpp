@@ -839,6 +839,10 @@ void init_vdf_state(struct vdf_state *vdf, struct vdf_proof_opts *opts, const ch
 {
     //int ret;
     //struct vdf_value initial;
+    integer discriminant;
+    if (mpz_set_str(discriminant.impl, d_str, 0))
+        throw std::invalid_argument("Invalid discriminant");
+    form initial = DeserializeForm(discriminant, init_form, BQFC_FORM_SIZE, false);
     size_t num_values;
     vdf->retain_asic_values = opts && opts->retain_asic_values;
     hw_proof_reset_retained_values(vdf);
@@ -878,7 +882,7 @@ void init_vdf_state(struct vdf_state *vdf, struct vdf_proof_opts *opts, const ch
         vdf->max_proof_threads = opts->max_proof_threads;
     }
 
-    mpz_set_str(vdf->D.impl, d_str, 0);
+    mpz_set(vdf->D.impl, discriminant.impl);
     mpz_set(vdf->L.impl, vdf->D.impl);
     mpz_neg(vdf->L.impl, vdf->L.impl);
     mpz_root(vdf->L.impl, vdf->L.impl, 4);
@@ -902,10 +906,9 @@ void init_vdf_state(struct vdf_state *vdf, struct vdf_proof_opts *opts, const ch
     //mpz_init_set_ui(initial.b, 1);
     //initial.iters = 0;
     init_vdf_value(&vdf->last_val);
-    // TODO: verify validity of initial form
-    bqfc_deserialize(vdf->last_val.a, vdf->last_val.b, vdf->D.impl, init_form,
-            BQFC_FORM_SIZE, BQFC_MAX_D_BITS, false);
-    hw_proof_get_form(hw_proof_value_at(vdf, 0), vdf, &vdf->last_val);
+    mpz_set(vdf->last_val.a, initial.a.impl);
+    mpz_set(vdf->last_val.b, initial.b.impl);
+    *hw_proof_value_at(vdf, 0) = std::move(initial);
     vdf->valid_values[0].store(1, std::memory_order_relaxed);
     //vdf->raw_values.push_back(initial);
     vdf->init_done = true;

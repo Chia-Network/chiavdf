@@ -68,6 +68,65 @@ static void check_pll_bounds() {
             "Frequency moved past the PLL table");
 }
 
+// The emulator deliberately does not model the regulator and returns 0.24375 V.
+// Legacy clock steps must neither validate that sample nor derive a voltage write
+// from it; the supervised transaction would reject it.
+static void check_legacy_frequency_adjustment() {
+    ChiaDriver driver;
+    require(driver.ftdi.Open() == 0, "Legacy fixture could not open the emulator");
+    const auto start = timelord_control::frequency_index(1100., pll_entries, VALID_PLL_FREQS);
+    require(driver.SetPLLFrequencyByIndex(start), "Legacy fixture could not set its PLL");
+    require(driver.GetBoardVoltage() < timelord_control::Limits::min_voltage,
+            "Legacy fixture no longer exercises an invalid voltage readback");
+    adjust_hw_freq(&driver, 0, 1);
+    require(driver.freq_idx == start + 1, "Legacy clock step depended on voltage validation");
+    adjust_hw_freq(&driver, 0, -1);
+    require(driver.freq_idx == start, "Legacy clock step down did not restore the index");
+    require(driver.SetPLLFrequencyByIndex(VALID_PLL_FREQS - 2), "Could not select a high PLL entry");
+    adjust_hw_freq(&driver, 0, 1);
+    require(driver.freq_idx == VALID_PLL_FREQS - 1,
+            "Legacy auto-frequency lost its full PLL-table range");
+    driver.freq_idx = VALID_PLL_FREQS;
+    adjust_hw_freq(&driver, 0, 1); // Invalid indexes are logged, not thrown.
+    require(driver.freq_idx == VALID_PLL_FREQS, "Invalid legacy PLL index was changed");
+}
+
+static void check_initial_values() {
+    for (uint8_t first : {uint8_t(4), uint8_t(8)}) {
+        for (size_t index = 0; index < BQFC_FORM_SIZE; ++index) {
+            vdf_state vdf{};
+            std::vector<uint8_t> bytes(BQFC_FORM_SIZE, 0);
+            bytes[0] = first;
+            if (index == 0) bytes[0] |= 1;
+            else bytes[index] = 1;
+            bool rejected = false;
+            try {
+                init_vdf_state(&vdf, nullptr, "-23", bytes.data(), 4000, 0);
+            } catch (const std::exception &) {
+                rejected = true;
+            }
+            if (!rejected) {
+                hw_stop_proof(&vdf);
+                clear_vdf_state(&vdf);
+            }
+            require(rejected, "Unexpected initial value");
+            require(!vdf.init_done && vdf.value_blocks == nullptr && vdf.valid_values == nullptr,
+                    "Unexpected initial state");
+            for (const auto &worker : vdf.aux_threads)
+                require(!worker.joinable(), "Unexpected worker state");
+        }
+    }
+    for (const char *discriminant : {"invalid", "-27"}) {
+        vdf_state vdf{};
+        uint8_t bytes[BQFC_FORM_SIZE] = {8};
+        bool rejected = false;
+        try { init_vdf_state(&vdf, nullptr, discriminant, bytes, 4000, 0); }
+        catch (const std::exception &) { rejected = true; }
+        if (!rejected) { hw_stop_proof(&vdf); clear_vdf_state(&vdf); }
+        require(rejected && !vdf.init_done, "Unexpected initial value");
+    }
+}
+
 static void check_delivery(const vdf_proof_delivery &delivery) {
     const auto tag = static_cast<uint8_t>(delivery.final.iters % 251);
     require(delivery.checkpoints.size() == 1, "Checkpoint snapshot was incomplete");
@@ -287,8 +346,11 @@ static void initialize_wait_state(vdf_state& vdf) {
 int main() {
     try {
         VdfBaseInit();
+        check_initial_values();
         check_pll_bounds();
+        check_legacy_frequency_adjustment();
         check_completed_engine_control_mask();
+        check_client_exception_shutdown_policy();
         check_completed_checkpoint_reuse();
         {
             vdf_state vdf{};

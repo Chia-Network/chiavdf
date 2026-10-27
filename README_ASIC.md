@@ -529,7 +529,9 @@ change clock and voltage without replacing the client. This mode requires anonym
 or named pipes on stdin and stdout and cannot be combined with `--auto-freq-period`.
 It uses the existing USB owner thread; it opens no control socket. Human-readable
 logs and raw telemetry remain on stderr. The supervisor should keep draining stderr
-and wait for each acknowledgement before sending another command.
+and wait for each acknowledgement before sending another command. Control polling
+uses a monotonic 100 ms deadline rather than a loop-turn count. A slow USB operation
+or other owner-thread work can still delay a command beyond that interval.
 
 Commands and replies are newline-delimited ASCII:
 
@@ -557,21 +559,43 @@ is 1 MHz and voltage tolerance is 0.0063 V. Failed samples log the stage, attemp
 clock-register values and individual register-read errors. These bounds are
 software guardrails, not a characterization of the silicon's operating limits.
 
-A hardware rejection returns `TLERR 1 ID reason` when the reply pipe remains
-writable. Failed temperature reads are reported as `temperature_unavailable`,
-separately from `temperature_limit`; valid zero or subzero readings are not read
-errors. Invalid commands, failed operations, controller EOF,
-a closed reply pipe or reply backpressure enter the same failure path as node
-socket errors: attempt to pause every selected engine, check the result, restore
-a low operating point (200 MHz / requested 0.7 V) without resuming engines, stop
-proof workers, close USB and exit with status 70. Failed pause writes fall back
-to board reset. The shutdown log reports whether quiescence and restoration were
-confirmed; a failed USB link cannot guarantee either. SIGPIPE is suppressed only
-for the writing thread during individual pipe/socket writes, without changing
-the process signal handler. The supervisor owns any delayed restart
-policy. Both pipes are nonblocking so a supervisor that stops reading replies
-cannot stall the USB owner. A startup failure to establish the channel exits before
-USB initialization.
+A rejected operation is fatal: a `TLERR` is a failure notification, not permission
+to send the next command. Replies and exit behavior are:
+
+| Condition | Reply | Result |
+| --- | --- | --- |
+| Valid command; hardware change and readback succeed | `TLACK 1 ID MHz V` | Continue running |
+| Parsed request selects an unsupported PLL frequency or fails temperature, write, or readback checks | `TLERR 1 ID reason`, if writable | Checked shutdown; exit 70 |
+| Unknown exception while applying a parsed request | `TLERR 1 ID unknown`, if writable | Checked shutdown; exit 70 |
+| Malformed/oversized frame, invalid bounds/version/ID, or repeated ID | No reply | Checked shutdown; exit 70 |
+| Controller EOF, pipe I/O error, closed/full reply pipe, or node-socket exception | No guaranteed control reply | Checked shutdown; exit 70 |
+| Channel setup fails at startup | No protocol reply; stderr diagnostic | Exit 1 before USB initialization |
+
+Failed temperature reads are reported as `temperature_unavailable`, separately from
+`temperature_limit`; valid zero or subzero readings are not read errors. Checked
+shutdown attempts to pause every selected engine, checks the result, restores a low
+operating point (200 MHz / requested 0.7 V) without resuming engines, stops proof
+workers, closes node connections and USB, and exits with status 70. Failed pause
+writes fall back to board reset. The shutdown log reports whether quiescence and
+restoration were confirmed; a failed USB link cannot guarantee either. SIGPIPE is
+suppressed only for the writing thread during individual pipe/socket writes,
+without changing the process signal handler. The supervisor owns delayed restart
+policy.
+
+The channel borrows stdin/stdout and makes them nonblocking while active, so a
+supervisor that stops reading replies cannot stall the USB owner. Their original
+file-status flags are restored when the channel stops or is destroyed, including
+a failed setup after one descriptor has changed. These flags are shared with any
+aliases of the same open file description while the channel is active; `dup` alone
+would not isolate them. Supervisors should provide dedicated control pipes.
+
+Legacy `--auto-freq-period` remains a clock-only pause/write/resume operation over
+the full PLL table. It does not read or write regulator voltage or use supervised
+temperature/readback validation. Driver failures and PLL-table boundaries are
+logged and do not introduce a new exception path. Without `--live-control`, an
+event-loop exception is logged, proof workers and connections are cleaned up, USB
+is closed, and the client exits 1; it does not request the supervised low operating
+point or board-reset fallback.
 
 `--raw-speed` enables `TLRAW 2 ENGINE IPS STATE` records on stderr, approximately
 once a second per running engine. `--live-control` enables these records too.

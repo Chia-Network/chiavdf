@@ -1,6 +1,8 @@
 #include "timelord_live_control.hpp"
 #ifdef _WIN32
 namespace timelord_control {
+Channel::~Channel() = default;
+void Channel::stop() noexcept {}
 bool Channel::supported() { return false; }
 bool Channel::start() { return false; }
 bool Channel::poll(const std::function<Point(Point)> &) { return false; }
@@ -36,15 +38,34 @@ std::ptrdiff_t write_no_sigpipe(int fd, const void *data, size_t size) {
     errno = error;
     return result;
 }
+Channel::~Channel() { stop(); }
+void Channel::stop() noexcept {
+    const int error = errno;
+    if (input_flags_ >= 0)
+        (void)fcntl(input_, F_SETFL, input_flags_);
+    if (output_flags_ >= 0)
+        (void)fcntl(output_, F_SETFL, output_flags_);
+    input_flags_ = output_flags_ = -1;
+    errno = error;
+}
 bool Channel::supported() { return true; }
 bool Channel::start() {
+    if (input_flags_ >= 0)
+        return true;
     struct stat input{}, output{};
     if (fstat(input_, &input) || fstat(output_, &output) || !S_ISFIFO(input.st_mode) ||
         !S_ISFIFO(output.st_mode))
         return false;
     const int in_flags = fcntl(input_, F_GETFL), out_flags = fcntl(output_, F_GETFL);
-    return in_flags >= 0 && out_flags >= 0 && !fcntl(input_, F_SETFL, in_flags | O_NONBLOCK) &&
-           !fcntl(output_, F_SETFL, out_flags | O_NONBLOCK);
+    if (in_flags < 0 || out_flags < 0 || fcntl(input_, F_SETFL, in_flags | O_NONBLOCK))
+        return false;
+    input_flags_ = in_flags;
+    if (fcntl(output_, F_SETFL, out_flags | O_NONBLOCK)) {
+        stop();
+        return false;
+    }
+    output_flags_ = out_flags;
+    return true;
 }
 bool Channel::reply(uint64_t id, const char *error, Point actual) {
     char response[512];

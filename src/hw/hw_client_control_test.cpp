@@ -435,3 +435,61 @@ TEST(HardwareTelemetry, IdleCadenceIgnoresIterationSchedulingAndLegacyPollingSta
     EXPECT_FALSE(legacy.due(false, start + std::chrono::seconds(60)));
     EXPECT_FALSE(legacy.due(false, start + std::chrono::seconds(120)));
 }
+
+TEST(HardwareLiveControl, ControlPollingUsesTimeInsteadOfLoopTurns) {
+    using Poll = timelord_control::Poll;
+    const auto start = Poll::Clock::time_point{};
+    Poll poll;
+    EXPECT_TRUE(poll.due(start));
+    // Tight real-hardware loops cannot consume the next poll early.
+    for (int turn = 0; turn < 10000; ++turn)
+        EXPECT_FALSE(poll.due(start));
+    // With the emulator's 50 ms turns, poll at 100 ms rather than 256 turns.
+    EXPECT_FALSE(poll.due(start + std::chrono::milliseconds(50)));
+    EXPECT_TRUE(poll.due(start + std::chrono::milliseconds(100)));
+    EXPECT_FALSE(poll.due(start + std::chrono::milliseconds(150)));
+    EXPECT_TRUE(poll.due(start + std::chrono::milliseconds(200)));
+    // A delayed owner schedules the next deadline from now, without a catch-up burst.
+    EXPECT_TRUE(poll.due(start + std::chrono::seconds(13)));
+    EXPECT_FALSE(poll.due(start + std::chrono::milliseconds(13001)));
+    EXPECT_TRUE(poll.due(start + std::chrono::milliseconds(13100)));
+}
+#ifndef _WIN32
+TEST(HardwareLiveControl, ChannelRestoresBorrowedDescriptorFlagsOnDestruction) {
+    for (bool already_nonblocking : {false, true}) {
+        HardwareControlPipes pipes;
+        if (already_nonblocking)
+            ASSERT_EQ(fcntl(pipes.input[0], F_SETFL, O_NONBLOCK), 0);
+        const int input_flags = fcntl(pipes.input[0], F_GETFL);
+        const int output_flags = fcntl(pipes.output[1], F_GETFL);
+        const int input_alias = dup(pipes.input[0]), output_alias = dup(pipes.output[1]);
+        ASSERT_GE(input_alias, 0);
+        ASSERT_GE(output_alias, 0);
+        {
+            timelord_control::Channel channel(pipes.input[0], pipes.output[1]);
+            ASSERT_TRUE(channel.start());
+            ASSERT_TRUE(channel.start()); // Must retain the flags from the first start.
+            EXPECT_NE(fcntl(input_alias, F_GETFL) & O_NONBLOCK, 0);
+            EXPECT_NE(fcntl(output_alias, F_GETFL) & O_NONBLOCK, 0);
+        }
+        EXPECT_EQ(fcntl(input_alias, F_GETFL), input_flags);
+        EXPECT_EQ(fcntl(output_alias, F_GETFL), output_flags);
+        close(input_alias);
+        close(output_alias);
+    }
+}
+TEST(HardwareLiveControl, ChannelStopRestoresFlagsAndRejectedStartupLeavesInputAlone) {
+    HardwareControlPipes pipes;
+    const int input_flags = fcntl(pipes.input[0], F_GETFL);
+    const int output_flags = fcntl(pipes.output[1], F_GETFL);
+    timelord_control::Channel rejected(pipes.input[0], -1);
+    EXPECT_FALSE(rejected.start());
+    EXPECT_EQ(fcntl(pipes.input[0], F_GETFL), input_flags);
+    timelord_control::Channel channel(pipes.input[0], pipes.output[1]);
+    ASSERT_TRUE(channel.start());
+    channel.stop();
+    channel.stop();
+    EXPECT_EQ(fcntl(pipes.input[0], F_GETFL), input_flags);
+    EXPECT_EQ(fcntl(pipes.output[1], F_GETFL), output_flags);
+}
+#endif

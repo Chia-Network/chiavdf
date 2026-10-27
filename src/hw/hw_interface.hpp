@@ -33,7 +33,7 @@ void copy_vdf_value(struct vdf_value *dst, struct vdf_value *src);
 int list_hw(void);
 bool hw_vdf_control(ChiaDriver *drv, uint8_t idx_mask, uint32_t value);
 timelord_control::Point set_hw_operating_point(ChiaDriver *drv, uint8_t mask,
-    timelord_control::Point target, bool supervised = true);
+    timelord_control::Point target);
 timelord_control::ShutdownResult shutdown_hw_operating_point(ChiaDriver *drv, uint8_t mask);
 void adjust_hw_freq(ChiaDriver *drv, uint8_t idx_mask, int direction);
 int start_hw_vdf(ChiaDriver *drv, mpz_t d, mpz_t a, mpz_t b, uint64_t n_iters, int idx);

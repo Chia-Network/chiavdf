@@ -210,6 +210,8 @@ struct form {
 };
 
 
+form DeserializeForm(const integer &D, const uint8_t *bytes, size_t size, bool strict);
+
 class PulmarkReducer {
     ClassGroupContext *t;
     Reducer *reducer;

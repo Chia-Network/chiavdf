@@ -3,6 +3,7 @@
 #include "hw_util.hpp"
 #include <cerrno>
 #include <charconv>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstddef>
@@ -30,13 +31,10 @@ struct Point {
     double frequency;
     double voltage;
 };
-inline bool readable(Point p) {
-    return std::isfinite(p.frequency) && std::isfinite(p.voltage) && p.frequency > 0 &&
-           p.voltage >= Limits::min_voltage && p.voltage <= Limits::max_voltage;
-}
 inline bool valid(Point p) {
-    return readable(p) && p.frequency >= Limits::min_frequency &&
-           p.frequency <= Limits::max_frequency;
+    return std::isfinite(p.frequency) && std::isfinite(p.voltage) &&
+           p.frequency >= Limits::min_frequency && p.frequency <= Limits::max_frequency &&
+           p.voltage >= Limits::min_voltage && p.voltage <= Limits::max_voltage;
 }
 inline void check_temperature(std::optional<double> temperature) {
     if (!temperature || !std::isfinite(*temperature))
@@ -141,22 +139,20 @@ Point checked_readback(const char *phase, Hardware &hardware, Accept accept) {
     }
     throw std::runtime_error("readback_unreachable");
 }
-// Both legacy auto-frequency and supervised control use this transaction.
-// Legacy auto-frequency retains its existing full PLL-table range.
-template <class Hardware>
-Point apply(Point target, Hardware &hardware, uint8_t mask, bool supervised = true) {
-    auto acceptable = [supervised](Point p) { return supervised ? valid(p) : readable(p); };
-    if (!acceptable(target))
+// Supervised changes always use the same validation and readback policy.
+// Legacy clock-only adjustment is a separate entry point in hw_interface.
+template <class Hardware> Point apply(Point target, Hardware &hardware, uint8_t mask) {
+    if (!valid(target))
         throw std::runtime_error("limits");
     hardware.control(mask, false);
-    const Point old = checked_readback("initial_readback", hardware, acceptable);
+    const Point old = checked_readback("initial_readback", hardware, valid);
     if (target.voltage > old.voltage)
         hardware.voltage(target.voltage);
     hardware.frequency(target.frequency);
     if (target.voltage < old.voltage)
         hardware.voltage(target.voltage);
     const Point actual = checked_readback("readback", hardware, [&](Point p) {
-        return acceptable(p) &&
+        return valid(p) &&
                std::abs(p.frequency - target.frequency) <= Limits::frequency_tolerance &&
                std::abs(p.voltage - target.voltage) <= Limits::voltage_tolerance;
     });
@@ -204,16 +200,35 @@ template <class Hardware> ShutdownResult shutdown(Hardware &hardware, uint8_t ma
 }
 // SIGPIPE is masked only on the writing thread and only for this write.
 std::ptrdiff_t write_no_sigpipe(int fd, const void *data, size_t size);
+// Poll on a monotonic deadline rather than a hardware-dependent loop count.
+class Poll {
+  public:
+    using Clock = std::chrono::steady_clock;
+    bool due(Clock::time_point now = Clock::now()) {
+        if (now < next_)
+            return false;
+        next_ = now + std::chrono::milliseconds(100);
+        return true;
+    }
+
+  private:
+    Clock::time_point next_{};
+};
 class Channel {
     int input_, output_;
+    int input_flags_ = -1, output_flags_ = -1;
     std::string pending_;
     uint64_t last_id_ = 0;
     bool reply(uint64_t id, const char *error, Point actual = {});
 
   public:
     explicit Channel(int input = 0, int output = 1) : input_(input), output_(output) {}
+    ~Channel();
+    Channel(const Channel &) = delete;
+    Channel &operator=(const Channel &) = delete;
     static bool supported();
     bool start();
+    void stop() noexcept;
     bool poll(const std::function<Point(Point)> &apply);
 };
 } // namespace timelord_control

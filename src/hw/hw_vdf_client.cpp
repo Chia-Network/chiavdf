@@ -812,8 +812,10 @@ int hw_vdf_client_main(int argc, char **argv)
     std::optional<timelord_control::ShutdownResult> shutdown;
     std::string failure_reason;
     auto fail = [&]() {
+        if (!client.opts.live_control)
+            return 1;
         shutdown = shutdown_hw_operating_point(client.drv, client.opts.vdfs_mask);
-        return client.opts.live_control ? timelord_control::Limits::failure_exit : 1;
+        return timelord_control::Limits::failure_exit;
     };
     int rc = 0;
     try {
@@ -831,13 +833,16 @@ int hw_vdf_client_main(int argc, char **argv)
         hw_stop_proof(&conn.vdf);
         clear_vdf_state(&conn.vdf);
     }
+    for (auto &conn : client.conns)
+        close_conn(&conn);
     clear_vdf_client(&client);
     stop_hw(client.drv);
     if (shutdown) {
         LOG_ERROR("Hardware shutdown: engines_paused=%d safe_point_restored=%d",
             shutdown->paused, shutdown->restored);
-        LOG_ERROR("VDF client stopped: %s", failure_reason.c_str());
     }
+    if (rc)
+        LOG_ERROR("VDF client stopped: %s", failure_reason.c_str());
     return rc;
 }
 

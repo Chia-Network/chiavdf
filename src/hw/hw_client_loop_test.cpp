@@ -7,11 +7,16 @@
 namespace {
 struct EndClientLoop {};
 uint8_t observed_running_mask = 0;
+double observed_frequency = 0.;
+bool standard_failure = false;
 } // namespace
 
 bool HardwareLiveControl::start(bool, bool) { return true; }
-bool HardwareLiveControl::poll(ChiaDriver *, uint8_t running_mask) {
+bool HardwareLiveControl::poll(ChiaDriver *driver, uint8_t running_mask) {
     observed_running_mask = running_mask;
+    observed_frequency = driver->GetPLLFrequency();
+    if (standard_failure)
+        throw std::runtime_error("fixture_exception");
     throw EndClientLoop{};
 }
 
@@ -83,6 +88,48 @@ static void check_completed_engine_control_mask() {
                 if (client.conns[i].state != expected)
                     throw std::runtime_error("unexpected_engine_state");
             }
+        }
+    }
+#endif
+}
+
+// Drive both catch branches through the actual CLI entry point. Only the
+// supervisor boundary is intercepted; startup, failure policy and cleanup are real.
+static void check_client_exception_shutdown_policy() {
+#ifndef _WIN32
+    struct Listener {
+        int fd = socket(AF_INET, SOCK_STREAM, 0);
+        ~Listener() { if (fd >= 0) close(fd); }
+    } listener;
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    socklen_t size = sizeof(address);
+    if (listener.fd < 0 || bind(listener.fd, reinterpret_cast<sockaddr *>(&address), size) ||
+        listen(listener.fd, 8) ||
+        getsockname(listener.fd, reinterpret_cast<sockaddr *>(&address), &size))
+        throw std::runtime_error("exception_fixture_listener");
+    std::string port = std::to_string(ntohs(address.sin_port));
+    for (bool supervised : {false, true}) {
+        for (bool standard : {false, true}) {
+            standard_failure = standard;
+            char name[] = "emu_hw_vdf_client", live[] = "--live-control", count[] = "1";
+            char *legacy_args[] = {name, port.data(), count};
+            char *live_args[] = {name, live, port.data(), count};
+            const int rc = hw_vdf_client_main(supervised ? 4 : 3,
+                                              supervised ? live_args : legacy_args);
+            standard_failure = false;
+            if (rc != (supervised ? timelord_control::Limits::failure_exit : 1))
+                throw std::runtime_error("client_exception_exit_status");
+            ChiaDriver probe;
+            if (probe.ftdi.Open())
+                throw std::runtime_error("exception_fixture_probe");
+            const double expected = supervised ? timelord_control::Limits::min_frequency
+                                               : observed_frequency;
+            if (std::abs(probe.GetPLLFrequency() - expected) > 1.)
+                throw std::runtime_error("ordinary_client_changed_clock_on_exception");
+            if (!supervised && observed_frequency <= timelord_control::Limits::min_frequency)
+                throw std::runtime_error("exception_fixture_did_not_start_above_safe_clock");
         }
     }
 #endif

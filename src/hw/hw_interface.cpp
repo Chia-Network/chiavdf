@@ -173,32 +173,47 @@ struct OperatingPointHardware {
 };
 } // namespace
 timelord_control::Point set_hw_operating_point(ChiaDriver *drv, uint8_t mask,
-                                               timelord_control::Point target, bool supervised) {
-    if (supervised) {
-        if (!timelord_control::supported_frequency(target.frequency, pll_entries, VALID_PLL_FREQS))
-            throw std::runtime_error("unsupported_frequency");
-        timelord_control::check_temperature(drv->GetPvtTemp());
-    }
+                                               timelord_control::Point target) {
+    if (!timelord_control::supported_frequency(target.frequency, pll_entries, VALID_PLL_FREQS))
+        throw std::runtime_error("unsupported_frequency");
+    timelord_control::check_temperature(drv->GetPvtTemp());
     OperatingPointHardware hardware{drv};
-    return timelord_control::apply(target, hardware, mask, supervised);
+    return timelord_control::apply(target, hardware, mask);
 }
 timelord_control::ShutdownResult shutdown_hw_operating_point(ChiaDriver *drv, uint8_t mask) {
     OperatingPointHardware hardware{drv};
     return timelord_control::shutdown(hardware, mask);
 }
+// Preserve legacy auto-frequency: no voltage writes, strict readback or exceptions
+// for driver failures. Supervised operating-point changes use the entry point above.
 void adjust_hw_freq(ChiaDriver *drv, uint8_t idx_mask, int direction) {
     if (!direction)
         return;
-    if (drv->freq_idx >= VALID_PLL_FREQS)
-        throw std::runtime_error("frequency_index");
-    if ((direction < 0 && drv->freq_idx == 0) ||
-        (direction > 0 && drv->freq_idx == VALID_PLL_FREQS - 1))
+    if (drv->freq_idx >= VALID_PLL_FREQS) {
+        LOG_ERROR("Current frequency index %u is out of range", drv->freq_idx);
         return;
-    const auto point = set_hw_operating_point(
-        drv, idx_mask, {pll_entries[drv->freq_idx + direction].freq, drv->GetBoardVoltage()},
-        false);
-    LOG_INFO("Frequency is %s to %.1f MHz; freq_idx = %u",
-             direction > 0 ? "increased" : "decreased", point.frequency, drv->freq_idx);
+    }
+    if (direction < 0 && drv->freq_idx == 0) {
+        LOG_INFO("Already at minimum frequency; not decreasing");
+        return;
+    }
+    if (direction > 0 && drv->freq_idx == VALID_PLL_FREQS - 1) {
+        LOG_INFO("Already at maximum frequency; not increasing");
+        return;
+    }
+    if (!hw_vdf_control(drv, idx_mask, 0))
+        LOG_ERROR("Failed to pause engines for legacy frequency adjustment");
+    const bool changed = drv->SetPLLFrequencyByIndex(drv->freq_idx + direction);
+    const double frequency = drv->GetPLLFrequency();
+    if (changed) {
+        LOG_INFO("Frequency is %s to %.1f MHz; freq_idx = %u",
+                 direction > 0 ? "increased" : "decreased", frequency, drv->freq_idx);
+    } else {
+        LOG_ERROR("Failed to %s frequency; current is %.1f MHz; freq_idx = %u",
+                  direction > 0 ? "increase" : "decrease", frequency, drv->freq_idx);
+    }
+    if (!hw_vdf_control(drv, idx_mask, 1))
+        LOG_ERROR("Failed to resume engines after legacy frequency adjustment");
 }
 
 int start_hw_vdf(ChiaDriver *drv, mpz_t d, mpz_t a, mpz_t b, uint64_t n_iters, int idx) {

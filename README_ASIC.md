@@ -592,10 +592,12 @@ would not isolate them. Supervisors should provide dedicated control pipes.
 Legacy `--auto-freq-period` remains a clock-only pause/write/resume operation over
 the full PLL table. It does not read or write regulator voltage or use supervised
 temperature/readback validation. Driver failures and PLL-table boundaries are
-logged and do not introduce a new exception path. Without `--live-control`, an
-event-loop exception is logged, proof workers and connections are cleaned up, USB
-is closed, and the client exits 1; it does not request the supervised low operating
-point or board-reset fallback.
+logged and do not introduce a new exception path. A failed register write while
+programming the clock makes the frequency change fail (logged; the client keeps
+running), rather than being ignored. Without `--live-control`, an event-loop
+exception is logged, proof workers and connections are cleaned up, USB is closed,
+and the client exits 1; it does not request the supervised low operating point or
+board-reset fallback.
 
 `--raw-speed` enables `TLRAW 2 ENGINE IPS STATE` records on stderr, approximately
 once a second per running engine. `--live-control` enables these records too.

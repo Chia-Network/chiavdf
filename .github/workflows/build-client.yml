@@ -486,7 +486,7 @@ jobs:
       - name: Package macOS bundle and installer
         if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
         env:
-          MACOS_ARCH: ${{ matrix.os == 'macos-15' && 'arm64' || 'intel' }}
+          MACOS_ARCH: ${{ runner.arch == 'ARM64' && 'arm64' || 'intel' }}
           RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.1-{0}', github.run_id) }}
           IS_RELEASE: ${{ inputs.is_final }}
           REQUEST_NOTARIZE: ${{ inputs.notarize_macos }}
@@ -532,7 +532,7 @@ jobs:
         if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.os == 'macos-15' && 'macos-arm64-bundle' || 'macos-intel-bundle' }}
+          name: ${{ runner.arch == 'ARM64' && 'macos-arm64-bundle' || 'macos-intel-bundle' }}
           path: |
             dist/macos/*.zip
             dist/macos/*.pkg

@@ -56,3 +56,7 @@ updates:
       - dependencies
       - rust
       - "Changed"
+    groups:
+      global:
+        patterns:
+          - "*"

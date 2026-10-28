@@ -205,6 +205,27 @@ expect_fail "GMP_TARBALL is the build dir's own copy" "mock-shasum-called" \
   env PATH="$BUILD_PATH" GMP_BUILD_DIR="$WORK/gmpdir" \
   GMP_TARBALL="$WORK/gmpdir/gmp-$GMP_VERSION.tar.xz" bash "$BUILD" "$WORK/prefix"
 
+# GMP_TARBALL is a symlink to the build dir's own copy: skip the cp too.
+mkdir -p "$WORK/gmpdir3"
+printf 'dummy tarball\n' > "$WORK/gmpdir3/gmp-$GMP_VERSION.tar.xz"
+ln -s "$WORK/gmpdir3/gmp-$GMP_VERSION.tar.xz" "$WORK/link-to-tarball"
+expect_fail "GMP_TARBALL is a symlink to the build dir's own copy" "mock-shasum-called" \
+  env PATH="$BUILD_PATH" GMP_BUILD_DIR="$WORK/gmpdir3" \
+  GMP_TARBALL="$WORK/link-to-tarball" bash "$BUILD" "$WORK/prefix"
+if [ ! -f "$WORK/gmpdir3/gmp-$GMP_VERSION.tar.xz" ] || [ -L "$WORK/gmpdir3/gmp-$GMP_VERSION.tar.xz" ]; then
+  fail "symlinked GMP_TARBALL replaced the build dir's tarball"
+fi
+if ! cmp -s "$WORK/link-to-tarball" "$WORK/gmpdir3/gmp-$GMP_VERSION.tar.xz"; then
+  fail "symlinked GMP_TARBALL changed the build dir's tarball"
+fi
+
+# GMP_TARBALL spelled relatively (with ./ and ..) resolves to the same file.
+mkdir -p "$WORK/gmpdir4"
+printf 'dummy tarball\n' > "$WORK/gmpdir4/gmp-$GMP_VERSION.tar.xz"
+(cd "$WORK" && expect_fail "GMP_TARBALL is a relative path to the build dir's own copy" "mock-shasum-called" \
+  env PATH="$BUILD_PATH" GMP_BUILD_DIR="$WORK/gmpdir4" \
+  GMP_TARBALL=./gmpdir4/../gmpdir4/gmp-"$GMP_VERSION".tar.xz bash "$BUILD" "$WORK/prefix")
+
 # GMP_TARBALL is a different file: copy it in, then reach the hash check.
 printf 'dummy tarball\n' > "$WORK/source-tarball"
 mkdir -p "$WORK/gmpdir2"

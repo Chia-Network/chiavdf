@@ -5,6 +5,7 @@
 #include "vdf_driver.hpp"
 #include "pll_freqs.hpp"
 #include "hw_util.hpp"
+#include "timelord_live_control.hpp"
 
 #define VR_I2C_ADDR 0x38
 #define CS_I2C_ADDR 0x70
@@ -195,14 +196,14 @@ uint32_t VdfDriver::TempToValue(double temp) {
 }
 
 // Get temperature from PVT
-double VdfDriver::GetPvtTemp() {
+std::optional<double> VdfDriver::GetPvtTemp() {
   int ret_val;
   uint32_t temp_data;
   ret_val = RegRead(PVT_TEMPERATURE_REG_OFFSET, temp_data);
 
   if (ret_val != 0) {
     fprintf(stderr, "GetPvtTemp bad reg read %d\n", ret_val);
-    return 0.0;
+    return std::nullopt;
   }
 
   double temp = ValueToTemp(temp_data);
@@ -325,29 +326,20 @@ void VdfDriver::ResetPLL() {
 }
 
 bool VdfDriver::SetPLLFrequency(double frequency, uint32_t entry_index) {
+  if (frequency != 0.) {
+    if (!std::isfinite(frequency) || frequency < 0.) return false;
+    const auto index = timelord_control::frequency_index(frequency, pll_entries, VALID_PLL_FREQS);
+    if (index == VALID_PLL_FREQS || Reset(10000)) return false;
+    entry_index = static_cast<uint32_t>(index);
+  }
+  return SetPLLFrequencyByIndex(entry_index);
+}
+
+bool VdfDriver::SetPLLFrequencyByIndex(uint32_t entry_index) {
   if (entry_index >= VALID_PLL_FREQS) {
     fprintf(stderr, "SetPLLFrequency entry index out of range: %u\n", entry_index);
     return false;
   }
-
-  if (frequency > pll_entries[VALID_PLL_FREQS - 1].freq) {
-    fprintf(stderr, "SetPLLFrequency frequency too high %lf\n", frequency);
-    return false;
-  }
-
-  if (!entry_index) {
-    // Reset is necessary for the initial setting of frequency
-    Reset(10000);
-    while (entry_index < VALID_PLL_FREQS &&
-           frequency > pll_entries[entry_index].freq) {
-      entry_index++;
-    }
-    if (entry_index >= VALID_PLL_FREQS) {
-      fprintf(stderr, "SetPLLFrequency frequency not found %lf\n", frequency);
-      return false;
-    }
-  }
-
   uint32_t divr = pll_entries[entry_index].settings.divr;
   uint32_t divfi = pll_entries[entry_index].settings.divfi;
   uint32_t divq = pll_entries[entry_index].settings.divq;
@@ -366,14 +358,12 @@ bool VdfDriver::SetPLLFrequency(double frequency, uint32_t entry_index) {
   //printf("Frequency %lf should use entry %d - divr %d fi %d q %d range %d\n",
   //       frequency, entry_index, divr, divfi, divq, filter_range);
 
-  RegWrite(CLOCK_CONTROL_REG_OFFSET, (uint32_t)0x1); // Reset
-
-  RegWrite(CLOCK_PRE_DIVIDE_REG_OFFSET, divr);
-  RegWrite(CLOCK_FB_DIVIDE_INTEGER_REG_OFFSET, divfi);
-  RegWrite(CLOCK_POST_DIVIDE_REG_OFFSET, divq);
-  RegWrite(CLOCK_FILTER_RANGE_REG_OFFSET, filter_range);
-
-  RegWrite(CLOCK_CONTROL_REG_OFFSET, (uint32_t)0x4); // New div
+  if (RegWrite(CLOCK_CONTROL_REG_OFFSET, (uint32_t)0x1) ||
+      RegWrite(CLOCK_PRE_DIVIDE_REG_OFFSET, divr) ||
+      RegWrite(CLOCK_FB_DIVIDE_INTEGER_REG_OFFSET, divfi) ||
+      RegWrite(CLOCK_POST_DIVIDE_REG_OFFSET, divq) ||
+      RegWrite(CLOCK_FILTER_RANGE_REG_OFFSET, filter_range) ||
+      RegWrite(CLOCK_CONTROL_REG_OFFSET, (uint32_t)0x4)) return false;
 
   // Wait for ack on new div
   int ret_val;
@@ -390,7 +380,7 @@ bool VdfDriver::SetPLLFrequency(double frequency, uint32_t entry_index) {
   }
 
   // Clear control reg
-  RegWrite(CLOCK_CONTROL_REG_OFFSET, (uint32_t)0x0);
+  if (RegWrite(CLOCK_CONTROL_REG_OFFSET, (uint32_t)0x0)) return false;
 
   // Wait for lock
   pll_status = 0;

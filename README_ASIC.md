@@ -522,6 +522,104 @@ Install the plist as a LaunchAgent for the logged-in user; a LaunchDaemon runs i
 
 This repo does not ship a Windows service. Run `hw_vdf_client.exe` in a console that will not sleep, or register that command with Task Scheduler at logon. A release zip has every DLL in `bin\`, so no `PATH` change is needed.
 
+## Supervisor control and telemetry
+
+On macOS and Linux, `hw_vdf_client --live-control PORT [N_VDFS]` lets a supervisor
+change clock and voltage without replacing the client. This mode requires anonymous
+or named pipes on stdin and stdout and cannot be combined with `--auto-freq-period`.
+It uses the existing USB owner thread; it opens no control socket. Human-readable
+logs and raw telemetry remain on stderr. The supervisor should keep draining stderr
+and wait for each acknowledgement before sending another command. Control polling
+uses a monotonic 100 ms deadline rather than a loop-turn count. A slow USB operation
+or other owner-thread work can still delay a command beyond that interval.
+
+Commands and replies are newline-delimited ASCII:
+
+```text
+TLSET 1 1 1880 1.0
+TLACK 1 1 1880.000000 1.000000
+```
+
+The fields are protocol version, a strictly increasing positive request ID,
+frequency in MHz, and requested voltage in V. Frames are bounded to 256 input
+bytes. The live-control limits are 200–2200 MHz and 0.7–1.0 V. The selected PLL
+entry uses the same ceiling selection as startup and must be within 1 MHz of the
+request; unsupported requests are rejected. The bounds and tolerances are defined
+in `timelord_control::Limits`.
+The probes `--control-version` and `--control-frequencies` use the regular option
+parser and print the protocol identifier and JSON frequency list respectively, before opening USB.
+These control options are unavailable on Windows; `--live-control` fails there.
+
+Before a change, the client requires a valid temperature below 55°C, pauses the
+running engines and reads the current clock/voltage. It raises voltage before
+changing clock and lowers voltage afterward, then checks actual readback before
+resuming the previously running engines. Both readback stages permit three reads,
+20 ms apart; only reads are retried, never PLL or voltage writes. Frequency tolerance
+is 1 MHz and voltage tolerance is 0.0063 V. Failed samples log the stage, attempt,
+clock-register values and individual register-read errors. These bounds are
+software guardrails, not a characterization of the silicon's operating limits.
+
+A rejected operation is fatal: a `TLERR` is a failure notification, not permission
+to send the next command. Replies and exit behavior are:
+
+| Condition | Reply | Result |
+| --- | --- | --- |
+| Valid command; hardware change and readback succeed | `TLACK 1 ID MHz V` | Continue running |
+| Parsed request selects an unsupported PLL frequency or fails temperature, write, or readback checks | `TLERR 1 ID reason`, if writable | Checked shutdown; exit 70 |
+| Unknown exception while applying a parsed request | `TLERR 1 ID unknown`, if writable | Checked shutdown; exit 70 |
+| Malformed/oversized frame, invalid bounds/version/ID, or repeated ID | No reply | Checked shutdown; exit 70 |
+| Controller EOF, pipe I/O error, closed/full reply pipe, or node-socket exception | No guaranteed control reply | Checked shutdown; exit 70 |
+| Channel setup fails at startup | No protocol reply; stderr diagnostic | Exit 1 before USB initialization |
+
+Failed temperature reads are reported as `temperature_unavailable`, separately from
+`temperature_limit`; valid zero or subzero readings are not read errors. Checked
+shutdown attempts to pause every selected engine, checks the result, restores a low
+operating point (200 MHz / requested 0.7 V) without resuming engines, stops proof
+workers, closes node connections and USB, and exits with status 70. Failed pause
+writes fall back to board reset. The shutdown log reports whether quiescence and
+restoration were confirmed; a failed USB link cannot guarantee either. SIGPIPE is
+suppressed only for the writing thread during individual pipe/socket writes,
+without changing the process signal handler. The supervisor owns delayed restart
+policy.
+
+The channel borrows stdin/stdout and makes them nonblocking while active, so a
+supervisor that stops reading replies cannot stall the USB owner. Their original
+file-status flags are restored when the channel stops or is destroyed, including
+a failed setup after one descriptor has changed. These flags are shared with any
+aliases of the same open file description while the channel is active; `dup` alone
+would not isolate them. Supervisors should provide dedicated control pipes.
+
+Legacy `--auto-freq-period` remains a clock-only pause/write/resume operation over
+the full PLL table. It does not read or write regulator voltage or use supervised
+temperature/readback validation. Driver failures and PLL-table boundaries are
+logged and do not introduce a new exception path. Without `--live-control`, an
+event-loop exception is logged, proof workers and connections are cleaned up, USB
+is closed, and the client exits 1; it does not request the supervised low operating
+point or board-reset fallback.
+
+`--raw-speed` enables `TLRAW 2 ENGINE IPS STATE` records on stderr, approximately
+once a second per running engine. `--live-control` enables these records too.
+`ENGINE` is the zero-based physical engine number. `STATE` is `running`, `sampling`
+or `idle`; the latter two use `IPS=-1`. Counter rollback, a new challenge session
+or return from idle resets the rate baseline. Rates use differences between already
+read iteration counters and add no USB reads. They exclude proof construction and
+must not be interpreted as verified proof throughput or summed across independent
+chains. Ordinary clients do not emit these extra raw-speed records unless requested.
+
+In live-control mode, temperature polling also has a monotonic five-second
+deadline, including when all engines are idle. Temperature-only reads do not start
+engines or deserialize VDF values. This keeps supervisors informed while an infused
+chain has no work. Ordinary clients retain their existing polling behavior.
+
+The `HardwareLiveControl` and `HardwareTelemetry` regression tests use fake register
+adapters and local pipes, without a node or USB device:
+
+```sh
+cmake -S src -B build-tests -DBUILD_PYTHON=OFF -DBUILD_VDF_TESTS=ON
+cmake --build build-tests --target regression_unit_tests
+ctest --test-dir build-tests --output-on-failure -R 'regression.unit.Hardware'
+```
+
 ## Troubleshooting
 
 **`libft4222.so: cannot open shared object file`.** Linux source build with no rpath. Export `LD_LIBRARY_PATH` to `hw/libft4222/build-x86_64` or `build-arm-v8` before starting the binary. The apt package's copy lives in `/usr/lib`.

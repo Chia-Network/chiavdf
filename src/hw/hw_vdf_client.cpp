@@ -1,4 +1,6 @@
 #include "hw_interface.hpp"
+#include "timelord_telemetry.hpp"
+#include "hw_live_control.hpp"
 #include "hw_proof.hpp"
 #include "hw_util.hpp"
 #include "bqfc.h"
@@ -44,6 +46,7 @@ struct vdf_conn {
     char read_buf[512];
     uint32_t buf_pos;
     enum conn_state state;
+    uint64_t session;
 };
 
 struct vdf_client_opts {
@@ -57,6 +60,10 @@ struct vdf_client_opts {
     bool do_list;
     bool show_version;
     bool auto_freq;
+    bool live_control;
+    bool raw_speed;
+    bool control_version;
+    bool control_frequencies;
     double max_freq; // Used when auto_freq mode is turned on, to limit the max frequency
     struct vdf_proof_opts vpo;
     uint8_t vdfs_mask;
@@ -72,7 +79,6 @@ struct vdf_client {
 void write_data(struct vdf_conn *conn, const char *buf, size_t size);
 
 static volatile bool g_stopping = false;
-
 static int vdf_socket_set_nonblock(vdf_socket_t sock)
 {
 #ifdef _WIN32
@@ -97,7 +103,7 @@ static int vdf_socket_write(vdf_socket_t sock, const char *buf, size_t size)
 #ifdef _WIN32
     return send(sock, buf, static_cast<int>(size), 0);
 #else
-    return write(sock, buf, size);
+    return static_cast<int>(timelord_control::write_no_sigpipe(sock, buf, size));
 #endif
 }
 
@@ -347,6 +353,7 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
         start_hw_vdf(client->drv, vdf->D.impl, vdf->last_val.a, vdf->last_val.b,
                 vdf->target_iters, vdf->idx);
         write_data(conn, "OK", 2);
+        ++conn->session;
         conn->state = RUNNING;
         conn->buf_pos = 0;
         LOG_INFO("VDF %d: Received challenge, running", vdf->idx);
@@ -370,13 +377,14 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
     }
 }
 
-void event_loop(struct vdf_client *client)
+void event_loop(struct vdf_client *client, HardwareLiveControl &control)
 {
     uint64_t loop_cnt = 0;
     uint32_t temp_period = chia_vdf_is_emu ? 200 : 20000;
+    timelord_telemetry::Poll telemetry(client->opts.live_control, temp_period);
+    timelord_telemetry::Speed raw_speeds[N_HW_VDFS];
     while(true) {
         uint8_t running_mask = 0;
-        uint8_t temp_flag = loop_cnt % temp_period ? 0 : HW_VDF_TEMP_FLAG;
 
         for (uint8_t i = 0; i < N_HW_VDFS; i++) {
             if (!(client->opts.vdfs_mask & (1 << i))) {
@@ -388,7 +396,8 @@ void event_loop(struct vdf_client *client)
             }
         }
 
-        if (running_mask) {
+        const uint8_t temp_flag = telemetry.due(running_mask != 0) ? HW_VDF_TEMP_FLAG : 0;
+        if (running_mask || temp_flag) {
             read_hw_status(client->drv, running_mask | temp_flag, client->values);
         } else if (g_stopping) {
             uint8_t n_closed = 0;
@@ -428,10 +437,21 @@ void event_loop(struct vdf_client *client)
                 if (client->conns[i].vdf.completed) {
                     stop_hw_vdf(client->drv, i);
                     client->conns[i].state = IDLING;
+                    running_mask &= ~(1U << i);
                 }
             }
         }
 
+        for (uint8_t i = 0; client->opts.raw_speed && i < N_HW_VDFS; ++i) {
+            const bool running = client->conns[i].state == RUNNING;
+            auto *vdf = &client->conns[i].vdf;
+            timelord_telemetry::Sample sample;
+            if (running) sample = {true, vdf->cur_iters, vdf_get_elapsed_us(vdf->start_time), client->conns[i].session};
+            const auto speed = raw_speeds[i].update(sample);
+            if (speed) LOG_INFO("TLRAW 2 %u %.0f %s", unsigned(i), *speed,
+                *speed >= 0 ? "running" : running ? "sampling" : "idle");
+        }
+        if (!control.poll(client->drv, running_mask)) throw std::runtime_error("live_control_failed");
         if (client->opts.auto_freq && !(loop_cnt % 256)) {
             uint64_t elapsed = vdf_get_elapsed_us(client->drv->last_freq_update);
             if (elapsed / 1000000 >= client->opts.auto_freq_period) {
@@ -473,6 +493,10 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     opts->do_list = false;
     opts->show_version = false;
     opts->auto_freq = false;
+    opts->live_control = false;
+    opts->raw_speed = false;
+    opts->control_version = false;
+    opts->control_frequencies = false;
     opts->max_freq = pll_entries[VALID_PLL_FREQS - 1].freq;
     opts->vpo.max_aux_threads = HW_VDF_DEFAULT_MAX_AUX_THREADS;
     opts->vpo.max_proof_threads = 0;
@@ -509,6 +533,26 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
             value = eq + 1;
         }
 
+        if (!strcmp(name, "raw-speed")) {
+            if (value) return -1;
+            opts->raw_speed = true;
+            argi++;
+            continue;
+        }
+        if (!strcmp(name, "live-control")) {
+            if (value) return -1;
+            opts->live_control = true;
+            opts->raw_speed = true;
+            argi++;
+            continue;
+        }
+        if (!strcmp(name, "control-version") || !strcmp(name, "control-frequencies")) {
+            if (value) return -1;
+            if (!strcmp(name, "control-version")) opts->control_version = true;
+            else opts->control_frequencies = true;
+            argi++;
+            continue;
+        }
         if (!strcmp(name, "list")) {
             if (value) {
                 LOG_SIMPLE("Invalid option");
@@ -599,6 +643,10 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
         argi++;
     }
 
+    if (opts->control_version || opts->control_frequencies) {
+        if ((opts->control_version && opts->control_frequencies) || opts->do_list || opts->show_version) return -1;
+        return 0;
+    }
     if (opts->do_list) {
         return 0;
     }
@@ -609,11 +657,11 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
         LOG_SIMPLE("Invalid freq or voltage specified");
         return -1;
     }
-    if (opts->freq < 200 || opts->freq > 2200) {
+    if (!std::isfinite(opts->freq) || opts->freq < timelord_control::Limits::min_frequency || opts->freq > timelord_control::Limits::max_frequency) {
         LOG_SIMPLE("Frequency is outside the allowed range");
         return -1;
     }
-    if (opts->voltage < 0.7 || opts->voltage > 1.0) {
+    if (!std::isfinite(opts->voltage) || opts->voltage < timelord_control::Limits::min_voltage || opts->voltage > timelord_control::Limits::max_voltage) {
         LOG_SIMPLE("Voltage is outside the allowed range");
         return -1;
     }
@@ -670,7 +718,8 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
 
 int hw_vdf_client_main(int argc, char **argv)
 {
-    struct vdf_client client;
+    struct vdf_client client{};
+    HardwareLiveControl control;
 #ifndef _WIN32
     struct sigaction sa = {};
 #endif
@@ -697,8 +746,8 @@ int hw_vdf_client_main(int argc, char **argv)
     if (parse_opts(argc, argv, &client.opts) < 0) {
         LOG_SIMPLE("\nUsage: %s [OPTIONS] PORT [N_VDFS]\n"
                 "List of options [default, min - max]:\n"
-                "  --freq N - set ASIC frequency [%d, 200 - 2200]\n"
-                "  --voltage N - set board voltage [%.2f, 0.7 - 1.0]\n"
+                "  --freq N - set ASIC frequency [%d, %.0f - %.0f]\n"
+                "  --voltage N - set board voltage [%.2f, %.1f - %.1f]\n"
                 "  --ip A.B.C.D - timelord IP address [localhost]\n"
                 "  --device-loc N - FTDI board location from --list [0: first available]\n"
                 "  --vdfs-mask N - mask for enabling VDF engines [7, 1 - 7]\n"
@@ -708,9 +757,15 @@ int hw_vdf_client_main(int argc, char **argv)
                 "  --checkpoint-threshold N - keep each segment at most N iterations when that fits in 61 checkpoints [1000000, 8000 - 4294967295]\n"
                 "  --auto-freq-period N - auto-adjust frequency every N seconds [0, 10 - inf]\n"
                 "  --max-freq N - max frequency while auto-freq is on [%.0f]\n"
+                "  --raw-speed - report recent per-engine counter rates on stderr\n"
+                "  --live-control - accept inherited-pipe TLSET commands; enables --raw-speed\n"
+                "  --control-version - print live-control protocol version and exit\n"
+                "  --control-frequencies - print supported live-control frequencies and exit\n"
                 "  --version - print version and exit\n"
                 "  --list - list available devices and exit",
-                argv[0], (int)HW_VDF_DEF_FREQ, HW_VDF_DEF_VOLTAGE,
+                argv[0], (int)HW_VDF_DEF_FREQ,
+                timelord_control::Limits::min_frequency, timelord_control::Limits::max_frequency,
+                HW_VDF_DEF_VOLTAGE, timelord_control::Limits::min_voltage, timelord_control::Limits::max_voltage,
                 pll_entries[VALID_PLL_FREQS - 1].freq);
         return 1;
     }
@@ -726,24 +781,24 @@ int hw_vdf_client_main(int argc, char **argv)
         return ret;
     }
 
+    if (client.opts.control_version || client.opts.control_frequencies) {
+        if (!timelord_control::Channel::supported()) {
+            LOG_SIMPLE("Live control requires POSIX pipes"); return 1;
+        }
+        if (client.opts.control_version) puts("timelord-live-control-v1");
+        else timelord_control::print_frequencies(pll_entries, VALID_PLL_FREQS);
+        return 0;
+    }
+    if (!control.start(client.opts.live_control, client.opts.auto_freq)) {
+        LOG_SIMPLE("Live control requires stdin/stdout POSIX pipes and no --auto-freq-period");
+        return 1;
+    }
     client.drv = init_hw(client.opts.freq, client.opts.voltage, client.opts.device_loc);
     if (!client.drv) {
         return 1;
     }
 
     init_vdf_client(&client);
-
-    struct StopLiveProofs {
-        struct vdf_client *client;
-        ~StopLiveProofs() {
-            if (!client) return;
-            for (uint8_t i = 0; i < N_HW_VDFS; i++) {
-                if (!client->conns[i].vdf.init_done) continue;
-                hw_stop_proof(&client->conns[i].vdf);
-                clear_vdf_state(&client->conns[i].vdf);
-            }
-        }
-    } stop_live_proofs{&client};
 
 #ifdef _WIN32
     signal(SIGINT, signal_handler);
@@ -754,19 +809,40 @@ int hw_vdf_client_main(int argc, char **argv)
     sigaction(SIGTERM, &sa, NULL);
 #endif
 
+    std::optional<timelord_control::ShutdownResult> shutdown;
+    std::string failure_reason;
+    auto fail = [&]() {
+        if (!client.opts.live_control)
+            return 1;
+        shutdown = shutdown_hw_operating_point(client.drv, client.opts.vdfs_mask);
+        return timelord_control::Limits::failure_exit;
+    };
     int rc = 0;
     try {
-        event_loop(&client);
+        event_loop(&client, control);
     } catch (const std::exception &err) {
-        LOG_ERROR("VDF client stopped: %s", err.what());
-        rc = 1;
+        rc = fail();
+        failure_reason = err.what();
     } catch (...) {
-        LOG_ERROR("VDF client stopped");
-        rc = 1;
+        rc = fail();
+        failure_reason = "unknown";
     }
 
-    stop_hw(client.drv);
+    for (auto &conn : client.conns) {
+        if (!conn.vdf.init_done) continue;
+        hw_stop_proof(&conn.vdf);
+        clear_vdf_state(&conn.vdf);
+    }
+    for (auto &conn : client.conns)
+        close_conn(&conn);
     clear_vdf_client(&client);
+    stop_hw(client.drv);
+    if (shutdown) {
+        LOG_ERROR("Hardware shutdown: engines_paused=%d safe_point_restored=%d",
+            shutdown->paused, shutdown->restored);
+    }
+    if (rc)
+        LOG_ERROR("VDF client stopped: %s", failure_reason.c_str());
     return rc;
 }
 

@@ -2,6 +2,7 @@
 #define VDF_DRIVER_HPP
 
 #include <gmp.h>
+#include <optional>
 #include "ftdi_driver.hpp"
 #include "pvt.hpp"
 #include "clock.hpp"
@@ -105,7 +106,7 @@ public:
   void EnablePvt();
   double ValueToTemp(uint32_t temp_code);
   uint32_t TempToValue(double temp);
-  double GetPvtTemp();
+  std::optional<double> GetPvtTemp();
   double GetPvtVoltage();
   double GetTempAlarmExternal();
   double GetTempAlarmEngine();
@@ -116,6 +117,7 @@ public:
   bool SetTempAlarmEngine(double temp);
   void ResetPLL();
   bool SetPLLFrequency(double frequency, uint32_t entry_index);
+  bool SetPLLFrequencyByIndex(uint32_t entry_index);
   double GetPLLFrequency();
   int Reset(uint32_t sleep_duration);
   int TurnFanOn();

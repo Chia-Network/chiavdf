@@ -26,13 +26,29 @@ def test_bqfc_deserialize_returns_signed_big_endian_bytes():
     assert b[0] in (0, 1)
 
 
-def test_bqfc_deserialize_strict_rejects_inflated_b0_by_default():
-    mutated = bytearray(B0_CANONICAL_FORM)
-    mutated[99] ^= 0x04
+def invalid_forms():
+    for value in (0x04, 0x08):
+        data = bytearray(B0_CANONICAL_FORM)
+        data[-1] ^= value
+        yield B0_DISCRIMINANT, bytes(data)
+    for first in (0x04, 0x08):
+        for index in range(1, 100):
+            data = bytearray(100)
+            data[0] = first
+            data[index] = 1
+            yield "-23", bytes(data)
+        for bit in range(8):
+            data = bytearray(100)
+            data[0] = first ^ (1 << bit)
+            yield "-23", bytes(data)
 
+
+@pytest.mark.parametrize("strict", [None, True, False])
+@pytest.mark.parametrize(
+    "discriminant, data",
+    [pytest.param(d, data, id=f"case{index}") for index, (d, data) in enumerate(invalid_forms())],
+)
+def test_bqfc_deserialize_rejects_invalid_form(strict, discriminant, data):
+    kwargs = {} if strict is None else {"strict": strict}
     with pytest.raises(RuntimeError):
-        bqfc_deserialize(B0_DISCRIMINANT, bytes(mutated))
-
-    a, b = bqfc_deserialize(B0_DISCRIMINANT, bytes(mutated), strict=False)
-    assert isinstance(a, bytes)
-    assert isinstance(b, bytes)
+        bqfc_deserialize(discriminant, data, **kwargs)

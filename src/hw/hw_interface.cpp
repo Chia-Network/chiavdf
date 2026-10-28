@@ -126,23 +126,69 @@ void stop_hw(ChiaDriver *drv)
     delete drv;
 }
 
-void hw_vdf_control(ChiaDriver *drv, uint8_t idx_mask, uint32_t value)
+bool hw_vdf_control(ChiaDriver *drv, uint8_t idx_mask, uint32_t value)
 {
+    bool success = true;
     for (uint8_t i = 0; i < N_HW_VDFS; i++) {
         uint32_t addr = CHIA_VDF_CONTROL_REG_OFFSET + CHIA_VDF_JOB_CSR_MULT * i;
-        if (idx_mask & (1 << i)) {
-           drv->RegWrite(addr, value);
+        if ((idx_mask & (1 << i)) && drv->RegWrite(addr, value)) {
+            success = false;
         }
     }
+    return success;
 }
 
-void adjust_hw_freq(ChiaDriver *drv, uint8_t idx_mask, int direction)
-{
-    double freq;
-
-    if (direction == 0) {
-        return;
+namespace {
+struct OperatingPointHardware {
+    ChiaDriver *driver;
+    timelord_control::Point read() {
+        return {driver->GetPLLFrequency(), driver->GetBoardVoltage()};
     }
+    void control(uint8_t mask, bool resume) {
+        if (!hw_vdf_control(driver, mask, resume ? 1 : 0))
+            throw std::runtime_error("engine_control");
+    }
+    void voltage(double value) {
+        if (driver->SetBoardVoltage(value))
+            throw std::runtime_error("voltage_write");
+        delay();
+    }
+    void frequency(double value) {
+        const auto index = timelord_control::frequency_index(value, pll_entries, VALID_PLL_FREQS);
+        if (index == VALID_PLL_FREQS ||
+            !driver->SetPLLFrequencyByIndex(static_cast<uint32_t>(index)))
+            throw std::runtime_error("pll_write");
+    }
+    void delay() { vdf_usleep(timelord_control::Limits::settle_us); }
+    bool reset() { return driver->Reset(1000) == 0; }
+    std::string diagnostics() {
+        return timelord_control::clock_registers(
+            [&](uint32_t address, uint32_t &value) { return driver->RegRead(address, value); },
+            {{"control", CLOCK_CONTROL_REG_OFFSET},
+             {"status", CLOCK_STATUS_REG_OFFSET},
+             {"pre_divide", CLOCK_PRE_DIVIDE_REG_OFFSET},
+             {"feedback", CLOCK_FB_DIVIDE_INTEGER_REG_OFFSET},
+             {"post_divide", CLOCK_POST_DIVIDE_REG_OFFSET}});
+    }
+};
+} // namespace
+timelord_control::Point set_hw_operating_point(ChiaDriver *drv, uint8_t mask,
+                                               timelord_control::Point target) {
+    if (!timelord_control::supported_frequency(target.frequency, pll_entries, VALID_PLL_FREQS))
+        throw std::runtime_error("unsupported_frequency");
+    timelord_control::check_temperature(drv->GetPvtTemp());
+    OperatingPointHardware hardware{drv};
+    return timelord_control::apply(target, hardware, mask);
+}
+timelord_control::ShutdownResult shutdown_hw_operating_point(ChiaDriver *drv, uint8_t mask) {
+    OperatingPointHardware hardware{drv};
+    return timelord_control::shutdown(hardware, mask);
+}
+// Preserve legacy auto-frequency: no voltage writes, strict readback or exceptions
+// for driver failures. Supervised operating-point changes use the entry point above.
+void adjust_hw_freq(ChiaDriver *drv, uint8_t idx_mask, int direction) {
+    if (!direction)
+        return;
     if (drv->freq_idx >= VALID_PLL_FREQS) {
         LOG_ERROR("Current frequency index %u is out of range", drv->freq_idx);
         return;
@@ -151,28 +197,26 @@ void adjust_hw_freq(ChiaDriver *drv, uint8_t idx_mask, int direction)
         LOG_INFO("Already at minimum frequency; not decreasing");
         return;
     }
-    if (direction > 0 && drv->freq_idx >= VALID_PLL_FREQS - 1) {
+    if (direction > 0 && drv->freq_idx == VALID_PLL_FREQS - 1) {
         LOG_INFO("Already at maximum frequency; not increasing");
         return;
     }
-
-    hw_vdf_control(drv, idx_mask, 0);
-
-    bool changed = drv->SetPLLFrequency(0.0, drv->freq_idx + direction);
-    freq = drv->GetPLLFrequency();
+    if (!hw_vdf_control(drv, idx_mask, 0))
+        LOG_ERROR("Failed to pause engines for legacy frequency adjustment");
+    const bool changed = drv->SetPLLFrequencyByIndex(drv->freq_idx + direction);
+    const double frequency = drv->GetPLLFrequency();
     if (changed) {
         LOG_INFO("Frequency is %s to %.1f MHz; freq_idx = %u",
-                direction > 0 ? "increased" : "decreased", freq, drv->freq_idx);
+                 direction > 0 ? "increased" : "decreased", frequency, drv->freq_idx);
     } else {
         LOG_ERROR("Failed to %s frequency; current is %.1f MHz; freq_idx = %u",
-                direction > 0 ? "increase" : "decrease", freq, drv->freq_idx);
+                  direction > 0 ? "increase" : "decrease", frequency, drv->freq_idx);
     }
-
-    hw_vdf_control(drv, idx_mask, 1);
+    if (!hw_vdf_control(drv, idx_mask, 1))
+        LOG_ERROR("Failed to resume engines after legacy frequency adjustment");
 }
 
-int start_hw_vdf(ChiaDriver *drv, mpz_t d, mpz_t a, mpz_t b, uint64_t n_iters, int idx)
-{
+int start_hw_vdf(ChiaDriver *drv, mpz_t d, mpz_t a, mpz_t b, uint64_t n_iters, int idx) {
     uint8_t job[CHIA_VDF_JOB_SIZE];
     uint32_t base_addr = CHIA_VDF_CONTROL_REG_OFFSET + CHIA_VDF_JOB_CSR_MULT * idx;
 

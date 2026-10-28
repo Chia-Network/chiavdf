@@ -3,6 +3,7 @@
 
 #include <gmp.h>
 #include <cstdint>
+#include "timelord_live_control.hpp"
 
 #define N_HW_VDFS 3
 #define HW_VDF_STATUS_SIZE 0xb4
@@ -30,6 +31,10 @@ void clear_vdf_value(struct vdf_value *val);
 void copy_vdf_value(struct vdf_value *dst, struct vdf_value *src);
 
 int list_hw(void);
+bool hw_vdf_control(ChiaDriver *drv, uint8_t idx_mask, uint32_t value);
+timelord_control::Point set_hw_operating_point(ChiaDriver *drv, uint8_t mask,
+    timelord_control::Point target);
+timelord_control::ShutdownResult shutdown_hw_operating_point(ChiaDriver *drv, uint8_t mask);
 void adjust_hw_freq(ChiaDriver *drv, uint8_t idx_mask, int direction);
 int start_hw_vdf(ChiaDriver *drv, mpz_t d, mpz_t a, mpz_t b, uint64_t n_iters, int idx);
 void stop_hw_vdf(ChiaDriver *drv, int idx);

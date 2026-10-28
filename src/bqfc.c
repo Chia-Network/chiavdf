@@ -115,17 +115,6 @@ int bqfc_decompr(mpz_t out_a, mpz_t out_b, const mpz_t D, const struct qfb_c *c,
         mpz_neg(out_b, out_b);
     }
 
-    /*
-     * Reject if |b| > a.  For a reduced form, |b| <= a must hold.  If b0 is
-     * inflated (e.g. b0 = canonical_b0 + 4k for k != 0) the decoded b lands
-     * outside this range even though bqfc_verify_canon would otherwise pass
-     * (the self-consistency check encode(decode(X))==X is satisfied for any
-     * b0 ≡ canonical_b0 mod (a/gcd(a,t))).
-     *
-     * When strict == true this makes the canonical-check a proper uniqueness
-     * gate.  When false we preserve the historical (pre-2026) behaviour for
-     * consensus compatibility.
-     */
     if (strict && mpz_cmpabs(out_b, out_a) > 0) {
         ret = -1;
         goto out;
@@ -296,9 +285,24 @@ out:
     return ret;
 }
 
-static int bqfc_verify_canon(mpz_t a, mpz_t b, const uint8_t *str, size_t d_bits)
+static int bqfc_verify_canon(mpz_t a, mpz_t b, const mpz_t D, const uint8_t *str, size_t d_bits)
 {
     uint8_t canon_str[BQFC_FORM_SIZE];
+    mpz_t value, divisor;
+    int comparison = mpz_cmpabs(b, a);
+    if (mpz_sgn(a) <= 0 || comparison > 0 || (comparison == 0 && mpz_sgn(b) < 0))
+        return -1;
+    mpz_inits(value, divisor, NULL);
+    mpz_mul(value, b, b);
+    mpz_sub(value, value, D);
+    mpz_mul_2exp(divisor, a, 2);
+    int valid = mpz_divisible_p(value, divisor);
+    mpz_mul(divisor, divisor, a);
+    comparison = mpz_cmp(value, divisor);
+    valid = valid && (comparison > 0 || (comparison == 0 && mpz_sgn(b) >= 0));
+    mpz_clears(value, divisor, NULL);
+    if (!valid)
+        return -1;
     int ret = bqfc_serialize(canon_str, a, b, d_bits);
 
     if (ret)
@@ -315,7 +319,7 @@ int bqfc_deserialize(mpz_t out_a, mpz_t out_b, const mpz_t D, const uint8_t *str
 
     if (d_bits == 0 || d_bits > BQFC_MAX_D_BITS)
         return -1;
-    if (size != BQFC_FORM_SIZE)
+    if (size != BQFC_FORM_SIZE || str == NULL)
         return -1;
 
     /* "Identity" (1, 1) and "generator" (2, 1) forms are serialized with a
@@ -323,7 +327,7 @@ int bqfc_deserialize(mpz_t out_a, mpz_t out_b, const mpz_t D, const uint8_t *str
     if (str[0] & (BQFC_IS_1 | BQFC_IS_GEN)) {
         mpz_set_ui(out_a, str[0] & BQFC_IS_GEN ? 2 : 1);
         mpz_set_ui(out_b, 1);
-        return 0;
+        return bqfc_verify_canon(out_a, out_b, D, str, d_bits);
     }
 
     mpz_inits(f_c.a, f_c.t, f_c.g, f_c.b0, NULL);
@@ -335,7 +339,7 @@ int bqfc_deserialize(mpz_t out_a, mpz_t out_b, const mpz_t D, const uint8_t *str
     if (ret)
         goto out;
 
-    ret = bqfc_verify_canon(out_a, out_b, str, d_bits);
+    ret = bqfc_verify_canon(out_a, out_b, D, str, d_bits);
 out:
     mpz_clears(f_c.a, f_c.t, f_c.g, f_c.b0, NULL);
     return ret;

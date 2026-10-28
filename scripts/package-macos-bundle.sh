@@ -161,7 +161,7 @@ for tool in "${MACOS_BUNDLE_TOOLS[@]}"; do
   cp "src/$tool" "$bin_dir/"
 done
 
-# FTDI and Homebrew GMP share one libexec directory. The staging script rewrites
+# FTDI and GMP share one libexec directory. The staging script rewrites
 # install names and the executable rpath in one install_name_tool pass, before
 # the codesign pass below.
 scripts/stage-macos-bundle-dylibs.sh "$bin_dir" "$libexec_dir"

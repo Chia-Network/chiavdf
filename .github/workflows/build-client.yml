@@ -76,6 +76,13 @@ jobs:
           bash tests/test_macos_pkg.sh
           bash tests/test_macos_bundle_plan.sh
           bash tests/test_macos_select_signing_identities.sh
+          bash tests/test_macos_gmp_build.sh
+
+      # The one gate for the release GMP steps below: the macOS arm64 runner's
+      # optimized build, chosen by OS and architecture rather than runner name.
+      - name: Select release GMP build (macOS arm64)
+        if: runner.os == 'macOS' && runner.arch == 'ARM64' && matrix.config == 'optimized=1'
+        run: echo "RELEASE_GMP=1" >> "$GITHUB_ENV"
 
       - name: Test for Apple signing secrets
         if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'
@@ -161,6 +168,15 @@ jobs:
           brew ls --versions boost >/dev/null 2>&1 || brew install boost
           echo "DYLD_FALLBACK_LIBRARY_PATH=$(brew --prefix gmp)/lib:${DYLD_FALLBACK_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
 
+      # The arm64 release bundle ships GMP built from source with
+      # HGCD2_DIV2_METHOD=1 instead of the Homebrew bottle; see the script.
+      # Homebrew GMP stays installed for the other macOS jobs and for CMake.
+      - name: Build release GMP (macOS arm64)
+        if: env.RELEASE_GMP == '1'
+        run: |
+          scripts/build-macos-gmp.sh "$RUNNER_TEMP/chiavdf-gmp"
+          echo "GMP_PREFIX=$RUNNER_TEMP/chiavdf-gmp" >> "$GITHUB_ENV"
+
       # Runtime workaround for TSAN-instrumented binaries on Ubuntu runners.
       # Apply before build because make TSAN=1 runs ./compile_asm during build.
       # See: https://github.com/google/sanitizers/issues/1716
@@ -208,9 +224,9 @@ jobs:
           ./scripts/get-libft4222.sh install
           cd src
           if [ -n "$RELEASE_TAG" ]; then
-            make ${{ matrix.config }} CHIAVDF_VERSION="$RELEASE_TAG" CPPFLAGS="-I${BOOST_INCLUDE} ${CPPFLAGS:-}" -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test hw_proof_wait_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+            make ${{ matrix.config }} CHIAVDF_VERSION="$RELEASE_TAG" GMP_PREFIX="${GMP_PREFIX:-}" CPPFLAGS="-I${BOOST_INCLUDE} ${CPPFLAGS:-}" -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test hw_proof_wait_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
           else
-            make ${{ matrix.config }} CPPFLAGS="-I${BOOST_INCLUDE} ${CPPFLAGS:-}" -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test hw_proof_wait_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+            make ${{ matrix.config }} GMP_PREFIX="${GMP_PREFIX:-}" CPPFLAGS="-I${BOOST_INCLUDE} ${CPPFLAGS:-}" -f Makefile.vdf-client vdf_client vdf_bench 1weso_test 2weso_test prover_test hw_proof_wait_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
           fi
 
       - name: Cache Boost on Windows
@@ -496,6 +512,20 @@ jobs:
           fi
           for zip in "${zips[@]}"; do
             scripts/verify-macos-bundle.sh "$zip"
+          done
+
+      - name: Verify macOS arm64 zip ships the release GMP
+        if: env.RELEASE_GMP == '1'
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          zips=(dist/macos/*.zip)
+          if [ "${#zips[@]}" -eq 0 ]; then
+            echo "No macOS zip produced to verify" >&2
+            exit 1
+          fi
+          for zip in "${zips[@]}"; do
+            scripts/check-macos-gmp-build.sh "$zip"
           done
 
       - name: Upload macOS bundle artifact

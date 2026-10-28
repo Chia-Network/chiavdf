@@ -41,6 +41,13 @@ endif
 ifeq ($(UNAME),Darwin)
 CXXFLAGS += -D CHIAOSX=1
 LDFLAGS += -Wl,-headerpad_max_install_names
+# A GMP from scripts/build-macos-gmp.sh (macOS arm64 releases) must come before
+# Homebrew's, which CI still installs.
+ifneq ($(GMP_PREFIX),)
+CXXFLAGS += -I$(GMP_PREFIX)/include
+CFLAGS += -I$(GMP_PREFIX)/include
+LDFLAGS += -L$(GMP_PREFIX)/lib
+endif
 # Homebrew (common on macOS) installs boost/gmp to /opt/homebrew or /usr/local
 ifneq ($(wildcard /opt/homebrew/include/boost/asio.hpp),)
 CXXFLAGS += -I/opt/homebrew/include

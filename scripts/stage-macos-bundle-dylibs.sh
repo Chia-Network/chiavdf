@@ -2,10 +2,11 @@
 # Stage the dylibs that ship inside the macOS release zip.
 #
 # FTDI is already relocatable (@rpath ids from scripts/get-libft4222.sh).
-# GMP is not: the Makefile links Homebrew's absolute install names, and the
-# hardened runtime will not load those on a machine that does not have that
-# Homebrew prefix. Both land in the same libexec directory, and every absolute
-# non-system install name is rewritten to @rpath/<basename>. Executables also
+# GMP is not: the Makefile links absolute install names (Homebrew's, or the
+# build-machine prefix of scripts/build-macos-gmp.sh on arm64), and the
+# hardened runtime will not load those on a machine without that prefix. Both
+# land in the same libexec directory, and every absolute non-system install
+# name is rewritten to @rpath/<basename>. Executables also
 # drop @executable_path/hw/libft4222 and gain @loader_path/../libexec/chiavdf
 # in that same install_name_tool pass. The caller signs the resulting files once.
 set -euo pipefail

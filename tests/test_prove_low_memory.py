@@ -13,7 +13,7 @@ INITIAL = b"\x08" + (b"\x00" * 99)
 
 
 @pytest.mark.parametrize("size", [512, 1024])
-@pytest.mark.parametrize("iters", [1, 2, 7, 100, 1000, 30000, 65537])
+@pytest.mark.parametrize("iters", [1, 2, 7, 100, 1000, 30000, 65537, 150000])
 def test_same_proof_as_prove(size, iters):
     challenge = secrets.token_bytes(10)
     expected = prove(challenge, INITIAL, size, iters, "")

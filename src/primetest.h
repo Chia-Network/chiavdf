@@ -147,8 +147,16 @@ static int is_prime_bpsw(const mpz_t n)
     int min_pprods = 5, n_pprods = sizeof(pprods) / sizeof(*pprods);
     mpz_t b, d;
 
+    /* Zero, one and negative numbers are not prime. */
+    if (mpz_cmp_ui(n, 2) < 0)
+        return 0;
+
+    /* Answer directly below 8. Primes are 2, 3, 5 and 7 (bitmask 0xac). */
+    if (mpz_cmp_ui(n, 8) < 0)
+        return ((0xac >> mpz_get_ui(n)) & 1) ? 2 : 0;
+
     /* Discard even numbers. */
-    if (!mpz_tstbit(n, 0) && mpz_cmp_ui(n, 2))
+    if (!mpz_tstbit(n, 0))
         return 0;
 
     /* Adjust the number of GCDs to compute with products of small primes
@@ -160,9 +168,13 @@ static int is_prime_bpsw(const mpz_t n)
         n_pprods = min_pprods + (n_pprods - min_pprods) * size_cube / (16*16*16);
     }
 
-    for (i = 0; i < n_pprods; i++) {
-        if (mpn_gcd_1(n->_mp_d, n->_mp_size, pprods[i]) != 1)
-            return 0;
+    /* Numbers up to the largest prime in the products may be one of those
+     * primes, so leave them to the exact Miller-Rabin and Lucas tests. */
+    if (mpz_cmp_ui(n, pprods_max_prime) > 0) {
+        for (i = 0; i < n_pprods; i++) {
+            if (mpn_gcd_1(n->_mp_d, n->_mp_size, pprods[i]) != 1)
+                return 0;
+        }
     }
 
     mpz_init2(b, n->_mp_size * sizeof(n->_mp_d[0]) * 8);

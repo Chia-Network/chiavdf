@@ -3,17 +3,18 @@
 #if defined(CHIAVDF_PAIR_KERNELS)
 
 #include "xgcd_lehmer_step.h"
+#include "xgcd_partial.h"
 
+#include <algorithm>
 #include <string.h>
-
-// The reference, in xgcd_partial.c (via nucomp.h). Used for operands the
-// fixed arrays cannot hold.
-void mpz_xgcd_partial(mpz_t co2, mpz_t co1, mpz_t r2, mpz_t r1, const mpz_t L);
 
 static_assert(GMP_LIMB_BITS == 64, "The paired kernels assume 64-bit limbs");
 
 namespace {
 
+// Operands up to 640 bits use the fixed arrays: 1024-bit discriminants give
+// remainders of at most about 9 limbs. Larger ones silently take the
+// reference mpz_xgcd_partial, with the same result.
 constexpr int kMaxInputLimbs = 10;
 constexpr int kLimbs = kMaxInputLimbs + 2;
 
@@ -39,13 +40,13 @@ void normalize(FixedInt* x)
 // GMP 6's mpz_limbs_* functions).
 void from_mpz(FixedInt* x, mpz_srcptr z)
 {
-    int old = x->n;
-    x->n = (int)mpz_size(z);
+    // Callers pass operands within kMaxInputLimbs and Euclid values derived
+    // from them, which are no larger; the bound only makes that visible.
+    size_t n = std::min(mpz_size(z), (size_t)kLimbs - 1);
+    memset(x->d, 0, sizeof(x->d));
+    memcpy(x->d, z->_mp_d, n * sizeof(mp_limb_t));
+    x->n = (int)n;
     x->neg = mpz_sgn(z) < 0;
-    if (x->n)
-        memcpy(x->d, z->_mp_d, (size_t)x->n * sizeof(mp_limb_t));
-    for (int i = x->n; i < old; ++i)
-        x->d[i] = 0;
 }
 
 void to_mpz(mpz_ptr z, const FixedInt* x)

@@ -34,12 +34,12 @@ static void check_fill_pairing_rule()
         vdf.pair_kernels = c.pair_kernels;
         for (size_t i = 0; i < c.queued; i++)
             vdf.wq.push_back(make_queued_fill());
-        vdf_work *taken = hw_proof_take_fill(&vdf, c.free_slots);
+        std::unique_ptr<vdf_work> taken = hw_proof_take_fill(&vdf, c.free_slots);
         require((taken->pair != nullptr) == c.paired, "Fill pairing rule chose the wrong pairing");
         require(vdf.wq.size() == c.queued - (c.paired ? 2 : 1), "Fill pairing took the wrong number of fills");
-        hw_proof_free_work(taken);
+        hw_proof_free_work(std::move(taken));
         for (vdf_work *w : vdf.wq)
-            hw_proof_free_work(w);
+            hw_proof_free_work(std::unique_ptr<vdf_work>(w));
     }
 }
 

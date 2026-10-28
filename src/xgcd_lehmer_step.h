@@ -45,13 +45,14 @@ static inline int xgcd_lehmer_step(xgcd_lehmer_round *r)
     t1 = r->rr2 - qq * r->rr1;
     t2 = r->aa2 - qq * r->aa1;
     t3 = r->bb2 - qq * r->bb1;
-    if (r->exact) {
-    } else if (r->i & 1) {
-        if (t1 < -t3 || r->rr1 - t1 < t2 - r->aa1)
-            return 0;
-    } else {
-        if (t1 < -t2 || r->rr1 - t1 < t3 - r->bb1)
-            return 0;
+    if (!r->exact) {
+        if (r->i & 1) {
+            if (t1 < -t3 || r->rr1 - t1 < t2 - r->aa1)
+                return 0;
+        } else {
+            if (t1 < -t2 || r->rr1 - t1 < t3 - r->bb1)
+                return 0;
+        }
     }
     r->rr2 = r->rr1;
     r->rr1 = t1;

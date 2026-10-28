@@ -391,19 +391,20 @@ void hw_proof_process_work(struct vdf_state *vdf)
 
     for (int i = 0; i < vdf->max_aux_threads; i++) {
         if (!(busy & (1UL << i))) {
-            struct vdf_work *work;
-
             if (vdf->wq.empty()) {
                 break;
             }
 
-            work = hw_proof_take_fill(vdf, free_slots);
+            std::unique_ptr<struct vdf_work> work = hw_proof_take_fill(vdf, free_slots);
             free_slots--;
 
             vdf->aux_threads_busy |= 1UL << i;
-            if (!hw_proof_submit(vdf, i, work, 0)) {
+            if (hw_proof_submit(vdf, i, work.get(), 0)) {
+                // The aux job owns it now (hw_proof_calc_values).
+                work.release();
+            } else {
                 vdf->aux_threads_busy &= ~(1UL << i);
-                hw_proof_free_work(work);
+                hw_proof_free_work(std::move(work));
             }
         }
     }
@@ -437,7 +438,7 @@ void hw_proof_wait_values(struct vdf_state *vdf, bool finish_work)
 
     if (!finish_work) {
         for (size_t i = 0; i < vdf->wq.size(); i++)
-            hw_proof_free_work(vdf->wq[i]);
+            hw_proof_free_work(std::unique_ptr<struct vdf_work>(vdf->wq[i]));
         vdf->wq.clear();
     }
 }

@@ -25,9 +25,10 @@
 
 #include <gmp.h>
 #include <stdint.h>
+#include <climits>
 
 #include "xgcd_lehmer_step.h"
-#include <climits>
+#include "xgcd_partial.h"
 
 #if !defined(__MPIR_VERSION) && (LONG_MAX < INT64_MAX)
 #define CHIAVDF_GMP_NARROW_LONG 1

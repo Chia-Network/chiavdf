@@ -118,24 +118,23 @@ void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_work *work, int thr_
         FillLane *y = lanes[1] && lanes[1]->active ? &*lanes[1] : nullptr;
         if (!x && !y)
             break;
-        if (x && y) {
 #if defined(CHIAVDF_PAIR_KERNELS)
+        if (x && y) {
             nudupl_form_pair(x->f, y->f, vdf->D, vdf->L, true);
-#else
-            nudupl_form(x->f, x->f, vdf->D, vdf->L);
-            nudupl_form(y->f, y->f, vdf->D, vdf->L);
-#endif
             reducer.reduce(x->f);
             reducer.reduce(y->f);
-        } else {
-            FillLane *one = x ? x : y;
+            x->advance();
+            y->advance();
+            continue;
+        }
+#endif
+        for (FillLane *one : {x, y}) {
+            if (!one)
+                continue;
             nudupl_form(one->f, one->f, vdf->D, vdf->L);
             reducer.reduce(one->f);
+            one->advance();
         }
-        if (x)
-            x->advance();
-        if (y)
-            y->advance();
     }
 
     for (auto &lane : lanes)
@@ -145,9 +144,9 @@ void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_work *work, int thr_
     LOG_DEBUG(" VDF %d: aux thread %d done", vdf->idx, thr_idx);
 }
 
-struct vdf_work *hw_proof_take_fill(struct vdf_state *vdf, int free_slots)
+std::unique_ptr<struct vdf_work> hw_proof_take_fill(struct vdf_state *vdf, int free_slots)
 {
-    struct vdf_work *work = vdf->wq.front();
+    std::unique_ptr<struct vdf_work> work(vdf->wq.front());
     vdf->wq.pop_front();
     if (vdf->pair_kernels && vdf->wq.size() > (size_t)(free_slots - 1)) {
         work->pair.reset(vdf->wq.front());
@@ -156,10 +155,9 @@ struct vdf_work *hw_proof_take_fill(struct vdf_state *vdf, int free_slots)
     return work;
 }
 
-void hw_proof_free_work(struct vdf_work *work)
+void hw_proof_free_work(std::unique_ptr<struct vdf_work> work)
 {
     if (work->pair)
         clear_vdf_value(&work->pair->start_val);
     clear_vdf_value(&work->start_val);
-    delete work;
 }

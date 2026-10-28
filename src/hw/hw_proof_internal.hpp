@@ -32,9 +32,9 @@ void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_work *work, int thr_
 // paired kernels on, a second fill joins it when the queue holds more fills
 // than the other free slots could start; a lone fill finishes sooner on its
 // own thread.
-struct vdf_work *hw_proof_take_fill(struct vdf_state *vdf, int free_slots);
+std::unique_ptr<struct vdf_work> hw_proof_take_fill(struct vdf_state *vdf, int free_slots);
 
 // Clear and delete a fill job that will not run, including its pair.
-void hw_proof_free_work(struct vdf_work *work);
+void hw_proof_free_work(std::unique_ptr<struct vdf_work> work);
 
 #endif // HW_PROOF_INTERNAL_H

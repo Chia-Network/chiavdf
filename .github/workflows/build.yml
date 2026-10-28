@@ -190,7 +190,7 @@ jobs:
     - name: Install build dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y cmake libgmp-dev libgmpxx4ldbl
+        sudo apt-get install -y cmake libgmp-dev libgmpxx4ldbl libboost-dev
 
     - name: flake8
       run: |
@@ -209,6 +209,18 @@ jobs:
         pip install mypy
         pip install .
         stubtest --concise chiavdf
+
+    - name: Check source install copies vdf_client and vdf_bench
+      env:
+        BUILD_VDF_CLIENT: Y
+        BUILD_VDF_BENCH: Y
+      run: |
+        python -m venv /tmp/hooks-venv
+        /tmp/hooks-venv/bin/pip install --no-binary chiavdf .
+        site=$(/tmp/hooks-venv/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
+        for f in vdf_client prover_test 1weso_test 2weso_test vdf_bench; do
+          test -x "$site/$f" || { echo "missing $site/$f"; exit 1; }
+        done
 
   upload:
     name: Upload to PyPI - Ubuntu 3.12 Intel

@@ -1,4 +1,5 @@
 #include "hw_proof.hpp"
+#include "hw_proof_internal.hpp"
 #include "chia_driver.hpp"
 #include "pll_freqs.hpp"
 #include <chrono>
@@ -10,10 +11,6 @@
 #include <vector>
 
 #include "hw_client_loop_test.cpp"
-
-int hw_proof_wait_value(struct vdf_state *vdf, size_t pos);
-form *hw_proof_value_at(struct vdf_state *vdf, size_t pos);
-void hw_proof_process_work(struct vdf_state *vdf);
 
 static bool wait_for(const std::function<bool()> &ready, std::chrono::milliseconds limit)
 {
@@ -144,6 +141,8 @@ struct OwnedVdf {
         clear_vdf_state(vdf);
     }
 };
+
+#include "hw_proof_fill_test.cpp"
 
 static uint64_t read_be64(const uint8_t *bytes) {
     uint64_t value = 0;
@@ -352,6 +351,10 @@ int main() {
         check_completed_engine_control_mask();
         check_client_exception_shutdown_policy();
         check_completed_checkpoint_reuse();
+        check_fill_pairing_rule();
+#if defined(CHIAVDF_PAIR_KERNELS)
+        check_paired_fills();
+#endif
         {
             vdf_state vdf{};
             initialize_wait_state(vdf);

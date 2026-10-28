@@ -34,6 +34,8 @@ class Prover {
 
 #define PARALLEL_PROVER_N_THREADS 2
 
+void nucomp_form(form &a, form const& b, form const& c, integer const& D, integer const& L);
+
 class ParallelProver : public Prover {
   private:
     static void ProofThread(ParallelProver* prover, uint8_t thr_idx, uint32_t start, uint32_t len);
@@ -45,10 +47,24 @@ class ParallelProver : public Prover {
     void GenerateProof();
 
   protected:
+    // a = b * c and d = e * f, two products with no dependency between them.
+    // Workers route independent bucket products and the two chains of the
+    // combine sweep through here, so a subclass can run them together
+    // (HwProver uses paired kernels). d, e and f must not alias a, b or c.
+    virtual void ComposeTwo(form& a, const form& b, const form& c,
+                            form& d, const form& e, const form& f);
+
     integer B;
     integer L;
     form id;
     form x_vals[PARALLEL_PROVER_N_THREADS];
 };
+
+inline void ParallelProver::ComposeTwo(form& a, const form& b, const form& c,
+                                       form& d, const form& e, const form& f)
+{
+    nucomp_form(a, b, c, D, L);
+    nucomp_form(d, e, f, D, L);
+}
 
 #endif // PROVER_INTERFACE_H

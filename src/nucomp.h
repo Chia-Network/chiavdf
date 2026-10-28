@@ -50,14 +50,7 @@ limitations under the License.
 #define LOG2(X) (63 - __builtin_clzll((X)))
 //using namespace std;
 
-typedef struct qfb
-{
-    mpz_t a;
-    mpz_t b;
-    mpz_t c;
-} qfb;
-
-typedef qfb qfb_t[1];
+#include "nucomp_phases.h"
 
 // From Antic using Flint (works!)
 // MSVC link-time optimization miscompiles this function when it is inlined,
@@ -70,8 +63,7 @@ __declspec(noinline)
 #endif
 void qfb_nucomp(qfb_t r, const qfb_t f, const qfb_t g, mpz_t const& D, mpz_t const& L)
 {
-   // Order the inputs once. A recursive call would re-enter the thread-local
-   // scratch below if this block were ever moved under that scratch.
+   // Order the inputs once: the smaller a first.
    const qfb* left = f;
    const qfb* right = g;
    if (mpz_cmp(f->a, g->a) > 0)
@@ -81,154 +73,15 @@ void qfb_nucomp(qfb_t r, const qfb_t f, const qfb_t g, mpz_t const& D, mpz_t con
    }
 
    // Same approach as qfb_nudupl: keep GMP temporaries for the life of the thread.
-   struct qfb_nucomp_ctx {
-      mpz_t a1, a2, c2, ca, cb, cc, k, s, sp, ss, m, t, u2, v1, v2;
-      mpz_t m1, m2, r1, r2, co1, co2, temp;
-
-      qfb_nucomp_ctx() {
-         mpz_inits(a1, a2, c2, ca, cb, cc, k, s, sp, ss, m, t, u2, v1, v2,
-            m1, m2, r1, r2, co1, co2, temp, nullptr);
-      }
-      ~qfb_nucomp_ctx() {
-         mpz_clears(a1, a2, c2, ca, cb, cc, k, s, sp, ss, m, t, u2, v1, v2,
-            m1, m2, r1, r2, co1, co2, temp, nullptr);
-      }
-      qfb_nucomp_ctx(const qfb_nucomp_ctx&) = delete;
-      qfb_nucomp_ctx& operator=(const qfb_nucomp_ctx&) = delete;
-   };
    static thread_local qfb_nucomp_ctx ctx;
 
-   mpz_t& a1 = ctx.a1;
-   mpz_t& a2 = ctx.a2;
-   mpz_t& c2 = ctx.c2;
-   mpz_t& ca = ctx.ca;
-   mpz_t& cb = ctx.cb;
-   mpz_t& cc = ctx.cc;
-   mpz_t& k = ctx.k;
-   mpz_t& s = ctx.s;
-   mpz_t& sp = ctx.sp;
-   mpz_t& ss = ctx.ss;
-   mpz_t& m = ctx.m;
-   mpz_t& t = ctx.t;
-   mpz_t& u2 = ctx.u2;
-   mpz_t& v1 = ctx.v1;
-   mpz_t& v2 = ctx.v2;
-   mpz_t& m1 = ctx.m1;
-   mpz_t& m2 = ctx.m2;
-   mpz_t& r1 = ctx.r1;
-   mpz_t& r2 = ctx.r2;
-   mpz_t& co1 = ctx.co1;
-   mpz_t& co2 = ctx.co2;
-   mpz_t& temp = ctx.temp;
-
-   /* nucomp calculation */
-
-   mpz_set(a1, left->a);
-   mpz_set(a2, right->a);
-   mpz_set(c2, right->c);
-
-   mpz_add(ss, left->b, right->b);
-   mpz_fdiv_q_2exp(ss, ss, 1);
-
-   mpz_sub(m, left->b, right->b);
-   mpz_fdiv_q_2exp(m, m, 1);
-
-   mpz_fdiv_r(t, a2, a1);
-   if (!mpz_cmp_ui(t, 0))
-   {
-      mpz_set_ui(v1, 0);
-      mpz_set(sp, a1);
-   } else
-      mpz_gcdext(sp, v1, NULL, t, a1);
-
-   mpz_mul(k, m, v1);
-   mpz_fdiv_r(k, k, a1);
-
-   if (mpz_cmp_ui(sp, 1))
-   {
-      mpz_gcdext(s, v2, u2, ss, sp);
-
-      /* k = k*u2 - v2*c2 */
-      mpz_mul(k, k, u2);
-      mpz_mul(t, v2, c2);
-      mpz_sub(k, k, t);
-
-      if (mpz_cmp_ui(s, 1))
-      {
-         mpz_divexact(a1, a1, s);
-         mpz_divexact(a2, a2, s);
-         mpz_mul(c2, c2, s);
-      }
-
-      mpz_fdiv_r(k, k, a1);
-   }
-
-   if (mpz_cmp(a1, L) < 0)
-   {
-      mpz_mul(t, a2, k);
-
-      mpz_mul(ca, a2, a1);
-
-      mpz_mul_2exp(cb, t, 1);
-      mpz_add(cb, cb, right->b);
-
-      mpz_add(cc, right->b, t);
-      mpz_mul(cc, cc, k);
-      mpz_add(cc, cc, c2);
-
-      mpz_divexact(cc, cc, a1);
-   } else
-   {
-      mpz_set(r2, a1);
-      mpz_set(r1, k);
-
-      mpz_xgcd_partial(co2, co1, r2, r1, L);
-
-      /* m1 = (m*co1 + a2*r1) / a1 */
-      mpz_mul(t, a2, r1);
-      mpz_mul(m1, m, co1);
-      mpz_add(m1, m1, t);
-      mpz_divexact(m1, m1, a1);
-
-      /* m2 = (ss*r1 - c2*co1) / a1 */
-      mpz_mul(m2, ss, r1);
-      mpz_mul(temp, c2, co1);
-      mpz_sub(m2, m2, temp);
-      mpz_divexact(m2, m2, a1);
-
-      /* ca = -sgn(co1) * (r1*m1 - co1*m2) */
-      mpz_mul(ca, r1, m1);
-      mpz_mul(temp, co1, m2);
-      if (mpz_sgn(co1) < 0)
-         mpz_sub(ca, ca, temp);
-      else
-         mpz_sub(ca, temp, ca);
-
-      /* cb = (2 * (t - ca*co2) / co1 - right->b) % (2*ca) */
-      mpz_mul(cb, ca, co2);
-      mpz_sub(cb, t, cb);
-      mpz_mul_2exp(cb, cb, 1);
-      mpz_divexact(cb, cb, co1);
-      mpz_sub(cb, cb, right->b);
-      mpz_mul_2exp(temp, ca, 1);
-      mpz_fdiv_r(cb, cb, temp);
-
-      /* cc = (cb*cb - D) / (4*ca) */
-      mpz_mul(cc, cb, cb);
-      mpz_sub(cc, cc, D);
-      mpz_divexact(cc, cc, ca);
-      mpz_fdiv_q_2exp(cc, cc, 2);
-
-      if (mpz_sgn(ca) < 0)
-      {
-         mpz_neg(ca, ca);
-         mpz_neg(cc, cc);
-      }
-   }
-
-   mpz_set(r->a, ca);
-   mpz_set(r->b, cb);
-   mpz_set(r->c, cc);
+   /* nucomp calculation (phases in nucomp_phases.h) */
+   if (qfb_nucomp_prepare(ctx, left, right))
+      mpz_gcdext(ctx.sp, ctx.v1, NULL, ctx.t, ctx.a1);
+   const bool partial = qfb_nucomp_reduce_k(ctx, L);
+   if (partial)
+      mpz_xgcd_partial(ctx.co2, ctx.co1, ctx.r2, ctx.r1, L);
+   qfb_nucomp_finish(ctx, r, right, D, partial);
 }
 
 // a = b * c
@@ -261,188 +114,59 @@ void qfb_nudupl(qfb_t r, qfb_t f, mpz_t const& D, mpz_t const& L)
     const bool timing = (prof != nullptr) && chiavdf_nudupl_profile_timing_enabled;
     if (prof != nullptr) {
         ++prof->qfb_nudupl_calls;
+        if (mpz_sgn(f->b) < 0) ++prof->b_negative;
     }
-#else
+    std::chrono::steady_clock::time_point t0;
 #endif
     // Performance note:
     // This function is on the hot path for ARM `square_vdf` (NUDUPL). Avoid per-iteration
     // `mpz_init/mpz_clear` churn by reusing a thread-local scratch context.
-    struct qfb_nudupl_ctx {
-        mpz_t a1, c1, cb, k, s, t, u2, v2;
-        mpz_t b_abs;
-        mpz_t m2, r1, r2, co1, co2, temp;  // only used in the "a1 >= L" branch
-
-        qfb_nudupl_ctx() {
-            mpz_inits(a1, c1, cb, k, s, t, u2, v2, b_abs, m2, r1, r2, co1, co2, temp, nullptr);
-        }
-        ~qfb_nudupl_ctx() {
-            mpz_clears(a1, c1, cb, k, s, t, u2, v2, b_abs, m2, r1, r2, co1, co2, temp, nullptr);
-        }
-        qfb_nudupl_ctx(const qfb_nudupl_ctx&) = delete;
-        qfb_nudupl_ctx& operator=(const qfb_nudupl_ctx&) = delete;
-    };
     static thread_local qfb_nudupl_ctx ctx;
 
-    mpz_t& a1 = ctx.a1;
-    mpz_t& c1 = ctx.c1;
-    mpz_t& cb = ctx.cb;
-    mpz_t& k  = ctx.k;
-    mpz_t& s  = ctx.s;
-    mpz_t& t  = ctx.t;
-    mpz_t& v2 = ctx.v2;
-    mpz_t& b_abs = ctx.b_abs;
-
-    /* nucomp calculation */
-
-    /* a1 = a */
-    mpz_set(a1, f->a);
-    /* c1 = c */
-    mpz_set(c1, f->c);
-
-    const int b_sgn = mpz_sgn(f->b);
-
-    if (b_sgn < 0) {
+    /* nucomp calculation (phases in nucomp_phases.h) */
+    qfb_nudupl_prepare(ctx, f);
 #if defined(VDF_TEST)
-        if (prof != nullptr) ++prof->b_negative;
-        std::chrono::steady_clock::time_point t_g0;
-        if (timing) t_g0 = std::chrono::steady_clock::now();
+    if (timing) t0 = std::chrono::steady_clock::now();
 #endif
-        // Use |b| for gcdext/invert and apply sign afterwards; avoids mutating f->b in-place.
-        mpz_neg(b_abs, f->b);
-        /* s = gcd(|b|, a); v2 = coefficient for |b| (mod a) */
-        mpz_gcdext(s, v2, NULL, b_abs, a1);
-        mpz_neg(v2, v2); // convert coefficient for |b| into coefficient for b (negative)
+    /* s = gcd(|b|, a); v2 = coefficient for |b| (mod a) */
+    mpz_gcdext(ctx.s, ctx.v2, NULL, ctx.b_abs, ctx.a1);
 #if defined(VDF_TEST)
-        if (timing) {
-            const auto t_g1 = std::chrono::steady_clock::now();
-            prof->gcdext_time_ns += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(t_g1 - t_g0).count());
-        }
-#endif
-    } else {
-#if defined(VDF_TEST)
-        std::chrono::steady_clock::time_point t_g0;
-        if (timing) t_g0 = std::chrono::steady_clock::now();
-#endif
-        mpz_set(b_abs, f->b);
-        mpz_gcdext(s, v2, NULL, b_abs, a1);
-#if defined(VDF_TEST)
-        if (timing) {
-            const auto t_g1 = std::chrono::steady_clock::now();
-            prof->gcdext_time_ns += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(t_g1 - t_g0).count());
-        }
-#endif
-    }
-
-    mpz_mul(k, v2, c1);
-    mpz_neg(k, k);
-
-    const bool s_is_1 = (mpz_cmp_ui(s, 1) == 0);
-#if defined(VDF_TEST)
+    if (timing)
+        prof->gcdext_time_ns += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - t0).count());
     if (prof != nullptr) {
-        if (s_is_1) ++prof->gcdext_s_eq_1;
+        if (mpz_cmp_ui(ctx.s, 1) == 0) ++prof->gcdext_s_eq_1;
         else ++prof->gcdext_s_ne_1;
     }
 #endif
 
-    if (!s_is_1) {
-        mpz_fdiv_q(a1, a1, s);
-        mpz_mul(c1, c1, s);
+    const bool partial = qfb_nudupl_reduce_k(ctx, f, L);
+#if defined(VDF_TEST)
+    if (prof != nullptr) {
+        if (partial) ++prof->branch_a_ge_L;
+        else ++prof->branch_a_lt_L;
     }
-
-    /* k = -(c*inv(b)) (mod a) */
-    // `mpz_fdiv_r` implements a floor-remainder; for positive modulus `a1`, we can
-    // compute the (typically faster) trunc-remainder and fix up negative results.
-    mpz_tdiv_r(k, k, a1);
-    if (mpz_sgn(k) < 0) mpz_add(k, k, a1);
-
-    if (mpz_cmp(a1, L) < 0) {
-#if defined(VDF_TEST)
-        if (prof != nullptr) ++prof->branch_a_lt_L;
+    std::chrono::steady_clock::time_point t_else0;
+    if (timing && partial) t_else0 = std::chrono::steady_clock::now();
 #endif
-        mpz_mul(t, a1, k);
-
-        mpz_mul(r->a, a1, a1);
-
-        mpz_mul_2exp(cb, t, 1);
-        mpz_add(cb, cb, f->b);
-
-        mpz_add(r->c, f->b, t);
-        mpz_mul(r->c, r->c, k);
-        mpz_add(r->c, r->c, c1);
-
-        mpz_fdiv_q(r->c, r->c, a1);
-    } else {
-#if defined(VDF_TEST)
-        if (prof != nullptr) ++prof->branch_a_ge_L;
-        std::chrono::steady_clock::time_point t_else0;
-        if (timing) t_else0 = std::chrono::steady_clock::now();
-#endif
-        mpz_t& m2 = ctx.m2;
-        mpz_t& r1 = ctx.r1;
-        mpz_t& r2 = ctx.r2;
-        mpz_t& co1 = ctx.co1;
-        mpz_t& co2 = ctx.co2;
-        mpz_t& temp = ctx.temp;
-
-        mpz_set(r2, a1);
-        /* r1 = k */
-        mpz_swap(r1, k);
-
+    if (partial) {
         /* Satisfies co2*r1 - co1*r2 == +/- r2_orig */
 #if defined(VDF_TEST)
-        std::chrono::steady_clock::time_point t_x0;
-        if (timing) t_x0 = std::chrono::steady_clock::now();
+        if (timing) t0 = std::chrono::steady_clock::now();
 #endif
-        mpz_xgcd_partial(co2, co1, r2, r1, L);
+        mpz_xgcd_partial(ctx.co2, ctx.co1, ctx.r2, ctx.r1, L);
 #if defined(VDF_TEST)
-        if (timing) {
-            const auto t_x1 = std::chrono::steady_clock::now();
-            prof->xgcd_partial_time_ns += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(t_x1 - t_x0).count());
-        }
-#endif
-
-        /* m2 = b * r1 */
-        mpz_mul(m2, f->b, r1);
-        mpz_submul(m2, c1, co1);
-        /* m2 = (b*r1 - c1*co1) / a1 */
-        mpz_divexact(m2, m2, a1);
-
-        /* new_a = r1^2 */
-        mpz_mul(r->a, r1, r1);
-        /* new_a = new_a - co1 * m2 */
-        mpz_submul(r->a, co1, m2);
-        if (mpz_sgn(co1) >= 0)
-            mpz_neg(r->a, r->a);
-
-        mpz_mul(cb, r->a, co2);
-        mpz_submul(cb, a1, r1);
-        /* cb = a1*r1 - new_a*co2 */
-        mpz_neg(cb, cb);
-        /* cb = 2 * (a1*r1 - new_a*co2) */
-        mpz_mul_2exp(cb, cb, 1);
-        mpz_divexact(cb, cb, co1);
-        mpz_sub(cb, cb, f->b);
-        mpz_mul_2exp(temp, r->a, 1);
-        mpz_fdiv_r(cb, cb, temp);
-
-        mpz_mul(r->c, cb, cb);
-        mpz_sub(r->c, r->c, D);
-        mpz_divexact(r->c, r->c, r->a);
-        mpz_tdiv_q_2exp(r->c, r->c, 2);
-
-        if (mpz_sgn(r->a) < 0) {
-            mpz_neg(r->a, r->a);
-            mpz_neg(r->c, r->c);
-        }
-#if defined(VDF_TEST)
-        if (timing) {
-            const auto t_else1 = std::chrono::steady_clock::now();
-            prof->else_branch_time_ns += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(t_else1 - t_else0).count());
-        }
+        if (timing)
+            prof->xgcd_partial_time_ns += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - t0).count());
 #endif
     }
-
-    mpz_set(r->b, cb);
+    qfb_nudupl_finish(ctx, r, f, D, partial);
+#if defined(VDF_TEST)
+    if (timing && partial)
+        prof->else_branch_time_ns += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - t_else0).count());
+#endif
 }
 
 // a = b * b

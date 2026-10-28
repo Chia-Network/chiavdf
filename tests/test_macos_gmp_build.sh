@@ -208,6 +208,7 @@ expect_fail "GMP_TARBALL is the build dir's own copy" "mock-shasum-called" \
 # GMP_TARBALL is a symlink to the build dir's own copy: skip the cp too.
 mkdir -p "$WORK/gmpdir3"
 printf 'dummy tarball\n' > "$WORK/gmpdir3/gmp-$GMP_VERSION.tar.xz"
+printf 'dummy tarball\n' > "$WORK/symlink-reference"
 ln -s "$WORK/gmpdir3/gmp-$GMP_VERSION.tar.xz" "$WORK/link-to-tarball"
 expect_fail "GMP_TARBALL is a symlink to the build dir's own copy" "mock-shasum-called" \
   env PATH="$BUILD_PATH" GMP_BUILD_DIR="$WORK/gmpdir3" \
@@ -215,16 +216,23 @@ expect_fail "GMP_TARBALL is a symlink to the build dir's own copy" "mock-shasum-
 if [ ! -f "$WORK/gmpdir3/gmp-$GMP_VERSION.tar.xz" ] || [ -L "$WORK/gmpdir3/gmp-$GMP_VERSION.tar.xz" ]; then
   fail "symlinked GMP_TARBALL replaced the build dir's tarball"
 fi
-if ! cmp -s "$WORK/link-to-tarball" "$WORK/gmpdir3/gmp-$GMP_VERSION.tar.xz"; then
-  fail "symlinked GMP_TARBALL changed the build dir's tarball"
+if ! cmp -s "$WORK/symlink-reference" "$WORK/gmpdir3/gmp-$GMP_VERSION.tar.xz"; then
+  fail "symlinked GMP_TARBALL clobbered or truncated the build dir's tarball"
 fi
 
 # GMP_TARBALL spelled relatively (with ./ and ..) resolves to the same file.
 mkdir -p "$WORK/gmpdir4"
 printf 'dummy tarball\n' > "$WORK/gmpdir4/gmp-$GMP_VERSION.tar.xz"
+printf 'dummy tarball\n' > "$WORK/relative-reference"
 (cd "$WORK" && expect_fail "GMP_TARBALL is a relative path to the build dir's own copy" "mock-shasum-called" \
   env PATH="$BUILD_PATH" GMP_BUILD_DIR="$WORK/gmpdir4" \
   GMP_TARBALL=./gmpdir4/../gmpdir4/gmp-"$GMP_VERSION".tar.xz bash "$BUILD" "$WORK/prefix")
+if [ ! -f "$WORK/gmpdir4/gmp-$GMP_VERSION.tar.xz" ] || [ -L "$WORK/gmpdir4/gmp-$GMP_VERSION.tar.xz" ]; then
+  fail "relative GMP_TARBALL replaced the build dir's tarball"
+fi
+if ! cmp -s "$WORK/relative-reference" "$WORK/gmpdir4/gmp-$GMP_VERSION.tar.xz"; then
+  fail "relative GMP_TARBALL clobbered or truncated the build dir's tarball"
+fi
 
 # GMP_TARBALL is a different file: copy it in, then reach the hash check.
 printf 'dummy tarball\n' > "$WORK/source-tarball"

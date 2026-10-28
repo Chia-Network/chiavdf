@@ -69,6 +69,20 @@ FTD2XX_API FT_STATUS WINAPI FT_OpenEx(PVOID pArg1, DWORD Flags, FT_HANDLE *pHand
     return 0;
 }
 
+// Emulator identity controls are never linked into the real hardware client.
+const char *chia_vdf_emu_gpio_serial = "EMULATEDD";
+bool chia_vdf_emu_info_error = false;
+FTD2XX_API FT_STATUS WINAPI FT_GetDeviceInfo(FT_HANDLE handle, FT_DEVICE *type,
+        LPDWORD id, PCHAR serial, PCHAR description, LPVOID) {
+    if (chia_vdf_emu_info_error || (handle != (void *)SPI_FT_BASE && handle != (void *)GPIO_FT_BASE))
+        return FT_INVALID_HANDLE;
+    *type = FT_DEVICE_4222H_0;
+    *id = 0x0403601c;
+    snprintf(serial, 16, "%s", handle == (void *)SPI_FT_BASE ? "EMULATEDA" : chia_vdf_emu_gpio_serial);
+    snprintf(description, 64, "%s", "Chia VDF emulator");
+    return FT_OK;
+}
+
 LIBFT4222_API FT4222_STATUS FT4222_SPIMaster_Init(FT_HANDLE ftHandle, FT4222_SPIMode  ioLine, FT4222_SPIClock clock, FT4222_SPICPOL  cpol, FT4222_SPICPHA  cpha, uint8 ssoMap)
 {
     return FT4222_OK;

@@ -407,6 +407,7 @@ List of options [default, min - max]:
   --voltage N - set board voltage [0.88, 0.7 - 1.0]
   --ip A.B.C.D - timelord IP address [localhost]
   --device-loc N - FTDI board location from --list [0: first available]
+  --expected-serial S - confirm opened board identity before configuration
   --vdfs-mask N - mask for enabling VDF engines [7, 1 - 7]
   --vdf-threads N - number of software threads per VDF engine [4, 2 - 64]
   --proof-threads N - number of proof threads per VDF engine
@@ -427,6 +428,7 @@ List of options [default, min - max]:
 | `--voltage` | Volts, 0.70–1.00. Default 0.88. The log line after the set is the value read back, which can differ slightly from the request. |
 | `--ip` | IPv4 of the timelord. Default 127.0.0.1. |
 | `--device-loc` | Location id printed by `--list`. `0`, the default, selects the first interface-A board. A nonzero value must match a location id exactly. |
+| `--expected-serial` | Optional serial from D2XX inventory (1–15 printable non-space characters). Accepts the board serial or its full interface-A serial. Confirms the actual opened SPI handle and its matching GPIO handle before bridge configuration or ASIC clock/voltage writes; unreadable or mismatched identities close the handles and fail. Use with `--device-loc` when a supervisor discovers a board by serial, since USB locations can be reused during hotplug. |
 | `--vdfs-mask` | Bit 0 (value 1) is engine 0, bit 1 (value 2) is engine 1, bit 2 (value 4) is engine 2. `0`, the parser default, means "the first `N_VDFS` engines", which is 7 when `N_VDFS` is 3. That is why the usage line shows 7. A non-zero mask is used as given, and `N_VDFS` does not change it. Values above 7 are rejected. |
 | `--vdf-threads` | Host threads per engine for intermediates and proofs. Default 4. Range 2–64. |
 | `--proof-threads` | How many of those threads may sit in proofs. Omitted, or set to 0, it is `vdf-threads - ceil(vdf-threads / 8)` (3 when `vdf-threads` is 4). Any other explicit value must be less than `--vdf-threads`. A proof starts while the used count is below this value, and each proof uses `--segment-threads` of it, so at least one proof runs and the concurrent proof count is `ceil(proof-threads / segment-threads)`. |

@@ -143,11 +143,12 @@ int FtdiDriver::List() {
   return 0;
 }
 
-int FtdiDriver::Open(DWORD target_id) {
-  return OpenClk((int)SYS_CLK_80, (int)CLK_DIV_8, target_id);
+int FtdiDriver::Open(DWORD target_id, const char *expected_serial) {
+  return OpenClk((int)SYS_CLK_80, (int)CLK_DIV_8, target_id, expected_serial);
 }
 
-int FtdiDriver::OpenClk(unsigned sys_clk, unsigned clk_div, DWORD target_id) {
+int FtdiDriver::OpenClk(unsigned sys_clk, unsigned clk_div, DWORD target_id,
+                        const char *expected_serial) {
   DWORD     num_devs = 0;
 
   CHECK(FT_CreateDeviceInfoList(&num_devs));
@@ -203,7 +204,7 @@ int FtdiDriver::OpenClk(unsigned sys_clk, unsigned clk_div, DWORD target_id) {
     return -1;
   }
 
-  return Open(device_id, sys_clk, clk_div);
+  return Open(device_id, sys_clk, clk_div, expected_serial);
 }
 
 int FtdiDriver::SetMode(FtdiDriver::MODE_t mode)
@@ -250,14 +251,52 @@ int FtdiDriver::SetMode(FtdiDriver::MODE_t mode)
 }
 
 
-int FtdiDriver::Open(DWORD loc_id, unsigned sys_clk, unsigned clk_div) {
+// Query the actual opened handle, not the enumeration that preceded FT_OpenEx.
+// GPIO identity must match the opened SPI board as well; locations can be reused.
+static bool read_serial(FT_HANDLE handle, std::string &serial) {
+  FT_DEVICE type;
+  DWORD id;
+  char value[16] = {}, description[64] = {};
+  if (FT_GetDeviceInfo(handle, &type, &id, value, description, nullptr) != FT_OK)
+    return false;
+  const auto end = static_cast<const char *>(memchr(value, 0, sizeof(value)));
+  if (end == nullptr || end == value)
+    return false;
+  serial.assign(value, static_cast<size_t>(end - value));
+  return true;
+}
+
+int FtdiDriver::Open(DWORD loc_id, unsigned sys_clk, unsigned clk_div,
+                     const char *expected_serial) {
   Close();
+  const auto reject_identity = [this]() {
+    // These handles have not entered SPI/I2C/GPIO mode. Do not let a failed
+    // UnInitialize short-circuit closure on this pre-initialization path.
+    if (gpio_ft_handle != nullptr) { FT_Close(gpio_ft_handle); gpio_ft_handle = nullptr; }
+    if (spi_ft_handle != nullptr) { FT_Close(spi_ft_handle); spi_ft_handle = nullptr; }
+    active_mode = MODE_none;
+    return -1;
+  };
 
   // fprintf(stderr, "Opening device %d\n", loc_id);
   spi_loc_id = loc_id;
 
   CHECK(FT_OpenEx((PVOID)(uintptr_t)spi_loc_id, FT_OPEN_BY_LOCATION,
                   &spi_ft_handle));
+
+  std::string spi_serial, board_serial;
+  if (expected_serial != nullptr) {
+    if (!read_serial(spi_ft_handle, spi_serial)) {
+      eprintf("Cannot confirm opened SPI serial identity");
+      return reject_identity();
+    }
+    board_serial = spi_serial;
+    if (board_serial.back() == 'A') board_serial.pop_back();
+    if (spi_serial != expected_serial && board_serial != expected_serial) {
+      eprintf("Opened SPI serial does not match expected board '%s'", expected_serial);
+      return reject_identity();
+    }
+  }
 
   // originally we set jumpers for CNFMODE1, which uses 4 USB interfaces with
   // SPIM on "A,B,C" and GPIO on "D" (ie +3).  But it may be convenient to get
@@ -271,6 +310,15 @@ int FtdiDriver::Open(DWORD loc_id, unsigned sys_clk, unsigned clk_div) {
     cnfmode = 0;
     CHECK(FT_OpenEx((PVOID)(uintptr_t)gpio_loc_id, FT_OPEN_BY_LOCATION,
                     &gpio_ft_handle));
+  }
+
+  if (expected_serial != nullptr) {
+    std::string gpio_serial;
+    if (!read_serial(gpio_ft_handle, gpio_serial) ||
+        gpio_serial != board_serial + (cnfmode == 1 ? "D" : "B")) {
+      eprintf("Opened GPIO serial does not match expected board '%s'", expected_serial);
+      return reject_identity();
+    }
   }
 
   CHECK(FT4222_SetClock(spi_ft_handle, (FT4222_ClockRate)sys_clk));

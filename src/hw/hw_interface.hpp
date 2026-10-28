@@ -22,7 +22,9 @@ extern int chia_vdf_is_emu;
 
 class ChiaDriver;
 // device_loc is the FTDI location printed by --list; zero selects the first board.
-ChiaDriver *init_hw(double freq, double brd_voltage, uint32_t device_loc = 0);
+// expected_serial optionally confirms SPI/GPIO identities before hardware writes.
+ChiaDriver *init_hw(double freq, double brd_voltage, uint32_t device_loc = 0,
+                    const char *expected_serial = nullptr);
 void stop_hw(ChiaDriver *drv);
 
 struct vdf_state;

@@ -78,6 +78,49 @@ It was attempted to use modular arithmetic to calculate k directly but this slow
 
 The speedup isn't very high since most of the time is spent in the GCD base case and these can't be parallelized.
 
+## Cubing (NUCUBE) vs. squaring (NUDUPL)
+
+In 2020 we evaluated whether repeated cubing could replace repeated squaring
+(chiavdf [PR #29](https://github.com/Chia-Network/chiavdf/pull/29), Caleb
+Smith, "NUCUBE", Aug 2020). Since 3^T' ≈ 2^T for T' = log_3(2)·T ≈ 0.6309·T,
+NUCUBE [Imbert–Jacobson–Schmidt 2010] needs about 37% fewer sequential
+operations than NUDUPL [Jacobson–van der Poorten 2002]. Benchmarks used Maxwell
+Sayles' libqform/liboptarith implementations of both algorithms (not chiavdf's
+optimised NUDUPL), with matched work (e.g. 1,000,000 squarings vs. 630,929
+cubings), with and without per-step reduction. Cubing was slower at every size:
+
+| Discriminant bits | Cubing time / squaring time |
+|---:|---:|
+| 128  | 1.020 |
+| 256  | 1.034 |
+| 512  | 1.057 |
+| 1024 | 1.124 |
+| 2048 | 1.303 |
+| 4096 | 1.474 |
+
+The likely cause is that NUCUBE's modular reduction uses a modulus about twice
+the bit length of NUDUPL's (Sayles 2013, Alg. 2.4 vs. 2.3). Form reduction is
+a minor cost, but a larger share for cubing, so a faster reducer would narrow
+the gap (not close it).
+
+Cubing also doesn't apply to the current construction. The VDF output is
+g^(2^T), and finishing from g^(3^T') would need g^(2^T − 3^T'). Without the
+group order, computing that exponent costs about as much sequential work as
+the original VDF. Redefining the VDF as g^(3^T) would remove this problem, but
+it would change consensus and the proof format, and the measurements above
+show it would still be slower. Specialised higher powers (e.g. quintupling)
+were noted as worth revisiting only if new results appear.
+
+References: L. Imbert, M. J. Jacobson Jr., A. Schmidt, "Fast ideal cubing in
+imaginary quadratic number and function fields", Adv. Math. Commun.
+4(2):237–260, 2010; M. J. Jacobson Jr., A. J. van der Poorten, "Computational
+aspects of NUCOMP", ANTS 2002; M. Sayles, "Improved arithmetic in the ideal
+class group of imaginary quadratic number fields with an application to
+integer factoring", MSc thesis, University of Calgary, 2013;
+https://github.com/maxwellsayles/libqform,
+https://github.com/maxwellsayles/liboptarith; NUCUBE report,
+https://github.com/Chia-Network/chiavdf/blob/210ab52839a7fee84d0cbc77d023c7a0471ead8e/cubing/NUCUBE.pdf.
+
 ## Generating proofs
 
 The nested wesolowski proofs (n-wesolowski) are used to check the correctness of a VDF result. (Simple) Wesolowski proofs are described in [A Survey of Two Verifiable Delay Functions](https://theory.stanford.edu/~dabo/papers/VDFsurvey.pdf). In order to prove h = g^(2^T), a n-wesolowski proof uses n intermediate simple wesolowski proofs. Given h, g, T, t1, t2, ..., tn, h1, h2, ..., hn, a correct n-wesolowski proof will verify the following:

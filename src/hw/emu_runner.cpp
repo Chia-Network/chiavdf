@@ -280,6 +280,10 @@ void read_regs(uint32_t addr, uint8_t *buf, uint32_t size)
 #define CMD_SIZE 4
 #define WAIT_CYCLES 4
 
+// Emulator-only ownership diagnostics; never linked into real hardware tools.
+std::atomic<uint8_t> chia_vdf_emu_paused_mask{7};
+std::atomic<bool> chia_vdf_emu_configuration_before_pause{false};
+
 int emu_do_io(uint8_t *buf_in, uint16_t size_in, uint8_t *buf_out, uint16_t size_out)
 {
     uint32_t job_control = CHIA_VDF_CONTROL_REG_OFFSET;
@@ -292,6 +296,11 @@ int emu_do_io(uint8_t *buf_in, uint16_t size_in, uint8_t *buf_out, uint16_t size
     buf_in += CMD_SIZE;
     size_in -= CMD_SIZE;
     LOG_DEBUG("Emu: addr=0x%x in=%hu bytes out=%hu bytes", addr, size_in, size_out);
+    const bool pause_register = addr >= job_control &&
+        addr < job_control + CHIA_VDF_JOB_CSR_MULT * N_VDFS &&
+        (addr - job_control) % CHIA_VDF_JOB_CSR_MULT == 0;
+    if (size_in && !pause_register && chia_vdf_emu_paused_mask.load() != 7)
+        chia_vdf_emu_configuration_before_pause.store(true);
     for (i = 0; i < N_VDFS; i++) {
         if (addr >= job_csr && addr < job_csr + sizeof(g_job_regs[0])) {
             uint32_t offset = addr - job_csr;
@@ -308,9 +317,11 @@ int emu_do_io(uint8_t *buf_in, uint16_t size_in, uint8_t *buf_out, uint16_t size
             memcpy(&data, buf_in, 4);
             data = ntohl_local(data);
             if (data & (1U << CHIA_VDF_CONTROL_CLK_ENABLE_BIT)) {
+                chia_vdf_emu_paused_mask.fetch_and(static_cast<uint8_t>(~(1U << i)));
                 enable_engine(i);
             } else {
                 disable_engine(i);
+                chia_vdf_emu_paused_mask.fetch_or(static_cast<uint8_t>(1U << i));
             }
         }
         job_csr += CHIA_VDF_JOB_CSR_MULT;

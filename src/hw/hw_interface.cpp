@@ -66,6 +66,13 @@ ChiaDriver *init_hw(double freq, double set_brd_voltage, uint32_t device_loc,
         goto fail;
     }
 
+    // A previous USB owner may have died with engines still running. The new
+    // mask need not include those engines: quiesce the entire board first.
+    if (!hw_vdf_control(drv, (1U << N_HW_VDFS) - 1, 0)) {
+        LOG_ERROR("Failed to quiesce engines before initial configuration");
+        goto fail;
+    }
+
     LOG_INFO("Setting frequency to %f MHz", freq);
     set_status = drv->SetPLLFrequency(freq, 0);
     if (set_status == false) {

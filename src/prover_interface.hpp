@@ -51,4 +51,27 @@ class ParallelProver : public Prover {
     form x_vals[PARALLEL_PROVER_N_THREADS];
 };
 
+// Apple Silicon leaves most of its width idle in one GCD chain, so the
+// hardware client there interleaves independent compositions two at a time
+// (src/nudupl_pair.h). The kernels use unsigned __int128.
+#if defined(__APPLE__) && defined(__aarch64__)
+#define CHIAVDF_PAIR_KERNELS 1
+#endif
+
+// ParallelProver with paired compositions; same proofs (src/prover_pair.hpp).
+class PairParallelProver : public Prover {
+  public:
+    PairParallelProver(Segment segm, integer D);
+    void GenerateProof();
+
+  protected:
+    integer B;
+    integer L;
+    form id;
+    form x_vals[PARALLEL_PROVER_N_THREADS];
+
+  private:
+    void ProvePart(uint8_t thr_idx, uint32_t start, uint32_t len);
+};
+
 #endif // PROVER_INTERFACE_H

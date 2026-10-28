@@ -8,5 +8,6 @@
 #include "proof_arithmetic_regression_test.cpp"
 #include "parallel_prover_witness_test.cpp"
 #include "fastpow_nucomp_regression_test.cpp"
+#include "pair_kernels_regression_test.cpp"
 
 #include "hw/hw_client_control_test.cpp"

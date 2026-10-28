@@ -1,4 +1,6 @@
 UNAME := $(shell uname)
+# Allow callers/CI to override VDF_MODE (e.g. `make VDF_MODE=1`), default production.
+VDF_MODE ?= 0
 # Allow callers/CI to override ARCH, otherwise detect from host.
 ARCH ?= $(shell uname -m)
 ARCH_CANON := $(ARCH)
@@ -31,10 +33,10 @@ LDFLAGS += $(LTO_FLAGS) $(NOPIE) -g
 ifeq ($(OS),Windows_NT)
 # 128-bit integer backend: CMake sets CHIAVDF_USE_UINT128_T_FALLBACK on Windows CI builds.
 LDLIBS += -lmpirxx -lmpir -lws2_32
-CXXFLAGS += $(LTO_FLAGS) -std=c++1z -D VDF_MODE=0 -D FAST_MACHINE=1 $(NOPIE) -fvisibility=hidden
+CXXFLAGS += $(LTO_FLAGS) -std=c++1z -D VDF_MODE=$(VDF_MODE) -D FAST_MACHINE=1 $(NOPIE) -fvisibility=hidden
 else
 LDLIBS += -lgmpxx -lgmp -pthread
-CXXFLAGS += $(LTO_FLAGS) -std=c++1z -D VDF_MODE=0 -D FAST_MACHINE=1 -pthread $(NOPIE) -fvisibility=hidden
+CXXFLAGS += $(LTO_FLAGS) -std=c++1z -D VDF_MODE=$(VDF_MODE) -D FAST_MACHINE=1 -pthread $(NOPIE) -fvisibility=hidden
 endif
 ifeq ($(UNAME),Darwin)
 CXXFLAGS += -D CHIAOSX=1

@@ -43,6 +43,29 @@ jobs:
       - id: policy
         uses: ./.github/actions/release-policy
 
+  # Keep the test-mode (assert-enabled) configuration compiling and passing on
+  # pull requests and main.
+  vdf-test-mode:
+    name: VDF_MODE=1 build
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y -o Acquire::Retries=3
+          sudo apt-get install -y build-essential cmake libgmp-dev libboost-python-dev libpython3-dev libboost-system-dev
+
+      - name: Build and run test-mode VDF tests
+        working-directory: src
+        run: |
+          make VDF_MODE=1 -f Makefile.vdf-client 1weso_test 2weso_test
+          ./1weso_test 1000
+          ./2weso_test 1000
+
   # Release builds of the C libraries run in this workflow so one publish job
   # can wait for them. Push and pull_request still use build-c-libraries.yml.
   c-libraries:

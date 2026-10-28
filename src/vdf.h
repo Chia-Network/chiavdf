@@ -191,7 +191,7 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
 
         #ifdef ENABLE_TRACK_CYCLES
             print( "track cycles enabled; results will be wrong" );
-            repeated_square_original(*weso->vdfo, f, D, L, 100); //randomize the a and b values
+            repeated_square_original(*weso->vdfo, f, D, L, 0, 100, NULL); //randomize the a and b values
         #endif
 
         uint64 actual_iterations = 0;
@@ -296,7 +296,7 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
                 form f_copy_2=f;
                 weso->reduce(f_copy_2);
 
-                repeated_square_original(*weso->vdfo, f_copy, D, L, actual_iterations);
+                repeated_square_original(*weso->vdfo, f_copy, D, L, num_iterations, actual_iterations, NULL);
                 assert(f_copy==f_copy_2);
             }
         #endif

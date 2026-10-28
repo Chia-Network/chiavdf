@@ -234,7 +234,7 @@ std::vector<uint8_t> ProveSlowLowMemoryWithParameters(integer& D, form& x, uint6
     // The rounds, last first, as in GenerateWesolowski.
     form proof = form::identity(D);
     for (int64_t j = static_cast<int64_t>(l) - 1; j >= 0; j--) {
-        proof = FastPowFormNucomp(proof, D, integer(1 << k), L, reducer);
+        proof = FastPowFormNucomp(proof, D, integer(uint64(1) << k), L, reducer);
         FoldWesolowskiBuckets(proof, ys[j], k, D, L, reducer);
     }
     reducer.reduce(proof);

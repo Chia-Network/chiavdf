@@ -61,7 +61,11 @@ int main(int argc, char const* argv[]) try
     form proof_form = DeserializeForm(D, proof.proof.data(), proof.proof.size());
     VerifyWesolowskiProof(D, x_init, y, proof_form, iter, is_valid);
     std::cout << "Verify result: " << is_valid << "\n";
-    assert(is_valid);
+    if (!is_valid) {
+        std::cerr << "Verification failed\n";
+        return 1;
+    }
+    return 0;
 }
 catch (std::exception const& e) {
     std::cerr << "Exception " << e.what() << '\n';

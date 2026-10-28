@@ -386,4 +386,6 @@ static const uint64_t pprods[] = {
     0xaf157a9999de1f,    // 14887*14891*14897*14923
     0xb1110edec9a5e7,    // 14929*14939*14947*14951
 };
+
+static const uint32_t pprods_max_prime = 14951;
 #endif // PPRODS_H

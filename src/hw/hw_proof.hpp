@@ -25,6 +25,7 @@
 #define HW_VDF_MAX_CHKP_SEGMENTS (64 - 3)
 #define HW_VDF_MAX_AUX_THREADS 64
 #define HW_VDF_DEFAULT_MAX_AUX_THREADS 4
+#define HW_VDF_DEFAULT_SEGMENT_THREADS 2
 #define HW_VDF_WQ_WARN_MULT 2
 #define HW_VDF_B_SIZE 33
 
@@ -75,6 +76,7 @@ struct vdf_proof_delivery {
 struct vdf_proof_opts {
     uint8_t max_aux_threads;
     uint8_t max_proof_threads;
+    uint8_t segment_threads = HW_VDF_DEFAULT_SEGMENT_THREADS;
     uint32_t checkpoint_threshold = HW_VDF_CHKP_INTERVAL;
     bool retain_asic_values = false;
     // Square independent fills and bucket products in pairs (pair_kernels.h).
@@ -144,6 +146,7 @@ struct vdf_state {
     uint8_t idx;
     uint8_t max_aux_threads;
     uint8_t max_proof_threads;
+    uint8_t segment_threads = HW_VDF_DEFAULT_SEGMENT_THREADS;
     bool completed;
     std::atomic<bool> stopping;
     bool init_done = false;

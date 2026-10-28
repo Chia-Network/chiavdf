@@ -5,6 +5,7 @@
 #include "hw_util.hpp"
 #include "bqfc.h"
 #include "vdf_base.hpp"
+#include "prover_interface.hpp"
 #include "chia_driver.hpp"
 #include "pll_freqs.hpp"
 #include "version.hpp"
@@ -500,6 +501,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     opts->max_freq = pll_entries[VALID_PLL_FREQS - 1].freq;
     opts->vpo.max_aux_threads = HW_VDF_DEFAULT_MAX_AUX_THREADS;
     opts->vpo.max_proof_threads = 0;
+    opts->vpo.segment_threads = HW_VDF_DEFAULT_SEGMENT_THREADS;
     opts->vpo.checkpoint_threshold = HW_VDF_CHKP_INTERVAL;
     opts->vpo.pair_kernels = CHIAVDF_PAIR_KERNELS_DEFAULT;
     opts->vdfs_mask = 0;
@@ -630,6 +632,17 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
                 return -1;
             }
             opts->vpo.checkpoint_threshold = static_cast<uint32_t>(threshold);
+        } else if (!strcmp(name, "segment-threads")) {
+            char *end = nullptr;
+            errno = 0;
+            unsigned long threads = strtoul(value, &end, 0);
+            if (value[0] < '0' || value[0] > '9' || *end || errno == ERANGE ||
+                    threads < 1 || threads > PROVER_MAX_SEGMENT_THREADS) {
+                LOG_SIMPLE("Segment threads must be between 1 and %d",
+                        PROVER_MAX_SEGMENT_THREADS);
+                return -1;
+            }
+            opts->vpo.segment_threads = static_cast<uint8_t>(threads);
         } else if (!strcmp(name, "proof-threads")) {
             opts->vpo.max_proof_threads = strtoul(value, NULL, 0);
         } else if (!strcmp(name, "auto-freq-period")) {
@@ -756,6 +769,7 @@ int hw_vdf_client_main(int argc, char **argv)
                 "  --proof-threads N - number of proof threads per VDF engine\n"
                 "  --retain-asic-values - use recent ASIC samples for off-grid proof endpoints\n"
                 "  --checkpoint-threshold N - keep each segment at most N iterations when that fits in 61 checkpoints [1000000, 8000 - 4294967295]\n"
+                "  --segment-threads N - number of threads that share each proof segment [2, 1 - 8]\n"
                 "  --auto-freq-period N - auto-adjust frequency every N seconds [0, 10 - inf]\n"
                 "  --max-freq N - max frequency while auto-freq is on [%.0f]\n"
                 "  --raw-speed - report recent per-engine counter rates on stderr\n"

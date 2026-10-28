@@ -15,4 +15,7 @@ form Prover::GetProof() {
     return proof;
 }
 
-ParallelProver::ParallelProver(Segment segm, integer D) : Prover(segm, D) {}
+ParallelProver::ParallelProver(Segment segm, integer D,
+                               uint8_t segment_threads) : Prover(segm, D) {
+    this->segment_threads = ClampSegmentThreads(segment_threads);
+}

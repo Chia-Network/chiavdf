@@ -185,9 +185,9 @@ static uint64_t hw_proof_tail_cost(const struct vdf_state *vdf,
     uint8_t room = HW_VDF_MAX_CHKP_SEGMENTS - depth;
     uint64_t chunk = hw_proof_segment_chunk(span, vdf->checkpoint_threshold,
             vdf->interval, room);
+    uint64_t segment_threads = std::max<uint64_t>(1, vdf->segment_threads);
     uint64_t workers = std::max<uint64_t>(1, std::min<uint64_t>(vdf->max_aux_threads,
-            (vdf->max_proof_threads + PARALLEL_PROVER_N_THREADS - 1)
-                / PARALLEL_PROVER_N_THREADS));
+            (vdf->max_proof_threads + segment_threads - 1) / segment_threads));
     uint64_t full = span / chunk;
     return full / workers * chunk + (full % workers ? chunk : span % chunk);
 }

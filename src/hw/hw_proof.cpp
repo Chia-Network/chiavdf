@@ -5,6 +5,7 @@
 //#include "vdf.h"
 
 #include <stdexcept>
+#include <string>
 static const uint32_t g_skip_thres = 10;
 static const size_t g_values_mult = 1UL << 12;
 
@@ -107,7 +108,7 @@ void hw_proof_finish_job(struct vdf_state *vdf, uint8_t slot, bool proving,
         hw_proof_abandon_gap(vdf, gap_from, gap_to);
     if (slot < HW_VDF_MAX_AUX_THREADS) {
         if (proving)
-            vdf->n_proof_threads -= PARALLEL_PROVER_N_THREADS;
+            vdf->n_proof_threads -= vdf->segment_threads;
         vdf->aux_threads_busy &= ~(1UL << slot);
     }
 }
@@ -372,11 +373,11 @@ void hw_proof_process_work(struct vdf_state *vdf)
                     vdf->idx, i, iters, proof->seg_iters, is_chkp ? " [checkpoint]" : "");
             vdf->queued_proofs.erase(vdf->queued_proofs.begin());
             vdf->aux_threads_busy |= 1UL << i;
-            vdf->n_proof_threads += PARALLEL_PROVER_N_THREADS;
+            vdf->n_proof_threads += vdf->segment_threads;
             proof->flags |= HW_VDF_PROOF_FLAG_STARTED;
             if (!hw_proof_submit(vdf, i, nullptr, idx)) {
                 vdf->aux_threads_busy &= ~(1UL << i);
-                vdf->n_proof_threads -= PARALLEL_PROVER_N_THREADS;
+                vdf->n_proof_threads -= vdf->segment_threads;
                 proof->flags &= ~HW_VDF_PROOF_FLAG_STARTED;
                 proof->flags |= HW_VDF_PROOF_FLAG_FAILED;
             }
@@ -547,7 +548,7 @@ void hw_stop_proof(struct vdf_state *vdf)
 class HwProver : public ParallelProver {
   public:
     HwProver(Segment segm, integer D, struct vdf_state *vdf, uint8_t slot)
-        : ParallelProver(segm, D)
+        : ParallelProver(segm, D, vdf->segment_threads)
     {
         this->vdf = vdf;
         this->slot = slot;
@@ -621,6 +622,12 @@ class HwProver : public ParallelProver {
     uint32_t pos_offset;
 };
 
+std::unique_ptr<ParallelProver> hw_make_prover(Segment segm, integer D,
+        struct vdf_state *vdf, uint8_t slot)
+{
+    return std::make_unique<HwProver>(segm, D, vdf, slot);
+}
+
 void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof *out_proof, uint8_t thr_idx)
 {
     hw_job_exit job(vdf, thr_idx, true, proof_idx);
@@ -678,14 +685,15 @@ void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof 
 
     {
         Segment seg(start_iters, proof_iters - start_iters, x, y);
-        HwProver prover(seg, vdf->D, vdf, thr_idx);
-        prover.start();
+        std::unique_ptr<ParallelProver> prover =
+            hw_make_prover(seg, vdf->D, vdf, thr_idx);
+        prover->start();
 
-        if (prover.IsFinished()) {
+        if (prover->IsFinished()) {
             size_t d_bits;
             uint64_t elapsed_us = vdf_get_elapsed_us(start_time);
             bool is_valid = false;
-            proof_val = prover.GetProof();
+            proof_val = prover->GetProof();
 
             LOG_INFO("VDF %d: Proof done for iters=%lu, length=%lu in %.3fs%s",
                     vdf->idx, proof_iters, seg.length,
@@ -819,6 +827,11 @@ void init_vdf_state(struct vdf_state *vdf, struct vdf_proof_opts *opts, const ch
     vdf->checkpoint_threshold = opts ? opts->checkpoint_threshold : HW_VDF_CHKP_INTERVAL;
     if (vdf->checkpoint_threshold < HW_VDF_MIN_CHKP_THRESHOLD) {
         throw std::invalid_argument("Checkpoint threshold must be at least twice the value interval");
+    }
+    vdf->segment_threads = opts ? opts->segment_threads : HW_VDF_DEFAULT_SEGMENT_THREADS;
+    if (vdf->segment_threads < 1 || vdf->segment_threads > PROVER_MAX_SEGMENT_THREADS) {
+        throw std::invalid_argument("Segment threads must be between 1 and "
+                + std::to_string(PROVER_MAX_SEGMENT_THREADS));
     }
     vdf->target_iters = (n_iters + vdf->interval - 1) / vdf->interval * vdf->interval;
     vdf->idx = idx;

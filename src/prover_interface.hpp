@@ -32,7 +32,17 @@ class Prover {
     std::atomic<bool> is_finished;
 };
 
+// Documented default number of host threads that share one proof segment.
 #define PARALLEL_PROVER_N_THREADS 2
+#define PROVER_MAX_SEGMENT_THREADS 8
+
+inline uint8_t ClampSegmentThreads(uint8_t n) {
+    if (n < 1)
+        return 1;
+    if (n > PROVER_MAX_SEGMENT_THREADS)
+        return PROVER_MAX_SEGMENT_THREADS;
+    return n;
+}
 
 void nucomp_form(form &a, form const& b, form const& c, integer const& D, integer const& L);
 
@@ -43,8 +53,10 @@ class ParallelProver : public Prover {
     void ProvePart(uint8_t thr_idx, uint32_t start, uint32_t len);
 
   public:
-    ParallelProver(Segment segm, integer D);
+    ParallelProver(Segment segm, integer D,
+                   uint8_t segment_threads = PARALLEL_PROVER_N_THREADS);
     void GenerateProof();
+    uint8_t SegmentThreads() const { return segment_threads; }
 
   protected:
     // a = b * c and d = e * f, two products with no dependency between them.
@@ -57,7 +69,8 @@ class ParallelProver : public Prover {
     integer B;
     integer L;
     form id;
-    form x_vals[PARALLEL_PROVER_N_THREADS];
+    form x_vals[PROVER_MAX_SEGMENT_THREADS];
+    uint8_t segment_threads;
 };
 
 inline void ParallelProver::ComposeTwo(form& a, const form& b, const form& c,

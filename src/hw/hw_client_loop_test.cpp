@@ -4,6 +4,9 @@
 #include "hw_vdf_client.cpp"
 #undef main
 
+#include <string>
+#include <vector>
+
 namespace {
 struct EndClientLoop {};
 uint8_t observed_running_mask = 0;
@@ -18,6 +21,72 @@ bool HardwareLiveControl::poll(ChiaDriver *driver, uint8_t running_mask) {
     if (standard_failure)
         throw std::runtime_error("fixture_exception");
     throw EndClientLoop{};
+}
+
+static int parse_segment_args(std::vector<std::string> args, vdf_client_opts &opts) {
+    std::vector<char *> argv;
+    argv.reserve(args.size());
+    for (auto &arg : args)
+        argv.push_back(&arg[0]);
+    return parse_opts(static_cast<int>(argv.size()), argv.data(), &opts);
+}
+
+static void check_segment_threads_option() {
+    const std::vector<std::string> base = {
+        "prog", "--freq", "1100", "--voltage", "0.88"
+    };
+    {
+        vdf_client_opts opts{};
+        auto args = base;
+        args.push_back("5000");
+        if (parse_segment_args(std::move(args), opts) != 0
+                || opts.vpo.segment_threads != 2)
+            throw std::runtime_error("segment_threads_default");
+    }
+    struct Accepted {
+        const char *option;
+        const char *value;
+        uint8_t expected;
+    };
+    const Accepted accepted[] = {
+        {"--segment-threads", "1", 1},
+        {"--segment-threads", "3", 3},
+        {"--segment-threads", "8", 8},
+        {"--segment-threads=1", nullptr, 1},
+        {"--segment-threads=8", nullptr, 8},
+    };
+    for (const Accepted &c : accepted) {
+        vdf_client_opts opts{};
+        auto args = base;
+        args.push_back(c.option);
+        if (c.value) args.push_back(c.value);
+        args.push_back("5000");
+        if (parse_segment_args(std::move(args), opts) != 0)
+            throw std::runtime_error("segment_threads_accepted_value_rejected");
+        if (opts.vpo.segment_threads != c.expected)
+            throw std::runtime_error("segment_threads_value_not_stored");
+    }
+    const char *rejected[] = {
+        "0", "9", "255", "256", "257", "4294967297",
+        "-1", "+3", "", "abc", "3x", " 3"
+    };
+    for (const char *value : rejected) {
+        vdf_client_opts opts{};
+        auto args = base;
+        args.push_back("--segment-threads");
+        args.push_back(value);
+        args.push_back("5000");
+        if (parse_segment_args(std::move(args), opts) != -1)
+            throw std::runtime_error("segment_threads_invalid_value_accepted");
+    }
+    {
+        vdf_client_opts opts{};
+        auto args = base;
+        args.push_back("5000");
+        args.push_back("--segment-threads");
+        if (parse_segment_args(std::move(args), opts) != -1)
+            throw std::runtime_error("segment_threads_missing_value_accepted");
+    }
 }
 
 static void check_completed_engine_control_mask() {

@@ -50,6 +50,9 @@ uint64_t GetBlock(uint64_t i, uint64_t k, uint64_t T, integer& B) {
     return res_vector.empty() ? 0 : res_vector[0];
 }
 
+// Ceiling division that cannot wrap for any uint64 inputs (d must be non-zero).
+inline uint64_t CeilDiv(uint64_t n, uint64_t d) { return n / d + (n % d != 0); }
+
 // Folds one round's 2^k buckets into x: the end of each round j of the
 // Wesolowski proof. Shared by GenerateWesolowski and ProveSlowLowMemory, so
 // both compute the proof with the very same operations.
@@ -90,13 +93,13 @@ form GenerateWesolowski(form &y, form &x_init,
     form x = form::identity(D);
 
     for (int64_t j = l - 1; j >= 0; j--) {
-        x = FastPowFormNucomp(x, D, integer(1 << k), L, reducer);
+        x = FastPowFormNucomp(x, D, integer(uint64(1) << k), L, reducer);
 
         std::vector<form> ys((1ULL << k));
         for (uint64_t i = 0; i < (1ULL << k); i++)
             ys[i] = form::identity(D);
 
-        for (uint64_t i = 0; i < (num_iterations + k * l - 1)  / (k * l); i++) {
+        for (uint64_t i = 0; i < CeilDiv(num_iterations, k * l); i++) {
             if (num_iterations >= k * (i * l + j + 1)) {
                 uint64_t b = GetBlock(i*l + j, k, num_iterations, B);
                 nucomp_form(ys[b], ys[b], intermediates[i], D, L);
@@ -148,7 +151,7 @@ std::vector<uint8_t> ProveSlowWithParameters(integer& D, form& x, uint64_t num_i
     int d_bits = D.num_bits();
     uint64_t const kl = k * l;
 
-    uint64_t const size_vec = (num_iterations + kl - 1) / kl;
+    uint64_t const size_vec = CeilDiv(num_iterations, static_cast<uint64_t>(kl));
     std::vector<form> intermediates(size_vec);
     form* cursor = intermediates.data();
     for (uint64_t i = 0; i < num_iterations; i++) {

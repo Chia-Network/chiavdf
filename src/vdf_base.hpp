@@ -271,6 +271,9 @@ integer FastPow(uint64_t a, uint64_t b, integer& c);
 form FastPowFormNucomp(form x, integer &D, integer num_iterations, integer &L, PulmarkReducer& reducer);
 void nucomp_form(form &a, form const& b, form const& c, integer const& D, integer const& L);
 void nudupl_form(form &a, form &b, const integer &D, const integer &L);
+// Two independent squarings with interleaved GCDs (src/nudupl_pair.h);
+// defined only where CHIAVDF_PAIR_KERNELS is set.
+void nudupl_form_pair(form &x, form &y, const integer &D, const integer &L, bool pair_full_gcd);
 
 integer GetB(const integer& D, form &x, form& y);
 

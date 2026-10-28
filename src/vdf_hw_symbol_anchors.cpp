@@ -1,6 +1,9 @@
 #include "verifier.h"
 #include "prover_base.hpp"
 #include "prover_parallel.hpp"
+#if defined(CHIAVDF_PAIR_KERNELS)
+#include "prover_pair.hpp"
+#endif
 
 bool hw_dummy_form_check_valid(form& f, integer& d)
 {

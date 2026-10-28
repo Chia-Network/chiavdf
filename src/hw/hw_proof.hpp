@@ -42,6 +42,9 @@ struct vdf_work {
     struct vdf_value start_val;
     uint64_t start_iters;
     uint32_t n_steps;
+    // A second fill squared in lockstep on the same aux thread. Set only at
+    // dispatch, so queued work never carries one.
+    struct vdf_work *pair = nullptr;
 };
 
 struct vdf_proof_req {

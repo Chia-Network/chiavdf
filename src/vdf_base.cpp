@@ -3,6 +3,9 @@
 #include "alloc.hpp"
 #include "prover_base.hpp"
 #include "prover_parallel.hpp"
+#if defined(CHIAVDF_PAIR_KERNELS)
+#include "prover_pair.hpp"
+#endif
 
 void VdfBaseInit(void)
 {

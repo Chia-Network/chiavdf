@@ -308,8 +308,105 @@ void hw_proof_add_intermediate(struct vdf_state *vdf, struct vdf_value *val, siz
     vdf->done_values++;
 }
 
+#if defined(CHIAVDF_PAIR_KERNELS)
+// Two fills on one aux thread, squared in lockstep with nudupl_form_pair.
+// Each fill publishes, fails and abandons its own grid range exactly as
+// hw_proof_calc_values would; a bad start form or result stops only its own
+// fill. The first fill's exit also releases the slot.
+static void hw_proof_calc_value_pair(struct vdf_state *vdf, struct vdf_work *work, int thr_idx)
+{
+    hw_job_exit job(vdf, (uint8_t)thr_idx, false, SIZE_MAX);
+    hw_job_exit pair_job(vdf, HW_VDF_MAX_AUX_THREADS, false, SIZE_MAX);
+    struct vdf_work *works[2] = {work, work->pair};
+    hw_job_exit *exits[2] = {&job, &pair_job};
+    form f[2];
+    uint64_t iters[2], next_iters[2], end_iters[2], init_iters[2];
+    bool active[2];
+
+    for (int j = 0; j < 2; j++) {
+        struct vdf_value *val = &works[j]->start_val;
+        integer a(val->a), b(val->b);
+        next_iters[j] = works[j]->start_iters;
+        end_iters[j] = next_iters[j] + vdf->interval * works[j]->n_steps;
+        iters[j] = init_iters[j] = val->iters;
+        exits[j]->track_gap = true;
+        exits[j]->gap_from = next_iters[j];
+        exits[j]->gap_to = end_iters[j];
+        clear_vdf_value(val);
+        try {
+            f[j] = form::from_abd(a, b, vdf->D);
+            active[j] = true;
+        } catch (const std::exception &ex) {
+            LOG_ERROR("VDF %d: aux thread %d dropped a paired fill: %s", vdf->idx, thr_idx, ex.what());
+            active[j] = false;
+        }
+    }
+    delete works[1];
+    delete works[0];
+
+    PulmarkReducer reducer;
+    timepoint_t t1 = vdf_get_cur_time();
+    LOG_DEBUG(" VDF %d: computing paired fills (%lu -> %lu, %lu -> %lu) in aux thread %d",
+            vdf->idx, iters[0], end_iters[0], iters[1], end_iters[1], thr_idx);
+    while ((active[0] || active[1]) && !vdf->stopping) {
+        if (active[0] && active[1]) {
+            nudupl_form_pair(f[0], f[1], vdf->D, vdf->L, true);
+            reducer.reduce(f[0]);
+            reducer.reduce(f[1]);
+        } else {
+            int j = active[0] ? 0 : 1;
+            nudupl_form(f[j], f[j], vdf->D, vdf->L);
+            reducer.reduce(f[j]);
+        }
+        for (int j = 0; j < 2; j++) {
+            if (!active[j])
+                continue;
+            iters[j]++;
+            if (iters[j] == next_iters[j]) {
+                size_t pos = iters[j] / vdf->interval;
+
+                if (!f[j].check_valid(vdf->D)) {
+                    LOG_ERROR(" VDF %d: bad form at iters=%lu", vdf->idx, iters[j]);
+                    active[j] = false;
+                    continue;
+                }
+
+                try {
+                    *hw_proof_value_at(vdf, pos) = f[j];
+                } catch (const std::exception &ex) {
+                    // As a single fill would, drop this fill (its exit
+                    // abandons the range) but keep squaring the other.
+                    LOG_ERROR("VDF %d: aux thread %d dropped a paired fill: %s", vdf->idx, thr_idx, ex.what());
+                    active[j] = false;
+                    continue;
+                }
+                hw_proof_add_intermediate(vdf, NULL, pos);
+
+                next_iters[j] += vdf->interval;
+                exits[j]->gap_from = next_iters[j];
+            }
+            if (iters[j] >= end_iters[j]) {
+                active[j] = false;
+                exits[j]->published = true;
+                exits[j]->track_gap = false;
+            }
+        }
+    }
+
+    vdf->done_iters += (iters[0] - init_iters[0]) + (iters[1] - init_iters[1]);
+    vdf->elapsed_us += vdf_get_elapsed_us(t1);
+    LOG_DEBUG(" VDF %d: aux thread %d done", vdf->idx, thr_idx);
+}
+#endif
+
 void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_work *work, int thr_idx)
 {
+#if defined(CHIAVDF_PAIR_KERNELS)
+    if (work->pair) {
+        hw_proof_calc_value_pair(vdf, work, thr_idx);
+        return;
+    }
+#endif
     hw_job_exit job(vdf, (uint8_t)thr_idx, false, SIZE_MAX);
     struct vdf_value *val = &work->start_val;
     uint64_t next_iters = work->start_iters;
@@ -438,6 +535,9 @@ void hw_proof_process_work(struct vdf_state *vdf)
     }
 
     busy = vdf->aux_threads_busy;
+    int free_slots = 0;
+    for (int i = 0; i < vdf->max_aux_threads; i++)
+        free_slots += !(busy & (1UL << i));
 
     for (int i = 0; i < vdf->max_aux_threads; i++) {
         if (!(busy & (1UL << i))) {
@@ -449,13 +549,25 @@ void hw_proof_process_work(struct vdf_state *vdf)
 
             work = vdf->wq.front();
             vdf->wq.pop_front();
+            free_slots--;
             //struct vdf_value *val = &vdf->raw_values[work.raw_idx];
+#if defined(CHIAVDF_PAIR_KERNELS)
+            // A lone fill finishes sooner on its own thread, so pair only
+            // when the queue would otherwise outlast the free slots.
+            if (vdf->wq.size() > (size_t)free_slots) {
+                work->pair = vdf->wq.front();
+                vdf->wq.pop_front();
+            }
+#endif
 
             vdf->aux_threads_busy |= 1UL << i;
             if (!hw_proof_submit(vdf, i, work, 0)) {
                 vdf->aux_threads_busy &= ~(1UL << i);
-                clear_vdf_value(&work->start_val);
-                delete work;
+                for (struct vdf_work *w : {work->pair, work}) {
+                    if (!w) continue;
+                    clear_vdf_value(&w->start_val);
+                    delete w;
+                }
             }
         }
     }
@@ -597,10 +709,16 @@ void hw_stop_proof(struct vdf_state *vdf)
     hw_proof_wait_values(vdf, false);
 }
 
-class HwProver : public ParallelProver {
+#if defined(CHIAVDF_PAIR_KERNELS)
+typedef PairParallelProver HwParallelProver;
+#else
+typedef ParallelProver HwParallelProver;
+#endif
+
+class HwProver : public HwParallelProver {
   public:
     HwProver(Segment segm, integer D, struct vdf_state *vdf, uint8_t slot)
-        : ParallelProver(segm, D)
+        : HwParallelProver(segm, D)
     {
         this->vdf = vdf;
         this->slot = slot;

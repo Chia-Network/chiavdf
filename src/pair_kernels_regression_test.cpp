@@ -1,11 +1,11 @@
 #include "vdf.h"
 #include "create_discriminant.h"
 #include "prover.hpp"
+#include "pair_kernels.h"
 
 #include <gtest/gtest.h>
 
 #if defined(CHIAVDF_PAIR_KERNELS)
-#include "prover_pair.hpp"
 
 #include <vector>
 
@@ -19,7 +19,8 @@ struct PairFixture {
     std::vector<form> chain;  // consecutive reduced squarings
 };
 
-PairFixture MakeChain(int bits, size_t n) {
+PairFixture MakeChain(int bits, size_t n)
+{
     set_rounding_mode();
     std::vector<uint8_t> seed = {0x70, 0x61, 0x69, 0x72, uint8_t(bits)};
     PairFixture f;
@@ -27,7 +28,10 @@ PairFixture MakeChain(int bits, size_t n) {
     f.L = root(-f.D, 4);
     form x = form::generator(f.D);
     PulmarkReducer reducer;
-    for (int i = 0; i < 200; i++) { nudupl_form(x, x, f.D, f.L); reducer.reduce(x); }
+    for (int i = 0; i < 200; i++) {
+        nudupl_form(x, x, f.D, f.L);
+        reducer.reduce(x);
+    }
     for (size_t i = 0; i < n; i++) {
         f.chain.push_back(x);
         nudupl_form(x, x, f.D, f.L);
@@ -36,15 +40,19 @@ PairFixture MakeChain(int bits, size_t n) {
     return f;
 }
 
-bool SameForm(const form& a, const form& b) {
+bool SameForm(const form& a, const form& b)
+{
     return mpz_cmp(a.a.impl, b.a.impl) == 0 && mpz_cmp(a.b.impl, b.b.impl) == 0 &&
            mpz_cmp(a.c.impl, b.c.impl) == 0;
 }
 
-struct PartialResult { integer co2, co1, r2, r1; };
+struct PartialResult {
+    integer co2, co1, r2, r1;
+};
 
-PartialResult RunPartial(void (*fn)(mpz_t, mpz_t, mpz_t, mpz_t, const mpz_t),
-                         const integer& r2, const integer& r1, const integer& limit) {
+PartialResult RunPartial(void (*fn)(mpz_ptr, mpz_ptr, mpz_ptr, mpz_ptr, mpz_srcptr),
+                         const integer& r2, const integer& r1, const integer& limit)
+{
     PartialResult out;
     out.r2 = r2;
     out.r1 = r1;
@@ -52,12 +60,19 @@ PartialResult RunPartial(void (*fn)(mpz_t, mpz_t, mpz_t, mpz_t, const mpz_t),
     return out;
 }
 
-void ExpectSamePartial(const PartialResult& a, const PartialResult& b) {
+void Reference(mpz_ptr co2, mpz_ptr co1, mpz_ptr r2, mpz_ptr r1, mpz_srcptr limit)
+{
+    mpz_xgcd_partial(co2, co1, r2, r1, limit);
+}
+
+void ExpectSamePartial(const PartialResult& a, const PartialResult& b)
+{
     EXPECT_TRUE(a.co2 == b.co2 && a.co1 == b.co1 && a.r2 == b.r2 && a.r1 == b.r1);
 }
 
 // The operands NUDUPL hands to the partial GCD for form f.
-void NudupPartialOperands(const form& f, const integer& L, integer* r2, integer* r1) {
+void NudupPartialOperands(const form& f, integer* r2, integer* r1)
+{
     integer s, v, b, k, a = f.a;
     mpz_abs(b.impl, f.b.impl);
     mpz_gcdext(s.impl, v.impl, NULL, b.impl, a.impl);
@@ -70,9 +85,17 @@ void NudupPartialOperands(const form& f, const integer& L, integer* r2, integer*
     *r1 = k;
 }
 
+void ExpectGcdext(const integer& g, const integer& v, const integer& b, const integer& a)
+{
+    integer eg, ev;
+    mpz_gcdext(eg.impl, ev.impl, NULL, b.impl, a.impl);
+    EXPECT_TRUE(g == eg && v == ev);
+}
+
 }  // namespace
 
-TEST(PairKernelsRegressionTest, FixedPartialGcdMatchesReference) {
+TEST(PairKernelsRegressionTest, FixedPartialGcdMatchesReference)
+{
     gmp_randstate_t rng;
     gmp_randinit_mt(rng);
     gmp_randseed_ui(rng, 20261027);
@@ -88,7 +111,7 @@ TEST(PairKernelsRegressionTest, FixedPartialGcdMatchesReference) {
         if (n % 13 == 0) limit = integer(0);
         if (n % 19 == 0) limit = r1;
         SCOPED_TRACE(n);
-        ExpectSamePartial(RunPartial(mpz_xgcd_partial, r2, r1, limit),
+        ExpectSamePartial(RunPartial(Reference, r2, r1, limit),
                           RunPartial(mpz_xgcd_partial_fixed, r2, r1, limit));
     }
     // Powers of two and their neighbours, across limb boundaries.
@@ -97,26 +120,59 @@ TEST(PairKernelsRegressionTest, FixedPartialGcdMatchesReference) {
         mpz_setbit(p.impl, bits);
         for (int delta : {-1, 0, 1}) {
             integer r2 = p + integer(delta), r1 = (p >> 1) + integer(delta), limit = p >> 2;
-            ExpectSamePartial(RunPartial(mpz_xgcd_partial, r2, r1, limit),
+            ExpectSamePartial(RunPartial(Reference, r2, r1, limit),
                               RunPartial(mpz_xgcd_partial_fixed, r2, r1, limit));
         }
     }
     gmp_randclear(rng);
 }
 
-TEST(PairKernelsRegressionTest, PairedGcdsMatchReference) {
+// With L == 0 the fixed GCD finishes in exact single-word Euclid once both
+// values fit in a word. The end state of a full GCD is unique, so it must
+// still match the reference, from one-word inputs and from long ones.
+TEST(PairKernelsRegressionTest, FullGcdExactTailMatchesReference)
+{
+    gmp_randstate_t rng;
+    gmp_randinit_mt(rng);
+    gmp_randseed_ui(rng, 61);
+    integer zero(0);
+    for (int n = 0; n < 4000; n++) {
+        unsigned bits = n < 2000 ? 1 + n % 63 : 64 + n % 600;
+        integer r2, r1;
+        mpz_urandomb(r2.impl, rng, bits);
+        mpz_urandomb(r1.impl, rng, bits);
+        if (r2 < r1) std::swap(r2, r1);
+        if (n % 9 == 0) {
+            // Shared factors, so the GCD is not 1.
+            integer g;
+            mpz_urandomb(g.impl, rng, 20);
+            mpz_add_ui(g.impl, g.impl, 2);
+            r2 = r2 * g;
+            r1 = r1 * g;
+        }
+        SCOPED_TRACE(n);
+        ExpectSamePartial(RunPartial(Reference, r2, r1, zero), RunPartial(mpz_xgcd_partial_fixed, r2, r1, zero));
+    }
+    gmp_randclear(rng);
+}
+
+TEST(PairKernelsRegressionTest, PairedGcdsMatchReference)
+{
     PairFixture f = MakeChain(1024, 512);
     // Real NUDUPL operands, two independent problems per call.
     for (size_t i = 0; i + 1 < f.chain.size(); i += 2) {
         integer r2[2], r1[2];
-        NudupPartialOperands(f.chain[i], f.L, &r2[0], &r1[0]);
-        NudupPartialOperands(f.chain[i + 1], f.L, &r2[1], &r1[1]);
+        NudupPartialOperands(f.chain[i], &r2[0], &r1[0]);
+        NudupPartialOperands(f.chain[i + 1], &r2[1], &r1[1]);
         PartialResult got[2];
-        for (int j = 0; j < 2; j++) { got[j].r2 = r2[j]; got[j].r1 = r1[j]; }
+        for (int j = 0; j < 2; j++) {
+            got[j].r2 = r2[j];
+            got[j].r1 = r1[j];
+        }
         mpz_xgcd_partial_pair(got[0].co2.impl, got[0].co1.impl, got[0].r2.impl, got[0].r1.impl, f.L.impl,
                               got[1].co2.impl, got[1].co1.impl, got[1].r2.impl, got[1].r1.impl, f.L.impl);
         for (int j = 0; j < 2; j++)
-            ExpectSamePartial(RunPartial(mpz_xgcd_partial, r2[j], r1[j], f.L), got[j]);
+            ExpectSamePartial(RunPartial(Reference, r2[j], r1[j], f.L), got[j]);
     }
 
     // gcdext on chain values and on unreduced bucket products, where
@@ -137,20 +193,49 @@ TEST(PairKernelsRegressionTest, PairedGcdsMatchReference) {
                 a[j] = swap ? y.a : x.a;
                 mpz_fdiv_r(b[j].impl, (swap ? x.a : y.a).impl, a[j].impl);
             }
-            mpz_gcdinv_pair(g[0].impl, v[0].impl, b[0].impl, a[0].impl,
-                            g[1].impl, v[1].impl, b[1].impl, a[1].impl);
+            mpz_gcdinv_pair(g[0].impl, v[0].impl, b[0].impl, a[0].impl, g[1].impl, v[1].impl, b[1].impl, a[1].impl);
             for (int j = 0; j < 2; j++) {
-                integer eg, ev;
-                mpz_gcdext(eg.impl, ev.impl, NULL, b[j].impl, a[j].impl);
-                EXPECT_TRUE(g[j] == eg && v[j] == ev);
-                non_coprime += mpz_cmp_ui(eg.impl, 1) != 0;
+                ExpectGcdext(g[j], v[j], b[j], a[j]);
+                non_coprime += mpz_cmp_ui(g[j].impl, 1) != 0;
             }
         }
     }
     EXPECT_GT(non_coprime, 0);
 }
 
-TEST(PairKernelsRegressionTest, PairedNudupMatchesReference) {
+// Inputs outside the Euclid sequence's usual shape (b >= a, b == a, b == 0),
+// and the guard that replaces a cofactor outside |v| < a/(2g).
+TEST(PairKernelsRegressionTest, GcdinvEdgesAndFallbackMatchGmp)
+{
+    PairFixture f = MakeChain(1024, 4);
+    const integer a = f.chain[0].a;
+    const integer bs[] = {a + f.chain[1].a, a, integer(0), f.chain[2].a * integer(3)};
+    for (const integer& b : bs) {
+        integer g[2], v[2];
+        mpz_gcdinv_pair(g[0].impl, v[0].impl, b.impl, a.impl, g[1].impl, v[1].impl, b.impl, a.impl);
+        ExpectGcdext(g[0], v[0], b, a);
+        ExpectGcdext(g[1], v[1], b, a);
+    }
+
+    // A valid inverse in the wrong residue class representative (v + a/g)
+    // breaks the bound, and must be replaced by mpz_gcdext's.
+    integer b = f.chain[3].a * integer(6), m;
+    integer a6 = a * integer(6);
+    integer g, v;
+    mpz_gcdext(g.impl, v.impl, NULL, b.impl, a6.impl);
+    ASSERT_TRUE(g != integer(1));
+    mpz_divexact(m.impl, a6.impl, g.impl);
+    integer shifted = v + m;
+    mpz_gcdinv_settle(g.impl, shifted.impl, b.impl, a6.impl);
+    ExpectGcdext(g, shifted, b, a6);
+    // An in-bound cofactor is kept as it is.
+    integer kept = v;
+    mpz_gcdinv_settle(g.impl, kept.impl, b.impl, a6.impl);
+    EXPECT_TRUE(kept == v);
+}
+
+TEST(PairKernelsRegressionTest, PairedNudupMatchesReference)
+{
     for (int bits : {1024, 256}) {
         PairFixture f = MakeChain(bits, 2);
         for (bool pair_full_gcd : {false, true}) {
@@ -162,15 +247,39 @@ TEST(PairKernelsRegressionTest, PairedNudupMatchesReference) {
                 nudupl_form(ey, ey, f.D, f.L);
                 // Unreduced outputs match before the reducer runs.
                 ASSERT_TRUE(SameForm(x, ex) && SameForm(y, ey)) << "bits " << bits << " step " << step;
-                reducer.reduce(x); reducer.reduce(y);
-                reducer.reduce(ex); reducer.reduce(ey);
+                reducer.reduce(x);
+                reducer.reduce(y);
+                reducer.reduce(ex);
+                reducer.reduce(ey);
             }
         }
     }
 }
 
-TEST(PairKernelsRegressionTest, PairedNucompMatchesReference) {
+// The identity has a < L, so its lane takes the branch without the partial
+// GCD while the other lane runs it; either lane may be the short one.
+TEST(PairKernelsRegressionTest, PairedNudupMixedBranchesMatchReference)
+{
+    PairFixture f = MakeChain(1024, 2);
+    for (bool pair_full_gcd : {false, true}) {
+        for (int short_lane = 0; short_lane < 2; short_lane++) {
+            form lanes[2] = {f.chain[0], f.chain[1]};
+            lanes[short_lane] = form::identity(f.D);
+            form expected[2] = {lanes[0], lanes[1]};
+            nudupl_form_pair(lanes[0], lanes[1], f.D, f.L, pair_full_gcd);
+            for (int j = 0; j < 2; j++) {
+                nudupl_form(expected[j], expected[j], f.D, f.L);
+                EXPECT_TRUE(SameForm(lanes[j], expected[j])) << "short lane " << short_lane;
+            }
+        }
+    }
+}
+
+TEST(PairKernelsRegressionTest, PairedNucompMatchesReference)
+{
     PairFixture f = MakeChain(1024, 300);
+    // Buckets start at the identity, so early products take the branch
+    // without a GCD while their partner runs both.
     std::vector<form> expected(8, form::identity(f.D)), actual(8, form::identity(f.D));
     for (int rep = 0; rep < 4; rep++) {
         // Odd passes put the grid value first, so qfb_nucomp's operand
@@ -196,25 +305,37 @@ TEST(PairKernelsRegressionTest, PairedNucompMatchesReference) {
 }
 
 namespace {
-template <class Base>
-class FormsProver : public Base {
+class FormsProver : public ParallelProver {
 public:
-    FormsProver(Segment segm, integer D, const std::vector<form>& forms, uint32_t kk, uint32_t ll)
-        : Base(segm, D), forms(forms) {
-        this->k = kk;
-        this->l = ll;
+    FormsProver(Segment segm, integer D, const std::vector<form>& forms, uint32_t kk, uint32_t ll, bool paired)
+        : ParallelProver(segm, D), forms(forms), paired(paired)
+    {
+        k = kk;
+        l = ll;
     }
     form GetForm(uint64_t iteration) override { return forms.at(iteration); }
-    void start() override { Base::GenerateProof(); }
+    void start() override { GenerateProof(); }
     void stop() override {}
     bool PerformExtraStep() override { return true; }
-    void OnFinish() override { this->is_finished = true; }
+    void OnFinish() override { is_finished = true; }
+
+protected:
+    void ComposeTwo(form& a, const form& b, const form& c, form& d, const form& e, const form& f) override
+    {
+        if (paired)
+            nucomp_form_pair(a, b, c, d, e, f, D, L);
+        else
+            ParallelProver::ComposeTwo(a, b, c, d, e, f);
+    }
+
 private:
     const std::vector<form>& forms;
+    bool paired;
 };
 }  // namespace
 
-TEST(PairKernelsRegressionTest, PairProverMatchesParallelProver) {
+TEST(PairKernelsRegressionTest, PairedComposeTwoMatchesParallelProver)
+{
     PairFixture f = MakeChain(1024, 1);
     PulmarkReducer reducer;
     form x = f.chain[0];
@@ -231,12 +352,12 @@ TEST(PairKernelsRegressionTest, PairProverMatchesParallelProver) {
                     if (i % (k * l) == 0 && i / (k * l) < rows) forms[i / (k * l)] = y;
                 }
                 Segment seg(0, iterations, x, y);
-                FormsProver<ParallelProver> parallel(seg, f.D, forms, k, l);
-                FormsProver<PairParallelProver> paired(seg, f.D, forms, k, l);
-                parallel.start();
+                FormsProver plain(seg, f.D, forms, k, l, false);
+                FormsProver paired(seg, f.D, forms, k, l, true);
+                plain.start();
                 paired.start();
-                ASSERT_TRUE(parallel.IsFinished() && paired.IsFinished());
-                form expected = parallel.GetProof(), actual = paired.GetProof();
+                ASSERT_TRUE(plain.IsFinished() && paired.IsFinished());
+                form expected = plain.GetProof(), actual = paired.GetProof();
                 EXPECT_TRUE(expected == actual) << "k " << k << " l " << l << " iterations " << iterations;
                 bool valid = false;
                 VerifyWesolowskiProof(f.D, x, y, actual, iterations, valid);

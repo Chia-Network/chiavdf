@@ -422,7 +422,7 @@ if(BUILD_VDF_TESTS)
   add_executable(regression_unit_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/regression_unit_tests.cpp
   )
-  target_sources(regression_unit_tests PRIVATE ${VDF_COMMON_SOURCES} ${VDF_ASM_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/hw/timelord_live_control.cpp)
+  target_sources(regression_unit_tests PRIVATE ${VDF_COMMON_SOURCES} ${VDF_ASM_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/hw/timelord_live_control.cpp ${CMAKE_CURRENT_SOURCE_DIR}/pair_kernels.cpp)
   target_compile_definitions(regression_unit_tests PRIVATE ${VDF_COMMON_DEFINITIONS})
   vdf_add_boost_includes(regression_unit_tests)
   target_link_libraries(
@@ -462,8 +462,10 @@ if(BUILD_HW_TOOLS)
   set(HW_COMMON_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/vdf_base.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/prover_runtime.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/pair_kernels.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_util.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_proof.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_proof_fill.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_proof_queue.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_timelord_frame.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_interface.cpp

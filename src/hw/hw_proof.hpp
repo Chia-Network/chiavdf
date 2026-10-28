@@ -5,6 +5,7 @@
 #include "hw_interface.hpp"
 #include "hw_util.hpp"
 #include "bqfc.h"
+#include "pair_kernels_config.h"
 
 #include <atomic>
 #include <array>
@@ -42,9 +43,10 @@ struct vdf_work {
     struct vdf_value start_val;
     uint64_t start_iters;
     uint32_t n_steps;
-    // A second fill squared in lockstep on the same aux thread. Set only at
-    // dispatch, so queued work never carries one.
-    struct vdf_work *pair = nullptr;
+    // A second fill run in lockstep on the same aux thread (paired kernels).
+    // Set only when a fill is taken from the queue; queued fills have none.
+    // Owners clear start_val before deletion (hw_proof_free_work).
+    std::unique_ptr<struct vdf_work> pair;
 };
 
 struct vdf_proof_req {
@@ -75,6 +77,8 @@ struct vdf_proof_opts {
     uint8_t max_proof_threads;
     uint32_t checkpoint_threshold = HW_VDF_CHKP_INTERVAL;
     bool retain_asic_values = false;
+    // Square independent fills and bucket products in pairs (pair_kernels.h).
+    bool pair_kernels = CHIAVDF_PAIR_KERNELS_DEFAULT;
 };
 
 struct hw_aux_job {
@@ -144,6 +148,7 @@ struct vdf_state {
     std::atomic<bool> stopping;
     bool init_done = false;
     bool retain_asic_values = false;
+    bool pair_kernels = false;
     std::mutex retained_values_mtx;
     std::deque<vdf_retained_value> retained_values;
     uint64_t retained_generation = 0;

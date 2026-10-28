@@ -1,5 +1,7 @@
 #include "hw_proof.hpp"
+#include "hw_proof_internal.hpp"
 #include "bqfc.h"
+#include "pair_kernels.h"
 //#include "vdf.h"
 
 #include <stdexcept>
@@ -45,7 +47,7 @@ static void hw_proof_cancel_failed(struct vdf_state *vdf)
 
 // A fill that stops short never publishes this grid range. Proofs that read
 // it fail, and waiters on those positions are released.
-static void hw_proof_abandon_gap(struct vdf_state *vdf, uint64_t from_iters, uint64_t to_iters)
+void hw_proof_abandon_gap(struct vdf_state *vdf, uint64_t from_iters, uint64_t to_iters)
 {
     if (from_iters > to_iters || vdf->interval == 0)
         return;
@@ -89,9 +91,9 @@ static void hw_proof_abandon_gap(struct vdf_state *vdf, uint64_t from_iters, uin
 // segment is marked so retrieval does not wait on its chain. A value job
 // that does not finish abandons the grid range it still owed. A direct
 // caller passes a slot outside the worker array and only updates the proof.
-static void hw_proof_finish_job(struct vdf_state *vdf, uint8_t slot, bool proving,
-        size_t proof_idx, bool published, bool track_gap = false,
-        uint64_t gap_from = 0, uint64_t gap_to = 0)
+void hw_proof_finish_job(struct vdf_state *vdf, uint8_t slot, bool proving,
+        size_t proof_idx, bool published, bool track_gap,
+        uint64_t gap_from, uint64_t gap_to)
 {
     if (proving && !published && proof_idx != SIZE_MAX) {
         std::lock_guard<std::mutex> lock(vdf->proofs_resize_mtx);
@@ -308,159 +310,6 @@ void hw_proof_add_intermediate(struct vdf_state *vdf, struct vdf_value *val, siz
     vdf->done_values++;
 }
 
-#if defined(CHIAVDF_PAIR_KERNELS)
-// Two fills on one aux thread, squared in lockstep with nudupl_form_pair.
-// Each fill publishes, fails and abandons its own grid range exactly as
-// hw_proof_calc_values would; a bad start form or result stops only its own
-// fill. The first fill's exit also releases the slot.
-static void hw_proof_calc_value_pair(struct vdf_state *vdf, struct vdf_work *work, int thr_idx)
-{
-    hw_job_exit job(vdf, (uint8_t)thr_idx, false, SIZE_MAX);
-    hw_job_exit pair_job(vdf, HW_VDF_MAX_AUX_THREADS, false, SIZE_MAX);
-    struct vdf_work *works[2] = {work, work->pair};
-    hw_job_exit *exits[2] = {&job, &pair_job};
-    form f[2];
-    uint64_t iters[2], next_iters[2], end_iters[2], init_iters[2];
-    bool active[2];
-
-    for (int j = 0; j < 2; j++) {
-        struct vdf_value *val = &works[j]->start_val;
-        integer a(val->a), b(val->b);
-        next_iters[j] = works[j]->start_iters;
-        end_iters[j] = next_iters[j] + vdf->interval * works[j]->n_steps;
-        iters[j] = init_iters[j] = val->iters;
-        exits[j]->track_gap = true;
-        exits[j]->gap_from = next_iters[j];
-        exits[j]->gap_to = end_iters[j];
-        clear_vdf_value(val);
-        try {
-            f[j] = form::from_abd(a, b, vdf->D);
-            active[j] = true;
-        } catch (const std::exception &ex) {
-            LOG_ERROR("VDF %d: aux thread %d dropped a paired fill: %s", vdf->idx, thr_idx, ex.what());
-            active[j] = false;
-        }
-    }
-    delete works[1];
-    delete works[0];
-
-    PulmarkReducer reducer;
-    timepoint_t t1 = vdf_get_cur_time();
-    LOG_DEBUG(" VDF %d: computing paired fills (%lu -> %lu, %lu -> %lu) in aux thread %d",
-            vdf->idx, iters[0], end_iters[0], iters[1], end_iters[1], thr_idx);
-    while ((active[0] || active[1]) && !vdf->stopping) {
-        if (active[0] && active[1]) {
-            nudupl_form_pair(f[0], f[1], vdf->D, vdf->L, true);
-            reducer.reduce(f[0]);
-            reducer.reduce(f[1]);
-        } else {
-            int j = active[0] ? 0 : 1;
-            nudupl_form(f[j], f[j], vdf->D, vdf->L);
-            reducer.reduce(f[j]);
-        }
-        for (int j = 0; j < 2; j++) {
-            if (!active[j])
-                continue;
-            iters[j]++;
-            if (iters[j] == next_iters[j]) {
-                size_t pos = iters[j] / vdf->interval;
-
-                if (!f[j].check_valid(vdf->D)) {
-                    LOG_ERROR(" VDF %d: bad form at iters=%lu", vdf->idx, iters[j]);
-                    active[j] = false;
-                    continue;
-                }
-
-                try {
-                    *hw_proof_value_at(vdf, pos) = f[j];
-                } catch (const std::exception &ex) {
-                    // As a single fill would, drop this fill (its exit
-                    // abandons the range) but keep squaring the other.
-                    LOG_ERROR("VDF %d: aux thread %d dropped a paired fill: %s", vdf->idx, thr_idx, ex.what());
-                    active[j] = false;
-                    continue;
-                }
-                hw_proof_add_intermediate(vdf, NULL, pos);
-
-                next_iters[j] += vdf->interval;
-                exits[j]->gap_from = next_iters[j];
-            }
-            if (iters[j] >= end_iters[j]) {
-                active[j] = false;
-                exits[j]->published = true;
-                exits[j]->track_gap = false;
-            }
-        }
-    }
-
-    vdf->done_iters += (iters[0] - init_iters[0]) + (iters[1] - init_iters[1]);
-    vdf->elapsed_us += vdf_get_elapsed_us(t1);
-    LOG_DEBUG(" VDF %d: aux thread %d done", vdf->idx, thr_idx);
-}
-#endif
-
-void hw_proof_calc_values(struct vdf_state *vdf, struct vdf_work *work, int thr_idx)
-{
-#if defined(CHIAVDF_PAIR_KERNELS)
-    if (work->pair) {
-        hw_proof_calc_value_pair(vdf, work, thr_idx);
-        return;
-    }
-#endif
-    hw_job_exit job(vdf, (uint8_t)thr_idx, false, SIZE_MAX);
-    struct vdf_value *val = &work->start_val;
-    uint64_t next_iters = work->start_iters;
-    uint32_t n_steps = work->n_steps;
-
-    integer a(val->a), b(val->b);
-    //const integer a = {val->a}, b = {val->b}, d = {vdf->d}, l = {vdf->l};
-    uint64_t end_iters = next_iters + vdf->interval * n_steps;
-    uint64_t iters = val->iters;
-    job.track_gap = true;
-    job.gap_from = next_iters;
-    job.gap_to = end_iters;
-    clear_vdf_value(val);
-    delete work;
-    form f = form::from_abd(a, b, vdf->D);
-    PulmarkReducer reducer;
-    timepoint_t t1;
-    uint64_t init_iters = iters;
-
-    LOG_DEBUG(" VDF %d: computing %lu iters (%lu -> %lu, %u steps) in aux thread %d",
-            vdf->idx, end_iters - iters, iters, end_iters, n_steps, thr_idx);
-    t1 = vdf_get_cur_time();
-    do {
-        if (vdf->stopping) {
-            break;
-        }
-        nudupl_form(f, f, vdf->D, vdf->L);
-        reducer.reduce(f);
-        iters++;
-
-        if (iters == next_iters) {
-            size_t pos = iters / vdf->interval;
-
-            if (!f.check_valid(vdf->D)) {
-                LOG_ERROR(" VDF %d: bad form at iters=%lu", vdf->idx, iters);
-                return;
-            }
-
-            *hw_proof_value_at(vdf, pos) = f;
-            hw_proof_add_intermediate(vdf, NULL, pos);
-
-            next_iters += vdf->interval;
-            job.gap_from = next_iters;
-        }
-
-    } while (iters < end_iters);
-
-    vdf->done_iters += iters - init_iters;
-    vdf->elapsed_us += vdf_get_elapsed_us(t1);
-    LOG_DEBUG(" VDF %d: aux thread %d done", vdf->idx, thr_idx);
-    job.published = true;
-    job.track_gap = false;
-}
-
 void hw_proof_add_work(struct vdf_state *vdf, uint64_t next_iters, uint32_t n_steps)
 {
     auto *work = new struct vdf_work;
@@ -535,6 +384,7 @@ void hw_proof_process_work(struct vdf_state *vdf)
     }
 
     busy = vdf->aux_threads_busy;
+
     int free_slots = 0;
     for (int i = 0; i < vdf->max_aux_threads; i++)
         free_slots += !(busy & (1UL << i));
@@ -547,27 +397,13 @@ void hw_proof_process_work(struct vdf_state *vdf)
                 break;
             }
 
-            work = vdf->wq.front();
-            vdf->wq.pop_front();
+            work = hw_proof_take_fill(vdf, free_slots);
             free_slots--;
-            //struct vdf_value *val = &vdf->raw_values[work.raw_idx];
-#if defined(CHIAVDF_PAIR_KERNELS)
-            // A lone fill finishes sooner on its own thread, so pair only
-            // when the queue would otherwise outlast the free slots.
-            if (vdf->wq.size() > (size_t)free_slots) {
-                work->pair = vdf->wq.front();
-                vdf->wq.pop_front();
-            }
-#endif
 
             vdf->aux_threads_busy |= 1UL << i;
             if (!hw_proof_submit(vdf, i, work, 0)) {
                 vdf->aux_threads_busy &= ~(1UL << i);
-                for (struct vdf_work *w : {work->pair, work}) {
-                    if (!w) continue;
-                    clear_vdf_value(&w->start_val);
-                    delete w;
-                }
+                hw_proof_free_work(work);
             }
         }
     }
@@ -600,10 +436,8 @@ void hw_proof_wait_values(struct vdf_state *vdf, bool finish_work)
     }
 
     if (!finish_work) {
-        for (size_t i = 0; i < vdf->wq.size(); i++) {
-            clear_vdf_value(&vdf->wq[i]->start_val);
-            delete vdf->wq[i];
-        }
+        for (size_t i = 0; i < vdf->wq.size(); i++)
+            hw_proof_free_work(vdf->wq[i]);
         vdf->wq.clear();
     }
 }
@@ -709,16 +543,10 @@ void hw_stop_proof(struct vdf_state *vdf)
     hw_proof_wait_values(vdf, false);
 }
 
-#if defined(CHIAVDF_PAIR_KERNELS)
-typedef PairParallelProver HwParallelProver;
-#else
-typedef ParallelProver HwParallelProver;
-#endif
-
-class HwProver : public HwParallelProver {
+class HwProver : public ParallelProver {
   public:
     HwProver(Segment segm, integer D, struct vdf_state *vdf, uint8_t slot)
-        : HwParallelProver(segm, D)
+        : ParallelProver(segm, D)
     {
         this->vdf = vdf;
         this->slot = slot;
@@ -740,6 +568,16 @@ class HwProver : public HwParallelProver {
     void start() override {
         GenerateProof();
     }
+
+#if defined(CHIAVDF_PAIR_KERNELS)
+    void ComposeTwo(form& a, const form& b, const form& c,
+                    form& d, const form& e, const form& f) override {
+        if (vdf->pair_kernels)
+            nucomp_form_pair(a, b, c, d, e, f, D, L);
+        else
+            ParallelProver::ComposeTwo(a, b, c, d, e, f);
+    }
+#endif
 
     void stop() override {
     }
@@ -963,6 +801,11 @@ void init_vdf_state(struct vdf_state *vdf, struct vdf_proof_opts *opts, const ch
     form initial = DeserializeForm(discriminant, init_form, BQFC_FORM_SIZE, false);
     size_t num_values;
     vdf->retain_asic_values = opts && opts->retain_asic_values;
+#if defined(CHIAVDF_PAIR_KERNELS)
+    vdf->pair_kernels = opts ? opts->pair_kernels : CHIAVDF_PAIR_KERNELS_DEFAULT;
+#else
+    vdf->pair_kernels = false;
+#endif
     hw_proof_reset_retained_values(vdf);
     vdf->cur_iters = 0;
     vdf->iters_offset = 0;

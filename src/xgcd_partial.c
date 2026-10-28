@@ -25,6 +25,8 @@
 
 #include <gmp.h>
 #include <stdint.h>
+
+#include "xgcd_lehmer_step.h"
 #include <climits>
 
 #if !defined(__MPIR_VERSION) && (LONG_MAX < INT64_MAX)
@@ -173,7 +175,8 @@ void mpz_xgcd_partial(mpz_t co2, mpz_t co1,
    static thread_local chiavdf_xgcd_partial_tls tls;
    mpz_ptr q = tls.q;
    mpz_ptr r = tls.r;
-   mp_limb_signed_t aa2, aa1, bb2, bb1, rr1, rr2, qq, bb, t1, t2, t3, i;
+   mp_limb_signed_t aa2, aa1, bb2, bb1, rr1, rr2, bb, i;
+   xgcd_lehmer_round round;
    mp_limb_signed_t bits, bits1, bits2;
 
    mpz_set_ui(co2, 0);
@@ -191,29 +194,11 @@ void mpz_xgcd_partial(mpz_t co2, mpz_t co1,
       rr1 = chiavdf_mpz_extract_uword_from_shift_nonneg(r1, bits);
       bb  = chiavdf_mpz_extract_uword_from_shift_nonneg(L,  bits);
 
-      aa2 = 0; aa1 = 1;
-      bb2 = 1; bb1 = 0;
-
-      for (i = 0; rr1 != 0 && rr1 > bb; i++)
-      {
-         qq = rr2 / rr1;
-
-         t1 = rr2 - qq*rr1;
-         t2 = aa2 - qq*aa1;
-         t3 = bb2 - qq*bb1;
-
-         if (i & 1)
-         {
-            if (t1 < -t3 || rr1 - t1 < t2 - aa1) break;
-         } else
-         {
-            if (t1 < -t2 || rr1 - t1 < t3 - bb1) break;
-         }
-
-         rr2 = rr1; rr1 = t1;
-         aa2 = aa1; aa1 = t2;
-         bb2 = bb1; bb1 = t3;
-      }
+      xgcd_lehmer_begin(&round, rr2, rr1, bb, 0);
+      while (xgcd_lehmer_step(&round)) {}
+      i = round.i;
+      aa2 = round.aa2; aa1 = round.aa1;
+      bb2 = round.bb2; bb1 = round.bb1;
 
       if (i == 0)
       {

@@ -501,6 +501,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     opts->vpo.max_aux_threads = HW_VDF_DEFAULT_MAX_AUX_THREADS;
     opts->vpo.max_proof_threads = 0;
     opts->vpo.checkpoint_threshold = HW_VDF_CHKP_INTERVAL;
+    opts->vpo.pair_kernels = CHIAVDF_PAIR_KERNELS_DEFAULT;
     opts->vdfs_mask = 0;
 
     while (argi < argc) {

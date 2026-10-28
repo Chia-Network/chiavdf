@@ -1,4 +1,5 @@
 #include "hw_proof.hpp"
+#include "hw_proof_internal.hpp"
 #include "chia_driver.hpp"
 #include "pll_freqs.hpp"
 #include <chrono>
@@ -10,10 +11,6 @@
 #include <vector>
 
 #include "hw_client_loop_test.cpp"
-
-int hw_proof_wait_value(struct vdf_state *vdf, size_t pos);
-form *hw_proof_value_at(struct vdf_state *vdf, size_t pos);
-void hw_proof_process_work(struct vdf_state *vdf);
 
 static bool wait_for(const std::function<bool()> &ready, std::chrono::milliseconds limit)
 {
@@ -144,6 +141,8 @@ struct OwnedVdf {
         clear_vdf_state(vdf);
     }
 };
+
+#include "hw_proof_fill_test.cpp"
 
 static uint64_t read_be64(const uint8_t *bytes) {
     uint64_t value = 0;
@@ -332,80 +331,6 @@ static form square_steps(form value, const integer &D, const integer &L, uint64_
     throw std::runtime_error("Squaring orbit did not return to the start");
 }
 
-#if defined(CHIAVDF_PAIR_KERNELS)
-integer CreateDiscriminant(std::vector<uint8_t>& seed, int length);
-
-static vdf_work *make_fill(vdf_state &vdf, const form &start, uint64_t start_iters,
-                           uint64_t grid_iters, uint32_t n_steps) {
-    auto *work = new vdf_work;
-    copy_vdf_value(&work->start_val, &vdf.last_val);
-    mpz_set(work->start_val.a, start.a.impl);
-    mpz_set(work->start_val.b, start.b.impl);
-    work->start_val.iters = start_iters;
-    work->start_iters = grid_iters;
-    work->n_steps = n_steps;
-    return work;
-}
-
-static bool value_bit(const std::unique_ptr<std::atomic<uint8_t>[]> &bits, size_t pos) {
-    return bits[pos / 8].load(std::memory_order_acquire) & (1u << (pos % 8));
-}
-
-// With one aux slot and two queued fills, dispatch pairs them on that slot.
-// Paired fills must publish the same grid values as a plain squaring chain,
-// and a bad start form must drop only its own fill.
-static void check_paired_fills() {
-    std::vector<uint8_t> seed = {0x70, 0x61, 0x69, 0x72};
-    integer D = CreateDiscriminant(seed, 1024);
-    std::string d_str = D.to_string();
-    vdf_proof_opts opts{};
-    opts.max_aux_threads = 1;
-    opts.max_proof_threads = 1;
-    vdf_state vdf{};
-    uint8_t initial[BQFC_FORM_SIZE] = {8};
-    const uint64_t interval = HW_VDF_VALUE_INTERVAL;
-    init_vdf_state(&vdf, &opts, d_str.c_str(), initial, 6 * interval, 0);
-    OwnedVdf owned{&vdf};
-
-    std::vector<form> chain(6 * interval + 1);
-    chain[0] = *hw_proof_value_at(&vdf, 0);
-    PulmarkReducer reducer;
-    for (size_t i = 1; i < chain.size(); i++) {
-        chain[i] = chain[i - 1];
-        nudupl_form(chain[i], chain[i], vdf.D, vdf.L);
-        reducer.reduce(chain[i]);
-    }
-
-    // Two fills: 3600 -> 4000 and 8000, and 11800 -> 12000.
-    vdf.wq.push_back(make_fill(vdf, chain[3600], 3600, interval, 1));
-    vdf.wq.push_back(make_fill(vdf, chain[11800], 11800, 3 * interval, 0));
-    hw_proof_process_work(&vdf);
-    require(vdf.wq.empty(), "Paired dispatch left a fill queued with one slot");
-    require(wait_for([&] { return vdf.aux_threads_busy.load() == 0; }, std::chrono::seconds(10)),
-            "Paired fills did not finish");
-    for (size_t pos : {1, 2, 3}) {
-        require(value_bit(vdf.valid_values, pos), "Paired fill did not publish its grid value");
-        require(*hw_proof_value_at(&vdf, pos) == chain[pos * interval],
-                "Paired fill published a different grid value");
-    }
-
-    // A bad start form (4a does not divide b^2 - D) drops only its own fill.
-    vdf_work *good = make_fill(vdf, chain[15900], 15900, 4 * interval, 0);
-    vdf_work *bad = make_fill(vdf, chain[19000], 19000, 5 * interval, 0);
-    mpz_set_ui(bad->start_val.a, 1);
-    mpz_set_ui(bad->start_val.b, 2);
-    vdf.wq.push_back(bad);
-    vdf.wq.push_back(good);
-    hw_proof_process_work(&vdf);
-    require(wait_for([&] { return vdf.aux_threads_busy.load() == 0; }, std::chrono::seconds(10)),
-            "Paired fills with a bad start form did not finish");
-    require(value_bit(vdf.valid_values, 4) && *hw_proof_value_at(&vdf, 4) == chain[4 * interval],
-            "A bad paired fill stopped the good one");
-    require(!value_bit(vdf.valid_values, 5), "A bad paired fill published its grid value");
-    require(value_bit(vdf.abandoned_values, 5), "A bad paired fill did not abandon its range");
-}
-#endif
-
 static void initialize_wait_state(vdf_state& vdf) {
     vdf.valid_values = std::make_unique<std::atomic<uint8_t>[]>(2);
     for (size_t i = 0; i < 2; ++i) vdf.valid_values[i].store(0);
@@ -426,6 +351,7 @@ int main() {
         check_completed_engine_control_mask();
         check_client_exception_shutdown_policy();
         check_completed_checkpoint_reuse();
+        check_fill_pairing_rule();
 #if defined(CHIAVDF_PAIR_KERNELS)
         check_paired_fills();
 #endif

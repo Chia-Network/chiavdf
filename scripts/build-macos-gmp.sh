@@ -26,7 +26,8 @@ Builds, checks (make check), and installs GMP into the absolute PREFIX.
 Environment:
   GMP_TARBALL     use this local gmp tarball instead of downloading (hash still checked)
   GMP_BUILD_DIR   build directory, kept afterwards (default: a temporary
-                  directory, removed when the script exits)
+                  directory, removed when the script exits); must not
+                  contain a comma
   GMP_BUILD_JOBS  make -j value (default: hw.ncpu)
 EOF
 }
@@ -57,10 +58,20 @@ else
 fi
 mkdir -p "$build_dir"
 build_dir="$(cd "$build_dir" && pwd)"
+case "$build_dir" in
+  *,*)
+    echo "Build directory path must not contain a comma: $build_dir" >&2
+    exit 1
+    ;;
+esac
 tarball="$build_dir/gmp-${GMP_VERSION}.tar.xz"
 
 if [ -n "${GMP_TARBALL:-}" ]; then
-  cp "$GMP_TARBALL" "$tarball"
+  if [ "$GMP_TARBALL" -ef "$tarball" ]; then
+    :
+  else
+    cp "$GMP_TARBALL" "$tarball"
+  fi
 else
   downloaded=false
   for url in "${GMP_URLS[@]}"; do

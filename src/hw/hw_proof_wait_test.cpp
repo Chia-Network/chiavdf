@@ -143,6 +143,7 @@ struct OwnedVdf {
 };
 
 #include "hw_proof_fill_test.cpp"
+#include "hw_proof_segment_threads_test.cpp"
 
 static uint64_t read_be64(const uint8_t *bytes) {
     uint64_t value = 0;
@@ -279,7 +280,20 @@ static void check_completed_checkpoint_reuse() {
         require(hw_retrieve_proof(&vdf, &delivery) < 0 && vdf.done_proofs.empty(),
                 "Failure after reuse allowed an invalid checkpoint chain to be delivered");
     }
-    for (uint8_t proof_limit : {1, 3}) {
+    struct ReuseCase {
+        uint8_t max_proof_threads;
+        uint8_t segment_threads;
+        bool keep_tip;
+    };
+    const ReuseCase reuse_cases[] = {
+        {1, 2, true},
+        {3, 2, false},
+        {8, 8, true},
+        {8, 2, false},
+        {3, 3, true},
+        {4, 3, false},
+    };
+    for (const ReuseCase &c : reuse_cases) {
         vdf_state vdf{};
         vdf.interval = HW_VDF_VALUE_INTERVAL;
         vdf.checkpoint_threshold = 8000;
@@ -289,12 +303,13 @@ static void check_completed_checkpoint_reuse() {
         mark_chain_done(vdf, tip);
         vdf.queued_proofs.clear();
         vdf.max_aux_threads = 4;
-        vdf.max_proof_threads = proof_limit;
+        vdf.max_proof_threads = c.max_proof_threads;
+        vdf.segment_threads = c.segment_threads;
         hw_request_proof(&vdf, 2000000, false);
         hw_proof_process_req(&vdf);
         const auto &proof = vdf.proofs.back();
-        if (proof_limit == 1)
-            require(proof.prev == tip, "Single proof slot discarded the longest cached prefix");
+        if (c.keep_tip)
+            require(proof.prev == tip, "Single proof worker discarded the longest cached prefix");
         else
             require(proof.prev != tip && proof.seg_iters < 2000000 - vdf.proofs[tip].iters,
                     "Full checkpoint chain forced a serial tail despite available proof workers");
@@ -350,6 +365,11 @@ int main() {
         check_legacy_frequency_adjustment();
         check_completed_engine_control_mask();
         check_client_exception_shutdown_policy();
+        check_segment_threads_option();
+        check_segment_threads_accounting();
+        check_segment_threads_validation();
+        check_segment_threads_proofs();
+        check_segment_threads_hw_prover();
         check_completed_checkpoint_reuse();
         check_fill_pairing_rule();
 #if defined(CHIAVDF_PAIR_KERNELS)

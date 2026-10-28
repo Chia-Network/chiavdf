@@ -4,6 +4,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <thread>
+#include <vector>
 #include "proof_block_cache.hpp"
 
 inline Prover::Prover(Segment segm, integer D) {
@@ -98,7 +99,10 @@ inline void Prover::GenerateProof() {
     OnFinish();
 }
 
-inline ParallelProver::ParallelProver(Segment segm, integer D) : Prover(segm, D) {}
+inline ParallelProver::ParallelProver(Segment segm, integer D,
+                                      uint8_t segment_threads) : Prover(segm, D) {
+    this->segment_threads = ClampSegmentThreads(segment_threads);
+}
 
 inline void ParallelProver::ProofThread(ParallelProver* prover, uint8_t thr_idx, uint32_t start, uint32_t len) {
     prover->ProvePart(thr_idx, start, len);
@@ -192,16 +196,53 @@ inline void ParallelProver::GenerateProof() {
     this->L = root(-D, 4);
     this->id = form::identity(D);
 
-    uint32_t l0 = l / 2;
-    uint32_t l1 = l - l0;
-    std::thread proof_thr(ParallelProver::ProofThread, this, 0, l, l0);
-    ProvePart(1, l1, l1);
+    uint32_t n = segment_threads;
+    if (n > l)
+        n = l;
+    if (n < 1)
+        n = 1;
+    uint32_t base = l / n;
+    uint32_t rem = l % n;
+    uint32_t starts[PROVER_MAX_SEGMENT_THREADS];
+    uint32_t lens[PROVER_MAX_SEGMENT_THREADS];
+    uint32_t offset = 0;
+    for (uint32_t i = 0; i < n; i++) {
+        lens[i] = base + (i >= n - rem ? 1 : 0);
+        starts[i] = l - offset;
+        offset += lens[i];
+    }
 
-    proof_thr.join();
+    // Ranges 0..n-2 run on new threads, the bottom range on the caller. The
+    // guard joins every started thread when this scope exits, including when
+    // thread creation or the caller's own ProvePart throws.
+    std::vector<std::thread> proof_thrs;
+    struct JoinAll {
+        std::vector<std::thread>& threads;
+        ~JoinAll() {
+            for (auto& thr : threads)
+                if (thr.joinable())
+                    thr.join();
+        }
+    } join_all{proof_thrs};
+
+    proof_thrs.reserve(n - 1);
+    for (uint32_t i = 0; i + 1 < n; i++)
+        proof_thrs.emplace_back(ParallelProver::ProofThread, this, i,
+                                starts[i], lens[i]);
+    ProvePart(n - 1, starts[n - 1], lens[n - 1]);
+
+    for (auto& thr : proof_thrs)
+        thr.join();
     if (!PerformExtraStep()) {
         return;
     }
-    nucomp_form(proof, x_vals[0], x_vals[1], D, L);
+    if (n == 1) {
+        proof = x_vals[0];
+    } else {
+        nucomp_form(proof, x_vals[0], x_vals[1], D, L);
+        for (uint32_t i = 2; i < n; i++)
+            nucomp_form(proof, proof, x_vals[i], D, L);
+    }
     reducer.reduce(proof);
     OnFinish();
 }

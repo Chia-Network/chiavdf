@@ -7,6 +7,11 @@
 
 form *hw_proof_value_at(struct vdf_state *vdf, size_t pos);
 int hw_proof_wait_value(struct vdf_state *vdf, size_t pos);
+
+// Build the proof engine for one segment. Used by hw_compute_proof and by the
+// hardware-free test so the segment thread wiring can be checked directly.
+std::unique_ptr<ParallelProver> hw_make_prover(Segment segm, integer D,
+        struct vdf_state *vdf, uint8_t slot);
 void hw_proof_add_intermediate(struct vdf_state *vdf, struct vdf_value *val, size_t pos);
 void hw_proof_process_work(struct vdf_state *vdf);
 

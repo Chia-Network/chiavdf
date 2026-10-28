@@ -412,6 +412,7 @@ List of options [default, min - max]:
   --proof-threads N - number of proof threads per VDF engine
   --retain-asic-values - use recent ASIC samples for off-grid proof endpoints
   --checkpoint-threshold N - keep each segment at most N iterations when that fits in 61 checkpoints [1000000, 8000 - 4294967295]
+  --segment-threads N - number of threads that share each proof segment [2, 1 - 8]
   --auto-freq-period N - auto-adjust frequency every N seconds [0, 10 - inf]
   --max-freq N - max frequency while auto-freq is on [3000]
   --version - print version and exit
@@ -428,9 +429,10 @@ List of options [default, min - max]:
 | `--device-loc` | Location id printed by `--list`. `0`, the default, selects the first interface-A board. A nonzero value must match a location id exactly. |
 | `--vdfs-mask` | Bit 0 (value 1) is engine 0, bit 1 (value 2) is engine 1, bit 2 (value 4) is engine 2. `0`, the parser default, means "the first `N_VDFS` engines", which is 7 when `N_VDFS` is 3. That is why the usage line shows 7. A non-zero mask is used as given, and `N_VDFS` does not change it. Values above 7 are rejected. |
 | `--vdf-threads` | Host threads per engine for intermediates and proofs. Default 4. Range 2–64. |
-| `--proof-threads` | How many of those threads may sit in proofs. Omitted, or set to 0, it is `vdf-threads - ceil(vdf-threads / 8)` (3 when `vdf-threads` is 4). Any other explicit value must be less than `--vdf-threads`. |
+| `--proof-threads` | How many of those threads may sit in proofs. Omitted, or set to 0, it is `vdf-threads - ceil(vdf-threads / 8)` (3 when `vdf-threads` is 4). Any other explicit value must be less than `--vdf-threads`. A proof starts while the used count is below this value, and each proof uses `--segment-threads` of it, so at least one proof runs and the concurrent proof count is `ceil(proof-threads / segment-threads)`. |
 | `--retain-asic-values` | Opt-in. Keeps up to 64 recent validated ASIC forms and reuses one for an off-grid proof endpoint when the forward check matches. The cache clears on recovery and on each new challenge. |
 | `--checkpoint-threshold` | Iterations per checkpoint segment, aligned to the 4,000-iteration value interval. Accepted range 8000–4294967295; default 1,000,000. A request is split only while the protocol's 61-checkpoint room allows it; a longer span uses a larger chunk. |
+| `--segment-threads` | Host threads that share one proof segment. Default 2, range 1–8; out-of-range values are rejected. Raising it shortens a single long segment but uses more CPU per proof. Each proof runs on its worker thread plus N-1 extra threads, which are not taken from `--vdf-threads`. Each proof counts as this many threads toward `--proof-threads`. The proof bytes do not depend on this value. |
 | `--auto-freq-period` | Enables auto-freq and sets the period in seconds. Minimum 10. Omitted, auto-freq stays off. |
 | `--max-freq` | Upper bound used only while auto-freq is on. Default is the last PLL entry, 3000 MHz, which is above the `--freq` ceiling. The parser stores the number `strtod` returns. |
 | `--list` | Print interface-A devices and exit. |

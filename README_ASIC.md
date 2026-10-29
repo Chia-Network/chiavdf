@@ -184,7 +184,7 @@ sudo apt-get update
 sudo apt-get install build-essential libgmp-dev
 ./scripts/get-libft4222.sh install
 cd src
-make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client hw_proof_wait_test
+make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client hw_proof_wait_test ftdi_identity_test
 ```
 
 `hw_proof_wait_test` links the emulator path and needs neither a board nor the FTDI shared library.
@@ -221,7 +221,7 @@ xcode-select --install
 brew install cmake gmp boost
 ./scripts/get-libft4222.sh install
 cd src
-make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client hw_proof_wait_test
+make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client hw_proof_wait_test ftdi_identity_test
 codesign -f -s - hw/libft4222/*.dylib hw_vdf_client hw_test
 ```
 
@@ -244,7 +244,7 @@ for cand in \
   fi
 done
 # still in src/; sign again after this rebuild
-make CPPFLAGS="-I${BOOST_INCLUDE}" -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client hw_proof_wait_test
+make CPPFLAGS="-I${BOOST_INCLUDE}" -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client hw_proof_wait_test ftdi_identity_test
 codesign -f -s - hw/libft4222/*.dylib hw_vdf_client hw_test
 ```
 
@@ -293,7 +293,7 @@ cmake -S src -B build -G Ninja `
   -DBUILD_VDF_TESTS=ON `
   -DBUILD_HW_TOOLS=ON `
   -DENABLE_GNU_ASM=ON
-cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test regression_unit_tests regression_io_tests hw_proof_wait_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test regression_unit_tests regression_io_tests hw_proof_wait_test ftdi_identity_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
 ```
 
 Binaries land in `build\`. The workflow's smoke test puts the build directory, `src\hw\libft4222`, and `mpir_gc_x64` on `PATH` before starting them:
@@ -337,6 +337,7 @@ Without hardware, the emulator binaries still run. CI uses:
 ./emu_hw_test 1 2000
 ./emu_hw_vdf_client --list
 ./hw_proof_wait_test
+./ftdi_identity_test
 ```
 
 On this host, `emu_hw_vdf_client --list` printed `Device 0: 'A', loc 559240` and exited 0. Keep `emu_hw_vdf_client` away from a timelord that is extending the chain. It speaks the same TCP protocol as the hardware client. `hw_proof_wait_test` exercises proof publication, cancellation, worker ownership, and proof snapshots through the emulator with no board or FTDI library.
@@ -407,6 +408,7 @@ List of options [default, min - max]:
   --voltage N - set board voltage [0.88, 0.7 - 1.0]
   --ip A.B.C.D - timelord IP address [localhost]
   --device-loc N - FTDI board location from --list [0: first available]
+  --expected-serial S - confirm opened board identity before configuration
   --vdfs-mask N - mask for enabling VDF engines [7, 1 - 7]
   --vdf-threads N - number of software threads per VDF engine [4, 2 - 64]
   --proof-threads N - number of proof threads per VDF engine
@@ -427,6 +429,7 @@ List of options [default, min - max]:
 | `--voltage` | Volts, 0.70–1.00. Default 0.88. The log line after the set is the value read back, which can differ slightly from the request. |
 | `--ip` | IPv4 of the timelord. Default 127.0.0.1. |
 | `--device-loc` | Location id printed by `--list`. `0`, the default, selects the first interface-A board. A nonzero value must match a location id exactly. |
+| `--expected-serial` | Optional serial from D2XX inventory (1–15 printable non-space characters). Accepts the board serial or its full interface-A serial. Confirms the actual opened SPI handle and its matching GPIO handle before bridge configuration or ASIC clock/voltage writes; unreadable or mismatched identities close the handles and fail. On multi-board hosts, pass the discovered `--device-loc` too: this option confirms identity but does not search by serial; location 0 still opens only the first board and fails if it does not match. |
 | `--vdfs-mask` | Bit 0 (value 1) is engine 0, bit 1 (value 2) is engine 1, bit 2 (value 4) is engine 2. `0`, the parser default, means "the first `N_VDFS` engines", which is 7 when `N_VDFS` is 3. That is why the usage line shows 7. A non-zero mask is used as given, and `N_VDFS` does not change it. Values above 7 are rejected. |
 | `--vdf-threads` | Host threads per engine for intermediates and proofs. Default 4. Range 2–64. |
 | `--proof-threads` | How many of those threads may sit in proofs. Omitted, or set to 0, it is `vdf-threads - ceil(vdf-threads / 8)` (3 when `vdf-threads` is 4). Any other explicit value must be less than `--vdf-threads`. A proof starts while the used count is below this value, and each proof uses `--segment-threads` of it, so at least one proof runs and the concurrent proof count is `ceil(proof-threads / segment-threads)`. |
@@ -438,13 +441,33 @@ List of options [default, min - max]:
 | `--list` | Print interface-A devices and exit. |
 | `--version` | Print `<argv0> <git describe>` on stdout and exit. |
 
+The guarded path requires interface serials in the form `<nonempty board base>A`
+and `<same base>D` (CNFMODE1) or `<same base>B` (CNFMODE0). Other formats fail
+closed with an explicit format error. A 15-character base is supported even when
+the suffixed interface serial fills all 16 D2XX bytes without a terminator.
+Only CNFMODE0 and CNFMODE1 are supported. Unreadable identity reports the D2XX status
+separately from a mismatch. D2XX serials are programmable: this prevents accidental
+USB location reuse/hotplug mix-ups, not impersonation by a duplicate serial. Prefer the exact board base from inventory;
+base/full-A matching is ambiguous if one board's base equals another board's full
+A serial (for example `X` and `XA`). Provision distinct, nonoverlapping serials.
+`--list` prints the full interface-A serial alongside each location.
+Opening/probing a GPIO handle issues no bridge-mode or ASIC setting writes before
+its identity is confirmed. Rejected handles are closed; UnInitialize is reserved
+for interfaces whose initialization was attempted, so a mismatched handle is not
+reconfigured during cleanup. Both USB modes and cleanup failures are covered by
+`ftdi_identity_test` using the emulator. Physical validation of both modes and
+cross-board hotplug behavior remains required before wide rollout.
+
+`hw_test` does not accept `--expected-serial`; its positional `DEVICE_LOC` selection
+is unprotected against location reuse. Use it only with controlled board attachment.
+
 `HW speed` falling behind, or `Warning: too much work for VDF aux threads`, means the host proof threads are the bottleneck. Raise `--vdf-threads` before raising the ASIC clock.
 
 This tree does not read `CHIAVDF_HW_DIRECT_STATUS` or `CHIAVDF_HW_TELEMETRY`. The flags above are the supported interface.
 
 ## Multiple boards and proof construction
 
-`--device-loc` selects a board. `--list` prints each interface-A location; `0`, the default, selects the first available board. Run one client per board with distinct locations. If simultaneous FTDI enumeration proves unreliable on your macOS host, initialize the clients sequentially: wait for one client to connect before starting the next. Location values can change when USB cables or hubs change.
+`--device-loc` selects a board. `--list` prints each interface-A serial and location; `0`, the default, selects the first available board. Run one client per board with distinct locations. If simultaneous FTDI enumeration proves unreliable on your macOS host, initialize the clients sequentially: wait for one client to connect before starting the next. Location values can change when USB cables or hubs change.
 
 The standalone test accepts the same location as an optional third argument: `hw_test N_VDFS N_ITERS DEVICE_LOC`.
 

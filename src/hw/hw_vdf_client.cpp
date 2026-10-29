@@ -15,6 +15,7 @@
 #include <cstring>
 #include <cerrno>
 #include <exception>
+#include <string>
 #include <signal.h>
 
 #ifdef _WIN32
@@ -55,6 +56,7 @@ struct vdf_client_opts {
     double voltage;
     uint32_t ip;
     uint32_t device_loc;
+    std::string expected_serial;
     int port;
     int n_vdfs;
     uint32_t auto_freq_period;
@@ -489,6 +491,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     opts->freq = HW_VDF_DEF_FREQ;
     opts->ip = INADDR_LOOPBACK;
     opts->device_loc = 0;
+    opts->expected_serial.clear();
     opts->port = 0;
     opts->n_vdfs = 3;
     opts->do_list = false;
@@ -617,6 +620,18 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
                 return -1;
             }
             opts->device_loc = static_cast<uint32_t>(loc);
+        } else if (!strcmp(name, "expected-serial")) {
+            if (!value[0] || strlen(value) > 15) {
+                LOG_SIMPLE("Expected serial must contain 1 to 15 printable non-space characters");
+                return -1;
+            }
+            for (const unsigned char *c = reinterpret_cast<const unsigned char *>(value); *c; ++c) {
+                if (*c < 33 || *c > 126) {
+                    LOG_SIMPLE("Invalid expected serial");
+                    return -1;
+                }
+            }
+            opts->expected_serial = value;
         } else if (!strcmp(name, "vdfs-mask")) {
             opts->vdfs_mask = strtoul(value, NULL, 0);
         } else if (!strcmp(name, "vdf-threads")) {
@@ -764,6 +779,7 @@ int hw_vdf_client_main(int argc, char **argv)
                 "  --voltage N - set board voltage [%.2f, %.1f - %.1f]\n"
                 "  --ip A.B.C.D - timelord IP address [localhost]\n"
                 "  --device-loc N - FTDI board location from --list [0: first available]\n"
+                "  --expected-serial S - confirm opened board identity before configuration\n"
                 "  --vdfs-mask N - mask for enabling VDF engines [7, 1 - 7]\n"
                 "  --vdf-threads N - number of software threads per VDF engine [4, 2 - 64]\n"
                 "  --proof-threads N - number of proof threads per VDF engine\n"
@@ -808,7 +824,8 @@ int hw_vdf_client_main(int argc, char **argv)
         LOG_SIMPLE("Live control requires stdin/stdout POSIX pipes and no --auto-freq-period");
         return 1;
     }
-    client.drv = init_hw(client.opts.freq, client.opts.voltage, client.opts.device_loc);
+    client.drv = init_hw(client.opts.freq, client.opts.voltage, client.opts.device_loc,
+        client.opts.expected_serial.empty() ? nullptr : client.opts.expected_serial.c_str());
     if (!client.drv) {
         return 1;
     }

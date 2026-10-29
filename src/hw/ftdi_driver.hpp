@@ -32,14 +32,16 @@ public:
 
   // Open a connection to an automatically located FTDI device
   // Returns status, 0 for success
-  int Open(DWORD target_id = 0);
+  int Open(DWORD target_id = 0, const char *expected_serial = nullptr);
 
   // Open with given SPI clock parameters
-  int OpenClk(unsigned sys_clk, unsigned clk_div, DWORD target_id = 0);
+  int OpenClk(unsigned sys_clk, unsigned clk_div, DWORD target_id = 0,
+              const char *expected_serial = nullptr);
 
   // Open a connection to a specific FTDI device
   // Returns status, 0 for success
-  int Open(DWORD spi_loc_id, unsigned sys_clk, unsigned clk_div);
+  int Open(DWORD spi_loc_id, unsigned sys_clk, unsigned clk_div,
+           const char *expected_serial = nullptr);
 
   // Enumeration of FTDI statemachine operation modes
   typedef enum {
@@ -153,6 +155,8 @@ private:
   // Opaque pointer for the FTDI driver
   void *spi_ft_handle;
   void *gpio_ft_handle;
+  bool spi_init_attempted = false;
+  bool gpio_init_attempted = false;
 
   // Location ID for the FTDI SPI device
   DWORD spi_loc_id;

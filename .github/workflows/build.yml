@@ -190,7 +190,7 @@ jobs:
     - name: Install build dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y cmake libgmp-dev libgmpxx4ldbl
+        sudo apt-get install -y cmake libgmp-dev libgmpxx4ldbl libboost-dev
 
     - name: flake8
       run: |
@@ -209,6 +209,27 @@ jobs:
         pip install mypy
         pip install .
         stubtest --concise chiavdf
+
+    - name: Check source install copies vdf_client and vdf_bench
+      env:
+        BUILD_VDF_CLIENT: Y
+        BUILD_VDF_BENCH: Y
+      run: |
+        python -m venv /tmp/hooks-venv
+        /tmp/hooks-venv/bin/pip install build
+        /tmp/hooks-venv/bin/python -m build --sdist --outdir /tmp/hooks-sdist .
+        sdist=$(ls /tmp/hooks-sdist/chiavdf-*.tar.gz)
+        test "$(echo "$sdist" | wc -l)" -eq 1 || { echo "expected one sdist: $sdist"; exit 1; }
+        # Confirm the sdist was built from this checkout
+        mkdir /tmp/hooks-src
+        tar -xzf "$sdist" -C /tmp/hooks-src --strip-components=1
+        diff -q setup.py /tmp/hooks-src/setup.py
+        /tmp/hooks-venv/bin/pip install "$sdist"
+        plat=$(/tmp/hooks-venv/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["platlib"])')
+        for f in vdf_client prover_test 1weso_test 2weso_test vdf_bench; do
+          test -x "$plat/$f" || { echo "missing $plat/$f"; exit 1; }
+        done
+        "$plat/vdf_bench" --version
 
   upload:
     name: Upload to PyPI - Ubuntu 3.12 Intel

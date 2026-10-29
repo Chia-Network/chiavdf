@@ -89,21 +89,6 @@ static void check_segment_threads_option() {
     }
 }
 
-static void check_initial_owner_quiesces_the_whole_board() {
-    extern std::atomic<uint8_t> chia_vdf_emu_paused_mask;
-    extern std::atomic<bool> chia_vdf_emu_configuration_before_pause;
-    chia_vdf_emu_paused_mask.store(0);
-    chia_vdf_emu_configuration_before_pause.store(false);
-    ChiaDriver *driver = init_hw(1100., 0.88, 0, "EMULATED");
-    if (driver == nullptr)
-        throw std::runtime_error("owner_initialization_failed");
-    const auto paused = chia_vdf_emu_paused_mask.load();
-    const auto premature = chia_vdf_emu_configuration_before_pause.load();
-    stop_hw(driver);
-    if (paused != 7 || premature)
-        throw std::runtime_error("owner_configured_before_all_engines_paused");
-}
-
 static void check_completed_engine_control_mask() {
 #ifndef _WIN32
     // Include a physical-engine-1-only board, all engines completing together,

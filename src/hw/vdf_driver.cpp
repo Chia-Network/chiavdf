@@ -329,7 +329,7 @@ bool VdfDriver::SetPLLFrequency(double frequency, uint32_t entry_index) {
   if (frequency != 0.) {
     if (!std::isfinite(frequency) || frequency < 0.) return false;
     const auto index = timelord_control::frequency_index(frequency, pll_entries, VALID_PLL_FREQS);
-    if (index == VALID_PLL_FREQS || Reset(10000)) return false;
+    if (index == VALID_PLL_FREQS) return false;
     entry_index = static_cast<uint32_t>(index);
   }
   return SetPLLFrequencyByIndex(entry_index);

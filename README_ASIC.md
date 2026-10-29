@@ -184,7 +184,7 @@ sudo apt-get update
 sudo apt-get install build-essential libgmp-dev
 ./scripts/get-libft4222.sh install
 cd src
-make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client hw_proof_wait_test ftdi_identity_test
+make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client hw_proof_wait_test ftdi_identity_test hw_initialization_test
 ```
 
 `hw_proof_wait_test` links the emulator path and needs neither a board nor the FTDI shared library.
@@ -221,7 +221,7 @@ xcode-select --install
 brew install cmake gmp boost
 ./scripts/get-libft4222.sh install
 cd src
-make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client hw_proof_wait_test ftdi_identity_test
+make -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client hw_proof_wait_test ftdi_identity_test hw_initialization_test
 codesign -f -s - hw/libft4222/*.dylib hw_vdf_client hw_test
 ```
 
@@ -244,7 +244,7 @@ for cand in \
   fi
 done
 # still in src/; sign again after this rebuild
-make CPPFLAGS="-I${BOOST_INCLUDE}" -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client hw_proof_wait_test ftdi_identity_test
+make CPPFLAGS="-I${BOOST_INCLUDE}" -f Makefile.vdf-client emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client hw_proof_wait_test ftdi_identity_test hw_initialization_test
 codesign -f -s - hw/libft4222/*.dylib hw_vdf_client hw_test
 ```
 
@@ -293,7 +293,7 @@ cmake -S src -B build -G Ninja `
   -DBUILD_VDF_TESTS=ON `
   -DBUILD_HW_TOOLS=ON `
   -DENABLE_GNU_ASM=ON
-cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test regression_unit_tests regression_io_tests hw_proof_wait_test ftdi_identity_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
+cmake --build build --target vdf_client vdf_bench 1weso_test 2weso_test prover_test regression_unit_tests regression_io_tests hw_proof_wait_test ftdi_identity_test hw_initialization_test emu_hw_test hw_test emu_hw_vdf_client hw_vdf_client
 ```
 
 Binaries land in `build\`. The workflow's smoke test puts the build directory, `src\hw\libft4222`, and `mpir_gc_x64` on `PATH` before starting them:
@@ -338,6 +338,7 @@ Without hardware, the emulator binaries still run. CI uses:
 ./emu_hw_vdf_client --list
 ./hw_proof_wait_test
 ./ftdi_identity_test
+./hw_initialization_test
 ```
 
 On this host, `emu_hw_vdf_client --list` printed `Device 0: 'A', loc 559240` and exited 0. Keep `emu_hw_vdf_client` away from a timelord that is extending the chain. It speaks the same TCP protocol as the hardware client. `hw_proof_wait_test` exercises proof publication, cancellation, worker ownership, and proof snapshots through the emulator with no board or FTDI library.
@@ -455,6 +456,17 @@ cross-board hotplug behavior remains required before wide rollout.
 
 `hw_test` does not accept `--expected-serial`; its positional `DEVICE_LOC` selection
 is unprotected against location reuse. Use it only with controlled board attachment.
+
+Before applying an initial operating point, the client gates and asserts reset on
+every engine, explicitly pulses board reset (also recovering partial control-write
+failures), and reads back every engine's control register. Both clock-disabled and
+reset-asserted bits must be confirmed before PLL and voltage programming. The
+sequence makes at most two attempts; errors identify the engine/stage, and an
+unconfirmed stop aborts initialization without applying the requested settings.
+`hw_initialization_test` exercises ordering and failure recovery through the same
+initialization helper, plus the real adapter over emulated USB. Register readback
+confirms the reported state; physical reset/readback behavior and a wedged USB
+stack still require hardware qualification.
 
 `HW speed` falling behind, or `Warning: too much work for VDF aux threads`, means the host proof threads are the bottleneck. Raise `--vdf-threads` before raising the ASIC clock.
 

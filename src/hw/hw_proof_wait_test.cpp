@@ -366,7 +366,6 @@ int main() {
         check_completed_engine_control_mask();
         check_client_exception_shutdown_policy();
         check_segment_threads_option();
-        check_initial_owner_quiesces_the_whole_board();
         check_segment_threads_accounting();
         check_segment_threads_validation();
         check_segment_threads_proofs();

@@ -34,6 +34,7 @@ src/emu_hw_test
 src/hw_test
 src/hw_proof_wait_test
 src/ftdi_identity_test
+src/hw_initialization_test
 src/emu_hw_vdf_client
 src/hw_vdf_client
 /verifier

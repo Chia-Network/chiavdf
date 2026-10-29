@@ -92,7 +92,7 @@ BINS = vdf_client prover_test 1weso_test 2weso_test vdf_bench
 all: $(BINS)
 
 clean:
-	rm -f *.o hw/*.o $(BINS) compile_asm emu_hw_test hw_test hw_vdf_client emu_hw_vdf_client hw_proof_wait_test ftdi_identity_test
+	rm -f *.o hw/*.o $(BINS) compile_asm emu_hw_test hw_test hw_vdf_client emu_hw_vdf_client hw_proof_wait_test ftdi_identity_test hw_initialization_test
 
 $(BINS) avx512_test: %: %.o lzcnt.o $(ASM_OBJS)
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
@@ -162,8 +162,13 @@ hw_proof_wait_test: hw/hw_proof_wait_test.o $(HW_OBJS) $(EMU_OBJS)
 ftdi_identity_test: hw/ftdi_identity_test.o hw/hw_live_control.o $(HW_OBJS) $(EMU_OBJS)
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-hw/hw_test.o hw/hw_vdf_client.o hw/hw_live_control.o hw/hw_proof_wait_test.o hw/ftdi_identity_test.o $(HW_OBJS) $(EMU_OBJS): CXXFLAGS += -I. -Ihw -Ihw/libft4222 $(OPT_CFLAGS) -Wall
+hw_initialization_test: hw/hw_initialization_test.o hw/hw_live_control.o $(HW_OBJS) $(EMU_OBJS)
+	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+
+hw/hw_test.o hw/hw_vdf_client.o hw/hw_live_control.o hw/hw_proof_wait_test.o hw/ftdi_identity_test.o hw/hw_initialization_test.o $(HW_OBJS) $(EMU_OBJS): CXXFLAGS += -I. -Ihw -Ihw/libft4222 $(OPT_CFLAGS) -Wall
 
 hw/ftdi_driver.o hw/ftdi_identity_test.o: hw/ftdi_identity.hpp hw/ftdi_driver.hpp
 hw/emu_funcs.o hw/ftdi_identity_test.o: hw/emu_ftdi_test.hpp
 hw/ftdi_identity_test.o: hw/hw_vdf_client.cpp
+
+hw/hw_interface.o hw/hw_initialization_test.o: hw/hw_initialization.hpp hw/hw_interface.hpp

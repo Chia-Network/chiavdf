@@ -116,6 +116,7 @@ public:
   bool SetTempAlarmExternal(double temp);
   bool SetTempAlarmEngine(double temp);
   void ResetPLL();
+  // Programs only the PLL; callers must quiesce/reset engines before configuration.
   bool SetPLLFrequency(double frequency, uint32_t entry_index);
   bool SetPLLFrequencyByIndex(uint32_t entry_index);
   double GetPLLFrequency();

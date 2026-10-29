@@ -10,6 +10,7 @@ HW_DIR="${SRC_DIR}/hw/libft4222"
 # on the Downloads tab in the middle of the page as of 2026-02-05.
 # We currently fetch known-good versions mirrored at download.chia.net.
 
+# Updated Linux LibFT4222 releases can be found at https://ftdichip.com/software-examples/ft4222h-software-examples/
 LINUX_URL="https://download.chia.net/vdf/libft4222-linux-1.4.4.232.zip"
 LINUX_ARCHIVE="${WORK_DIR}/libft4222-linux-1.4.4.232.zip"
 LINUX_SHA256="9e7141d252b67c74b585e85652079e801c7e820e7bf271fc0fa061ef849ceff0"

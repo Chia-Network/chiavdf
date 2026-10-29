@@ -254,7 +254,7 @@ void copy_regs(void *dst, void *src, uint32_t size, uint32_t max_size, int32_t o
 #define CHIA_VDF_STATUS_SIZE 0xb4
 #define CHIA_VDF_BURST_START 0x300014
 //#define CHIA_VDF_BURST_END 0x300244
-#define CHIA_VDF_JOB_CSR_MULT 0x10000
+#define CHIA_VDF_JOB_CSR_MULT HW_VDF_ENGINE_STRIDE
 
 void read_regs(uint32_t addr, uint8_t *buf, uint32_t size)
 {

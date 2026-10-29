@@ -4,6 +4,7 @@
 #include <gmp.h>
 #include <optional>
 #include "ftdi_driver.hpp"
+#include "hw_interface.hpp"
 #include "pvt.hpp"
 #include "clock.hpp"
 #include "hw_util.hpp"
@@ -22,7 +23,7 @@ public:
   static const uint32_t RESET_BIT  = 0x10;
   static const uint32_t CLOCK_BIT  = 0x01;
   static const uint32_t BURST_ADDR = 0x300000;
-  static const uint32_t VDF_ENGINE_STRIDE = 0x10000;
+  static const uint32_t VDF_ENGINE_STRIDE = HW_VDF_ENGINE_STRIDE;
 
   FtdiDriver ftdi;
   uint32_t   freq_idx;

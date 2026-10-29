@@ -1,6 +1,7 @@
 #include "hw_initialization.hpp"
 #include "chia_driver.hpp"
 #include "emu_runner.hpp"
+#include <algorithm>
 #include <array>
 #include <limits>
 #include <memory>
@@ -191,6 +192,20 @@ void check_real_adapter() {
     auto reordered = trace.operations;
     reordered.insert(reordered.begin(), {EmuOperation::write, 0, 1});
     require(!valid_initialization_trace(reordered), "trace check missed an early PLL write");
+    reordered = trace.operations;
+    auto reset = std::find_if(reordered.begin(), reordered.end(), [](const EmuOperation &op) {
+        return op.kind == EmuOperation::reset;
+    });
+    require(reset != reordered.end(), "trace fixture has no reset");
+    reordered.insert(reset + 1, {EmuOperation::write, 0, 1});
+    require(!valid_initialization_trace(reordered), "trace check missed a PLL write before readback");
+    reordered = trace.operations;
+    auto pll = std::find_if(reordered.begin(), reordered.end(), [](const EmuOperation &op) {
+        return op.kind == EmuOperation::write && op.address < 0x20;
+    });
+    require(pll != reordered.end(), "trace fixture has no PLL write");
+    reordered.insert(pll, {EmuOperation::reset, 0, 0});
+    require(!valid_initialization_trace(reordered), "trace check reused readback from before a reset");
     require(driver->Reset(1000) == 0, "emulated board reset failed");
     for (unsigned engine = 0; engine < N_HW_VDFS; ++engine) {
         uint32_t control = ~0U;

@@ -471,7 +471,9 @@ initialization helper, plus the real adapter over emulated USB. Register readbac
 confirms the reported state; physical reset/readback behavior and a wedged USB
 stack still require hardware qualification.
 
-`HW speed` falling behind, or `Warning: too much work for VDF aux threads`, means the host proof threads are the bottleneck. Raise `--vdf-threads` before raising the ASIC clock.
+`HW speed` falling behind, or `Warning: too much work for VDF aux threads`, means
+the host proof threads are the bottleneck. Raise `--vdf-threads` before raising
+the ASIC clock.
 
 This tree does not read `CHIAVDF_HW_DIRECT_STATUS` or `CHIAVDF_HW_TELEMETRY`. The flags above are the supported interface.
 

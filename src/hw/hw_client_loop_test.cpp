@@ -89,40 +89,6 @@ static void check_segment_threads_option() {
     }
 }
 
-static void check_opened_board_identity() {
-    extern const char *chia_vdf_emu_gpio_serial;
-    extern bool chia_vdf_emu_info_error;
-    FtdiDriver driver;
-    for (const char *expected : {"EMULATED", "EMULATEDA"}) {
-        if (driver.Open(0, expected) || !driver.IsOpen())
-            throw std::runtime_error("expected_serial_correct_board_rejected");
-        driver.Close();
-    }
-    if (driver.Open(0, "OTHER") == 0 || driver.IsOpen())
-        throw std::runtime_error("expected_serial_wrong_spi_opened");
-    chia_vdf_emu_gpio_serial = "OTHERD";
-    const int wrong_gpio = driver.Open(0, "EMULATED");
-    chia_vdf_emu_gpio_serial = "EMULATEDD";
-    if (wrong_gpio == 0 || driver.IsOpen())
-        throw std::runtime_error("expected_serial_wrong_gpio_opened");
-    chia_vdf_emu_info_error = true;
-    const int unreadable = driver.Open(0, "EMULATED");
-    chia_vdf_emu_info_error = false;
-    if (unreadable == 0 || driver.IsOpen())
-        throw std::runtime_error("expected_serial_unreadable_identity_opened");
-    if (driver.Open() || !driver.IsOpen())
-        throw std::runtime_error("expected_serial_optional_legacy_open_failed");
-    driver.Close();
-    for (const char *value : {"", "space serial", "abcdefghijklmnop"}) {
-        vdf_client_opts opts{};
-        if (parse_segment_args({"prog", "--expected-serial", value, "5000"}, opts) != -1)
-            throw std::runtime_error("expected_serial_invalid_cli_accepted");
-    }
-    vdf_client_opts opts{};
-    if (parse_segment_args({"prog", "--expected-serial=EMULATED", "5000"}, opts))
-        throw std::runtime_error("expected_serial_cli_value_not_stored");
-}
-
 static void check_initial_owner_quiesces_the_whole_board() {
     extern std::atomic<uint8_t> chia_vdf_emu_paused_mask;
     extern std::atomic<bool> chia_vdf_emu_configuration_before_pause;

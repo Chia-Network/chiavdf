@@ -10,6 +10,7 @@
 typedef std::chrono::high_resolution_clock Clock;
 
 #include "ftdi_driver.hpp"
+#include "ftdi_identity.hpp"
 
 void print_buf(size_t offset, uint8_t *buf, size_t size) {
   uint32_t *buf32 = (uint32_t *)buf;
@@ -218,12 +219,14 @@ int FtdiDriver::SetMode(FtdiDriver::MODE_t mode)
     CHECK(FT4222_UnInitialize(spi_ft_handle));
     //printf("SetMode FT4222_UnInitialize\n");
     active_mode = MODE_none;
+    spi_init_attempted = false;
   }
 
   switch(mode) {
 
   case MODE_spi:
     //printf("SetMode(MODE_spi);\n");
+    spi_init_attempted = true;
     CHECK(FT4222_SPIMaster_Init(spi_ft_handle, SPI_IO_QUAD, spi_clk_div,
                                 CLK_IDLE_LOW, CLK_LEADING, 0x01));
     // The SPI_ChipSelect value is named either CS_ACTIVE_NEGTIVE or
@@ -239,6 +242,7 @@ int FtdiDriver::SetMode(FtdiDriver::MODE_t mode)
 
   case MODE_i2c:
     //printf("SetMode(MODE_i2c);\n");
+    spi_init_attempted = true;
     CHECK(FT4222_I2CMaster_Init(spi_ft_handle, 100 /*kHz*/));
     active_mode = mode;
     break;
@@ -251,32 +255,14 @@ int FtdiDriver::SetMode(FtdiDriver::MODE_t mode)
 }
 
 
-// Query the actual opened handle, not the enumeration that preceded FT_OpenEx.
-// GPIO identity must match the opened SPI board as well; locations can be reused.
-static bool read_serial(FT_HANDLE handle, std::string &serial) {
-  FT_DEVICE type;
-  DWORD id;
-  char value[16] = {}, description[64] = {};
-  if (FT_GetDeviceInfo(handle, &type, &id, value, description, nullptr) != FT_OK)
-    return false;
-  const auto end = static_cast<const char *>(memchr(value, 0, sizeof(value)));
-  if (end == nullptr || end == value)
-    return false;
-  serial.assign(value, static_cast<size_t>(end - value));
-  return true;
-}
-
 int FtdiDriver::Open(DWORD loc_id, unsigned sys_clk, unsigned clk_div,
                      const char *expected_serial) {
-  Close();
-  const auto reject_identity = [this]() {
-    // These handles have not entered SPI/I2C/GPIO mode. Do not let a failed
-    // UnInitialize short-circuit closure on this pre-initialization path.
-    if (gpio_ft_handle != nullptr) { FT_Close(gpio_ft_handle); gpio_ft_handle = nullptr; }
-    if (spi_ft_handle != nullptr) { FT_Close(spi_ft_handle); spi_ft_handle = nullptr; }
-    active_mode = MODE_none;
-    return -1;
-  };
+  if (Close() != 0) return -1;
+  struct OpenGuard {
+    FtdiDriver &driver;
+    bool committed = false;
+    ~OpenGuard() { if (!committed) driver.Close(); }
+  } guard{*this};
 
   // fprintf(stderr, "Opening device %d\n", loc_id);
   spi_loc_id = loc_id;
@@ -284,18 +270,16 @@ int FtdiDriver::Open(DWORD loc_id, unsigned sys_clk, unsigned clk_div,
   CHECK(FT_OpenEx((PVOID)(uintptr_t)spi_loc_id, FT_OPEN_BY_LOCATION,
                   &spi_ft_handle));
 
-  std::string spi_serial, board_serial;
+  std::string board_serial;
   if (expected_serial != nullptr) {
-    if (!read_serial(spi_ft_handle, spi_serial)) {
-      eprintf("Cannot confirm opened SPI serial identity");
-      return reject_identity();
+    const auto identity = ftdi_identity::confirm(spi_ft_handle, 'A', expected_serial, true);
+    if (identity.error != nullptr) {
+      eprintf("Opened SPI identity %s (FT status %lu, serial '%s', expected '%s')",
+              identity.error, static_cast<unsigned long>(identity.status),
+              identity.serial.c_str(), expected_serial);
+      return -1;
     }
-    board_serial = spi_serial;
-    if (board_serial.back() == 'A') board_serial.pop_back();
-    if (spi_serial != expected_serial && board_serial != expected_serial) {
-      eprintf("Opened SPI serial does not match expected board '%s'", expected_serial);
-      return reject_identity();
-    }
+    board_serial = identity.base;
   }
 
   // originally we set jumpers for CNFMODE1, which uses 4 USB interfaces with
@@ -313,11 +297,12 @@ int FtdiDriver::Open(DWORD loc_id, unsigned sys_clk, unsigned clk_div,
   }
 
   if (expected_serial != nullptr) {
-    std::string gpio_serial;
-    if (!read_serial(gpio_ft_handle, gpio_serial) ||
-        gpio_serial != board_serial + (cnfmode == 1 ? "D" : "B")) {
-      eprintf("Opened GPIO serial does not match expected board '%s'", expected_serial);
-      return reject_identity();
+    const auto identity = ftdi_identity::confirm(gpio_ft_handle, cnfmode == 1 ? 'D' : 'B', board_serial);
+    if (identity.error != nullptr) {
+      eprintf("Opened GPIO identity %s (FT status %lu, serial '%s', expected '%s%c')",
+              identity.error, static_cast<unsigned long>(identity.status),
+              identity.serial.c_str(), board_serial.c_str(), cnfmode == 1 ? 'D' : 'B');
+      return -1;
     }
   }
 
@@ -335,6 +320,7 @@ int FtdiDriver::Open(DWORD loc_id, unsigned sys_clk, unsigned clk_div,
   gpio_dir[1] = GPIO_INPUT;
   gpio_dir[2] = GPIO_INPUT;
   gpio_dir[3] = GPIO_INPUT;
+  gpio_init_attempted = true;
   CHECK(FT4222_GPIO_Init(gpio_ft_handle, gpio_dir));
 
   // Set up GPIOs
@@ -343,23 +329,47 @@ int FtdiDriver::Open(DWORD loc_id, unsigned sys_clk, unsigned clk_div,
   // Disable interrupt, enable gpio 3
   CHECK(FT4222_SetWakeUpInterrupt(gpio_ft_handle, 0));
 
+  guard.committed = true;
   return 0;
 }
 
 int FtdiDriver::Close() {
-  if (spi_ft_handle != NULL) {
-    //printf("FtdiDriver::Close\n");
-    CHECK(FT4222_UnInitialize(spi_ft_handle));
-    CHECK(FT_Close(spi_ft_handle));
-    spi_ft_handle = NULL;
+  int first_error = 0;
+  const auto record = [&first_error](int status) {
+    if (status != 0 && first_error == 0) first_error = status;
+  };
+  // Always attempt both closes, even if UnInitialize or an earlier close fails.
+  // Uninitialize only interfaces whose initialization we attempted. Before
+  // identity confirmation a handle could belong to another board during hotplug.
+  if (spi_ft_handle != nullptr) {
+    if (spi_init_attempted) {
+      const auto status = FT4222_UnInitialize(spi_ft_handle);
+      record(status);
+      if (status == FT4222_OK) {
+        spi_init_attempted = false;
+        active_mode = MODE_none;
+      }
+    }
+    const auto status = FT_Close(spi_ft_handle);
+    record(status);
+    if (status == FT_OK) spi_ft_handle = nullptr;
   }
-  if (gpio_ft_handle != NULL) {
-    //printf("FtdiDriver::Close\n");
-    CHECK(FT4222_UnInitialize(gpio_ft_handle));
-    CHECK(FT_Close(gpio_ft_handle));
-    gpio_ft_handle = NULL;
+  if (gpio_ft_handle != nullptr) {
+    if (gpio_init_attempted) {
+      const auto status = FT4222_UnInitialize(gpio_ft_handle);
+      record(status);
+      if (status == FT4222_OK) gpio_init_attempted = false;
+    }
+    const auto status = FT_Close(gpio_ft_handle);
+    record(status);
+    if (status == FT_OK) gpio_ft_handle = nullptr;
   }
-  return 0;
+  if (spi_ft_handle == nullptr) {
+    active_mode = MODE_none;
+    spi_init_attempted = false;
+  }
+  if (gpio_ft_handle == nullptr) gpio_init_attempted = false;
+  return first_error;
 }
 
 void FtdiDriver::ParseParams(unsigned &sys_clk, unsigned &clk_div,

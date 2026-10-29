@@ -15,6 +15,7 @@
 #include <cstring>
 #include <cerrno>
 #include <exception>
+#include <string>
 #include <signal.h>
 
 #ifdef _WIN32
@@ -55,7 +56,7 @@ struct vdf_client_opts {
     double voltage;
     uint32_t ip;
     uint32_t device_loc;
-    const char *expected_serial;
+    std::string expected_serial;
     int port;
     int n_vdfs;
     uint32_t auto_freq_period;
@@ -490,7 +491,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     opts->freq = HW_VDF_DEF_FREQ;
     opts->ip = INADDR_LOOPBACK;
     opts->device_loc = 0;
-    opts->expected_serial = nullptr;
+    opts->expected_serial.clear();
     opts->port = 0;
     opts->n_vdfs = 3;
     opts->do_list = false;
@@ -823,7 +824,8 @@ int hw_vdf_client_main(int argc, char **argv)
         LOG_SIMPLE("Live control requires stdin/stdout POSIX pipes and no --auto-freq-period");
         return 1;
     }
-    client.drv = init_hw(client.opts.freq, client.opts.voltage, client.opts.device_loc, client.opts.expected_serial);
+    client.drv = init_hw(client.opts.freq, client.opts.voltage, client.opts.device_loc,
+        client.opts.expected_serial.empty() ? nullptr : client.opts.expected_serial.c_str());
     if (!client.drv) {
         return 1;
     }

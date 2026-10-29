@@ -1,4 +1,5 @@
 #include "emu_runner.hpp"
+#include "emu_ftdi_test.hpp"
 
 //#include "verifier.h"
 //#include "bit_manipulation.h"
@@ -34,6 +35,18 @@ int chia_vdf_is_emu = 1;
 #define SPI_FT_BASE 0x100
 #define GPIO_FT_BASE 0x200
 
+EmuFtdiTestState chia_vdf_emu_ftdi;
+
+static bool fail_call(const char *name) {
+    return chia_vdf_emu_ftdi.fail_call != nullptr &&
+           strcmp(chia_vdf_emu_ftdi.fail_call, name) == 0;
+}
+
+static FT4222_STATUS configure(const char *name) {
+    ++chia_vdf_emu_ftdi.configuration_calls;
+    return fail_call(name) ? FT4222_IO_ERROR : FT4222_OK;
+}
+
 FTD2XX_API FT_STATUS WINAPI FT_CreateDeviceInfoList(LPDWORD lpdwNumDevs)
 {
     *lpdwNumDevs = 1;
@@ -58,79 +71,98 @@ FTD2XX_API FT_STATUS WINAPI FT_GetDeviceInfoList(
 
 FTD2XX_API FT_STATUS WINAPI FT_OpenEx(PVOID pArg1, DWORD Flags, FT_HANDLE *pHandle)
 {
-    if ((uintptr_t)pArg1 == EMU_LOC_ID) {
+    auto &state = chia_vdf_emu_ftdi;
+    const auto location = reinterpret_cast<uintptr_t>(pArg1);
+    if (location == EMU_LOC_ID) {
+        if (state.spi_open) return FT_DEVICE_NOT_OPENED;
         *pHandle = (void *)SPI_FT_BASE;
-    } else if ((uintptr_t)pArg1 == EMU_LOC_ID + 3) {
+        state.spi_open = true;
+    } else if (location == EMU_LOC_ID + (state.mode0 ? 1 : 3) && !fail_call("gpio_open")) {
+        if (state.gpio_open) return FT_DEVICE_NOT_OPENED;
         *pHandle = (void *)GPIO_FT_BASE;
+        state.gpio_open = true;
     } else {
-        return FT4222_DEVICE_NOT_FOUND;
+        return FT_DEVICE_NOT_FOUND;
     }
-
-    return 0;
+    ++state.opens;
+    return FT_OK;
 }
 
-// Emulator identity controls are never linked into the real hardware client.
-const char *chia_vdf_emu_gpio_serial = "EMULATEDD";
-bool chia_vdf_emu_info_error = false;
 FTD2XX_API FT_STATUS WINAPI FT_GetDeviceInfo(FT_HANDLE handle, FT_DEVICE *type,
         LPDWORD id, PCHAR serial, PCHAR description, LPVOID) {
-    if (chia_vdf_emu_info_error || (handle != (void *)SPI_FT_BASE && handle != (void *)GPIO_FT_BASE))
+    const auto &state = chia_vdf_emu_ftdi;
+    const bool spi = handle == (void *)SPI_FT_BASE;
+    if ((spi && (!state.spi_open || state.spi_info_error)) ||
+        (!spi && (handle != (void *)GPIO_FT_BASE || !state.gpio_open || state.gpio_info_error)))
         return FT_INVALID_HANDLE;
     *type = FT_DEVICE_4222H_0;
     *id = 0x0403601c;
-    snprintf(serial, 16, "%s", handle == (void *)SPI_FT_BASE ? "EMULATEDA" : chia_vdf_emu_gpio_serial);
+    const std::string &value = spi ? state.spi_serial : state.gpio_serial;
+    const char *text = !spi && value.empty() ? (state.mode0 ? "EMULATEDB" : "EMULATEDD") : value.c_str();
+    // A 16-byte value deliberately exercises the non-terminated D2XX buffer case.
+    strncpy(serial, text, 16);
     snprintf(description, 64, "%s", "Chia VDF emulator");
     return FT_OK;
 }
 
 LIBFT4222_API FT4222_STATUS FT4222_SPIMaster_Init(FT_HANDLE ftHandle, FT4222_SPIMode  ioLine, FT4222_SPIClock clock, FT4222_SPICPOL  cpol, FT4222_SPICPHA  cpha, uint8 ssoMap)
 {
-    return FT4222_OK;
+    return configure("FT4222_SPIMaster_Init");
 }
 
 LIBFT4222_API FT4222_STATUS FT4222_SPIMaster_SetCS(FT_HANDLE ftHandle, SPI_ChipSelect cs)
 {
-    return FT4222_OK;
+    return configure("FT4222_SPIMaster_SetCS");
 }
 
 LIBFT4222_API FT4222_STATUS FT4222_SetClock(FT_HANDLE ftHandle, FT4222_ClockRate clk)
 {
-    return FT4222_OK;
+    return configure("FT4222_SetClock");
 }
 
 FTD2XX_API FT_STATUS WINAPI FT_SetUSBParameters(FT_HANDLE ftHandle, ULONG ulInTransferSize, ULONG ulOutTransferSize)
 {
-    return 0;
+    ++chia_vdf_emu_ftdi.configuration_calls;
+    return fail_call("FT_SetUSBParameters") ? FT_IO_ERROR : FT_OK;
 }
 
 LIBFT4222_API FT4222_STATUS FT4222_SPI_SetDrivingStrength(FT_HANDLE ftHandle, SPI_DrivingStrength clkStrength, SPI_DrivingStrength ioStrength, SPI_DrivingStrength ssoStrength)
 {
-    return FT4222_OK;
+    return configure("FT4222_SPI_SetDrivingStrength");
 }
 
 LIBFT4222_API FT4222_STATUS FT4222_GPIO_Init(FT_HANDLE ftHandle, GPIO_Dir gpioDir[4])
 {
-    return FT4222_OK;
+    return configure("FT4222_GPIO_Init");
 }
 
 LIBFT4222_API FT4222_STATUS FT4222_SetSuspendOut(FT_HANDLE ftHandle, BOOL enable)
 {
-    return FT4222_OK;
+    return configure("FT4222_SetSuspendOut");
 }
 
 LIBFT4222_API FT4222_STATUS FT4222_SetWakeUpInterrupt(FT_HANDLE ftHandle, BOOL enable)
 {
-    return FT4222_OK;
+    return configure("FT4222_SetWakeUpInterrupt");
 }
 
 LIBFT4222_API FT4222_STATUS FT4222_UnInitialize(FT_HANDLE ftHandle)
 {
-    return FT4222_OK;
+    ++chia_vdf_emu_ftdi.uninitializes;
+    return fail_call("FT4222_UnInitialize") ? FT4222_IO_ERROR : FT4222_OK;
 }
 
 FTD2XX_API FT_STATUS WINAPI FT_Close(FT_HANDLE ftHandle)
 {
-    return 0;
+    auto &state = chia_vdf_emu_ftdi;
+    bool *open = ftHandle == (void *)SPI_FT_BASE ? &state.spi_open :
+                 ftHandle == (void *)GPIO_FT_BASE ? &state.gpio_open : nullptr;
+    if (open == nullptr || !*open) return FT_INVALID_HANDLE;
+    if (fail_call(ftHandle == (void *)SPI_FT_BASE ? "spi_close" : "gpio_close"))
+        return FT_IO_ERROR;
+    *open = false;
+    ++state.closes;
+    return FT_OK;
 }
 
 LIBFT4222_API FT4222_STATUS FT4222_SPIMaster_MultiReadWrite(FT_HANDLE ftHandle, uint8* readBuffer, uint8* writeBuffer, uint8 singleWriteBytes, uint16 multiWriteBytes, uint16 multiReadBytes, uint32* sizeOfRead)
@@ -156,7 +188,7 @@ LIBFT4222_API FT4222_STATUS FT4222_GPIO_Read(FT_HANDLE ftHandle, GPIO_Port portN
 
 LIBFT4222_API FT4222_STATUS FT4222_I2CMaster_Init(FT_HANDLE ftHandle, uint32 kbps)
 {
-    return FT4222_OK;
+    return configure("FT4222_I2CMaster_Init");
 }
 
 LIBFT4222_API FT4222_STATUS FT4222_I2CMaster_ReadEx(FT_HANDLE ftHandle, uint16 deviceAddress, uint8 flag, uint8* buffer, uint16 bufferSize, uint16* sizeTransferred)

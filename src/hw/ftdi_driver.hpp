@@ -155,6 +155,8 @@ private:
   // Opaque pointer for the FTDI driver
   void *spi_ft_handle;
   void *gpio_ft_handle;
+  bool spi_init_attempted = false;
+  bool gpio_init_attempted = false;
 
   // Location ID for the FTDI SPI device
   DWORD spi_loc_id;

@@ -32,9 +32,11 @@ template <class Hardware> bool quiesce_all(Hardware &hardware) {
         for (unsigned engine = 0; engine < N_HW_VDFS; ++engine) {
             uint32_t control = 0;
             const bool read = hardware.engine_control_read(engine, control);
-            if (read && (control & (reset_bit | clock_bit)) == reset_bit)
+            if (read && (control & (reset_bit | clock_bit)) == reset_bit) {
                 confirmed |= static_cast<uint8_t>(1U << engine);
-            else
+                LOG_INFO("Initialization quiescence confirmed engine=%u attempt=%u control=0x%08x",
+                        engine, attempt, control);
+            } else
                 LOG_ERROR("Initialization quiescence unconfirmed engine=%u attempt=%u read=%d control=0x%08x",
                         engine, attempt, read, control);
         }

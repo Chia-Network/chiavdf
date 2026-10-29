@@ -15,6 +15,8 @@ $WorkDir = Join-Path $SrcDir "libft4222"
 $HwDir = Join-Path $SrcDir "hw\libft4222"
 
 $ZipUrl = "https://download.chia.net/vdf/LibFT4222-v1.4.8.zip"
+# ftdichip.cn is currently down; confirm this URL before enabling it as a fallback:
+# $ZipUrl = "https://ftdichip.cn/Support/SoftwareExamples/LibFT4222-v1.4.8.zip"
 $ZipSha256 = "f7bab9e78ec15035e0dd43be9043bc19557eff558d91e4854bb1d4f52d5396cd"
 $ZipPath = Join-Path $WorkDir "LibFT4222-v1.4.8.zip"
 $ExtractDir = Join-Path $WorkDir "extract"

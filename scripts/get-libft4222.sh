@@ -12,6 +12,8 @@ HW_DIR="${SRC_DIR}/hw/libft4222"
 
 # Updated Linux LibFT4222 releases can be found at https://ftdichip.com/software-examples/ft4222h-software-examples/
 LINUX_URL="https://download.chia.net/vdf/libft4222-linux-1.4.4.232.zip"
+# ftdichip.cn is currently down; confirm this URL before enabling it as a fallback:
+# LINUX_URL="https://ftdichip.cn/Support/SoftwareExamples/libft4222-linux-1.4.4.232.zip"
 LINUX_ARCHIVE="${WORK_DIR}/libft4222-linux-1.4.4.232.zip"
 LINUX_SHA256="9e7141d252b67c74b585e85652079e801c7e820e7bf271fc0fa061ef849ceff0"
 LINUX_TGZ="libft4222-linux-1.4.4.232.tgz"
@@ -20,6 +22,8 @@ MAC_ARCHIVE="${WORK_DIR}/LibFT4222-mac-v1.4.4.190.zip"
 MAC_DMG="libft4222.1.4.4.190.dmg"
 # D2XX 1.4.36 ships in its own image, pinned by SHA-256.
 D2XX_DMG_URL="https://download.chia.net/vdf/D2XX1.4.36.dmg"
+# ftdichip.cn is currently down; confirm this URL before enabling it as a fallback:
+# D2XX_DMG_URL="https://ftdichip.cn/Drivers/D2XX/MacOSX/D2XX1.4.36.dmg"
 D2XX_DMG="${WORK_DIR}/D2XX1.4.36.dmg"
 D2XX_DMG_SHA256="6cc05c59762fe3ceb949cb5d9f0ee39265de19780d25da0c3e4c12dc8c146e07"
 

@@ -58,6 +58,8 @@ def literal_ok(update: Update, added: list[str]) -> bool:
 
 
 def _parse_updates(raw: str) -> list[Update]:
+    if not raw.strip():
+        raise SystemExit("updated-dependencies-json is empty; fetch-metadata did not run or no input was given")
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:

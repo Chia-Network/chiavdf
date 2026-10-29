@@ -16,6 +16,10 @@ LINUX_ARCHIVE="${WORK_DIR}/libft4222-linux-1.4.4.170.tgz"
 MAC_URL="https://download.chia.net/vdf/LibFT4222-mac-v1.4.4.190.zip"
 MAC_ARCHIVE="${WORK_DIR}/LibFT4222-mac-v1.4.4.190.zip"
 MAC_DMG="libft4222.1.4.4.190.dmg"
+# D2XX 1.4.36 ships in its own image, pinned by SHA-256.
+D2XX_DMG_URL="https://download.chia.net/vdf/D2XX1.4.36.dmg"
+D2XX_DMG="${WORK_DIR}/D2XX1.4.36.dmg"
+D2XX_DMG_SHA256="6cc05c59762fe3ceb949cb5d9f0ee39265de19780d25da0c3e4c12dc8c146e07"
 
 usage() {
   cat <<'EOF'
@@ -46,6 +50,17 @@ fetch_once() {
   fi
 }
 
+sha256_of() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    echo "Missing shasum or sha256sum for checksums" >&2
+    exit 1
+  fi
+}
+
 validate_archive() {
   local kind="$1"
   local path="$2"
@@ -55,6 +70,9 @@ validate_archive() {
       ;;
     zip)
       unzip -t "$path" >/dev/null 2>&1
+      ;;
+    dmg)
+      [ "$(sha256_of "$path")" = "$D2XX_DMG_SHA256" ]
       ;;
     *)
       echo "Unknown archive type: $kind" >&2
@@ -120,14 +138,20 @@ install_macos() {
   unzip -q "$MAC_ARCHIVE" -d "$WORK_DIR"
 
   local mount_dir="${WORK_DIR}/ft4222-mount"
+  local d2xx_mount_dir="${WORK_DIR}/d2xx-mount"
   local mounted=0
-  cleanup_mount() {
+  local d2xx_mounted=0
+  cleanup_mounts() {
     if [ "$mounted" -eq 1 ]; then
       hdiutil detach "$mount_dir" >/dev/null 2>&1 || true
       mounted=0
     fi
+    if [ "$d2xx_mounted" -eq 1 ]; then
+      hdiutil detach "$d2xx_mount_dir" >/dev/null 2>&1 || true
+      d2xx_mounted=0
+    fi
   }
-  trap cleanup_mount EXIT
+  trap cleanup_mounts EXIT
 
   # If a previous run failed, try to detach before re-attaching.
   hdiutil detach "$mount_dir" >/dev/null 2>&1 || true
@@ -135,12 +159,22 @@ install_macos() {
   hdiutil attach -nobrowse -readonly -mountpoint "$mount_dir" "${WORK_DIR}/${MAC_DMG}"
   mounted=1
 
-  cp "$mount_dir/ftd2xx.h" "$WORK_DIR/"
   cp "$mount_dir/libft4222.h" "$WORK_DIR/"
-  cp "$mount_dir/WinTypes.h" "$WORK_DIR/"
   cp "$mount_dir/build/libft4222.1.4.4.190.dylib" "$WORK_DIR/"
-  cp "$mount_dir/build/libftd2xx.dylib" "$WORK_DIR/"
-  cleanup_mount
+  cleanup_mounts
+
+  fetch_with_retry "$D2XX_DMG_URL" "$D2XX_DMG" dmg 3
+
+  # If a previous run failed, try to detach before re-attaching.
+  hdiutil detach "$d2xx_mount_dir" >/dev/null 2>&1 || true
+  mkdir -p "$d2xx_mount_dir"
+  hdiutil attach -nobrowse -readonly -mountpoint "$d2xx_mount_dir" "$D2XX_DMG"
+  d2xx_mounted=1
+
+  cp "$d2xx_mount_dir/release/build/libftd2xx.1.4.36.dylib" "${WORK_DIR}/libftd2xx.dylib"
+  cp "$d2xx_mount_dir/release/ftd2xx.h" "$WORK_DIR/"
+  cp "$d2xx_mount_dir/release/WinTypes.h" "$WORK_DIR/"
+  cleanup_mounts
   trap - EXIT
 
   ln -sf "libft4222.1.4.4.190.dylib" "${WORK_DIR}/libft4222.dylib"
@@ -170,7 +204,9 @@ install_macos() {
 
 clean_all() {
   local mount_dir="${WORK_DIR}/ft4222-mount"
+  local d2xx_mount_dir="${WORK_DIR}/d2xx-mount"
   hdiutil detach "$mount_dir" >/dev/null 2>&1 || true
+  hdiutil detach "$d2xx_mount_dir" >/dev/null 2>&1 || true
   rm -rf "$WORK_DIR"
   if [ -L "$HW_DIR" ] || [ -d "$HW_DIR" ]; then
     rm -rf "$HW_DIR"

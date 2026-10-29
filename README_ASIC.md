@@ -88,7 +88,7 @@ brew install chia-network/chia/chiavdf
 This installs `hw_vdf_client`, `hw_test`, and the emulators alongside
 `vdf_client` and `vdf_bench`. The bundled FTDI libraries are installed under
 `libexec/chiavdf`. Install the FTDI D2XX driver from
-https://ftdichip.com/products/ft4222h/ before connecting a board.
+https://ftdichip.com/drivers/d2xx-drivers/ before connecting a board.
 
 ### Windows (winget)
 
@@ -105,7 +105,7 @@ and stages the FTDI CDM driver (`ftdibus.inf` and `ftdiport.inf`) with
 administrator/UAC. If you cannot elevate, use the
 portable `chiavdf-<version>-windows-amd64.zip` from a
 [release](https://github.com/Chia-Network/chiavdf/releases) and install the
-FTDI D2XX driver from https://ftdichip.com/products/ft4222h/ manually. The
+FTDI D2XX driver from https://ftdichip.com/drivers/d2xx-drivers/ manually. The
 installer leaves the shared FTDI driver in the driver store on uninstall.
 Open a new terminal after installation so the updated `PATH` is visible.
 Details are in `assets/windows-installer.md`.
@@ -122,7 +122,7 @@ bin/emu_hw_test
 bin/vdf_client
 bin/vdf_bench
 libexec/chiavdf/libft4222.dylib
-libexec/chiavdf/libft4222.1.4.4.190.dylib
+libexec/chiavdf/libft4222.1.4.4.221.dylib
 libexec/chiavdf/libftd2xx.dylib
 libexec/chiavdf/libgmp.<version>.dylib
 libexec/chiavdf/libgmpxx.<version>.dylib
@@ -161,7 +161,7 @@ The zip has a flat `bin\` and no `lib\`. The loader looks in the executable's di
 .\bin\hw_vdf_client.exe --list
 ```
 
-For the portable zip, install the FTDI D2XX driver before running the ASIC tools. `scripts/get-libft4222.ps1` stages `LibFT4222-64.dll` plus the `ftd2xx.lib` import library, fetches the native amd64 `FTD2XX.dll` from FTDI CDM 2.12.36.20, and stages the unmodified CDM driver package under `src\hw\libft4222\driver` for the installer build. The kernel driver is the D2XX/CDM package from the FT4222H downloads page: https://ftdichip.com/products/ft4222h/
+For the portable zip, install the FTDI D2XX driver before running the ASIC tools. `scripts/get-libft4222.ps1` stages `LibFT4222-64.dll` plus the `ftd2xx.lib` import library, fetches the native amd64 `FTD2XX.dll` from FTDI CDM 2.12.36.20 (mirrored at `download.chia.net`, with `ftdichip.cn` as the fallback, SHA-256 verified), and stages the unmodified CDM driver package under `src\hw\libft4222\driver` for the installer build. The kernel driver is the D2XX/CDM package from the FTDI D2XX drivers page: https://ftdichip.com/drivers/d2xx-drivers/ Updated LibFT4222 releases for Linux can be found at https://ftdichip.com/software-examples/ft4222h-software-examples/
 
 ## Build from source
 
@@ -169,8 +169,8 @@ Versions pinned by the fetch scripts:
 
 | Host | Script | Library |
 | --- | --- | --- |
-| Linux x86_64 and aarch64/arm64 | `scripts/get-libft4222.sh` | libft4222 1.4.4.170 from `download.chia.net` |
-| macOS | same script | LibFT4222 1.4.4.190 plus `libftd2xx.dylib` |
+| Linux x86_64 and aarch64/arm64 | `scripts/get-libft4222.sh` | libft4222 1.4.4.232 from `download.chia.net` |
+| macOS | same script | LibFT4222 1.4.4.221 plus `libftd2xx.dylib` |
 | Windows | `scripts/get-libft4222.ps1` | LibFT4222 1.4.8 plus native `FTD2XX.dll` and the driver package from CDM 2.12.36.20 |
 
 `install` downloads and stages headers and libraries. `clean` removes them. Linux and macOS place a symlink at `src/hw/libft4222`. Windows copies headers, import libraries, and DLLs into `src\hw\libft4222` and stages the unmodified FTDI CDM package under `src\hw\libft4222\driver` for the installer build.

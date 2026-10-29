@@ -169,7 +169,7 @@ Versions pinned by the fetch scripts:
 
 | Host | Script | Library |
 | --- | --- | --- |
-| Linux x86_64 and aarch64/arm64 | `scripts/get-libft4222.sh` | libft4222 1.4.4.170 from `download.chia.net` |
+| Linux x86_64 and aarch64/arm64 | `scripts/get-libft4222.sh` | libft4222 1.4.4.232 from `download.chia.net` |
 | macOS | same script | LibFT4222 1.4.4.190 plus `libftd2xx.dylib` |
 | Windows | `scripts/get-libft4222.ps1` | LibFT4222 1.4.8 plus native `FTD2XX.dll` and the driver package from CDM 2.12.36.20 |
 

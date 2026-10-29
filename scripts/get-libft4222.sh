@@ -8,11 +8,12 @@ HW_DIR="${SRC_DIR}/hw/libft4222"
 
 # Upstream FT4222 driver downloads can be found at https://ftdichip.com/drivers/d2xx-drivers/
 # on the Downloads tab in the middle of the page as of 2026-02-05.
-# There is an updated Linux version available(v1.4.4.233) also as of 2026-02-05.
 # We currently fetch known-good versions mirrored at download.chia.net.
 
-LINUX_URL="https://download.chia.net/vdf/libft4222-linux-1.4.4.170.tgz"
-LINUX_ARCHIVE="${WORK_DIR}/libft4222-linux-1.4.4.170.tgz"
+LINUX_URL="https://download.chia.net/vdf/libft4222-linux-1.4.4.232.zip"
+LINUX_ARCHIVE="${WORK_DIR}/libft4222-linux-1.4.4.232.zip"
+LINUX_SHA256="9e7141d252b67c74b585e85652079e801c7e820e7bf271fc0fa061ef849ceff0"
+LINUX_TGZ="libft4222-linux-1.4.4.232.tgz"
 MAC_URL="https://download.chia.net/vdf/LibFT4222-mac-v1.4.4.190.zip"
 MAC_ARCHIVE="${WORK_DIR}/LibFT4222-mac-v1.4.4.190.zip"
 MAC_DMG="libft4222.1.4.4.190.dmg"
@@ -71,6 +72,9 @@ validate_archive() {
     zip)
       unzip -t "$path" >/dev/null 2>&1
       ;;
+    linuxzip)
+      unzip -t "$path" >/dev/null 2>&1 && [ "$(sha256_of "$path")" = "$LINUX_SHA256" ]
+      ;;
     dmg)
       [ "$(sha256_of "$path")" = "$D2XX_DMG_SHA256" ]
       ;;
@@ -105,10 +109,12 @@ fetch_with_retry() {
 
 install_linux() {
   need_cmd tar
+  need_cmd unzip
 
   mkdir -p "$WORK_DIR"
-  fetch_with_retry "$LINUX_URL" "$LINUX_ARCHIVE" tgz 3
-  tar -xzf "$LINUX_ARCHIVE" -C "$WORK_DIR"
+  fetch_with_retry "$LINUX_URL" "$LINUX_ARCHIVE" linuxzip 3
+  unzip -q -o "$LINUX_ARCHIVE" -d "$WORK_DIR"
+  tar -xzf "$WORK_DIR/$LINUX_TGZ" -C "$WORK_DIR"
 
   local linux_arch
   linux_arch="$(uname -m)"
@@ -124,7 +130,7 @@ install_linux() {
 
   rm -rf "$HW_DIR"
   ln -s "$WORK_DIR" "$HW_DIR"
-  ln -sf "$WORK_DIR/$libft4222_dir/libft4222.so.1.4.4.170" \
+  ln -sf "$WORK_DIR/$libft4222_dir/libft4222.so.1.4.4.232" \
     "$WORK_DIR/$libft4222_dir/libft4222.so"
 }
 

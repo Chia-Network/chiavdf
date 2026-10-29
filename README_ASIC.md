@@ -161,7 +161,7 @@ The zip has a flat `bin\` and no `lib\`. The loader looks in the executable's di
 .\bin\hw_vdf_client.exe --list
 ```
 
-For the portable zip, install the FTDI D2XX driver before running the ASIC tools. `scripts/get-libft4222.ps1` stages `LibFT4222-64.dll` plus the `ftd2xx.lib` import library, fetches the native amd64 `FTD2XX.dll` from FTDI CDM 2.12.36.20, and stages the unmodified CDM driver package under `src\hw\libft4222\driver` for the installer build. The kernel driver is the D2XX/CDM package from the FT4222H downloads page: https://ftdichip.com/products/ft4222h/
+For the portable zip, install the FTDI D2XX driver before running the ASIC tools. `scripts/get-libft4222.ps1` stages `LibFT4222-64.dll` plus the `ftd2xx.lib` import library, fetches the native amd64 `FTD2XX.dll` from FTDI CDM 2.12.36.20 (mirrored at `download.chia.net`, with `ftdichip.cn` as the fallback, SHA-256 verified), and stages the unmodified CDM driver package under `src\hw\libft4222\driver` for the installer build. The kernel driver is the D2XX/CDM package from the FT4222H downloads page: https://ftdichip.com/products/ft4222h/ New CDM versions can be checked at https://ftdichip.com/drivers/d2xx-drivers/.
 
 ## Build from source
 

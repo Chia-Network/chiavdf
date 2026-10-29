@@ -17,9 +17,11 @@ LINUX_URL="https://download.chia.net/vdf/libft4222-linux-1.4.4.232.zip"
 LINUX_ARCHIVE="${WORK_DIR}/libft4222-linux-1.4.4.232.zip"
 LINUX_SHA256="9e7141d252b67c74b585e85652079e801c7e820e7bf271fc0fa061ef849ceff0"
 LINUX_TGZ="libft4222-linux-1.4.4.232.tgz"
-MAC_URL="https://download.chia.net/vdf/LibFT4222-mac-v1.4.4.190.zip"
-MAC_ARCHIVE="${WORK_DIR}/LibFT4222-mac-v1.4.4.190.zip"
-MAC_DMG="libft4222.1.4.4.190.dmg"
+MAC_DMG_URL="https://download.chia.net/vdf/libft4222-mac-v1.4.4.221.dmg"
+# ftdichip.cn is currently down; confirm this URL before enabling it as a fallback:
+# MAC_DMG_URL="https://ftdichip.cn/Support/SoftwareExamples/libft4222-mac-v1.4.4.221.dmg"
+MAC_DMG="${WORK_DIR}/libft4222-mac-v1.4.4.221.dmg"
+MAC_DMG_SHA256="ef2be6003d9286c4c50d3f3db329dced9f800ea53894cce41cc568100fb3d43f"
 # D2XX 1.4.36 ships in its own image, pinned by SHA-256.
 D2XX_DMG_URL="https://download.chia.net/vdf/D2XX1.4.36.dmg"
 # ftdichip.cn is currently down; confirm this URL before enabling it as a fallback:
@@ -83,6 +85,9 @@ validate_archive() {
     dmg)
       [ "$(sha256_of "$path")" = "$D2XX_DMG_SHA256" ]
       ;;
+    ft4222dmg)
+      [ "$(sha256_of "$path")" = "$MAC_DMG_SHA256" ]
+      ;;
     *)
       echo "Unknown archive type: $kind" >&2
       return 1
@@ -140,13 +145,11 @@ install_linux() {
 }
 
 install_macos() {
-  need_cmd unzip
   need_cmd hdiutil
   need_cmd install_name_tool
 
   mkdir -p "$WORK_DIR"
-  fetch_with_retry "$MAC_URL" "$MAC_ARCHIVE" zip 3
-  unzip -q "$MAC_ARCHIVE" -d "$WORK_DIR"
+  fetch_with_retry "$MAC_DMG_URL" "$MAC_DMG" ft4222dmg 3
 
   local mount_dir="${WORK_DIR}/ft4222-mount"
   local d2xx_mount_dir="${WORK_DIR}/d2xx-mount"
@@ -167,11 +170,11 @@ install_macos() {
   # If a previous run failed, try to detach before re-attaching.
   hdiutil detach "$mount_dir" >/dev/null 2>&1 || true
   mkdir -p "$mount_dir"
-  hdiutil attach -nobrowse -readonly -mountpoint "$mount_dir" "${WORK_DIR}/${MAC_DMG}"
+  hdiutil attach -nobrowse -readonly -mountpoint "$mount_dir" "$MAC_DMG"
   mounted=1
 
   cp "$mount_dir/libft4222.h" "$WORK_DIR/"
-  cp "$mount_dir/build/libft4222.1.4.4.190.dylib" "$WORK_DIR/"
+  cp "$mount_dir/build/libft4222.1.4.4.221.dylib" "$WORK_DIR/"
   cleanup_mounts
 
   fetch_with_retry "$D2XX_DMG_URL" "$D2XX_DMG" dmg 3
@@ -188,12 +191,12 @@ install_macos() {
   cleanup_mounts
   trap - EXIT
 
-  ln -sf "libft4222.1.4.4.190.dylib" "${WORK_DIR}/libft4222.dylib"
+  ln -sf "libft4222.1.4.4.221.dylib" "${WORK_DIR}/libft4222.dylib"
 
   install_name_tool -id "@rpath/libftd2xx.dylib" "${WORK_DIR}/libftd2xx.dylib"
-  install_name_tool -id "@rpath/libft4222.dylib" "${WORK_DIR}/libft4222.1.4.4.190.dylib"
+  install_name_tool -id "@rpath/libft4222.dylib" "${WORK_DIR}/libft4222.1.4.4.221.dylib"
   install_name_tool -change "libftd2xx.dylib" "@rpath/libftd2xx.dylib" \
-    "${WORK_DIR}/libft4222.1.4.4.190.dylib"
+    "${WORK_DIR}/libft4222.1.4.4.221.dylib"
 
   # Clear download metadata that can trigger loader trust checks on macOS.
   if command -v xattr >/dev/null 2>&1; then
@@ -205,7 +208,7 @@ install_macos() {
     need_cmd codesign
     codesign --force --sign - \
       "${WORK_DIR}/libftd2xx.dylib" \
-      "${WORK_DIR}/libft4222.1.4.4.190.dylib" \
+      "${WORK_DIR}/libft4222.1.4.4.221.dylib" \
       "${WORK_DIR}/libft4222.dylib"
   fi
 

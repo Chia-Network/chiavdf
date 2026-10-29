@@ -122,7 +122,7 @@ bin/emu_hw_test
 bin/vdf_client
 bin/vdf_bench
 libexec/chiavdf/libft4222.dylib
-libexec/chiavdf/libft4222.1.4.4.190.dylib
+libexec/chiavdf/libft4222.1.4.4.221.dylib
 libexec/chiavdf/libftd2xx.dylib
 libexec/chiavdf/libgmp.<version>.dylib
 libexec/chiavdf/libgmpxx.<version>.dylib
@@ -170,7 +170,7 @@ Versions pinned by the fetch scripts:
 | Host | Script | Library |
 | --- | --- | --- |
 | Linux x86_64 and aarch64/arm64 | `scripts/get-libft4222.sh` | libft4222 1.4.4.232 from `download.chia.net` |
-| macOS | same script | LibFT4222 1.4.4.190 plus `libftd2xx.dylib` |
+| macOS | same script | LibFT4222 1.4.4.221 plus `libftd2xx.dylib` |
 | Windows | `scripts/get-libft4222.ps1` | LibFT4222 1.4.8 plus native `FTD2XX.dll` and the driver package from CDM 2.12.36.20 |
 
 `install` downloads and stages headers and libraries. `clean` removes them. Linux and macOS place a symlink at `src/hw/libft4222`. Windows copies headers, import libraries, and DLLs into `src\hw\libft4222` and stages the unmodified FTDI CDM package under `src\hw\libft4222\driver` for the installer build.

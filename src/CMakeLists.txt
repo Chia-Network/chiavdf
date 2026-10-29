@@ -581,6 +581,19 @@ if(BUILD_HW_TOOLS)
     add_test(NAME regression.hw.ftdi_identity COMMAND ftdi_identity_test)
   endif()
 
+  add_executable(hw_initialization_test ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_initialization_test.cpp)
+  target_sources(hw_initialization_test PRIVATE ${HW_COMMON_SOURCES} ${EMU_SOURCES} ${HW_VDF_ASM_SOURCES} ${VDF_COMMON_SOURCES})
+  target_compile_definitions(hw_initialization_test PRIVATE ${VDF_COMMON_DEFINITIONS})
+  target_include_directories(hw_initialization_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/hw ${CMAKE_CURRENT_SOURCE_DIR}/hw/libft4222)
+  target_link_libraries(hw_initialization_test PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads ${HW_SOCKET_LIBS})
+  vdf_add_windows_clang_opts(hw_initialization_test PRESERVE_NONFINITE)
+  if(UNIX AND NOT APPLE)
+    target_link_options(hw_initialization_test PRIVATE -no-pie)
+  endif()
+  if(BUILD_VDF_TESTS)
+    add_test(NAME regression.hw.initialization COMMAND hw_initialization_test)
+  endif()
+
   add_executable(hw_proof_wait_test
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/hw_proof_wait_test.cpp
   )

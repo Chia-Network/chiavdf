@@ -1,4 +1,6 @@
 #include "chia_driver.hpp"
+#include "hw_interface.hpp"
+#include "emu_runner.hpp"
 #include "vdf_base.hpp"
 #include "clock.hpp"
 #include "hw_util.hpp"
@@ -29,7 +31,15 @@ static inline uint32_t htonl_local(uint32_t x) { return htonl(x); }
 static inline uint32_t ntohl_local(uint32_t x) { return ntohl(x); }
 #endif
 
-#define N_VDFS 3
+constexpr unsigned N_VDFS = N_HW_VDFS;
+
+static thread_local EmuTrace *active_trace = nullptr;
+EmuTrace::EmuTrace() : previous_(active_trace) { active_trace = this; }
+EmuTrace::~EmuTrace() { active_trace = previous_; }
+static void record(EmuOperation operation) {
+    if (active_trace && active_trace->operations.size() < 4096)
+        active_trace->operations.push_back(operation);
+}
 
 struct job_reg_set {
     uint32_t id;
@@ -50,6 +60,7 @@ struct job_status {
 
 static struct job_status g_status_regs[N_VDFS];
 static uint32_t g_pll_regs[8];
+static uint32_t g_control_regs[N_VDFS];
 
 static int g_error_prob = -1;
 
@@ -151,6 +162,16 @@ static void disable_engine(int i)
     }
 }
 
+void emu_reset_board() {
+    record({EmuOperation::reset});
+    for (unsigned i = 0; i < N_VDFS; ++i) {
+        disable_engine(i);
+        // Deliberately clear the controls rather than assume reset-bit defaults.
+        g_control_regs[i] = 0;
+    }
+    memset(g_pll_regs, 0, sizeof(g_pll_regs));
+}
+
 static void enable_engine(int i)
 {
     if (!states[i]) {
@@ -233,7 +254,7 @@ void copy_regs(void *dst, void *src, uint32_t size, uint32_t max_size, int32_t o
 #define CHIA_VDF_STATUS_SIZE 0xb4
 #define CHIA_VDF_BURST_START 0x300014
 //#define CHIA_VDF_BURST_END 0x300244
-#define CHIA_VDF_JOB_CSR_MULT 0x10000
+#define CHIA_VDF_JOB_CSR_MULT HW_VDF_ENGINE_STRIDE
 
 void read_regs(uint32_t addr, uint8_t *buf, uint32_t size)
 {
@@ -259,6 +280,14 @@ void read_regs(uint32_t addr, uint8_t *buf, uint32_t size)
         {
             LOG_DEBUG("Emu: Updating vdf %d", i);
             update_status(&g_status_regs[i], states[i]);
+        }
+    }
+
+    for (unsigned i = 0; i < N_VDFS; ++i) {
+        if (addr == CHIA_VDF_CONTROL_REG_OFFSET + CHIA_VDF_JOB_CSR_MULT * i && size == sizeof(uint32_t)) {
+            const uint32_t control = htonl_local(g_control_regs[i]);
+            memcpy(buf, &control, sizeof(control));
+            return;
         }
     }
 
@@ -292,6 +321,11 @@ int emu_do_io(uint8_t *buf_in, uint16_t size_in, uint8_t *buf_out, uint16_t size
     buf_in += CMD_SIZE;
     size_in -= CMD_SIZE;
     LOG_DEBUG("Emu: addr=0x%x in=%hu bytes out=%hu bytes", addr, size_in, size_out);
+    if (size_in >= sizeof(uint32_t)) {
+        uint32_t value;
+        memcpy(&value, buf_in, sizeof(value));
+        record({EmuOperation::write, addr, ntohl_local(value)});
+    }
     for (i = 0; i < N_VDFS; i++) {
         if (addr >= job_csr && addr < job_csr + sizeof(g_job_regs[0])) {
             uint32_t offset = addr - job_csr;
@@ -303,10 +337,11 @@ int emu_do_io(uint8_t *buf_in, uint16_t size_in, uint8_t *buf_out, uint16_t size
                 g_job_regs[i].start_flag = 0;
             }
         }
-        if (addr == job_control) {
+        if (size_in && addr == job_control) {
             uint32_t data;
             memcpy(&data, buf_in, 4);
             data = ntohl_local(data);
+            g_control_regs[i] = data;
             if (data & (1U << CHIA_VDF_CONTROL_CLK_ENABLE_BIT)) {
                 enable_engine(i);
             } else {
@@ -322,6 +357,11 @@ int emu_do_io(uint8_t *buf_in, uint16_t size_in, uint8_t *buf_out, uint16_t size
         buf_out += WAIT_CYCLES;
 
         read_regs(addr, buf_out, size_out);
+        if (size_out >= sizeof(uint32_t)) {
+            uint32_t value;
+            memcpy(&value, buf_out, sizeof(value));
+            record({EmuOperation::read, addr, ntohl_local(value)});
+        }
     } else if (!size_out && addr < sizeof(g_pll_regs)) {
         uint8_t *regs_addr = &((uint8_t *)g_pll_regs)[addr];
         uint32_t status_val = htonl_local((1U << CLOCK_STATUS_DIVACK_BIT) |
@@ -336,6 +376,8 @@ int emu_do_io(uint8_t *buf_in, uint16_t size_in, uint8_t *buf_out, uint16_t size
 
 int emu_do_io_i2c(uint8_t *buf, uint16_t size, uint32_t addr, int is_out)
 {
+    if (!is_out && size >= 2)
+        record({EmuOperation::i2c_write, addr, static_cast<uint32_t>((buf[0] << 8) | buf[1])});
     if (is_out) {
         memset(buf, 0, size);
     }

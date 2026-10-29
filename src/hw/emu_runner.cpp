@@ -1,5 +1,6 @@
 #include "chia_driver.hpp"
 #include "hw_interface.hpp"
+#include "emu_runner.hpp"
 #include "vdf_base.hpp"
 #include "clock.hpp"
 #include "hw_util.hpp"
@@ -31,6 +32,14 @@ static inline uint32_t ntohl_local(uint32_t x) { return ntohl(x); }
 #endif
 
 constexpr unsigned N_VDFS = N_HW_VDFS;
+
+static thread_local EmuTrace *active_trace = nullptr;
+EmuTrace::EmuTrace() : previous_(active_trace) { active_trace = this; }
+EmuTrace::~EmuTrace() { active_trace = previous_; }
+static void record(EmuOperation operation) {
+    if (active_trace && active_trace->operations.size() < 4096)
+        active_trace->operations.push_back(operation);
+}
 
 struct job_reg_set {
     uint32_t id;
@@ -151,6 +160,16 @@ static void disable_engine(int i)
         LOG_INFO("Emu %d: Disabling engine", i);
         states[i]->stopping.store(true, std::memory_order_release);
     }
+}
+
+void emu_reset_board() {
+    record({EmuOperation::reset});
+    for (unsigned i = 0; i < N_VDFS; ++i) {
+        disable_engine(i);
+        // Deliberately clear the controls rather than assume reset-bit defaults.
+        g_control_regs[i] = 0;
+    }
+    memset(g_pll_regs, 0, sizeof(g_pll_regs));
 }
 
 static void enable_engine(int i)
@@ -302,6 +321,11 @@ int emu_do_io(uint8_t *buf_in, uint16_t size_in, uint8_t *buf_out, uint16_t size
     buf_in += CMD_SIZE;
     size_in -= CMD_SIZE;
     LOG_DEBUG("Emu: addr=0x%x in=%hu bytes out=%hu bytes", addr, size_in, size_out);
+    if (size_in >= sizeof(uint32_t)) {
+        uint32_t value;
+        memcpy(&value, buf_in, sizeof(value));
+        record({EmuOperation::write, addr, ntohl_local(value)});
+    }
     for (i = 0; i < N_VDFS; i++) {
         if (addr >= job_csr && addr < job_csr + sizeof(g_job_regs[0])) {
             uint32_t offset = addr - job_csr;
@@ -333,6 +357,11 @@ int emu_do_io(uint8_t *buf_in, uint16_t size_in, uint8_t *buf_out, uint16_t size
         buf_out += WAIT_CYCLES;
 
         read_regs(addr, buf_out, size_out);
+        if (size_out >= sizeof(uint32_t)) {
+            uint32_t value;
+            memcpy(&value, buf_out, sizeof(value));
+            record({EmuOperation::read, addr, ntohl_local(value)});
+        }
     } else if (!size_out && addr < sizeof(g_pll_regs)) {
         uint8_t *regs_addr = &((uint8_t *)g_pll_regs)[addr];
         uint32_t status_val = htonl_local((1U << CLOCK_STATUS_DIVACK_BIT) |
@@ -347,6 +376,8 @@ int emu_do_io(uint8_t *buf_in, uint16_t size_in, uint8_t *buf_out, uint16_t size
 
 int emu_do_io_i2c(uint8_t *buf, uint16_t size, uint32_t addr, int is_out)
 {
+    if (!is_out && size >= 2)
+        record({EmuOperation::i2c_write, addr, static_cast<uint32_t>((buf[0] << 8) | buf[1])});
     if (is_out) {
         memset(buf, 0, size);
     }

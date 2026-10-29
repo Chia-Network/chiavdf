@@ -6,6 +6,7 @@
 #include "timelord_live_control.hpp"
 
 #define N_HW_VDFS 3
+constexpr uint32_t HW_VDF_ENGINE_STRIDE = 0x10000;
 constexpr uint8_t HW_VDF_ALL_ENGINES = (1U << N_HW_VDFS) - 1;
 #define HW_VDF_STATUS_SIZE 0xb4
 #define HW_VDF_BURST_START 0x300014

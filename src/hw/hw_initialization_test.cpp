@@ -1,5 +1,6 @@
 #include "hw_initialization.hpp"
 #include "chia_driver.hpp"
+#include "emu_runner.hpp"
 #include <array>
 #include <limits>
 #include <memory>
@@ -27,6 +28,7 @@ struct Hardware {
     std::array<uint32_t, N_HW_VDFS> controls;
     std::vector<Event> trace;
     uint8_t failed_writes = 0;
+    unsigned write_failures = std::numeric_limits<unsigned>::max();
     uint8_t failed_reads = 0;
     uint8_t running_readback = 0;
     uint8_t missing_reset_readback = 0;
@@ -38,14 +40,14 @@ struct Hardware {
 
     bool engine_control(unsigned engine, uint32_t value) {
         trace.push_back({"control", engine, value});
-        if (failed_writes & (1U << engine)) return false;
+        if ((failed_writes & (1U << engine)) && reset_calls <= write_failures) return false;
         controls[engine] = value;
         return true;
     }
     bool reset() {
         trace.push_back({"board_reset"});
         if (++reset_calls <= reset_failures) return false;
-        controls.fill(kReset);
+        controls.fill(0);
         return true;
     }
     bool engine_control_read(unsigned engine, uint32_t &value) {
@@ -78,6 +80,7 @@ void check_order() {
         Hardware hardware;
         require(hw_initialization::operating_point(hardware, frequency, 0.88), "initialization failed");
         size_t position = 0;
+        require(hardware.trace.at(position++).operation == "board_reset", "missing initial board reset");
         for (unsigned engine = 0; engine < N_HW_VDFS; ++engine) {
             const auto &gate = hardware.trace.at(position++);
             const auto &reset = hardware.trace.at(position++);
@@ -86,7 +89,6 @@ void check_order() {
             require(reset.operation == "control" && reset.engine == engine && reset.value == kReset,
                     "engine reset order");
         }
-        require(hardware.trace.at(position++).operation == "board_reset", "missing explicit board reset");
         for (unsigned engine = 0; engine < N_HW_VDFS; ++engine) {
             const auto &read = hardware.trace.at(position++);
             require(read.operation == "read" && read.engine == engine, "missing post-reset readback");
@@ -111,8 +113,12 @@ void check_failures() {
         const auto bit = static_cast<uint8_t>(1U << engine);
         Hardware partial;
         partial.failed_writes = bit;
-        require(hw_initialization::operating_point(partial, 1100., 0.88) && partial.reset_calls == 1,
-                "board reset did not recover partial control write failure");
+        partial.write_failures = 1;
+        require(hw_initialization::operating_point(partial, 1100., 0.88) && partial.reset_calls == 2,
+                "second attempt did not recover partial control write failure");
+        Hardware permanent;
+        permanent.failed_writes = bit;
+        require_no_settings(permanent);
         Hardware unreadable;
         unreadable.failed_reads = bit;
         require_no_settings(unreadable);
@@ -133,6 +139,7 @@ void check_failures() {
     Hardware recovered;
     recovered.failed_writes = HW_VDF_ALL_ENGINES;
     recovered.reset_failures = 1;
+    recovered.write_failures = 1;
     require(hw_initialization::operating_point(recovered, 1100., 0.88) && recovered.reset_calls == 2,
             "transient reset failure did not recover");
     Hardware pll_error;
@@ -144,13 +151,51 @@ void check_failures() {
     require(!hw_initialization::operating_point(voltage_error, 1100., 0.88), "voltage failure hidden");
 }
 
+bool valid_initialization_trace(const std::vector<EmuOperation> &operations) {
+    uint8_t verified = 0;
+    bool reset_seen = false, pll_seen = false, voltage_seen = false;
+    for (const auto &operation : operations) {
+        if (operation.kind == EmuOperation::reset) {
+            reset_seen = true;
+            verified = 0;
+        }
+        for (unsigned engine = 0; engine < N_HW_VDFS; ++engine) {
+            if (operation.kind == EmuOperation::read &&
+                operation.address == CHIA_VDF_CONTROL_REG_OFFSET + HW_VDF_ENGINE_STRIDE * engine &&
+                (operation.value & (kClock | kReset)) == kReset)
+                verified |= static_cast<uint8_t>(1U << engine);
+        }
+        if (operation.kind == EmuOperation::write && operation.address < 0x20) {
+            if (!reset_seen || verified != HW_VDF_ALL_ENGINES) return false;
+            pll_seen = true;
+        }
+        if (operation.kind == EmuOperation::i2c_write && operation.address == 0x38 &&
+            ((operation.value >> 8) == 7 || (operation.value >> 8) == 8)) {
+            if (!pll_seen || verified != HW_VDF_ALL_ENGINES) return false;
+            voltage_seen = true;
+        }
+    }
+    return reset_seen && pll_seen && voltage_seen;
+}
+
 void check_real_adapter() {
+    EmuTrace trace;
     std::unique_ptr<ChiaDriver, decltype(&stop_hw)> driver(init_hw(1100., 0.88, 0, "EMULATED"), stop_hw);
     require(driver != nullptr, "emulated init failed");
     for (unsigned engine = 0; engine < N_HW_VDFS; ++engine) {
         uint32_t control = 0;
-        require(driver->RegRead(CHIA_VDF_CONTROL_REG_OFFSET + VdfDriver::VDF_ENGINE_STRIDE * engine, control) == 0 &&
+        require(driver->RegRead(CHIA_VDF_CONTROL_REG_OFFSET + HW_VDF_ENGINE_STRIDE * engine, control) == 0 &&
                 (control & (kReset | kClock)) == kReset, "real adapter did not leave every engine reset/gated");
+    }
+    require(valid_initialization_trace(trace.operations), "real adapter programmed settings before verified quiescence");
+    auto reordered = trace.operations;
+    reordered.insert(reordered.begin(), {EmuOperation::write, 0, 1});
+    require(!valid_initialization_trace(reordered), "trace check missed an early PLL write");
+    require(driver->Reset(1000) == 0, "emulated board reset failed");
+    for (unsigned engine = 0; engine < N_HW_VDFS; ++engine) {
+        uint32_t control = ~0U;
+        require(driver->RegRead(CHIA_VDF_CONTROL_REG_OFFSET + HW_VDF_ENGINE_STRIDE * engine, control) == 0 &&
+                control == 0, "emulator reset preserved pre-reset control writes");
     }
 }
 } // namespace

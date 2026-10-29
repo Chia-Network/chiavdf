@@ -457,9 +457,9 @@ cross-board hotplug behavior remains required before wide rollout.
 `hw_test` does not accept `--expected-serial`; its positional `DEVICE_LOC` selection
 is unprotected against location reuse. Use it only with controlled board attachment.
 
-Before applying an initial operating point, the client gates and asserts reset on
-every engine, explicitly pulses board reset (also recovering partial control-write
-failures), and reads back every engine's control register. Both clock-disabled and
+Before applying an initial operating point, the client first pulses board reset,
+then gates and asserts reset on every engine, and reads back every control register.
+The readback checks values just written, independent of power-on defaults. Both clock-disabled and
 reset-asserted bits must be confirmed before PLL and voltage programming. The
 sequence makes at most two attempts; errors identify the engine/stage, and an
 unconfirmed stop aborts initialization without applying the requested settings.

@@ -178,6 +178,7 @@ LIBFT4222_API FT4222_STATUS FT4222_SPIMaster_MultiReadWrite(FT_HANDLE ftHandle, 
 
 LIBFT4222_API FT4222_STATUS FT4222_GPIO_Write(FT_HANDLE ftHandle, GPIO_Port portNum, BOOL bValue)
 {
+    if (portNum == GPIO_PORT2 && !bValue) emu_reset_board();
     return FT4222_OK;
 }
 

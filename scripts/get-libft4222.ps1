@@ -25,7 +25,7 @@ $ExtractDir = Join-Path $WorkDir "extract"
 # mirrored at download.chia.net and tried first, with FTDI's ftdichip.cn
 # mirror as the fallback. The SHA-256 pins the bytes whichever host serves
 # them.
-# New driver versions can be checked at https://ftdichip.com/drivers/d2xx-drivers/ (reference only, not a download source).
+# New driver versions can be checked at https://ftdichip.com/drivers/d2xx-drivers/
 #
 # The same CDM archive supplies the installer's unmodified ftdibus.inf/
 # ftdiport.inf driver package. Staging it here keeps the DLL and driver from

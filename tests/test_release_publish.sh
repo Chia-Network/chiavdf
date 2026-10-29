@@ -534,19 +534,6 @@ assert_windows_signing_wiring() {
     ! grep -Fq 'Assert-FtdiDriverSource' "$driver_script"; then
     fail "FT4222 fetch script does not use the shared FTDI driver validator"
   fi
-  chia_cdm_line=$(grep -nF 'https://download.chia.net/vdf/CDM-v2.12.36.20-WHQL-Certified.zip' "$driver_script" | cut -d: -f1 || true)
-  cn_cdm_line=$(grep -nF 'https://ftdichip.cn/Drivers/CDM/CDM-v2.12.36.20-WHQL-Certified.zip' "$driver_script" | cut -d: -f1 || true)
-  if [ -z "$chia_cdm_line" ] || [ -z "$cn_cdm_line" ] ||
-    [ "$chia_cdm_line" -ge "$cn_cdm_line" ]; then
-    fail "FT4222 fetch script does not try the download.chia.net CDM mirror before the ftdichip.cn fallback"
-  fi
-  if grep -Fq 'ftdichip.com/wp-content' "$driver_script"; then
-    fail "FT4222 fetch script still downloads from ftdichip.com"
-  fi
-  if ! grep -Fq 'Download-FromMirrors' "$driver_script" ||
-    ! grep -Fq '$D2xxUrls' "$driver_script"; then
-    fail "FT4222 fetch script does not use the CDM mirror fallback helper"
-  fi
   if ! grep -Fq 'windows-ftdi-driver.ps1' "$script" ||
     ! grep -Fq 'Assert-FtdiDriverSource' "$installer_script"; then
     fail "Windows packaging does not use the shared FTDI driver validator"

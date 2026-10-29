@@ -32,17 +32,16 @@
 int chia_vdf_is_emu = 1;
 
 #define EMU_LOC_ID 0x88888
-#define SPI_FT_BASE 0x100
-#define GPIO_FT_BASE 0x200
+#define SPI_FT_BASE kEmuSpiHandle
+#define GPIO_FT_BASE kEmuGpioHandle
 
 EmuFtdiTestState chia_vdf_emu_ftdi;
 
-static bool fail_call(const char *name) {
-    return chia_vdf_emu_ftdi.fail_call != nullptr &&
-           strcmp(chia_vdf_emu_ftdi.fail_call, name) == 0;
+static bool fail_call(EmuFtdiFailure call) {
+    return chia_vdf_emu_ftdi.fail_call == call;
 }
 
-static FT4222_STATUS configure(const char *name) {
+static FT4222_STATUS configure(EmuFtdiFailure name) {
     ++chia_vdf_emu_ftdi.configuration_calls;
     return fail_call(name) ? FT4222_IO_ERROR : FT4222_OK;
 }
@@ -58,13 +57,14 @@ FTD2XX_API FT_STATUS WINAPI FT_GetDeviceInfoList(
 {
     *lpdwNumDevs = 1;
 
-    pDest->Type = FT_DEVICE_4222H_0;
+    pDest->Type = chia_vdf_emu_ftdi.mode0 ? FT_DEVICE_4222H_0 : FT_DEVICE_4222H_1_2;
 #ifdef _WIN32
     strcpy_s(pDest->Description, sizeof(pDest->Description), "A");
 #else
     snprintf(pDest->Description, sizeof(pDest->Description), "%s", "A");
 #endif
     pDest->LocId = EMU_LOC_ID;
+    snprintf(pDest->SerialNumber, sizeof(pDest->SerialNumber), "%s", chia_vdf_emu_ftdi.spi_serial.c_str());
 
     return 0;
 }
@@ -77,10 +77,12 @@ FTD2XX_API FT_STATUS WINAPI FT_OpenEx(PVOID pArg1, DWORD Flags, FT_HANDLE *pHand
         if (state.spi_open) return FT_DEVICE_NOT_OPENED;
         *pHandle = (void *)SPI_FT_BASE;
         state.spi_open = true;
-    } else if (location == EMU_LOC_ID + (state.mode0 ? 1 : 3) && !fail_call("gpio_open")) {
+    } else if (((location == EMU_LOC_ID + 3 && !state.mode0 && !state.gpio_d_unavailable) ||
+                (location == EMU_LOC_ID + 1 && (state.mode0 || state.mode1_b_available))) && !fail_call(EmuFtdiFailure::gpio_open)) {
         if (state.gpio_open) return FT_DEVICE_NOT_OPENED;
         *pHandle = (void *)GPIO_FT_BASE;
         state.gpio_open = true;
+        state.gpio_is_b = location == EMU_LOC_ID + 1;
     } else {
         return FT_DEVICE_NOT_FOUND;
     }
@@ -95,10 +97,10 @@ FTD2XX_API FT_STATUS WINAPI FT_GetDeviceInfo(FT_HANDLE handle, FT_DEVICE *type,
     if ((spi && (!state.spi_open || state.spi_info_error)) ||
         (!spi && (handle != (void *)GPIO_FT_BASE || !state.gpio_open || state.gpio_info_error)))
         return FT_INVALID_HANDLE;
-    *type = FT_DEVICE_4222H_0;
+    *type = state.mode0 ? FT_DEVICE_4222H_0 : FT_DEVICE_4222H_1_2;
     *id = 0x0403601c;
     const std::string &value = spi ? state.spi_serial : state.gpio_serial;
-    const char *text = !spi && value.empty() ? (state.mode0 ? "EMULATEDB" : "EMULATEDD") : value.c_str();
+    const char *text = !spi && value.empty() ? (state.gpio_is_b ? "EMULATEDB" : "EMULATEDD") : value.c_str();
     // A 16-byte value deliberately exercises the non-terminated D2XX buffer case.
     strncpy(serial, text, 16);
     snprintf(description, 64, "%s", "Chia VDF emulator");
@@ -107,49 +109,49 @@ FTD2XX_API FT_STATUS WINAPI FT_GetDeviceInfo(FT_HANDLE handle, FT_DEVICE *type,
 
 LIBFT4222_API FT4222_STATUS FT4222_SPIMaster_Init(FT_HANDLE ftHandle, FT4222_SPIMode  ioLine, FT4222_SPIClock clock, FT4222_SPICPOL  cpol, FT4222_SPICPHA  cpha, uint8 ssoMap)
 {
-    return configure("FT4222_SPIMaster_Init");
+    return configure(EmuFtdiFailure::FT4222_SPIMaster_Init);
 }
 
 LIBFT4222_API FT4222_STATUS FT4222_SPIMaster_SetCS(FT_HANDLE ftHandle, SPI_ChipSelect cs)
 {
-    return configure("FT4222_SPIMaster_SetCS");
+    return configure(EmuFtdiFailure::FT4222_SPIMaster_SetCS);
 }
 
 LIBFT4222_API FT4222_STATUS FT4222_SetClock(FT_HANDLE ftHandle, FT4222_ClockRate clk)
 {
-    return configure("FT4222_SetClock");
+    return configure(EmuFtdiFailure::FT4222_SetClock);
 }
 
 FTD2XX_API FT_STATUS WINAPI FT_SetUSBParameters(FT_HANDLE ftHandle, ULONG ulInTransferSize, ULONG ulOutTransferSize)
 {
     ++chia_vdf_emu_ftdi.configuration_calls;
-    return fail_call("FT_SetUSBParameters") ? FT_IO_ERROR : FT_OK;
+    return fail_call(EmuFtdiFailure::FT_SetUSBParameters) ? FT_IO_ERROR : FT_OK;
 }
 
 LIBFT4222_API FT4222_STATUS FT4222_SPI_SetDrivingStrength(FT_HANDLE ftHandle, SPI_DrivingStrength clkStrength, SPI_DrivingStrength ioStrength, SPI_DrivingStrength ssoStrength)
 {
-    return configure("FT4222_SPI_SetDrivingStrength");
+    return configure(EmuFtdiFailure::FT4222_SPI_SetDrivingStrength);
 }
 
 LIBFT4222_API FT4222_STATUS FT4222_GPIO_Init(FT_HANDLE ftHandle, GPIO_Dir gpioDir[4])
 {
-    return configure("FT4222_GPIO_Init");
+    return configure(EmuFtdiFailure::FT4222_GPIO_Init);
 }
 
 LIBFT4222_API FT4222_STATUS FT4222_SetSuspendOut(FT_HANDLE ftHandle, BOOL enable)
 {
-    return configure("FT4222_SetSuspendOut");
+    return configure(EmuFtdiFailure::FT4222_SetSuspendOut);
 }
 
 LIBFT4222_API FT4222_STATUS FT4222_SetWakeUpInterrupt(FT_HANDLE ftHandle, BOOL enable)
 {
-    return configure("FT4222_SetWakeUpInterrupt");
+    return configure(EmuFtdiFailure::FT4222_SetWakeUpInterrupt);
 }
 
 LIBFT4222_API FT4222_STATUS FT4222_UnInitialize(FT_HANDLE ftHandle)
 {
     ++chia_vdf_emu_ftdi.uninitializes;
-    return fail_call("FT4222_UnInitialize") ? FT4222_IO_ERROR : FT4222_OK;
+    return fail_call(EmuFtdiFailure::FT4222_UnInitialize) ? FT4222_IO_ERROR : FT4222_OK;
 }
 
 FTD2XX_API FT_STATUS WINAPI FT_Close(FT_HANDLE ftHandle)
@@ -158,7 +160,7 @@ FTD2XX_API FT_STATUS WINAPI FT_Close(FT_HANDLE ftHandle)
     bool *open = ftHandle == (void *)SPI_FT_BASE ? &state.spi_open :
                  ftHandle == (void *)GPIO_FT_BASE ? &state.gpio_open : nullptr;
     if (open == nullptr || !*open) return FT_INVALID_HANDLE;
-    if (fail_call(ftHandle == (void *)SPI_FT_BASE ? "spi_close" : "gpio_close"))
+    if (fail_call(ftHandle == (void *)SPI_FT_BASE ? EmuFtdiFailure::spi_close : EmuFtdiFailure::gpio_close))
         return FT_IO_ERROR;
     *open = false;
     ++state.closes;
@@ -189,7 +191,7 @@ LIBFT4222_API FT4222_STATUS FT4222_GPIO_Read(FT_HANDLE ftHandle, GPIO_Port portN
 
 LIBFT4222_API FT4222_STATUS FT4222_I2CMaster_Init(FT_HANDLE ftHandle, uint32 kbps)
 {
-    return configure("FT4222_I2CMaster_Init");
+    return configure(EmuFtdiFailure::FT4222_I2CMaster_Init);
 }
 
 LIBFT4222_API FT4222_STATUS FT4222_I2CMaster_ReadEx(FT_HANDLE ftHandle, uint16 deviceAddress, uint8 flag, uint8* buffer, uint16 bufferSize, uint16* sizeTransferred)

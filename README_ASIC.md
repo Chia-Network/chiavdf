@@ -446,7 +446,10 @@ The guarded path requires interface serials in the form `<nonempty board base>A`
 and `<same base>D` (CNFMODE1) or `<same base>B` (CNFMODE0). Other formats fail
 closed with an explicit format error. Unreadable identity reports the D2XX status
 separately from a mismatch. D2XX serials are programmable: this prevents accidental
-USB location reuse/hotplug mix-ups, not impersonation by a duplicate serial.
+USB location reuse/hotplug mix-ups, not impersonation by a duplicate serial. Prefer the exact board base from inventory;
+base/full-A matching is ambiguous if one board's base equals another board's full
+A serial (for example `X` and `XA`). Provision distinct, nonoverlapping serials.
+`--list` prints the full interface-A serial alongside each location.
 Opening/probing a GPIO handle issues no bridge-mode or ASIC setting writes before
 its identity is confirmed. Rejected handles are closed; UnInitialize is reserved
 for interfaces whose initialization was attempted, so a mismatched handle is not

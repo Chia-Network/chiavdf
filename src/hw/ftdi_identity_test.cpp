@@ -82,6 +82,9 @@ void check_rejected(const std::function<void(EmuFtdiTestState &)> &change,
       require(state.configuration_calls == 0 && state.uninitializes == 0,
               "identity rejection modified an unconfirmed board");
     }
+    if (state.fail_call == EmuFtdiFailure::FT4222_SetClock ||
+        state.fail_call == EmuFtdiFailure::FT_SetUSBParameters)
+      require(state.uninitializes >= 1, "configured SPI bridge skipped UnInitialize");
     // Retry the expected-serial path, not just a legacy unguarded open.
     const auto opens = state.opens;
     state = {};
@@ -100,20 +103,37 @@ void check_failures() {
   for (const std::string serial : {"", "A", "EMULATED", "EMULATEDB", "bad A", "abcdefghijklmnop"})
     check_rejected([&](EmuFtdiTestState &s) { s.spi_serial = serial; }, true);
   check_rejected([](EmuFtdiTestState &s) { s.gpio_serial = s.mode0 ? "EMULATEDD" : "EMULATEDB"; }, true);
-  for (const char *call : {"gpio_open", "FT4222_SetClock", "FT_SetUSBParameters",
-                          "FT4222_SPIMaster_Init", "FT4222_SPIMaster_SetCS",
-                          "FT4222_SPI_SetDrivingStrength", "FT4222_GPIO_Init",
-                          "FT4222_SetSuspendOut", "FT4222_SetWakeUpInterrupt"})
+  for (const auto call : {EmuFtdiFailure::gpio_open, EmuFtdiFailure::FT4222_SetClock, EmuFtdiFailure::FT_SetUSBParameters,
+                          EmuFtdiFailure::FT4222_SPIMaster_Init, EmuFtdiFailure::FT4222_SPIMaster_SetCS,
+                          EmuFtdiFailure::FT4222_SPI_SetDrivingStrength, EmuFtdiFailure::FT4222_GPIO_Init,
+                          EmuFtdiFailure::FT4222_SetSuspendOut, EmuFtdiFailure::FT4222_SetWakeUpInterrupt})
     check_rejected([&](EmuFtdiTestState &s) { s.fail_call = call; }, false);
 
-  for (const char *call : {"spi_close", "gpio_close"}) {
+  check_rejected([](EmuFtdiTestState &s) {
+    if (!s.mode0) { s.mode1_b_available = true; s.gpio_d_unavailable = true; }
+    else s.gpio_serial = "OTHERB";
+  }, true);
+  {
+    Fixture fixture;
+    FtdiDriver driver;
+    chia_vdf_emu_ftdi.spi_serial = "OTHERA";
+    chia_vdf_emu_ftdi.fail_call = EmuFtdiFailure::spi_close;
+    require(driver.Open(0, "EMULATED") != 0 && chia_vdf_emu_ftdi.spi_open,
+            "identity/close failure fixture did not retain the stuck handle");
+    require(chia_vdf_emu_ftdi.configuration_calls == 0 && chia_vdf_emu_ftdi.uninitializes == 0,
+            "identity rollback configured foreign board");
+    chia_vdf_emu_ftdi.fail_call = EmuFtdiFailure::none;
+    require(driver.Close() == 0 && chia_vdf_emu_ftdi.opens == chia_vdf_emu_ftdi.closes,
+            "identity rollback close retry leaked");
+  }
+  for (const auto call : {EmuFtdiFailure::spi_close, EmuFtdiFailure::gpio_close}) {
     Fixture fixture;
     FtdiDriver driver;
     require(driver.Open(0, "EMULATED") == 0, "close-error fixture open failed");
     chia_vdf_emu_ftdi.fail_call = call;
     require(driver.Close() != 0 && !driver.IsOpen() && chia_vdf_emu_ftdi.closes == 1,
             "one close failure skipped the other handle");
-    chia_vdf_emu_ftdi.fail_call = nullptr;
+    chia_vdf_emu_ftdi.fail_call = EmuFtdiFailure::none;
     require(driver.Close() == 0 && chia_vdf_emu_ftdi.opens == chia_vdf_emu_ftdi.closes &&
             chia_vdf_emu_ftdi.uninitializes == 2,
             "failed close retry repeated uninitialize or lost the handle");
@@ -121,12 +141,12 @@ void check_failures() {
   Fixture fixture;
   FtdiDriver driver;
   require(driver.Open(0, "EMULATED") == 0, "cleanup fixture open failed");
-  chia_vdf_emu_ftdi.fail_call = "FT4222_UnInitialize";
+  chia_vdf_emu_ftdi.fail_call = EmuFtdiFailure::FT4222_UnInitialize;
   require(driver.Close() != 0, "uninitialize error hidden");
   require(!driver.IsOpen() && chia_vdf_emu_ftdi.uninitializes == 2 &&
           chia_vdf_emu_ftdi.opens == chia_vdf_emu_ftdi.closes,
           "uninitialize failure skipped handle cleanup");
-  chia_vdf_emu_ftdi.fail_call = nullptr;
+  chia_vdf_emu_ftdi.fail_call = EmuFtdiFailure::none;
   require(driver.Open() == 0, "legacy optional open failed");
 }
 
@@ -135,11 +155,11 @@ void check_diagnostics() {
   FtdiDriver driver;
   require(driver.Open(0, "EMULATED") == 0, "diagnostic fixture open failed");
   chia_vdf_emu_ftdi.gpio_info_error = true;
-  auto result = ftdi_identity::confirm(reinterpret_cast<FT_HANDLE>(0x200), 'D', "EMULATED");
+  auto result = ftdi_identity::confirm(reinterpret_cast<FT_HANDLE>(kEmuGpioHandle), 'D', "EMULATED");
   require(result.error != nullptr && std::string(result.error) == "unreadable" &&
           result.status == FT_INVALID_HANDLE, "D2XX error status lost");
   chia_vdf_emu_ftdi.gpio_info_error = false;
-  result = ftdi_identity::confirm(reinterpret_cast<FT_HANDLE>(0x200), 'D', "OTHER");
+  result = ftdi_identity::confirm(reinterpret_cast<FT_HANDLE>(kEmuGpioHandle), 'D', "OTHER");
   require(result.error != nullptr && std::string(result.error) == "mismatch" &&
           result.status == FT_OK && result.serial == "EMULATEDD", "mismatch diagnostic lost");
 }

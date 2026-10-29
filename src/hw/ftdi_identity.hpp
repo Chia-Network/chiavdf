@@ -28,8 +28,10 @@ inline Result confirm(FT_HANDLE handle, char suffix, const std::string &expected
     result.error = "unreadable";
     return result;
   }
-  const auto end = static_cast<const char *>(std::memchr(serial, 0, sizeof(serial)));
-  if (end == nullptr || end - serial < 2 || end[-1] != suffix) {
+  auto end = static_cast<const char *>(std::memchr(serial, 0, sizeof(serial)));
+  // D2XX fields may occupy all 16 bytes without a trailing NUL.
+  if (end == nullptr) end = serial + sizeof(serial);
+  if (end - serial < 2 || end[-1] != suffix) {
     result.error = "invalid interface serial format";
     return result;
   }

@@ -444,7 +444,9 @@ List of options [default, min - max]:
 
 The guarded path requires interface serials in the form `<nonempty board base>A`
 and `<same base>D` (CNFMODE1) or `<same base>B` (CNFMODE0). Other formats fail
-closed with an explicit format error. Unreadable identity reports the D2XX status
+closed with an explicit format error. A 15-character base is supported even when
+the suffixed interface serial fills all 16 D2XX bytes without a terminator.
+Only CNFMODE0 and CNFMODE1 are supported. Unreadable identity reports the D2XX status
 separately from a mismatch. D2XX serials are programmable: this prevents accidental
 USB location reuse/hotplug mix-ups, not impersonation by a duplicate serial. Prefer the exact board base from inventory;
 base/full-A matching is ambiguous if one board's base equals another board's full
@@ -479,7 +481,7 @@ This tree does not read `CHIAVDF_HW_DIRECT_STATUS` or `CHIAVDF_HW_TELEMETRY`. Th
 
 ## Multiple boards and proof construction
 
-`--device-loc` selects a board. `--list` prints each interface-A location; `0`, the default, selects the first available board. Run one client per board with distinct locations. If simultaneous FTDI enumeration proves unreliable on your macOS host, initialize the clients sequentially: wait for one client to connect before starting the next. Location values can change when USB cables or hubs change.
+`--device-loc` selects a board. `--list` prints each interface-A serial and location; `0`, the default, selects the first available board. Run one client per board with distinct locations. If simultaneous FTDI enumeration proves unreliable on your macOS host, initialize the clients sequentially: wait for one client to connect before starting the next. Location values can change when USB cables or hubs change.
 
 The standalone test accepts the same location as an optional third argument: `hw_test N_VDFS N_ITERS DEVICE_LOC`.
 

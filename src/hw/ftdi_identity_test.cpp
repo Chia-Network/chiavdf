@@ -59,6 +59,17 @@ void check_modes() {
       require(driver.Close() == 0, "close failed");
       require(chia_vdf_emu_ftdi.opens == chia_vdf_emu_ftdi.closes, "successful open leaked");
     }
+    const std::string longest_base(15, 'x');
+    chia_vdf_emu_ftdi.spi_serial = longest_base + "A";
+    chia_vdf_emu_ftdi.gpio_serial = longest_base + (mode0 ? "B" : "D");
+    vdf_client_opts opts{};
+    require(parse({"prog", "--expected-serial", longest_base, "5000"}, opts) == 0,
+            "maximum base rejected by CLI");
+    require(driver.Open(0, opts.expected_serial.c_str()) == 0,
+            "full-width interface serial rejected");
+    require(driver.Close() == 0, "maximum-base close failed");
+    require(driver.Open() == 0, "legacy mode open failed");
+    require(driver.Close() == 0, "legacy mode close failed");
     // A board base ending in A is valid; the full interface-A serial is AA.
     chia_vdf_emu_ftdi.spi_serial = "AA";
     chia_vdf_emu_ftdi.gpio_serial = mode0 ? "AB" : "AD";
@@ -84,7 +95,7 @@ void check_rejected(const std::function<void(EmuFtdiTestState &)> &change,
     }
     if (state.fail_call == EmuFtdiFailure::FT4222_SetClock ||
         state.fail_call == EmuFtdiFailure::FT_SetUSBParameters)
-      require(state.uninitializes >= 1, "configured SPI bridge skipped UnInitialize");
+      require(state.uninitializes == 1, "configured SPI bridge skipped UnInitialize");
     // Retry the expected-serial path, not just a legacy unguarded open.
     const auto opens = state.opens;
     state = {};
@@ -113,6 +124,16 @@ void check_failures() {
     if (!s.mode0) { s.mode1_b_available = true; s.gpio_d_unavailable = true; }
     else s.gpio_serial = "OTHERB";
   }, true);
+  {
+    Fixture fixture;
+    auto &state = chia_vdf_emu_ftdi;
+    state.mode1_b_available = true;
+    state.gpio_d_unavailable = true;
+    FtdiDriver driver;
+    require(driver.Open() != 0 && state.configuration_calls == 0 &&
+            state.uninitializes == 0 && state.opens == state.closes,
+            "legacy open configured an incompatible GPIO interface");
+  }
   {
     Fixture fixture;
     FtdiDriver driver;

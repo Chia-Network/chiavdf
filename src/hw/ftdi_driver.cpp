@@ -280,6 +280,10 @@ int FtdiDriver::Open(DWORD loc_id, unsigned sys_clk, unsigned clk_div,
     }
     board_serial = identity.base;
     board_type = identity.type;
+  } else {
+    DWORD id;
+    char serial[16] = {}, description[64] = {};
+    CHECK(FT_GetDeviceInfo(spi_ft_handle, &board_type, &id, serial, description, nullptr));
   }
 
   // originally we set jumpers for CNFMODE1, which uses 4 USB interfaces with
@@ -306,9 +310,8 @@ int FtdiDriver::Open(DWORD loc_id, unsigned sys_clk, unsigned clk_div,
     }
   }
 
-  if (expected_serial != nullptr &&
-      ((cnfmode == 0 && board_type != FT_DEVICE_4222H_0) ||
-       (cnfmode == 1 && board_type != FT_DEVICE_4222H_1_2))) {
+  if ((cnfmode == 0 && board_type != FT_DEVICE_4222H_0) ||
+      (cnfmode == 1 && board_type != FT_DEVICE_4222H_1_2)) {
     eprintf("Opened GPIO interface is incompatible with SPI device type %u (mode %d)",
             static_cast<unsigned>(board_type), cnfmode);
     return -1;

@@ -167,7 +167,8 @@ hw_initialization_test: hw/hw_initialization_test.o hw/hw_live_control.o $(HW_OB
 
 hw/hw_test.o hw/hw_vdf_client.o hw/hw_live_control.o hw/hw_proof_wait_test.o hw/ftdi_identity_test.o hw/hw_initialization_test.o $(HW_OBJS) $(EMU_OBJS): CXXFLAGS += -I. -Ihw -Ihw/libft4222 $(OPT_CFLAGS) -Wall
 
-hw/ftdi_driver.o hw/ftdi_identity_test.o: hw/ftdi_identity.hpp hw/ftdi_driver.hpp
+hw/ftdi_driver.o hw/ftdi_identity_test.o: hw/ftdi_identity.hpp
+hw/ftdi_driver.o hw/ftdi_i2c.o hw/ftdi_identity_test.o: hw/ftdi_driver.hpp
 hw/emu_funcs.o hw/ftdi_identity_test.o: hw/emu_ftdi_test.hpp
 hw/ftdi_identity_test.o: hw/hw_vdf_client.cpp
 

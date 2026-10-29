@@ -15,21 +15,28 @@ $WorkDir = Join-Path $SrcDir "libft4222"
 $HwDir = Join-Path $SrcDir "hw\libft4222"
 
 $ZipUrl = "https://download.chia.net/vdf/LibFT4222-v1.4.8.zip"
+# ftdichip.cn is currently down; confirm this URL before enabling it as a fallback:
+# $ZipUrl = "https://ftdichip.cn/Support/SoftwareExamples/LibFT4222-v1.4.8.zip"
 $ZipSha256 = "f7bab9e78ec15035e0dd43be9043bc19557eff558d91e4854bb1d4f52d5396cd"
 $ZipPath = Join-Path $WorkDir "LibFT4222-v1.4.8.zip"
 $ExtractDir = Join-Path $WorkDir "extract"
 
 # LibFT4222 1.4.8 ships the amd64 import library and LibFT4222-64.dll, but
 # not the native D2XX DLL that import library names. The DLL comes from
-# FTDI CDM 2.12.36.20, which stores it as amd64/FTD2XX64.dll. ftdichip.com
-# answers the runner with a Cloudflare challenge, so this is FTDI's mirror
-# of that same archive. The SHA-256 is the pin for the bytes.
+# FTDI CDM 2.12.36.20, which stores it as amd64/FTD2XX64.dll. The archive is
+# mirrored at download.chia.net and tried first, with FTDI's ftdichip.cn
+# mirror as the fallback. The SHA-256 pins the bytes whichever host serves
+# them.
+# New driver versions can be checked at https://ftdichip.com/drivers/d2xx-drivers/
 #
 # The same CDM archive supplies the installer's unmodified ftdibus.inf/
 # ftdiport.inf driver package. Staging it here keeps the DLL and driver from
 # the same pinned archive and lets the signing job consume both from the build
 # artifact instead of downloading the driver again.
-$D2xxUrl = "https://ftdichip.cn/Drivers/CDM/CDM-v2.12.36.20-WHQL-Certified.zip"
+$D2xxUrls = @(
+    "https://download.chia.net/vdf/CDM-v2.12.36.20-WHQL-Certified.zip"
+    "https://ftdichip.cn/Drivers/CDM/CDM-v2.12.36.20-WHQL-Certified.zip"
+)
 $D2xxSha256 = "e8ebf401d06994183694d78e5855ed5ab026bdfa8c3d4e4ccde09ec238a0eaf1"
 $D2xxZipPath = Join-Path $WorkDir "CDM-v2.12.36.20-WHQL-Certified.zip"
 $D2xxEntry = "amd64/FTD2XX64.dll"
@@ -114,6 +121,24 @@ function Download-With-Retry {
     throw "Failed to download a valid zip from $Url after $Attempts attempts."
 }
 
+function Download-FromMirrors {
+    param(
+        [string[]]$Urls,
+        [string]$Path,
+        [string]$Sha256,
+        [int]$Attempts = 3
+    )
+    foreach ($url in $Urls) {
+        try {
+            $null = Download-With-Retry -Url $url -Path $Path -Sha256 $Sha256 -Attempts $Attempts
+            return $url
+        } catch {
+            Write-Warning "Failed to download a valid zip from $url."
+        }
+    }
+    throw "Failed to download a valid zip from any mirror: $($Urls -join ', ')."
+}
+
 function Copy-ExtractedFile {
     param(
         [string]$RelativePath,
@@ -127,7 +152,7 @@ function Copy-ExtractedFile {
 }
 
 function Install-Ftd2xxDll {
-    Download-With-Retry -Url $D2xxUrl -Path $D2xxZipPath -Sha256 $D2xxSha256 -Attempts 3
+    $script:D2xxSourceUrl = Download-FromMirrors -Urls $D2xxUrls -Path $D2xxZipPath -Sha256 $D2xxSha256 -Attempts 3
     $zip = [System.IO.Compression.ZipFile]::OpenRead($D2xxZipPath)
     try {
         $entry = @($zip.Entries | Where-Object { $_.FullName.Replace('\', '/') -eq $D2xxEntry })
@@ -179,7 +204,7 @@ function Install-Ftd2xxDriver {
 
     @"
 FTDI CDM 2.12.36.20 (WHQL Certified)
-Source: $D2xxUrl
+Source: $script:D2xxSourceUrl
 SHA-256: $D2xxSha256
 License: see the unmodified ftdibus.inf and ftdiport.inf headers.
 "@ | Set-Content -LiteralPath (Join-Path $Destination "SOURCE.txt") -Encoding ASCII

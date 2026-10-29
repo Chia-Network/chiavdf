@@ -10,6 +10,7 @@ namespace ftdi_identity {
 struct Result {
   const char *error = nullptr;
   FT_STATUS status = FT_OK;
+  FT_DEVICE type = FT_DEVICE_UNKNOWN;
   std::string serial;
   std::string base;
 };
@@ -20,10 +21,9 @@ struct Result {
 inline Result confirm(FT_HANDLE handle, char suffix, const std::string &expected,
                       bool allow_full_serial = false) {
   Result result;
-  FT_DEVICE type;
   DWORD id;
   char serial[16] = {}, description[64] = {};
-  result.status = FT_GetDeviceInfo(handle, &type, &id, serial, description, nullptr);
+  result.status = FT_GetDeviceInfo(handle, &result.type, &id, serial, description, nullptr);
   if (result.status != FT_OK) {
     result.error = "unreadable";
     return result;

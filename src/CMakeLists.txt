@@ -478,6 +478,7 @@ if(BUILD_HW_TOOLS)
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/timelord_live_control.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/chia_driver.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/ftdi_driver.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/hw/ftdi_i2c.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/vdf_driver.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw/pll_freqs.cpp
   )

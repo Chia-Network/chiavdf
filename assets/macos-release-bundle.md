@@ -13,7 +13,7 @@ This repository publishes macOS ARM64 and Intel release archives intended for Ho
   - `vdf_bench`
 - `libexec/chiavdf/`
   - `libft4222.dylib`
-  - `libft4222.1.4.4.190.dylib`
+  - `libft4222.1.4.4.221.dylib`
   - `libftd2xx.dylib`
   - versioned `libgmp` and `libgmpxx` (the sonames the binaries were linked against)
 

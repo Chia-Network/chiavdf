@@ -6,7 +6,7 @@
 #
 # Source repository: https://github.com/actions/dependency-review-action
 # Public documentation: https://docs.github.com/en/code-security/supply-chain-security/understanding-your-software-supply-chain/about-dependency-review#dependency-review-enforcement
-name: "🚨 Dependency Review"
+name: 🚨 Dependency Review
 on: [pull_request]
 
 permissions:
@@ -17,10 +17,10 @@ jobs:
     if: github.repository_owner == 'Chia-Network'
     runs-on: ubuntu-latest
     steps:
-      - name: "Checkout Repository"
+      - name: Checkout Repository
         uses: actions/checkout@v7
 
-      - name: "Dependency Review"
+      - name: Dependency Review
         uses: actions/dependency-review-action@v5.0.0
         with:
           allow-dependencies-licenses: pkg:pypi/pyinstaller

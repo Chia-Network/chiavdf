@@ -210,7 +210,7 @@ jobs:
         pip install .
         stubtest --concise chiavdf
 
-    - name: Check source install copies vdf_client and vdf_bench
+    - name: Check source install copies binaries to package and platlib root
       env:
         BUILD_VDF_CLIENT: Y
         BUILD_VDF_BENCH: Y
@@ -227,9 +227,10 @@ jobs:
         /tmp/hooks-venv/bin/pip install "$sdist"
         plat=$(/tmp/hooks-venv/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["platlib"])')
         for f in vdf_client prover_test 1weso_test 2weso_test vdf_bench; do
+          test -x "$plat/chiavdf/$f" || { echo "missing $plat/chiavdf/$f"; exit 1; }
           test -x "$plat/$f" || { echo "missing $plat/$f"; exit 1; }
         done
-        "$plat/vdf_bench" --version
+        "$plat/chiavdf/vdf_bench" --version
 
   upload:
     name: Upload to PyPI - Ubuntu 3.12 Intel

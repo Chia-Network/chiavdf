@@ -616,6 +616,16 @@ if(BUILD_HW_TOOLS)
 
 endif()
 
+# Standalone Unix corpus verifier; does not require GoogleTest or BUILD_VDF_TESTS.
+if(UNIX)
+  add_executable(verify_vdf_corpus
+    ${CMAKE_CURRENT_SOURCE_DIR}/verify_vdf_corpus.cpp
+  )
+  target_compile_features(verify_vdf_corpus PRIVATE cxx_std_20)
+  target_sources(verify_vdf_corpus PRIVATE ${VDF_COMMON_SOURCES})
+  target_link_libraries(verify_vdf_corpus PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
+endif()
+
 add_executable(verifier_test
   ${CMAKE_CURRENT_SOURCE_DIR}/verifier_test.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c

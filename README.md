@@ -246,6 +246,76 @@ cmake --build build --target vdf_client_session_test
 ctest --test-dir build --output-on-failure -R '^regression\.'
 ```
 
+### Blockchain proof corpus
+
+`verify_vdf_corpus` is a standalone Unix tool that validates binary VDF proof corpora
+independently of a blockchain database. Supply one or more files on the command
+line; there is no default sample or environment-variable configuration. The
+existing `ReferenceGoldenRegressionTest` retains the arithmetic regression coverage.
+
+Export more proofs with `export-vdf-proofs` in the `chia_rs` repository:
+
+```bash
+cargo run --release -p chia-tools --bin export-vdf-proofs -- \
+  /path/to/blockchain.sqlite mainnet-proofs.bin
+```
+
+The tool opens the database read-only, includes orphan blocks, reports progress, and
+resolves partial-proof inputs using ancestor records. It refuses to overwrite
+an existing output file. If extraction fails, discard the partial output.
+
+The file is a sequence of independently serialized Streamable records. There is
+no file header or record count. The Rust `CorpusEntry` layout is:
+
+```rust
+struct CorpusEntry {
+    height: u32,
+    input: ClassgroupElement,
+    info: VDFInfo,
+    proof: VDFProof,
+}
+```
+
+Streamable integers are big-endian. The 100 raw bytes of `input` follow the
+four-byte `height` immediately. The discriminant size is a fixed 1024 bits in
+the verifier and is not stored in the corpus. Witness bytes have a `u32` byte
+length prefix. `VDFInfo` contains the
+32-byte challenge, `u64` iteration count, and output element. `VDFProof` contains
+the `u8` witness type, length-prefixed witness, and one-byte normalized flag.
+`input` and `info.number_of_iterations` are the resolved verifier arguments,
+including adjustments for partial proofs. The C++ reader does not reapply the
+normalized flag. Block hashes and proof field names are omitted; failures
+identify the file, height and record number.
+
+Exports can be combined with
+`cat mainnet-proofs.bin testnet11-proofs.bin testneta-proofs.bin > proofs.bin`.
+The corpus omits version, network and proof field metadata. No compression is
+required.
+
+Build and run from the chiavdf repository (GoogleTest is not required):
+
+```bash
+cmake -S src -B build -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_PYTHON=OFF -DBUILD_VDF_TESTS=OFF
+cmake --build build --config Release --target verify_vdf_corpus -j 4
+./build/verify_vdf_corpus mainnet-proofs.bin testnet11-proofs.bin testneta-proofs.bin
+```
+
+For multi-configuration generators such as Xcode, run the executable from
+`build/Release/` instead.
+
+Files are processed in argument order. Verification uses one worker per hardware
+thread reported by `std::thread::hardware_concurrency()` (with a fallback of one
+worker), maps each corpus file and parses records as workers need them. Decoded
+proof memory is bounded by the worker count.
+Progress is printed every 10,000 proofs, followed by per-file and overall totals.
+Failures include the filename, block height and record number. Empty, truncated,
+unreadable or malformed corpora cause a nonzero
+exit status. A malformed record stops that file, and the tool continues with
+subsequent files. Invalid proofs are reported while checking the remaining records.
+Exit status is 0 when every file passes, 1 on failure, or 2 if no files were supplied.
+Use `--help` for usage. The tool checks VDF validity, not block consensus.
+
 ### Testing matrix
 
 - Binary integration tests: `1weso_test`, `2weso_test`, `prover_test`; these

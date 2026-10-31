@@ -49,6 +49,21 @@ die() {
   exit 1
 }
 
+retry() {
+  # Run a command up to 5 times, sleeping 30/60/120/240s between attempts.
+  local attempt=1 delay=30
+  until "$@"; do
+    if [ "$attempt" -ge 5 ]; then
+      echo "package-macos-bundle: command failed after $attempt attempts: $1 ${2:-}" >&2
+      return 1
+    fi
+    echo "package-macos-bundle: attempt $attempt failed: $1 ${2:-}; retrying in ${delay}s" >&2
+    sleep "$delay"
+    attempt=$((attempt + 1))
+    delay=$((delay * 2))
+  done
+}
+
 print_plan=false
 if [ "$#" -gt 1 ]; then
   usage >&2
@@ -274,14 +289,14 @@ fi
 scripts/package-macos-pkg.sh "$bundle_root" "$pkg_path" "$release_tag" "$installer_identity"
 
 if [ "$mode" = notarized ]; then
-  if ! xcrun notarytool submit "$pkg_path" \
+  if ! retry xcrun notarytool submit "$pkg_path" \
     --apple-id "$APPLE_NOTARIZE_USERNAME" \
     --password "$APPLE_NOTARIZE_PASSWORD" \
     --team-id "$APPLE_TEAM_ID" \
     --wait; then
     die "Notarization failed for $pkg_path"
   fi
-  xcrun stapler staple "$pkg_path"
+  retry xcrun stapler staple "$pkg_path" || die "Stapling failed for $pkg_path"
   xcrun stapler validate "$pkg_path"
   spctl -a -vv -t install "$pkg_path"
 fi

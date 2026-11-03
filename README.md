@@ -299,6 +299,7 @@ cmake -S src -B build -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_PYTHON=OFF -DBUILD_VDF_TESTS=OFF
 cmake --build build --config Release --target verify_vdf_corpus -j 4
 ./build/verify_vdf_corpus mainnet-proofs.bin testnet11-proofs.bin testneta-proofs.bin
+./build/verify_vdf_corpus --start-height 1000000 mainnet-proofs.bin
 ```
 
 For multi-configuration generators such as Xcode, run the executable from
@@ -306,8 +307,11 @@ For multi-configuration generators such as Xcode, run the executable from
 
 Files are processed in argument order. Verification uses one worker per hardware
 thread reported by `std::thread::hardware_concurrency()` (with a fallback of one
-worker), maps each corpus file and parses records as workers need them. Decoded
-proof memory is bounded by the worker count.
+worker), maps each corpus file and parses records as workers need them. With
+`--start-height`, the verifier still scans every record because the corpus has
+no height index and sorting proofs by challenge can move heights out of order.
+It validates only proofs at or above the specified height. Decoded proof memory
+is bounded by the worker count.
 Progress is printed every 10,000 proofs, followed by per-file and overall totals.
 Failures include the filename, block height and record number. Empty, truncated,
 unreadable or malformed corpora cause a nonzero

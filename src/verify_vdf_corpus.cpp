@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cstddef>
 #include <cstdint>
+#include <iomanip>
 #include <iostream>
 #include <mutex>
 #include <optional>
@@ -11,7 +13,6 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
-#include <utility>
 #include <vector>
 
 #include <fcntl.h>
@@ -128,9 +129,17 @@ std::optional<Proof> read_proof(std::span<const uint8_t>& input)
 struct Result {
     uint64_t checked = 0;
     uint64_t failures = 0;
+    uint64_t run_proofs = 0;
+    uint64_t runs = 0;
 };
 
-Result verify(const MappedFile& file, const std::string& path, unsigned workers)
+struct Run {
+    std::span<const uint8_t> bytes;
+    std::span<const uint8_t> challenge;
+    uint64_t first_number;
+};
+
+Result verify(const MappedFile& file, const std::string& path, unsigned workers, uint32_t start_height)
 {
     if (workers == 0) throw std::runtime_error("need at least one worker");
     std::span<const uint8_t> input(file.data(), file.size());
@@ -140,51 +149,98 @@ Result verify(const MappedFile& file, const std::string& path, unsigned workers)
     Result result;
     auto worker = [&] {
         std::array<uint8_t, BQFC_FORM_SIZE + MAX_WITNESS_SIZE> proof_blob;
-        // Parse one record under the lock, verify outside it, then report under
-        // the lock. Each record is checked once; decoded memory is bounded by workers.
+        // Claim a whole consecutive challenge run under the lock. Compute its
+        // discriminant once, then verify every proof outside the lock.
         while (true) {
-            std::optional<Proof> proof;
-            uint64_t number;
+            Run run;
+            uint64_t selected = 0;
             {
                 std::lock_guard<std::mutex> guard(mutex);
-                if (stop) return;
-                number = ++record_number;
+                if (stop || input.empty()) return;
+                const auto start = input;
+                auto next = input;
+                std::span<const uint8_t> challenge;
+                uint64_t count = 0;
                 try {
-                    proof = read_proof(input);
-                    if (!proof) { stop = true; return; }
+                    const auto first = read_proof(next);
+                    challenge = first->challenge;
+                    ++count;
+                    selected += first->height >= start_height;
+                    while (!next.empty()) {
+                        auto after = next;
+                        const auto candidate = read_proof(after);
+                        if (!std::equal(first->challenge.begin(), first->challenge.end(),
+                                        candidate->challenge.begin()))
+                            break;
+                        next = after;
+                        ++count;
+                        selected += candidate->height >= start_height;
+                    }
                 } catch (const std::exception& e) {
-                    // A malformed record may destroy framing. Stop reading,
-                    // but let in-flight verifications finish and report.
+                    // A malformed record may destroy framing. Keep the valid
+                    // prefix of this run and let in-flight verifications finish.
                     stop = true;
                     ++result.failures;
-                    std::cerr << path << ": record " << number << ": " << e.what() << std::endl;
-                    return;
+                    std::cerr << path << ": record " << record_number + count + 1
+                              << ": " << e.what() << std::endl;
                 }
+                run = {start.first(start.size() - next.size()), challenge, record_number + 1};
+                record_number += count;
+                if (selected != 0) {
+                    result.run_proofs += selected;
+                    ++result.runs;
+                }
+                input = next;
             }
-            std::string error;
+            if (run.bytes.empty()) return;
+            if (selected == 0) continue;
+            std::optional<integer> discriminant;
+            std::string discriminant_error;
             try {
-                std::copy(proof->output.begin(), proof->output.end(), proof_blob.begin());
-                if (!proof->witness.empty())
-                    std::copy(proof->witness.begin(), proof->witness.end(),
-                              proof_blob.begin() + proof->output.size());
-                std::vector<uint8_t> challenge(proof->challenge.begin(), proof->challenge.end());
-                if (!CreateDiscriminantAndCheckProofOfTimeNWesolowski(
-                        std::move(challenge), DISCRIMINANT_SIZE_BITS, proof->input.data(), proof_blob.data(),
-                        proof->output.size() + proof->witness.size(), proof->iterations, proof->depth))
-                    error = "INVALID";
+                std::vector<uint8_t> challenge(run.challenge.begin(), run.challenge.end());
+                discriminant = CreateDiscriminant(challenge, DISCRIMINANT_SIZE_BITS);
             } catch (const std::exception& e) {
-                error = e.what();
+                discriminant_error = e.what();
             }
-            std::lock_guard<std::mutex> guard(mutex);
-            ++result.checked;
-            if (!error.empty()) {
-                ++result.failures;
-                std::cerr << path << ": record " << number << ": height=" << proof->height
-                          << ": " << error << std::endl;
+            auto records = run.bytes;
+            uint64_t number = run.first_number;
+            while (!records.empty()) {
+                const auto proof = read_proof(records);
+                if (proof->height < start_height) {
+                    ++number;
+                    continue;
+                }
+                std::string error = discriminant_error;
+                if (discriminant) {
+                    try {
+                        std::copy(proof->output.begin(), proof->output.end(), proof_blob.begin());
+                        if (!proof->witness.empty())
+                            std::copy(proof->witness.begin(), proof->witness.end(),
+                                      proof_blob.begin() + proof->output.size());
+                        if (!CheckProofOfTimeNWesolowski(
+                                *discriminant, proof->input.data(), proof_blob.data(),
+                                proof->output.size() + proof->witness.size(), proof->iterations,
+                                DISCRIMINANT_SIZE_BITS, proof->depth))
+                            error = "INVALID";
+                    } catch (const std::exception& e) {
+                        error = e.what();
+                    }
+                }
+                std::lock_guard<std::mutex> guard(mutex);
+                ++result.checked;
+                if (!error.empty()) {
+                    ++result.failures;
+                    std::cerr << path << ": record " << number << ": height=" << proof->height
+                              << ": " << error << std::endl;
+                }
+                if (result.checked % 10000 == 0)
+                    std::cout << path << ": checked " << result.checked << " proofs, "
+                              << result.failures << " failures, average challenge run length "
+                              << std::fixed << std::setprecision(2)
+                              << static_cast<double>(result.run_proofs) / result.runs
+                              << " (height=" << proof->height << ")" << std::endl;
+                ++number;
             }
-            if (result.checked % 10000 == 0)
-                std::cout << path << ": checked " << result.checked << " proofs, "
-                          << result.failures << " failures (height=" << proof->height << ")" << std::endl;
         }
     };
     {
@@ -213,21 +269,56 @@ Result verify(const MappedFile& file, const std::string& path, unsigned workers)
 
 int main(int argc, char* argv[])
 {
-    if (argc < 2 || (argc == 2 && std::string(argv[1]) == "--help")) {
-        std::cout << "Usage: " << argv[0] << " CORPUS.bin [CORPUS.bin ...]\n"
+    const auto usage = [&] {
+        std::cout << "Usage: " << argv[0]
+                  << " [--start-height HEIGHT] CORPUS.bin [CORPUS.bin ...]\n"
                   << "Verify binary Streamable corpora from chia-tools/export-vdf-proofs.\n";
-        return argc < 2 ? 2 : 0;
+    };
+    uint32_t start_height = 0;
+    bool has_start_height = false;
+    bool files_only = false;
+    std::vector<std::string> paths;
+    for (int i = 1; i < argc; ++i) {
+        const std::string arg = argv[i];
+        if (!files_only && arg == "--help") {
+            usage();
+            return 0;
+        }
+        if (!files_only && arg == "--") {
+            files_only = true;
+            continue;
+        }
+        if (!files_only && arg == "--start-height") {
+            if (has_start_height || i + 1 == argc) {
+                std::cerr << "--start-height requires one HEIGHT value\n";
+                return 2;
+            }
+            const std::string value = argv[++i];
+            const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), start_height);
+            if (error != std::errc{} || end != value.data() + value.size()) {
+                std::cerr << "invalid start height: " << value << std::endl;
+                return 2;
+            }
+            has_start_height = true;
+            continue;
+        }
+        if (!files_only && !arg.empty() && arg[0] == '-') {
+            std::cerr << "unknown option: " << arg << std::endl;
+            return 2;
+        }
+        paths.push_back(arg);
     }
+    if (paths.empty()) { usage(); return 2; }
     const unsigned workers = std::max(1u, std::thread::hardware_concurrency());
     std::cout << "Using " << workers << " verifier threads" << std::endl;
     uint64_t total_proofs = 0;
     uint64_t total_failures = 0;
     unsigned failed_files = 0;
-    for (int i = 1; i < argc; ++i) {
-        const std::string path = argv[i];
+    for (const std::string& path : paths) {
         try {
+            std::cout << path << ": start height " << start_height << std::endl;
             proof_corpus::MappedFile file(path);
-            auto result = proof_corpus::verify(file, path, workers);
+            auto result = proof_corpus::verify(file, path, workers, start_height);
             total_proofs += result.checked;
             total_failures += result.failures;
             if (result.failures != 0) ++failed_files;
@@ -240,6 +331,6 @@ int main(int argc, char* argv[])
         }
     }
     std::cout << "Total: " << total_proofs << " proofs, " << total_failures
-              << " failures, " << failed_files << " failed files out of " << argc - 1 << std::endl;
+              << " failures, " << failed_files << " failed files out of " << paths.size() << std::endl;
     return total_failures == 0 ? 0 : 1;
 }

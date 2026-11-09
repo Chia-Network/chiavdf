@@ -42,6 +42,7 @@ test -s "$libmingwex"
 test -s "$libgcc"
 if [ -n "${GITHUB_ENV:-}" ]; then
   github_env=$(cygpath -u "$GITHUB_ENV")
+  printf 'CHIAVDF_GMP_PREFIX=%s\n' "$(cygpath -w "$prefix")" >> "$github_env"
   printf 'MINGW_LIBMINGWEX=%s\n' "$(cygpath -w "$libmingwex")" >> "$github_env"
   printf 'MINGW_LIBGCC=%s\n' "$(cygpath -w "$libgcc")" >> "$github_env"
 fi

@@ -66,6 +66,12 @@ jobs:
           & $exe
           if ($LASTEXITCODE -ne 0) { throw "MSVC GMP probe failed with exit code $LASTEXITCODE" }
 
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build and test Rust crate with MinGW GMP
+        run: cargo test -p chiavdf
+
   fuzz_targets:
     name: Run fuzzers (${{ matrix.target }})
     runs-on: ubuntu-latest

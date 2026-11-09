@@ -48,7 +48,10 @@ jobs:
         run: |
           $prefix = Join-Path $env:RUNNER_TEMP 'chiavdf-gmp'
           $exe = Join-Path $env:RUNNER_TEMP 'mingw-gmp-msvc-probe.exe'
-          cl.exe /nologo /MD "/I$prefix\include" tests\windows-mingw-gmp-probe.c "$prefix\lib\libgmp.a" "/Fe:$exe"
+          $libmingwex = (& gcc.exe -print-file-name=libmingwex.a).Trim()
+          $libgcc = (& gcc.exe -print-file-name=libgcc.a).Trim()
+          if (-not (Test-Path $libmingwex) -or -not (Test-Path $libgcc)) { throw 'Could not locate MinGW static runtime archives' }
+          cl.exe /nologo /MD "/I$prefix\include" tests\windows-mingw-gmp-probe.c "$prefix\lib\libgmp.a" $libmingwex $libgcc "/Fe:$exe"
           if ($LASTEXITCODE -ne 0) { throw "MSVC link failed with exit code $LASTEXITCODE" }
           & $exe
           if ($LASTEXITCODE -ne 0) { throw "MSVC GMP probe failed with exit code $LASTEXITCODE" }

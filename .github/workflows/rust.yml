@@ -19,6 +19,40 @@ permissions:
   contents: read
 
 jobs:
+  mingw_gmp_msvc_link:
+    name: MinGW GMP static archive with MSVC linker
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Set up MinGW-w64
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            base-devel
+            mingw-w64-x86_64-toolchain
+
+      - name: Build GMP with MinGW
+        shell: msys2 {0}
+        run: bash "$(cygpath -u "$GITHUB_WORKSPACE")/scripts/build-windows-mingw-gmp.sh" "$RUNNER_TEMP/chiavdf-gmp"
+
+      - name: Link and run MSVC consumer
+        shell: pwsh
+        run: |
+          $prefix = Join-Path $env:RUNNER_TEMP 'chiavdf-gmp'
+          $exe = Join-Path $env:RUNNER_TEMP 'mingw-gmp-msvc-probe.exe'
+          cl.exe /nologo /MD "/I$prefix\include" tests\windows-mingw-gmp-probe.c "$prefix\lib\libgmp.a" "/Fe:$exe"
+          if ($LASTEXITCODE -ne 0) { throw "MSVC link failed with exit code $LASTEXITCODE" }
+          & $exe
+          if ($LASTEXITCODE -ne 0) { throw "MSVC GMP probe failed with exit code $LASTEXITCODE" }
+
   fuzz_targets:
     name: Run fuzzers (${{ matrix.target }})
     runs-on: ubuntu-latest

@@ -36,4 +36,13 @@ make install
 
 test -s "$prefix/lib/libgmp.a"
 test -s "$prefix/include/gmp.h"
+libmingwex=$(x86_64-w64-mingw32-gcc -print-file-name=libmingwex.a)
+libgcc=$(x86_64-w64-mingw32-gcc -print-file-name=libgcc.a)
+test -s "$libmingwex"
+test -s "$libgcc"
+if [ -n "${GITHUB_ENV:-}" ]; then
+  github_env=$(cygpath -u "$GITHUB_ENV")
+  printf 'MINGW_LIBMINGWEX=%s\n' "$(cygpath -w "$libmingwex")" >> "$github_env"
+  printf 'MINGW_LIBGCC=%s\n' "$(cygpath -w "$libgcc")" >> "$github_env"
+fi
 echo "Built GMP ${version} static archive at $prefix"

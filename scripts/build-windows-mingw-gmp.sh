@@ -28,7 +28,7 @@ cd "gmp-${version}"
   --prefix="$prefix" \
   --disable-shared \
   --enable-static \
-  --disable-cxx \
+  --enable-cxx \
   CFLAGS="-std=gnu17"
 make -j"$(nproc)"
 make check
@@ -36,6 +36,7 @@ make install
 
 test -s "$prefix/lib/libgmp.a"
 test -s "$prefix/include/gmp.h"
+test -s "$prefix/include/gmpxx.h"
 libmingwex=$(x86_64-w64-mingw32-gcc -print-file-name=libmingwex.a)
 libgcc=$(x86_64-w64-mingw32-gcc -print-file-name=libgcc.a)
 test -s "$libmingwex"

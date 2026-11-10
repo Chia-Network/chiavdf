@@ -47,7 +47,10 @@ fn main() {
 
     if target_os == "windows" && target_env == "msvc" {
         if let Some(prefix) = &gmp_prefix {
-            config.define("CHIAVDF_GMP_PREFIX", prefix.to_str().expect("GMP prefix is not UTF-8"));
+            config.define(
+                "CHIAVDF_GMP_PREFIX",
+                prefix.to_str().expect("GMP prefix is not UTF-8"),
+            );
         }
     }
 
@@ -75,12 +78,18 @@ fn main() {
     if target_os == "windows" {
         if let Some(prefix) = gmp_prefix {
             println!("cargo:rustc-link-lib=static=gmp");
-            println!("cargo:rustc-link-search=native={}", prefix.join("lib").display());
+            println!(
+                "cargo:rustc-link-search=native={}",
+                prefix.join("lib").display()
+            );
             for runtime_archive in ["MINGW_LIBMINGWEX", "MINGW_LIBGCC"] {
                 let archive = PathBuf::from(env::var_os(runtime_archive).unwrap_or_else(|| {
                     panic!("{runtime_archive} must be set when using MinGW GMP on Windows")
                 }));
-                println!("cargo:rustc-link-search=native={}", archive.parent().unwrap().display());
+                println!(
+                    "cargo:rustc-link-search=native={}",
+                    archive.parent().unwrap().display()
+                );
             }
             println!("cargo:rustc-link-lib=static:+verbatim=libmingwex.a");
             println!("cargo:rustc-link-lib=static:+verbatim=libgcc.a");

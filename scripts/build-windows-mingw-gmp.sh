@@ -40,10 +40,12 @@ libmingwex=$(x86_64-w64-mingw32-gcc -print-file-name=libmingwex.a)
 libgcc=$(x86_64-w64-mingw32-gcc -print-file-name=libgcc.a)
 test -s "$libmingwex"
 test -s "$libgcc"
+cp "$libmingwex" "$prefix/lib/libmingwex.a"
+cp "$libgcc" "$prefix/lib/libgcc.a"
 if [ -n "${GITHUB_ENV:-}" ]; then
   github_env=$(cygpath -u "$GITHUB_ENV")
   printf 'CHIAVDF_GMP_PREFIX=%s\n' "$(cygpath -w "$prefix")" >> "$github_env"
-  printf 'MINGW_LIBMINGWEX=%s\n' "$(cygpath -w "$libmingwex")" >> "$github_env"
-  printf 'MINGW_LIBGCC=%s\n' "$(cygpath -w "$libgcc")" >> "$github_env"
+  printf 'MINGW_LIBMINGWEX=%s\n' "$(cygpath -w "$prefix/lib/libmingwex.a")" >> "$github_env"
+  printf 'MINGW_LIBGCC=%s\n' "$(cygpath -w "$prefix/lib/libgcc.a")" >> "$github_env"
 fi
 echo "Built GMP ${version} static archive at $prefix"

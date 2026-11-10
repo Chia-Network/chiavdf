@@ -196,12 +196,23 @@ jobs:
           command -v cmake
           cmake --version
 
-      - name: Install MPIR on Windows
+      - name: Install MinGW GMP on Windows
         if: matrix.os.name == 'Windows'
+        shell: pwsh
         run: |
-          bash scripts/get-mpir-gc-x64.sh
-          if ($LASTEXITCODE -ne 0) { throw "get-mpir-gc-x64.sh failed with exit code $LASTEXITCODE" }
-          "$(Get-Location)/mpir_gc_x64" | Out-File -Append -FilePath $env:GITHUB_PATH
+          choco install msys2 --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "MSYS2 installation failed with exit code $LASTEXITCODE" }
+          $bash = 'C:\tools\msys64\usr\bin\bash.exe'
+          $env:MSYSTEM = 'MINGW64'
+          $env:CHERE_INVOKING = '1'
+          & $bash -lc 'pacman -Syu --noconfirm'
+          if ($LASTEXITCODE -ne 0) { throw "MSYS2 update failed with exit code $LASTEXITCODE" }
+          & $bash -lc 'pacman -S --needed --noconfirm base-devel mingw-w64-x86_64-toolchain'
+          if ($LASTEXITCODE -ne 0) { throw "MinGW-w64 installation failed with exit code $LASTEXITCODE" }
+          $env:POWERSHELL_GMP_SCRIPT = Join-Path (Get-Location).Path 'scripts/build-windows-mingw-gmp.sh'
+          $env:POWERSHELL_GMP_PREFIX = Join-Path $env:RUNNER_TEMP 'chiavdf-gmp'
+          & $bash -lc 'bash "$(cygpath -u "$POWERSHELL_GMP_SCRIPT")" "$(cygpath -u "$POWERSHELL_GMP_PREFIX")"'
+          if ($LASTEXITCODE -ne 0) { throw "GMP MinGW build failed with exit code $LASTEXITCODE" }
 
       - name: Install libclang-dev on Linux
         if: matrix.os.name == 'Ubuntu'
@@ -215,6 +226,14 @@ jobs:
 
       - name: Tests
         run: cargo test && cargo test --release
+
+      - name: Upload bundled Windows GMP
+        if: matrix.os.name == 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: rust-crate-windows-gmp
+          path: ${{ runner.temp }}/chiavdf-gmp
+          if-no-files-found: error
 
   build_crate:
     name: Build crate
@@ -235,8 +254,12 @@ jobs:
       - name: Prepare for publish
         run: |
           cp -r src rust_bindings/cpp
-          bash scripts/get-mpir-gc-x64.sh
-          mv mpir_gc_x64 rust_bindings/mpir_gc_x64
+
+      - name: Download bundled Windows GMP
+        uses: actions/download-artifact@v8
+        with:
+          name: rust-crate-windows-gmp
+          path: rust_bindings/gmp-win64
 
       - name: Publish to crates.io (dry run)
         # We use `--allow-dirty` because the `cpp` folder is copied into the working directory.

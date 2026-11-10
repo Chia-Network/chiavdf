@@ -19,59 +19,6 @@ permissions:
   contents: read
 
 jobs:
-  mingw_gmp_msvc_link:
-    name: MinGW GMP static archive with MSVC linker
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up MSVC environment
-        uses: step-security/msvc-dev-cmd@v1.13.1
-        with:
-          arch: x64
-
-      - name: Install MinGW-w64
-        shell: pwsh
-        run: |
-          choco install msys2 --yes --no-progress
-          if ($LASTEXITCODE -ne 0) { throw "MSYS2 installation failed with exit code $LASTEXITCODE" }
-          $bash = 'C:\tools\msys64\usr\bin\bash.exe'
-          if (-not (Test-Path $bash)) { throw "MSYS2 bash not found at $bash" }
-          $env:MSYSTEM = 'MINGW64'
-          $env:CHERE_INVOKING = '1'
-          & $bash -lc 'pacman -Syu --noconfirm'
-          if ($LASTEXITCODE -ne 0) { throw "MSYS2 update failed with exit code $LASTEXITCODE" }
-          & $bash -lc 'pacman -S --needed --noconfirm base-devel mingw-w64-x86_64-toolchain'
-          if ($LASTEXITCODE -ne 0) { throw "MinGW-w64 installation failed with exit code $LASTEXITCODE" }
-
-      - name: Build GMP with MinGW
-        shell: pwsh
-        run: |
-          $env:MSYSTEM = 'MINGW64'
-          $env:CHERE_INVOKING = '1'
-          $bash = 'C:\tools\msys64\usr\bin\bash.exe'
-          $env:POWERSHELL_GMP_SCRIPT = Join-Path (Get-Location).Path 'scripts/build-windows-mingw-gmp.sh'
-          $env:POWERSHELL_GMP_PREFIX = Join-Path $env:RUNNER_TEMP 'chiavdf-gmp'
-          & $bash -lc 'bash "$(cygpath -u "$POWERSHELL_GMP_SCRIPT")" "$(cygpath -u "$POWERSHELL_GMP_PREFIX")"'
-          if ($LASTEXITCODE -ne 0) { throw "GMP MinGW build failed with exit code $LASTEXITCODE" }
-
-      - name: Link and run MSVC consumer
-        shell: pwsh
-        run: |
-          $prefix = Join-Path $env:RUNNER_TEMP 'chiavdf-gmp'
-          $exe = Join-Path $env:RUNNER_TEMP 'mingw-gmp-msvc-probe.exe'
-          if (-not (Test-Path $env:MINGW_LIBMINGWEX) -or -not (Test-Path $env:MINGW_LIBGCC)) { throw 'Could not locate MinGW static runtime archives' }
-          cl.exe /nologo /MD "/I$prefix\include" tests\windows-mingw-gmp-probe.c "$prefix\lib\libgmp.a" $env:MINGW_LIBMINGWEX $env:MINGW_LIBGCC "/Fe:$exe"
-          if ($LASTEXITCODE -ne 0) { throw "MSVC link failed with exit code $LASTEXITCODE" }
-          & $exe
-          if ($LASTEXITCODE -ne 0) { throw "MSVC GMP probe failed with exit code $LASTEXITCODE" }
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build and test Rust crate with MinGW GMP
-        run: cargo test -p chiavdf
-
   fuzz_targets:
     name: Run fuzzers (${{ matrix.target }})
     runs-on: ubuntu-latest

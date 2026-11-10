@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build a pinned MinGW-w64 static GMP archive for the MSVC linker experiment.
+# Build the pinned MinGW-w64 static GMP libraries used by the Windows Rust crate.
 set -euo pipefail
 
 if [ "$#" -ne 1 ]; then

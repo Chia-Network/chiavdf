@@ -1,0 +1,17 @@
+[package]
+name = "chiavdf-tools"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "validate_vdf_corpus"
+path = "src/bin/validate_vdf_corpus.rs"
+
+[dependencies]
+chia-protocol = "0.53.0"
+chia-sha2 = "0.53.0"
+chia-traits = "0.53.0"
+chia_streamable_macro = "0.53.0"
+chiavdf = { path = "../rust_bindings" }
+memmap2 = "0.9"

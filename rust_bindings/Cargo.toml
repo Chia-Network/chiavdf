@@ -13,7 +13,7 @@ include = ["build.rs", "wrapper.h", "src/**", "cpp/**", "gmp-win64/**", "Cargo.t
 link-cplusplus = "1.0.12"
 
 [build-dependencies]
-bindgen = "0.73.2"
+bindgen = { version = "0.73.2", default-features = false, features = ["runtime"] }
 cmake = "0.1.58"
 
 [dev-dependencies]

@@ -22,14 +22,14 @@ echo "$sha256  gmp-${version}.tar.xz" | sha256sum --check --status
 tar -xf "gmp-${version}.tar.xz"
 cd "gmp-${version}"
 
-./configure \
+CFLAGS="-O2 -std=gnu17" ./configure \
   --build=x86_64-pc-msys \
   --host=x86_64-w64-mingw32 \
   --prefix="$prefix" \
+  --enable-fat \
   --disable-shared \
   --enable-static \
-  --enable-cxx \
-  CFLAGS="-std=gnu17"
+  --enable-cxx
 make -j"$(nproc)"
 make check
 make install

@@ -14,4 +14,5 @@ chia-sha2 = "0.53.0"
 chia-traits = "0.53.0"
 chia_streamable_macro = "0.53.0"
 chiavdf = { path = "../rust_bindings" }
+clap = { version = "4.5", features = ["derive"] }
 memmap2 = "0.9"

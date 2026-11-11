@@ -8,6 +8,10 @@ publish = false
 name = "validate_vdf_corpus"
 path = "src/bin/validate_vdf_corpus.rs"
 
+[[bin]]
+name = "vdf_bench"
+path = "src/bin/vdf_bench.rs"
+
 [dependencies]
 chia-protocol = "0.53.0"
 chia-sha2 = "0.53.0"

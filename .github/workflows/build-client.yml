@@ -520,7 +520,12 @@ jobs:
       - name: Benchmark Rust bindings (Windows)
         if: matrix.config == 'optimized=1' && matrix.os == 'windows-latest'
         shell: pwsh
+        env:
+          CMAKE_GENERATOR: Ninja
+          CC: clang-cl
+          CXX: clang-cl
         run: |
+          Write-Host "Building Rust bindings' C/C++ core with clang-cl via Ninja"
           Write-Host "Benchmarking Rust bindings with 50 discriminants (static GMP)"
           cargo run --release -p chiavdf-tools --bin vdf_bench -- discr 50
           if ($LASTEXITCODE -ne 0) { throw "Rust vdf_bench discr failed with exit code $LASTEXITCODE" }

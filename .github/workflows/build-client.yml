@@ -350,6 +350,28 @@ jobs:
             Write-Host "Verified generated asm output: $foundPath"
           }
 
+      - name: Install MinGW GMP for Rust benchmark (Windows)
+        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
+        shell: pwsh
+        run: |
+          choco install msys2 --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "MSYS2 installation failed with exit code $LASTEXITCODE" }
+          $bash = 'C:\tools\msys64\usr\bin\bash.exe'
+          $env:MSYSTEM = 'MINGW64'
+          $env:CHERE_INVOKING = '1'
+          & $bash -lc 'pacman -Syu --noconfirm'
+          if ($LASTEXITCODE -ne 0) { throw "MSYS2 update failed with exit code $LASTEXITCODE" }
+          & $bash -lc 'pacman -S --needed --noconfirm base-devel mingw-w64-x86_64-toolchain'
+          if ($LASTEXITCODE -ne 0) { throw "MinGW-w64 installation failed with exit code $LASTEXITCODE" }
+          $env:POWERSHELL_GMP_SCRIPT = Join-Path (Get-Location).Path 'scripts/build-windows-mingw-gmp.sh'
+          $env:POWERSHELL_GMP_PREFIX = Join-Path $env:RUNNER_TEMP 'chiavdf-gmp'
+          & $bash -lc 'bash "$(cygpath -u "$POWERSHELL_GMP_SCRIPT")" "$(cygpath -u "$POWERSHELL_GMP_PREFIX")"'
+          if ($LASTEXITCODE -ne 0) { throw "MinGW GMP build failed with exit code $LASTEXITCODE" }
+
+      - name: Set up Rust for Windows benchmark
+        if: matrix.os == 'windows-latest' && matrix.config == 'optimized=1'
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Run HW smoke test (Ubuntu/macOS)
         if: matrix.os != 'windows-latest' && (matrix.config != 'TSAN=1' || startsWith(matrix.os, 'ubuntu'))
         run: |
@@ -485,9 +507,26 @@ jobs:
         run: |
           cd build
           $env:PATH = "$PWD;$PWD\..\src\hw\libft4222;$PWD\..\mpir_gc_x64;$env:PATH"
+          Write-Host "Benchmarking C vdf_bench discr 50 (MPIR)"
+          .\vdf_bench.exe discr 50
+          if ($LASTEXITCODE -ne 0) { throw "C vdf_bench discr failed with exit code $LASTEXITCODE" }
+          Write-Host "Benchmarking C vdf_bench prove 100000 (MPIR)"
+          .\vdf_bench.exe prove 100000
+          if ($LASTEXITCODE -ne 0) { throw "C vdf_bench prove failed with exit code $LASTEXITCODE" }
           Write-Host "Benchmarking vdf_bench with 2,000,000 iterations of square_asm"
           .\vdf_bench.exe square_asm 2000000
           if ($LASTEXITCODE -ne 0) { throw "vdf_bench failed with exit code $LASTEXITCODE" }
+
+      - name: Benchmark Rust bindings (Windows)
+        if: matrix.config == 'optimized=1' && matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          Write-Host "Benchmarking Rust bindings with 50 discriminants (static GMP)"
+          cargo run --release -p chiavdf-tools --bin vdf_bench -- discr 50
+          if ($LASTEXITCODE -ne 0) { throw "Rust vdf_bench discr failed with exit code $LASTEXITCODE" }
+          Write-Host "Benchmarking Rust bindings with prove 100000 (static GMP)"
+          cargo run --release -p chiavdf-tools --bin vdf_bench -- prove 100000
+          if ($LASTEXITCODE -ne 0) { throw "Rust vdf_bench prove failed with exit code $LASTEXITCODE" }
 
       - name: Package macOS bundle and installer
         if: startsWith(matrix.os, 'macos') && matrix.config == 'optimized=1'

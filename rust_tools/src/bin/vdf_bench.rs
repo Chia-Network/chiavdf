@@ -47,15 +47,14 @@ fn main() -> Result<(), String> {
                 duration
             };
             let duration = duration as u64;
-            let speed_tenths = iterations
+            let speed_tenths_k_ips = iterations
                 .checked_mul(10)
                 .ok_or_else(|| "iteration count overflows speed calculation".to_string())?
-                / duration
-                % 10;
+                / duration;
             println!(
                 "Time: {duration} ms; speed: {}.{}K ips",
-                iterations / duration,
-                speed_tenths
+                speed_tenths_k_ips / 10,
+                speed_tenths_k_ips % 10
             );
         }
         Command::Discr { iterations } => {

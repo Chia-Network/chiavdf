@@ -12,7 +12,7 @@ constexpr int kIterationHeaderDigits = 2;
 constexpr int kMaxIterationDigits = 20;
 }  // namespace
 
-static_assert(kTwoWesoItersLimit == static_cast<uint64_t>(kMaxItersAllowed) - 500000,
+static_assert(kTwoWesoItersLimit == kMaxItersAllowed - 500000,
               "TwoWesoItersSupported threshold must match kMaxItersAllowed");
 
 // Segments are 2^16, 2^18, ..., 2^30

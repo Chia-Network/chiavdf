@@ -9,7 +9,8 @@
 #include <stdexcept>
 #include <string>
 
-inline constexpr uint64_t kTwoWesoItersLimit = 800000000ULL - 500000ULL;
+// Must match kMaxItersAllowed - 500000 in callback.h (checked by a static_assert in vdf_client.cpp).
+inline constexpr uint64_t kTwoWesoItersLimit = 10000000000ULL - 500000ULL;
 
 inline bool TwoWesoItersSupported(uint64_t iters) {
     return iters < kTwoWesoItersLimit;

@@ -89,16 +89,17 @@ TEST(VdfClientSessionRegressionTest, TwoWesoItersOneIsSupported) {
     EXPECT_TRUE(TwoWesoItersSupported(1));
 }
 
-TEST(VdfClientSessionRegressionTest, TwoWesoItersSixHundredMillionIsSupported) {
-    EXPECT_TRUE(TwoWesoItersSupported(600000000ULL));
+TEST(VdfClientSessionRegressionTest, TwoWesoItersPastOldLimitIsSupported) {
+    EXPECT_TRUE(TwoWesoItersSupported(800000000ULL));
+    EXPECT_TRUE(TwoWesoItersSupported(2400000000ULL));
 }
 
 TEST(VdfClientSessionRegressionTest, TwoWesoItersLastSupportedValue) {
-    EXPECT_TRUE(TwoWesoItersSupported(799499999ULL));
+    EXPECT_TRUE(TwoWesoItersSupported(9999499999ULL));
 }
 
 TEST(VdfClientSessionRegressionTest, TwoWesoItersFirstRejectedValue) {
-    EXPECT_FALSE(TwoWesoItersSupported(799500000ULL));
+    EXPECT_FALSE(TwoWesoItersSupported(9999500000ULL));
 }
 
 TEST(VdfClientSessionRegressionTest, TwoWesoItersMaxValueIsRejected) {

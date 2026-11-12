@@ -298,6 +298,13 @@ void SessionTwoWeso(tcp::socket& sock) {
                     PrintInfo("Too big iter... ignoring");
                     continue;
                 }
+                // stop_vector is indexed by threads.size() and threads is never
+                // reduced, so at most sizeof(stop_vector) / sizeof(stop_vector[0])
+                // requests can be accepted in one session.
+                if (threads.size() >= sizeof(stop_vector) / sizeof(stop_vector[0])) {
+                    PrintInfo("Too many iterations in this session... ignoring");
+                    continue;
+                }
                 if (threads.size() < kMaxProcessesAllowed || iters < min_iter) {
                     seen_iterations.insert({iters, threads.size()});
                     PrintInfo("Running proving for iter: " + to_string(iters));

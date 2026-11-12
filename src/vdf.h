@@ -268,7 +268,7 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
             // 2-weso specific logic.
             if (two_weso) {
                 TwoWesolowskiCallback* nweso = (TwoWesolowskiCallback*) weso;
-                if (num_iterations >= nweso->Limits().switch_iters && !nweso->LargeConstants()) {
+                if (num_iterations >= nweso->Limits().switch_threshold_iters && !nweso->LargeConstants()) {
                     uint64 round_up = (100 - num_iterations % 100) % 100;
                     if (round_up > 0) {
                         repeated_square_original(*weso->vdfo, f, D, L, num_iterations, round_up, weso);
@@ -277,7 +277,7 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
                     nweso->IncreaseConstants(num_iterations);
                     weso->iterations = num_iterations;
                 }
-                if (num_iterations >= nweso->Limits().max_iters - 500000) {
+                if (num_iterations >= nweso->Limits().max_iters - kTwoWesoStopMargin) {
                     std::cout << "Maximum possible number of iterations reached!\n";
                     return ;
                 }
@@ -353,9 +353,10 @@ Proof ProveTwoWeso(integer& D, form x, uint64_t iters, uint64_t done_iterations,
 {
     integer L=root(-D, 4);
     const uint64_t end_iterations = done_iterations + iters;
-    // Past wide_stride_iters checkpoints are 1000 iterations apart, so the
-    // segment boundaries and the final checkpoint use that alignment.
-    const uint64_t alignment = (end_iterations > weso->Limits().wide_stride_iters) ? 1000 : 100;
+    // Segment boundaries and the final checkpoint must sit on stored checkpoints:
+    // at least every 100 iterations (as before), or wider where the layout stores
+    // checkpoints more sparsely.
+    const uint64_t alignment = std::max<uint64_t>(100, weso->StrideCovering(end_iterations));
     if (depth == 2) {
         while (!stop_signal && weso->iterations < end_iterations) {
             std::this_thread::sleep_for (std::chrono::milliseconds(200));

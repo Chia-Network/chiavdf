@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <iostream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -48,8 +49,38 @@ class TwoWesoWorkerGuard {
     std::atomic<bool>& stopped_;
 };
 
+TwoWesoLimits ScaledLimits(uint32_t block_shift) {
+    TwoWesoLimits limits;
+    limits.switch_threshold_iters = 9100;
+    limits.wide_stride_iters = 80000;
+    limits.max_iters = 1500000;
+    limits.block_shift = block_shift;
+    return limits;
+}
+
+TwoWesoProverTuning ScaledTuning() {
+    TwoWesoProverTuning tuning;
+    tuning.small_segment_iters = 1000;
+    return tuning;
+}
+
+std::vector<std::string> ScaledExpectedHashes() {
+    // These were recorded with the same scaled limits before the storage rework (the checkpoint layout and proofs do not depend on the block size).
+    return {
+        "be254f04a5f24d96a311054d4862473669895deaa4c942fa638d228dce413fc5",
+        "dd5623891108eae2c41f2637ccbdab4db57887cce1f640d103491e417e461134",
+        "729a41ff293ac5f3bce59b142203e50af15521627104d03dd0e5a8424302e832",
+        "aea8af5d23f676399fc4d5793e4630aa304737625a4fb47d2553f67ff86decff",
+        "1e830d000ebe452f16b2b7b262b9536f3e75054c4d11d0a3a8013781002c6592",
+        "62808bc919996853e7c6a49800d4967e22bf35c0afc97d490983be6eedccb1af",
+        "6067aa9c63707ce59b6b9cf8c1489296aa41154a7364e3a9cb709d8ca4318e67",
+        "0ec2c422c91c97b6f76ba8f65528330c3ea8b99a4053621c64259f534150853f",
+    };
+}
+
 std::vector<std::string> RunTwoWesoProofs(
     const TwoWesoLimits& limits,
+    const TwoWesoProverTuning& tuning,
     const std::vector<uint64_t>& counts) {
     init_gmp();
     set_rounding_mode();
@@ -63,7 +94,7 @@ std::vector<std::string> RunTwoWesoProofs(
     fast_algorithm = false;
     two_weso = true;
 
-    TwoWesolowskiCallback weso(D, f, limits);
+    TwoWesolowskiCallback weso(D, f, limits, tuning);
     std::atomic<bool> stopped{false};
     std::thread worker(
         repeated_square,
@@ -104,7 +135,8 @@ std::vector<std::string> RunTwoWesoProofs(
 
 TEST(TwoWesoHeadroomTest, ProofsMatchRecordedOutputBelowOldLimit) {
     const std::vector<uint64_t> counts = {1000, 15000, 100000, 1000000};
-    const std::vector<std::string> hashes = RunTwoWesoProofs(TwoWesoLimits(), counts);
+    const std::vector<std::string> hashes =
+        RunTwoWesoProofs(TwoWesoLimits(), TwoWesoProverTuning(), counts);
     const std::vector<std::string> expected = {
         "f102f062449d2da1d285fe31a24ecf148c0c1611822adac1f93d3b587e48e2b6",
         "367f43655fa2a44845b039e8699918839987179bf6fabd509ab24a7580f79f5d",
@@ -118,16 +150,45 @@ TEST(TwoWesoHeadroomTest, ProofsMatchRecordedOutputBelowOldLimit) {
     }
 }
 
-TEST(TwoWesoHeadroomTest, ProvesPastWideStrideItersWithScaledLimits) {
-    TwoWesoLimits limits;
-    limits.switch_iters = 9100;
-    limits.small_segment_iters = 1000;
-    limits.wide_stride_iters = 80000;
-    limits.max_iters = 1500000;
-
+TEST(TwoWesoHeadroomTest, ProofsMatchRecordedOutputWithScaledLimits) {
     const std::vector<uint64_t> counts = {
-        50000, 79900, 80000, 80001, 120000, 450000, 999000,
+        50000, 79900, 79999, 80000, 80001, 120000, 450000, 999000,
     };
-    const std::vector<std::string> hashes = RunTwoWesoProofs(limits, counts);
+    const std::vector<std::string> hashes =
+        RunTwoWesoProofs(ScaledLimits(8), ScaledTuning(), counts);
+    const std::vector<std::string> expected = ScaledExpectedHashes();
+
+    ASSERT_EQ(hashes.size(), counts.size());
+    ASSERT_EQ(expected.size(), counts.size());
+    for (size_t i = 0; i < counts.size(); i++) {
+        EXPECT_EQ(hashes[i], expected[i]) << "count=" << counts[i];
+    }
+}
+
+TEST(TwoWesoHeadroomTest, ScaledLayoutMatchesWithDefaultBlockSize) {
+    const std::vector<uint64_t> counts = {79999, 80001, 450000};
+    const std::vector<size_t> expected_indices = {2, 4, 6};
+    const std::vector<std::string> hashes =
+        RunTwoWesoProofs(ScaledLimits(16), ScaledTuning(), counts);
+    const std::vector<std::string> expected = ScaledExpectedHashes();
+
+    ASSERT_EQ(hashes.size(), counts.size());
+    ASSERT_EQ(expected_indices.size(), counts.size());
+    for (size_t i = 0; i < counts.size(); i++) {
+        EXPECT_EQ(hashes[i], expected[expected_indices[i]]) << "count=" << counts[i];
+    }
+}
+
+TEST(TwoWesoHeadroomTest, ShortSegmentsPastSwitchUseStoredStride) {
+    // A small segment setting above switch_threshold_iters / 9 leaves segments
+    // that end past the switch point shorter than the segment size, so they must
+    // rely on the stored wide stride instead of stepping every 10 iterations.
+    TwoWesoProverTuning tuning;
+    tuning.small_segment_iters = 5000;
+
+    const std::vector<uint64_t> counts = {40000, 45000, 60000};
+    const std::vector<std::string> hashes =
+        RunTwoWesoProofs(ScaledLimits(8), tuning, counts);
+
     EXPECT_EQ(hashes.size(), counts.size());
 }

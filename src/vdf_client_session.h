@@ -2,15 +2,13 @@
 
 #include <boost/asio.hpp>
 #include "bqfc.h"
+#include "two_weso_limits.h"
 
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <stdexcept>
 #include <string>
-
-// Must match kMaxItersAllowed - 500000 in callback.h (checked by a static_assert in vdf_client.cpp).
-inline constexpr uint64_t kTwoWesoItersLimit = 10000000000ULL - 500000ULL;
 
 inline bool TwoWesoItersSupported(uint64_t iters) {
     return iters < kTwoWesoItersLimit;

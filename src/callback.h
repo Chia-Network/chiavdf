@@ -3,6 +3,7 @@
 
 #include "util.h"
 #include "nudupl_listener.h"
+#include "two_weso_limits.h"
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
@@ -10,27 +11,23 @@
 #include <memory>
 #include <mutex>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 // Applies to n-weso.
 const int kWindowSize = 20;
 
-// Applies only to 2-weso. Checkpoints are stored every 10 iterations below the
-// switch point, every 100 iterations up to kWideStrideIters, and every 1000
-// iterations after that. The squaring worker stops 500000 iterations before
-// kMaxItersAllowed.
-const uint64_t kMaxItersAllowed = 10000000000ULL;
-const int kSwitchIters = 91000000;
-const uint64_t kWideStrideIters = 800000000;
-// Segments shorter than this (all of which end before the switch point) are
-// proven with a checkpoint stride of 10 instead of 100.
-const uint64_t kSmallSegmentIters = 10000000;
-
 struct TwoWesoLimits {
-    uint64_t switch_iters = kSwitchIters;
-    uint64_t small_segment_iters = kSmallSegmentIters;
+    // Iteration count at which the worker switches from a 10- to a 100-iteration stride.
+    uint64_t switch_threshold_iters = kSwitchIters;
     uint64_t wide_stride_iters = kWideStrideIters;
     uint64_t max_iters = kMaxItersAllowed;
+    // log2 of the number of checkpoints per storage block (tests use small blocks).
+    uint32_t block_shift = 16;
+};
+
+struct TwoWesoProverTuning {
+    uint64_t small_segment_iters = kSmallSegmentIters;
 };
 
 class WesolowskiCallback :public INUDUPLListener {
@@ -91,8 +88,6 @@ public:
 
     virtual void OnIteration(int type, void *data, uint64_t iteration) = 0;
 
-    std::unique_ptr<form[]> forms;
-    size_t forms_capacity = 0;
     std::atomic<int64_t> iterations{0};
     integer D;
     integer L;
@@ -150,56 +145,86 @@ class OneWesolowskiCallback: public WesolowskiCallback {
     uint64_t wanted_iter;
     uint32_t kl;
     form result;
+    std::unique_ptr<form[]> forms;
+    size_t forms_capacity = 0;
 };
 
 class TwoWesolowskiCallback: public WesolowskiCallback {
   public:
-    TwoWesolowskiCallback(integer& D, const form& f, const TwoWesoLimits& limits = TwoWesoLimits())
-        : WesolowskiCallback(D), limits_(limits) {
-        if (limits_.switch_iters == 0) {
-            throw std::invalid_argument("TwoWesolowskiCallback switch_iters must be positive");
+    TwoWesolowskiCallback(integer& D, const form& f,
+        const TwoWesoLimits& limits = TwoWesoLimits(),
+        const TwoWesoProverTuning& tuning = TwoWesoProverTuning())
+        : WesolowskiCallback(D), limits_(limits), tuning_(tuning) {
+        if (limits_.switch_threshold_iters == 0) {
+            throw std::invalid_argument("TwoWesolowskiCallback switch_threshold_iters must be positive");
         }
-        if (limits_.switch_iters % 100 != 0) {
-            throw std::invalid_argument("TwoWesolowskiCallback switch_iters must be a multiple of 100");
+        if (limits_.switch_threshold_iters % 100 != 0) {
+            throw std::invalid_argument("TwoWesolowskiCallback switch_threshold_iters must be a multiple of 100");
         }
         if (limits_.wide_stride_iters % 1000 != 0) {
             throw std::invalid_argument("TwoWesolowskiCallback wide_stride_iters must be a multiple of 1000");
         }
-        if (limits_.switch_iters >= limits_.wide_stride_iters) {
-            throw std::invalid_argument("TwoWesolowskiCallback switch_iters must be before wide_stride_iters");
+        if (limits_.switch_threshold_iters > std::numeric_limits<uint64_t>::max() - kSwitchSlackIters) {
+            throw std::invalid_argument("TwoWesolowskiCallback switch_threshold_iters is too large");
         }
-        if (limits_.max_iters <= limits_.wide_stride_iters ||
-            limits_.max_iters - limits_.wide_stride_iters <= 500000) {
-            throw std::invalid_argument("TwoWesolowskiCallback max_iters must be past wide_stride_iters by more than 500000");
+        const uint64_t switch_max = limits_.switch_threshold_iters + kSwitchSlackIters;
+        if (switch_max >= limits_.wide_stride_iters) {
+            throw std::invalid_argument("TwoWesolowskiCallback switch_threshold_iters plus slack must be before wide_stride_iters");
         }
-        if (limits_.small_segment_iters == 0) {
+        if (switch_max > static_cast<uint64_t>(std::numeric_limits<uint32_t>::max()) - 1) {
+            throw std::invalid_argument("TwoWesolowskiCallback switch threshold does not fit the 32-bit switch encoding");
+        }
+        if (limits_.wide_stride_iters > std::numeric_limits<uint64_t>::max() - kTwoWesoStopMargin ||
+            limits_.max_iters <= limits_.wide_stride_iters + kTwoWesoStopMargin) {
+            throw std::invalid_argument("TwoWesolowskiCallback max_iters must be past wide_stride_iters by more than the stop margin");
+        }
+        if (tuning_.small_segment_iters == 0) {
             throw std::invalid_argument("TwoWesolowskiCallback small_segment_iters must be positive");
         }
+        if (limits_.block_shift < 4 || limits_.block_shift > 24) {
+            throw std::invalid_argument("TwoWesolowskiCallback block_shift must be between 4 and 24");
+        }
 
-        const uint64_t early_points = limits_.wide_stride_iters / 10;
-        const uint64_t late_points =
-            (limits_.max_iters - limits_.wide_stride_iters) / 1000;
-        if (early_points > std::numeric_limits<uint64_t>::max() - late_points) {
+        const uint64_t mid_points = (limits_.wide_stride_iters - switch_max) / 100;
+        const uint64_t late_points = (limits_.max_iters - limits_.wide_stride_iters) / 1000;
+        uint64_t capacity = switch_max / 10;
+        if (capacity > std::numeric_limits<uint64_t>::max() - mid_points) {
             throw std::overflow_error("TwoWesolowskiCallback forms capacity overflow");
         }
-        const uint64_t max_position = early_points + late_points;
-        if (max_position > static_cast<uint64_t>(std::numeric_limits<size_t>::max() - 1)) {
+        capacity += mid_points;
+        if (capacity > std::numeric_limits<uint64_t>::max() - late_points) {
             throw std::overflow_error("TwoWesolowskiCallback forms capacity overflow");
         }
-        forms_capacity = static_cast<size_t>(max_position + 1);
-        blocks_.resize(forms_capacity / kBlockSize + 1);
+        capacity += late_points;
+        if (capacity == std::numeric_limits<uint64_t>::max()) {
+            throw std::overflow_error("TwoWesolowskiCallback forms capacity overflow");
+        }
+        capacity += 1;
+        if (capacity > static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
+            throw std::overflow_error("TwoWesolowskiCallback forms capacity overflow");
+        }
+        capacity_ = static_cast<size_t>(capacity);
+        block_size_ = size_t(1) << limits_.block_shift;
+        if (capacity_ > std::numeric_limits<size_t>::max() - (block_size_ - 1)) {
+            throw std::overflow_error("TwoWesolowskiCallback blocks directory overflow");
+        }
+        blocks_.resize((capacity_ + block_size_ - 1) / block_size_);
 
         form* slot = SlotUnlocked(0, true);
         *slot = f;
+        if (blocks_.size() > 1 && !blocks_[1]) {
+            blocks_[1].reset(new form[block_size_]);
+        }
         kl.store(10, std::memory_order_relaxed);
         transition_state.store(EncodeTransitionState(/*switch_index=*/0, /*switch_iters=*/-1), std::memory_order_relaxed);
     }
 
     const TwoWesoLimits& Limits() const { return limits_; }
+    const TwoWesoProverTuning& ProverTuning() const { return tuning_; }
 
     void IncreaseConstants(uint64_t num_iters) {
-        if (num_iters >= limits_.wide_stride_iters) {
-            throw std::logic_error("TwoWesolowskiCallback::IncreaseConstants past wide_stride_iters");
+        if (num_iters >= limits_.switch_threshold_iters + kSwitchSlackIters) {
+            throw std::logic_error("TwoWesolowskiCallback::IncreaseConstants past the switch window");
         }
         std::lock_guard<std::mutex> lk(forms_mutex);
         // Publish transition metadata first. `kl` is only a fast-path hint.
@@ -220,18 +245,24 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
         return GetPositionFromSnapshot(power, snapshot);
     }
 
+    // The stride of the stratum containing end - 1 (for end == 0 return 10).
+    // Checkpoints below `end` exist at every multiple of this value, so a proof
+    // segment ending at `end` must step through checkpoints in multiples of it.
+    uint32_t StrideCovering(uint64_t end) const {
+        if (end == 0) {
+            return 10U;
+        }
+        const uint64_t snapshot = transition_state.load(std::memory_order_acquire);
+        const Strata st = StrataFromSnapshot(snapshot);
+        return StratumFor(st, end - 1).stride;
+    }
+
     form GetFormCopy(uint64_t power) {
         std::lock_guard<std::mutex> lk(forms_mutex);
-        if (power > limits_.max_iters) {
-            throw std::runtime_error("TwoWesolowskiCallback::GetFormCopy out of bounds");
-        }
         const size_t pos = GetPositionUnlocked(power);
-        if (pos >= forms_capacity) {
-            throw std::runtime_error("TwoWesolowskiCallback::GetFormCopy out of bounds");
-        }
         form* slot = SlotUnlocked(pos, false);
         if (slot == nullptr) {
-            return form();
+            throw std::logic_error("TwoWesolowskiCallback::GetFormCopy checkpoint not computed yet");
         }
         return *slot;
     }
@@ -249,42 +280,97 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
             return;
         }
 
-        std::lock_guard<std::mutex> lk(forms_mutex);
-        const uint64_t snapshot = transition_state.load(std::memory_order_acquire);
-        const uint32_t effective_kl = GetEffectiveKl(iteration, snapshot);
-        if (iteration % effective_kl != 0) {
-            return;
+        bool allocate_next = false;
+        size_t next_block = 0;
+        {
+            std::lock_guard<std::mutex> lk(forms_mutex);
+            const uint64_t snapshot = transition_state.load(std::memory_order_acquire);
+            const Strata st = StrataFromSnapshot(snapshot);
+            const Stratum& stratum = StratumFor(st, iteration);
+            if (iteration % stratum.stride != 0) {
+                return;
+            }
+            const size_t pos = static_cast<size_t>(PositionInStrata(st, iteration));
+            form* mulf = SlotUnlocked(pos, true);
+            SetForm(type, data, mulf);
+            if (stratum.stride > current_kl) {
+                kl.store(stratum.stride, std::memory_order_release);
+            }
+            const size_t candidate = (pos >> limits_.block_shift) + 1;
+            if (candidate < blocks_.size() && !blocks_[candidate]) {
+                allocate_next = true;
+                next_block = candidate;
+            }
         }
-        if (iteration > limits_.max_iters) {
-            throw std::runtime_error("TwoWesolowskiCallback::OnIteration out of bounds");
-        }
-        const size_t pos = GetPositionFromSnapshot(iteration, snapshot);
-        if (pos >= forms_capacity) {
-            throw std::runtime_error("TwoWesolowskiCallback::OnIteration out of bounds");
-        }
-        form* mulf = SlotUnlocked(pos, true);
-        SetForm(type, data, mulf);
-        if (effective_kl > current_kl) {
-            kl.store(effective_kl, std::memory_order_release);
+        if (allocate_next) {
+            std::unique_ptr<form[]> pending(new form[block_size_]);
+            std::lock_guard<std::mutex> lk(forms_mutex);
+            if (!blocks_[next_block]) {
+                blocks_[next_block] = std::move(pending);
+            }
         }
     }
 
   private:
-    static constexpr size_t kBlockShift = 16;
-    static constexpr size_t kBlockSize = size_t(1) << kBlockShift;
+    struct Stratum {
+        uint64_t begin_iter;
+        uint64_t begin_pos;
+        uint32_t stride;
+    };
+    // Strata in increasing order; strata[count-1] is the last one in use.
+    struct Strata {
+        Stratum s[3];
+        int count;
+    };
+
+    Strata StrataFromSnapshot(uint64_t state) const {
+        const int64_t switch_iters = DecodeSwitchIters(state);
+        const uint64_t switch_index = DecodeSwitchIndex(state);
+        const uint64_t wide = limits_.wide_stride_iters;
+        Strata st;
+        if (switch_iters == -1) {
+            st.s[0] = {0, 0, 10};
+            st.s[1] = {wide, wide / 10, 1000};
+            st.count = 2;
+        } else {
+            const uint64_t sw = static_cast<uint64_t>(switch_iters);
+            st.s[0] = {0, 0, 10};
+            st.s[1] = {sw, switch_index, 100};
+            st.s[2] = {wide, switch_index + (wide - sw) / 100, 1000};
+            st.count = 3;
+        }
+        return st;
+    }
+
+    const Stratum& StratumFor(const Strata& st, uint64_t power) const {
+        const Stratum* chosen = &st.s[0];
+        for (int i = 0; i < st.count; i++) {
+            if (st.s[i].begin_iter <= power) {
+                chosen = &st.s[i];
+            } else {
+                break;
+            }
+        }
+        return *chosen;
+    }
+
+    uint64_t PositionInStrata(const Strata& st, uint64_t power) const {
+        const Stratum& stratum = StratumFor(st, power);
+        return stratum.begin_pos + (power - stratum.begin_iter) / stratum.stride;
+    }
 
     form* SlotUnlocked(size_t pos, bool allocate) {
-        if (pos >= forms_capacity) {
+        if (pos >= capacity_) {
             throw std::runtime_error("TwoWesolowskiCallback position out of bounds");
         }
-        const size_t block = pos >> kBlockShift;
+        const size_t block = pos >> limits_.block_shift;
         if (!blocks_[block]) {
             if (!allocate) {
                 return nullptr;
             }
-            blocks_[block].reset(new form[kBlockSize]);
+            blocks_[block].reset(new form[block_size_]);
         }
-        return &blocks_[block][pos & (kBlockSize - 1)];
+        return &blocks_[block][pos & (block_size_ - 1)];
     }
 
     static uint64_t EncodeTransitionState(uint64_t switch_index_value, int64_t switch_iters_value) {
@@ -311,41 +397,17 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
     }
 
     uint32_t GetEffectiveKl(uint64_t power, uint64_t state) const {
-        const uint64_t wide_stride_iters = limits_.wide_stride_iters;
-        const int64_t current_switch_iters = DecodeSwitchIters(state);
-        if (power >= wide_stride_iters) {
-            return 1000U;
-        }
-        if (current_switch_iters == -1 || power < static_cast<uint64_t>(current_switch_iters)) {
-            return 10U;
-        }
-        return 100U;
+        return StratumFor(StrataFromSnapshot(state), power).stride;
     }
 
     size_t GetPositionFromSnapshot(uint64_t power, uint64_t state) const {
-        const uint64_t wide_stride_iters = limits_.wide_stride_iters;
-        const int64_t current_switch_iters = DecodeSwitchIters(state);
-        const uint64_t current_switch_index = DecodeSwitchIndex(state);
-
-        uint64_t position;
-        if (power < wide_stride_iters) {
-            if (current_switch_iters == -1 || power < static_cast<uint64_t>(current_switch_iters)) {
-                position = power / 10;
-            } else {
-                position = current_switch_index +
-                    (power - static_cast<uint64_t>(current_switch_iters)) / 100;
-            }
-        } else if (current_switch_iters == -1) {
-            position = wide_stride_iters / 10 + (power - wide_stride_iters) / 1000;
-        } else {
-            position = current_switch_index +
-                (wide_stride_iters - static_cast<uint64_t>(current_switch_iters)) / 100 +
-                (power - wide_stride_iters) / 1000;
-        }
-        return static_cast<size_t>(position);
+        return static_cast<size_t>(PositionInStrata(StrataFromSnapshot(state), power));
     }
 
     TwoWesoLimits limits_;
+    TwoWesoProverTuning tuning_;
+    size_t capacity_ = 0;
+    size_t block_size_ = 0;
     std::vector<std::unique_ptr<form[]>> blocks_;
     std::atomic<uint64_t> transition_state{0};
     std::atomic<uint32_t> kl{10};
@@ -432,6 +494,8 @@ class FastAlgorithmCallback : public WesolowskiCallback {
     std::unique_ptr<form[]> checkpoints;
     form y_ret;
     int segments;
+    std::unique_ptr<form[]> forms;
+    size_t forms_capacity = 0;
     // The intermediate values size of a 2^16 segment.
     const int bucket_size1 = 6554;
     // The intermediate values size of a >= 2^18 segment.

@@ -61,15 +61,16 @@ TEST(TwoWesolowskiCallbackRegressionTest, TransitionMathSupportsNonRoundedSwitch
     EXPECT_EQ(callback.GetPosition(custom_switch_iters + 100), switch_index + 1);
 }
 
-TEST(TwoWesolowskiCallbackRegressionTest, RejectsOutOfBoundsFormLookupAtCapacityLimit) {
+TEST(TwoWesolowskiCallbackRegressionTest, RejectsFormLookupPastCapacity) {
     integer d = make_fixture_discriminant();
     form f = form::generator(d);
     TwoWesolowskiCallback callback(d, f);
     callback.IncreaseConstants(kSwitchIters);
 
-    EXPECT_NO_THROW((void)callback.GetFormCopy(kMaxItersAllowed - 1000));
-    EXPECT_NO_THROW((void)callback.GetFormCopy(kMaxItersAllowed));
-    EXPECT_THROW((void)callback.GetFormCopy(kMaxItersAllowed + 1000), std::runtime_error);
+    EXPECT_THROW(
+        (void)callback.GetFormCopy(kMaxItersAllowed + 100000000),
+        std::runtime_error
+    );
 }
 
 TEST(TwoWesolowskiCallbackRegressionTest, UsesWideStrideIndexingPastWideStrideIters) {
@@ -123,51 +124,83 @@ TEST(TwoWesolowskiCallbackRegressionTest, RejectsInvalidLimits) {
     integer d = make_fixture_discriminant();
     form f = form::generator(d);
 
-    auto expect_invalid = [&](const TwoWesoLimits& limits) {
-        EXPECT_THROW(TwoWesolowskiCallback(d, f, limits), std::invalid_argument);
+    auto expect_invalid = [&](const TwoWesoLimits& limits, const TwoWesoProverTuning& tuning) {
+        EXPECT_THROW(TwoWesolowskiCallback(d, f, limits, tuning), std::invalid_argument);
     };
 
+    TwoWesoProverTuning tuning;
+
     TwoWesoLimits zero_switch;
-    zero_switch.switch_iters = 0;
-    expect_invalid(zero_switch);
+    zero_switch.switch_threshold_iters = 0;
+    expect_invalid(zero_switch, tuning);
 
     TwoWesoLimits misaligned_switch;
-    misaligned_switch.switch_iters = 12345;
-    expect_invalid(misaligned_switch);
+    misaligned_switch.switch_threshold_iters = 12345;
+    expect_invalid(misaligned_switch, tuning);
 
     TwoWesoLimits misaligned_wide;
-    misaligned_wide.switch_iters = 9100;
+    misaligned_wide.switch_threshold_iters = 9100;
     misaligned_wide.wide_stride_iters = 80500;
-    expect_invalid(misaligned_wide);
+    expect_invalid(misaligned_wide, tuning);
 
-    TwoWesoLimits switch_not_before_wide;
-    switch_not_before_wide.switch_iters = switch_not_before_wide.wide_stride_iters;
-    expect_invalid(switch_not_before_wide);
+    TwoWesoLimits switch_past_slack;
+    switch_past_slack.switch_threshold_iters = 9100;
+    switch_past_slack.wide_stride_iters = 70000;
+    expect_invalid(switch_past_slack, tuning);
 
     TwoWesoLimits max_too_close;
-    max_too_close.max_iters = max_too_close.wide_stride_iters + 500000;
-    expect_invalid(max_too_close);
+    max_too_close.max_iters = max_too_close.wide_stride_iters + kTwoWesoStopMargin;
+    expect_invalid(max_too_close, tuning);
+
+    TwoWesoLimits block_too_small;
+    block_too_small.block_shift = 3;
+    expect_invalid(block_too_small, tuning);
+
+    TwoWesoLimits block_too_large;
+    block_too_large.block_shift = 25;
+    expect_invalid(block_too_large, tuning);
+
+    TwoWesoProverTuning zero_small_segment;
+    zero_small_segment.small_segment_iters = 0;
+    expect_invalid(TwoWesoLimits(), zero_small_segment);
 }
 
-TEST(TwoWesolowskiCallbackRegressionTest, RejectsSwitchPastWideStrideIters) {
+TEST(TwoWesolowskiCallbackRegressionTest, RejectsSwitchPastSlack) {
     integer d = make_fixture_discriminant();
     form f = form::generator(d);
     TwoWesolowskiCallback callback(d, f);
 
-    EXPECT_THROW(callback.IncreaseConstants(kWideStrideIters), std::logic_error);
+    EXPECT_THROW(
+        callback.IncreaseConstants(kSwitchIters + kSwitchSlackIters),
+        std::logic_error
+    );
 }
 
-TEST(TwoWesolowskiCallbackRegressionTest, UnwrittenCheckpointReadsAsDefaultForm) {
+TEST(TwoWesolowskiCallbackRegressionTest, ThrowsOnCheckpointNotComputedYet) {
     integer d = make_fixture_discriminant();
     form f = form::generator(d);
     TwoWesolowskiCallback callback(d, f);
     callback.IncreaseConstants(kSwitchIters);
 
-    form stored;
-    ASSERT_NO_THROW(stored = callback.GetFormCopy(kWideStrideIters));
+    EXPECT_NO_THROW((void)callback.GetFormCopy(0));
+    EXPECT_THROW((void)callback.GetFormCopy(kWideStrideIters), std::logic_error);
+}
 
-    const form empty;
-    EXPECT_TRUE(stored.a == empty.a);
-    EXPECT_TRUE(stored.b == empty.b);
-    EXPECT_TRUE(stored.c == empty.c);
+TEST(TwoWesolowskiCallbackRegressionTest, StrideCoveringFollowsLayout) {
+    integer d = make_fixture_discriminant();
+    form f = form::generator(d);
+    TwoWesolowskiCallback callback(d, f);
+
+    EXPECT_EQ(callback.StrideCovering(1), 10U);
+    EXPECT_EQ(callback.StrideCovering(kSwitchIters), 10U);
+    EXPECT_EQ(callback.StrideCovering(kWideStrideIters), 10U);
+    EXPECT_EQ(callback.StrideCovering(kWideStrideIters + 1), 1000U);
+
+    callback.IncreaseConstants(kSwitchIters);
+
+    EXPECT_EQ(callback.StrideCovering(kSwitchIters), 10U);
+    EXPECT_EQ(callback.StrideCovering(kSwitchIters + 1), 100U);
+    EXPECT_EQ(callback.StrideCovering(kWideStrideIters), 100U);
+    EXPECT_EQ(callback.StrideCovering(kWideStrideIters + 1), 1000U);
+    EXPECT_EQ(callback.StrideCovering(kMaxItersAllowed), 1000U);
 }

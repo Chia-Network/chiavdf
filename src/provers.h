@@ -3,6 +3,7 @@
 
 #include "prover_base.hpp"
 #include "callback.h"
+#include <stdexcept>
 
 class OneWesolowskiProver : public Prover {
   public:
@@ -49,8 +50,18 @@ class TwoWesolowskiProver : public Prover{
     {
         this->weso = weso;
         this->done_iterations = segm.start;
+        const TwoWesoLimits& limits = weso->Limits();
         k = 10;
-        l = (segm.length < 10000000) ? 1 : 10;
+        if (segm.start + segm.length > limits.wide_stride_iters) {
+            // The segment reads checkpoints past wide_stride_iters, which are
+            // 1000 iterations apart.
+            l = 100;
+        } else {
+            l = (segm.length < limits.small_segment_iters) ? 1 : 10;
+        }
+        if (segm.start % (static_cast<uint64_t>(k) * static_cast<uint64_t>(l)) != 0) {
+            throw std::logic_error("TwoWesolowskiProver segment start is not on a checkpoint");
+        }
     }
 
     ~TwoWesolowskiProver() {

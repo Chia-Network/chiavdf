@@ -5,16 +5,33 @@
 #include "nudupl_listener.h"
 #include <algorithm>
 #include <atomic>
+#include <cstdint>
 #include <limits>
+#include <memory>
 #include <mutex>
 #include <stdexcept>
+#include <vector>
 
 // Applies to n-weso.
 const int kWindowSize = 20;
 
-// Applies only to 2-weso.
-const int kMaxItersAllowed = 8e8;
+// Applies only to 2-weso. Checkpoints are stored every 10 iterations below the
+// switch point, every 100 iterations up to kWideStrideIters, and every 1000
+// iterations after that. The squaring worker stops 500000 iterations before
+// kMaxItersAllowed.
+const uint64_t kMaxItersAllowed = 10000000000ULL;
 const int kSwitchIters = 91000000;
+const uint64_t kWideStrideIters = 800000000;
+// Segments shorter than this (all of which end before the switch point) are
+// proven with a checkpoint stride of 10 instead of 100.
+const uint64_t kSmallSegmentIters = 10000000;
+
+struct TwoWesoLimits {
+    uint64_t switch_iters = kSwitchIters;
+    uint64_t small_segment_iters = kSmallSegmentIters;
+    uint64_t wide_stride_iters = kWideStrideIters;
+    uint64_t max_iters = kMaxItersAllowed;
+};
 
 class WesolowskiCallback :public INUDUPLListener {
 public:
@@ -137,19 +154,53 @@ class OneWesolowskiCallback: public WesolowskiCallback {
 
 class TwoWesolowskiCallback: public WesolowskiCallback {
   public:
-    TwoWesolowskiCallback(integer& D, const form& f) : WesolowskiCallback(D) {
-        const uint64_t early_points = static_cast<uint64_t>(kSwitchIters) / 10;
+    TwoWesolowskiCallback(integer& D, const form& f, const TwoWesoLimits& limits = TwoWesoLimits())
+        : WesolowskiCallback(D), limits_(limits) {
+        if (limits_.switch_iters == 0) {
+            throw std::invalid_argument("TwoWesolowskiCallback switch_iters must be positive");
+        }
+        if (limits_.switch_iters % 100 != 0) {
+            throw std::invalid_argument("TwoWesolowskiCallback switch_iters must be a multiple of 100");
+        }
+        if (limits_.wide_stride_iters % 1000 != 0) {
+            throw std::invalid_argument("TwoWesolowskiCallback wide_stride_iters must be a multiple of 1000");
+        }
+        if (limits_.switch_iters >= limits_.wide_stride_iters) {
+            throw std::invalid_argument("TwoWesolowskiCallback switch_iters must be before wide_stride_iters");
+        }
+        if (limits_.max_iters <= limits_.wide_stride_iters ||
+            limits_.max_iters - limits_.wide_stride_iters <= 500000) {
+            throw std::invalid_argument("TwoWesolowskiCallback max_iters must be past wide_stride_iters by more than 500000");
+        }
+        if (limits_.small_segment_iters == 0) {
+            throw std::invalid_argument("TwoWesolowskiCallback small_segment_iters must be positive");
+        }
+
+        const uint64_t early_points = limits_.wide_stride_iters / 10;
         const uint64_t late_points =
-            (static_cast<uint64_t>(kMaxItersAllowed) - static_cast<uint64_t>(kSwitchIters)) / 100;
-        const size_t space_needed = static_cast<size_t>(early_points + late_points);
-        forms_capacity = space_needed;
-        forms.reset(new form[space_needed]);
-        forms[0] = f;
+            (limits_.max_iters - limits_.wide_stride_iters) / 1000;
+        if (early_points > std::numeric_limits<uint64_t>::max() - late_points) {
+            throw std::overflow_error("TwoWesolowskiCallback forms capacity overflow");
+        }
+        const uint64_t max_position = early_points + late_points;
+        if (max_position > static_cast<uint64_t>(std::numeric_limits<size_t>::max() - 1)) {
+            throw std::overflow_error("TwoWesolowskiCallback forms capacity overflow");
+        }
+        forms_capacity = static_cast<size_t>(max_position + 1);
+        blocks_.resize(forms_capacity / kBlockSize + 1);
+
+        form* slot = SlotUnlocked(0, true);
+        *slot = f;
         kl.store(10, std::memory_order_relaxed);
         transition_state.store(EncodeTransitionState(/*switch_index=*/0, /*switch_iters=*/-1), std::memory_order_relaxed);
     }
 
+    const TwoWesoLimits& Limits() const { return limits_; }
+
     void IncreaseConstants(uint64_t num_iters) {
+        if (num_iters >= limits_.wide_stride_iters) {
+            throw std::logic_error("TwoWesolowskiCallback::IncreaseConstants past wide_stride_iters");
+        }
         std::lock_guard<std::mutex> lk(forms_mutex);
         // Publish transition metadata first. `kl` is only a fast-path hint.
         transition_state.store(
@@ -171,11 +222,18 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
 
     form GetFormCopy(uint64_t power) {
         std::lock_guard<std::mutex> lk(forms_mutex);
+        if (power > limits_.max_iters) {
+            throw std::runtime_error("TwoWesolowskiCallback::GetFormCopy out of bounds");
+        }
         const size_t pos = GetPositionUnlocked(power);
         if (pos >= forms_capacity) {
             throw std::runtime_error("TwoWesolowskiCallback::GetFormCopy out of bounds");
         }
-        return forms[pos];
+        form* slot = SlotUnlocked(pos, false);
+        if (slot == nullptr) {
+            return form();
+        }
+        return *slot;
     }
 
     bool LargeConstants() {
@@ -197,15 +255,38 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
         if (iteration % effective_kl != 0) {
             return;
         }
+        if (iteration > limits_.max_iters) {
+            throw std::runtime_error("TwoWesolowskiCallback::OnIteration out of bounds");
+        }
         const size_t pos = GetPositionFromSnapshot(iteration, snapshot);
         if (pos >= forms_capacity) {
             throw std::runtime_error("TwoWesolowskiCallback::OnIteration out of bounds");
         }
-        form* mulf = &forms[pos];
+        form* mulf = SlotUnlocked(pos, true);
         SetForm(type, data, mulf);
+        if (effective_kl > current_kl) {
+            kl.store(effective_kl, std::memory_order_release);
+        }
     }
 
   private:
+    static constexpr size_t kBlockShift = 16;
+    static constexpr size_t kBlockSize = size_t(1) << kBlockShift;
+
+    form* SlotUnlocked(size_t pos, bool allocate) {
+        if (pos >= forms_capacity) {
+            throw std::runtime_error("TwoWesolowskiCallback position out of bounds");
+        }
+        const size_t block = pos >> kBlockShift;
+        if (!blocks_[block]) {
+            if (!allocate) {
+                return nullptr;
+            }
+            blocks_[block].reset(new form[kBlockSize]);
+        }
+        return &blocks_[block][pos & (kBlockSize - 1)];
+    }
+
     static uint64_t EncodeTransitionState(uint64_t switch_index_value, int64_t switch_iters_value) {
         if (switch_index_value > static_cast<uint64_t>(std::numeric_limits<uint32_t>::max())) {
             throw std::overflow_error("TwoWesolowskiCallback switch_index overflow");
@@ -229,22 +310,43 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
         return static_cast<int64_t>(encoded_iters) - 1;
     }
 
-    static uint32_t GetEffectiveKl(uint64_t power, uint64_t state) {
+    uint32_t GetEffectiveKl(uint64_t power, uint64_t state) const {
+        const uint64_t wide_stride_iters = limits_.wide_stride_iters;
         const int64_t current_switch_iters = DecodeSwitchIters(state);
-        return (current_switch_iters == -1 || power < static_cast<uint64_t>(current_switch_iters)) ? 10U : 100U;
-    }
-
-    static size_t GetPositionFromSnapshot(uint64_t power, uint64_t state) {
-        const int64_t current_switch_iters = DecodeSwitchIters(state);
-        if (current_switch_iters == -1 || power < static_cast<uint64_t>(current_switch_iters)) {
-            return static_cast<size_t>(power / 10);
+        if (power >= wide_stride_iters) {
+            return 1000U;
         }
-        const uint64_t current_switch_index = DecodeSwitchIndex(state);
-        return static_cast<size_t>(
-            current_switch_index + (power - static_cast<uint64_t>(current_switch_iters)) / 100
-        );
+        if (current_switch_iters == -1 || power < static_cast<uint64_t>(current_switch_iters)) {
+            return 10U;
+        }
+        return 100U;
     }
 
+    size_t GetPositionFromSnapshot(uint64_t power, uint64_t state) const {
+        const uint64_t wide_stride_iters = limits_.wide_stride_iters;
+        const int64_t current_switch_iters = DecodeSwitchIters(state);
+        const uint64_t current_switch_index = DecodeSwitchIndex(state);
+
+        uint64_t position;
+        if (power < wide_stride_iters) {
+            if (current_switch_iters == -1 || power < static_cast<uint64_t>(current_switch_iters)) {
+                position = power / 10;
+            } else {
+                position = current_switch_index +
+                    (power - static_cast<uint64_t>(current_switch_iters)) / 100;
+            }
+        } else if (current_switch_iters == -1) {
+            position = wide_stride_iters / 10 + (power - wide_stride_iters) / 1000;
+        } else {
+            position = current_switch_index +
+                (wide_stride_iters - static_cast<uint64_t>(current_switch_iters)) / 100 +
+                (power - wide_stride_iters) / 1000;
+        }
+        return static_cast<size_t>(position);
+    }
+
+    TwoWesoLimits limits_;
+    std::vector<std::unique_ptr<form[]>> blocks_;
     std::atomic<uint64_t> transition_state{0};
     std::atomic<uint32_t> kl{10};
     std::mutex forms_mutex;

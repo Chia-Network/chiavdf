@@ -12,6 +12,9 @@ constexpr int kIterationHeaderDigits = 2;
 constexpr int kMaxIterationDigits = 20;
 }  // namespace
 
+static_assert(kTwoWesoItersLimit == static_cast<uint64_t>(kMaxItersAllowed) - 500000,
+              "TwoWesoItersSupported threshold must match kMaxItersAllowed");
+
 // Segments are 2^16, 2^18, ..., 2^30
 // Best case it'll be able to proof for up to 2^36 due to 64-wesolowski restriction.
 int segments = 8;
@@ -294,8 +297,15 @@ void SessionTwoWeso(tcp::socket& sock) {
                     PrintInfo("Duplicate iteration " + to_string(iters) + "... Ignoring.");
                     continue;
                 }
-                if (iters >= kMaxProcessesAllowed - 500000) {
-                    PrintInfo("Too big iter... ignoring");
+                if (!TwoWesoItersSupported(iters)) {
+                    PrintInfo("Iteration " + to_string(iters) + " exceeds the 2-weso session limit; ignoring.");
+                    continue;
+                }
+                // stop_vector is indexed by threads.size() and threads is never
+                // reduced, so at most sizeof(stop_vector) / sizeof(stop_vector[0])
+                // requests can be accepted in one session.
+                if (threads.size() >= sizeof(stop_vector) / sizeof(stop_vector[0])) {
+                    PrintInfo("Too many iterations in this session... ignoring");
                     continue;
                 }
                 if (threads.size() < kMaxProcessesAllowed || iters < min_iter) {

@@ -92,6 +92,10 @@ PYBIND11_MODULE(_chiavdf, m) {
                                    const string& x_s,
                                    const string& proof_blob,
                                    const uint64_t num_iterations, const uint64_t disc_size_bits, const uint64_t recursion) {
+        // The verifier reads exactly BQFC_FORM_SIZE bytes from x_s.
+        if (x_s.size() != BQFC_FORM_SIZE) {
+            return false;
+        }
         std::string discriminant_copy(discriminant);
         std::string x_s_copy(x_s);
         std::string proof_blob_copy(proof_blob);
@@ -111,6 +115,10 @@ PYBIND11_MODULE(_chiavdf, m) {
                                    const string& proof_blob,
                                    const uint64_t num_iterations,
                                    const uint64_t recursion) {
+        // The verifier reads exactly BQFC_FORM_SIZE bytes from x_s.
+        if (x_s.size() != BQFC_FORM_SIZE) {
+            return false;
+        }
         std::string challenge_hash_str(challenge_hash);
         std::vector<uint8_t> challenge_hash_bits = std::vector<uint8_t>(challenge_hash_str.begin(), challenge_hash_str.end());
         std::string x_s_copy(x_s);
@@ -143,6 +151,10 @@ PYBIND11_MODULE(_chiavdf, m) {
                                    const string& x_s,
                                    const string& proof_blob,
                                    const uint64_t num_iterations, const uint64_t recursion) -> py::tuple {
+        // The verifier reads exactly BQFC_FORM_SIZE bytes from x_s.
+        if (x_s.size() != BQFC_FORM_SIZE) {
+            return py::make_tuple(false, py::bytes());
+        }
         std::string discriminant_copy(discriminant);
         std::string B_copy(B);
         std::string x_s_copy(x_s);
@@ -175,6 +187,10 @@ PYBIND11_MODULE(_chiavdf, m) {
                                    const string& x_s,
                                    const string& proof_blob,
                                    const uint64_t num_iterations, const uint64_t recursion) {
+        // The verifier reads exactly BQFC_FORM_SIZE bytes from x_s.
+        if (x_s.size() != BQFC_FORM_SIZE) {
+            throw std::runtime_error("Invalid proof.");
+        }
         std::string discriminant_copy(discriminant);
         std::string x_s_copy(x_s);
         std::string proof_blob_copy(proof_blob);

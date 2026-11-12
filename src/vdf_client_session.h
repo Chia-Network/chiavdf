@@ -3,10 +3,17 @@
 #include <boost/asio.hpp>
 #include "bqfc.h"
 
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <stdexcept>
 #include <string>
+
+inline constexpr uint64_t kTwoWesoItersLimit = 800000000ULL - 500000ULL;
+
+inline bool TwoWesoItersSupported(uint64_t iters) {
+    return iters < kTwoWesoItersLimit;
+}
 
 inline char disc[350];
 inline uint8_t initial_form_s[BQFC_FORM_SIZE];

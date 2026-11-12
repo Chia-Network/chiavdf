@@ -85,6 +85,26 @@ TEST(VdfClientSessionRegressionTest, WrappedNegativeFormSizeIsRejected) {
     EXPECT_NE(error.find("Invalid form size"), std::string::npos);
 }
 
+TEST(VdfClientSessionRegressionTest, TwoWesoItersOneIsSupported) {
+    EXPECT_TRUE(TwoWesoItersSupported(1));
+}
+
+TEST(VdfClientSessionRegressionTest, TwoWesoItersSixHundredMillionIsSupported) {
+    EXPECT_TRUE(TwoWesoItersSupported(600000000ULL));
+}
+
+TEST(VdfClientSessionRegressionTest, TwoWesoItersLastSupportedValue) {
+    EXPECT_TRUE(TwoWesoItersSupported(799499999ULL));
+}
+
+TEST(VdfClientSessionRegressionTest, TwoWesoItersFirstRejectedValue) {
+    EXPECT_FALSE(TwoWesoItersSupported(799500000ULL));
+}
+
+TEST(VdfClientSessionRegressionTest, TwoWesoItersMaxValueIsRejected) {
+    EXPECT_FALSE(TwoWesoItersSupported(UINT64_MAX));
+}
+
 TEST(VdfClientSessionRegressionTest, ValidPayloadParsesWithoutProtocolOverread) {
     const std::vector<uint8_t> payload = {'0', '0', '3', 'a', 'b', 'c', 0x05, 0x10, 0x20, 0x30, 0x40, 0x50};
     const std::string error = run_init_session_with_payload(payload);

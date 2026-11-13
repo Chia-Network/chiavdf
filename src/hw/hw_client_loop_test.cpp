@@ -13,10 +13,16 @@ uint8_t observed_running_mask = 0;
 double observed_frequency = 0.;
 bool standard_failure = false;
 bool normal_shutdown = false;
+bool real_pipe_control = false;
 } // namespace
 
-bool HardwareLiveControl::start(bool, bool) { return true; }
+bool HardwareLiveControl::start(bool enabled, bool) {
+    if (!real_pipe_control) return true;
+    enabled_ = enabled;
+    return !enabled_ || channel_.start();
+}
 bool HardwareLiveControl::poll(ChiaDriver *driver, uint8_t running_mask) {
+    if (real_pipe_control) return channel_.poll([](timelord_control::Point p) { return p; });
     if (normal_shutdown) return true;
     observed_running_mask = running_mask;
     observed_frequency = driver->GetPLLFrequency();
@@ -206,27 +212,6 @@ static void check_client_exception_shutdown_policy() {
 #endif
 }
 
-static void check_physical_engine_identity_on_reconnect() {
-#ifndef _WIN32
-    int listener = socket(AF_INET, SOCK_STREAM, 0);
-    sockaddr_in address{}; address.sin_family = AF_INET; address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    socklen_t size = sizeof(address);
-    if (listener < 0 || bind(listener, reinterpret_cast<sockaddr *>(&address), size) || listen(listener, 3) ||
-        getsockname(listener, reinterpret_cast<sockaddr *>(&address), &size)) throw std::runtime_error("identity_listener");
-    for (unsigned engine : {2u, 0u, 1u}) {
-        vdf_conn conn{}; conn.vdf.idx = engine;
-        init_conn(&conn, INADDR_LOOPBACK, ntohs(address.sin_port), true);
-        int peer = accept(listener, nullptr, nullptr);
-        char identity[13]{};
-        const auto count = recv(peer, identity, sizeof(identity), MSG_WAITALL);
-        const std::string expected = "TLENGINE 1 " + std::to_string(engine) + "\n";
-        if (count != 13 || std::string(identity,13) != expected) throw std::runtime_error("physical_engine_identity");
-        close(peer);close_conn(&conn);
-    }
-    close(listener);
-#endif
-}
-
 static void check_normal_supervised_shutdown_policy() {
 #ifndef _WIN32
     char name[] = "emu_hw_vdf_client", live[] = "--live-control", port[] = "18110", count[] = "1";
@@ -237,7 +222,90 @@ static void check_normal_supervised_shutdown_policy() {
     const int rc = hw_vdf_client_main(4,args);
     g_stopping = false; normal_shutdown = false;
     ChiaDriver probe;
-    if (rc || probe.ftdi.Open() || std::abs(probe.GetPLLFrequency()-timelord_control::Limits::min_frequency)>1.)
+    // The emulator cannot confirm 0.7 V; normal termination must report the
+    // unconfirmed hardware state as failure, even though the clock was restored.
+    if (rc != timelord_control::Limits::failure_exit || probe.ftdi.Open() || std::abs(probe.GetPLLFrequency()-timelord_control::Limits::min_frequency)>1.)
         throw std::runtime_error("normal_shutdown_did_not_restore_safe_clock");
+#endif
+}
+
+#ifndef _WIN32
+#include <poll.h>
+#include <sys/wait.h>
+#endif
+static void check_pipe_shutdown_through_main() {
+#ifndef _WIN32
+    // Only the operating-point command boundary is intercepted. TLSTOP, ACK
+    // framing, the real signal handler and main's exit policy run unchanged.
+    struct Listener {
+        int fd = socket(AF_INET, SOCK_STREAM, 0);
+        ~Listener() { if (fd >= 0) close(fd); }
+    } listener;
+    sockaddr_in address{};
+    address.sin_family = AF_INET; address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    socklen_t size = sizeof(address);
+    if (listener.fd < 0 || bind(listener.fd, reinterpret_cast<sockaddr *>(&address), size) ||
+        listen(listener.fd, 8) || getsockname(listener.fd, reinterpret_cast<sockaddr *>(&address), &size))
+        throw std::runtime_error("shutdown_fixture_listener");
+    std::string port = std::to_string(ntohs(address.sin_port));
+    for (int mode : {0, 1, 2}) {
+        int input[2], output[2];
+        if (pipe(input) || pipe(output)) throw std::runtime_error("shutdown_fixture_pipe");
+        const pid_t pid = fork();
+        if (pid < 0) throw std::runtime_error("shutdown_fixture_fork");
+        if (!pid) {
+            close(input[1]); close(output[0]);
+            if (dup2(input[0], STDIN_FILENO) < 0 || dup2(output[1], STDOUT_FILENO) < 0) _exit(99);
+            close(input[0]); close(output[1]);
+            close(listener.fd);
+            real_pipe_control = true; g_stopping = false;
+            char name[] = "emu_hw_vdf_client", live[] = "--live-control", count[] = "1";
+            char *args[] = {name, live, port.data(), count};
+            _exit(hw_vdf_client_main(4,args));
+        }
+        close(input[0]); close(output[1]);
+        const auto receive = [&]() {
+            std::string line;
+            while (line.size() < 128) {
+                pollfd ready{output[0], POLLIN, 0};
+                if (::poll(&ready, 1, 5000) <= 0) throw std::runtime_error("shutdown_fixture_timeout");
+                char byte;
+                if (read(output[0], &byte, 1) != 1) throw std::runtime_error("shutdown_fixture_eof");
+                line += byte;
+                if (byte == '\n') return line;
+            }
+            throw std::runtime_error("shutdown_fixture_oversized_ack");
+        };
+        try {
+            const char barrier[] = "TLSET 1 5 1450 1\n";
+            if (write(input[1], barrier, sizeof(barrier)-1) != ssize_t(sizeof(barrier)-1)) throw std::runtime_error("shutdown_fixture_write");
+            const std::string ready = receive();
+            if (ready != "TLACK 1 5 1450.000000 1.000000\n") throw std::runtime_error("shutdown_fixture_barrier: " + ready);
+            if (mode == 2) {
+                kill(pid, SIGTERM);
+            } else {
+                const std::string stop = mode == 0 ? "TLSTOP 1 7\n" : "TLSTOP 1 5\n";
+                if (write(input[1], stop.data(), stop.size()) != ssize_t(stop.size())) throw std::runtime_error("shutdown_fixture_stop");
+            }
+            const std::string expected = mode == 0 ? "TLSTOPACK 1 7 1 0\n" : "TLSTOPACK 1 0 1 0\n";
+            if (receive() != expected) throw std::runtime_error("shutdown_fixture_hardware_flags");
+            // Bound process cleanup independently from the ACK deadline.
+            int status = 0;
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+            while (waitpid(pid, &status, WNOHANG) == 0) {
+                if (std::chrono::steady_clock::now() >= deadline) throw std::runtime_error("shutdown_fixture_cleanup_timeout");
+                usleep(1000);
+            }
+            // The emulator cannot confirm its safe voltage; neither an explicit
+            // stop nor SIGTERM may disguise that failure with exit status zero.
+            if (!WIFEXITED(status) || WEXITSTATUS(status) != timelord_control::Limits::failure_exit)
+                throw std::runtime_error("unconfirmed_shutdown_reported_success");
+        } catch (...) {
+            kill(pid, SIGKILL); waitpid(pid, nullptr, 0);
+            close(input[1]); close(output[0]);
+            throw;
+        }
+        close(input[1]); close(output[0]);
+    }
 #endif
 }

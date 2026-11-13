@@ -178,7 +178,7 @@ TEST(HardwareLiveControl, OrdersVoltageAndClockWritesWhilePaused) {
     EXPECT_TRUE(fixture.actions.empty());
 }
 
-TEST(HardwareLiveControl, QuantizedMinimumVoltageAllowsShutdownAndSubsequentStartup) {
+TEST(HardwareLiveControl, OneStepLowVoltageAllowsShutdownAndSubsequentStartup) {
     HardwareControlFixture fixture;
     fixture.reader = [&] {
         Point actual = fixture.current;
@@ -192,7 +192,9 @@ TEST(HardwareLiveControl, QuantizedMinimumVoltageAllowsShutdownAndSubsequentStar
     EXPECT_TRUE(stopped.paused);
     EXPECT_TRUE(stopped.restored);
     EXPECT_EQ(fixture.actions, (std::vector<std::string>{"pause", "frequency", "voltage"}));
+    fixture.actions.clear();
     EXPECT_NO_THROW(fixture.apply({1450., .95}));
+    EXPECT_EQ(fixture.actions, (std::vector<std::string>{"pause", "voltage", "frequency", "resume"}));
     const auto minimum = fixture.apply({200., .7});
     EXPECT_DOUBLE_EQ(minimum.voltage, .69375);
     EXPECT_THROW(fixture.apply({200., .69375}), std::runtime_error);
@@ -213,9 +215,8 @@ TEST(HardwareLiveControl, ReadbackToleranceDoesNotRelaxCommandLimitsOrAcceptInva
         EXPECT_FALSE(valid_readback(point));
         HardwareControlFixture fixture;
         fixture.reader = [point] { return point; };
-        const auto stopped = shutdown(fixture, 7);
-        EXPECT_TRUE(stopped.paused);
-        EXPECT_FALSE(stopped.restored);
+        EXPECT_THROW(fixture.apply({1450., .95}), std::runtime_error);
+        EXPECT_EQ(fixture.actions, (std::vector<std::string>{"pause"}));
     }
 }
 
@@ -537,6 +538,10 @@ TEST(HardwareLiveControl, ChannelStopRestoresFlagsAndRejectedStartupLeavesInputA
 
 TEST(HardwareLiveControl, StopRequestsAreVersionedBoundedAndCannotReplayControlIds) {
     EXPECT_EQ(timelord_control::parse_tlstop("TLSTOP 1 42"), 42u);
+    EXPECT_EQ(timelord_control::parse_tlstop("TLSTOP 1 18446744073709551615"), UINT64_MAX);
+    for (const char *frame : {"TLSTOP 1 ", "TLSTOP 1 +1", "TLSTOP 1 1\r", "TLSTOP 1 1 ", "TLSTOP 1  1"})
+        EXPECT_FALSE(timelord_control::parse_tlstop(frame));
+    EXPECT_FALSE(timelord_control::parse_tlstop(std::string_view("TLSTOP 1 1\0", 11)));
     for (const char *frame : {"TLSTOP 2 1", "TLSTOP 1 0", "TLSTOP 1 -1", "TLSTOP 1 1 extra", "TLSTOP 1 18446744073709551616", "TLSTOP 1 1\n"})
         EXPECT_FALSE(timelord_control::parse_tlstop(frame));
 #ifndef _WIN32
@@ -565,5 +570,36 @@ TEST(HardwareLiveControl, StopQueuedBehindControlIsProcessedBeforeEof) {
     EXPECT_TRUE(channel.stop_requested());
     EXPECT_TRUE(channel.shutdown_ack({true,true}));
     EXPECT_EQ(fixture.reply(),"TLSTOPACK 1 2 1 1\n");
+#endif
+}
+
+TEST(HardwareLiveControl, StaleStopIsConsumedFailsClosedAndAcksAsUnsolicited) {
+#ifndef _WIN32
+    HardwareControlPipes fixture;
+    timelord_control::Channel channel(fixture.input[0], fixture.output[1]);
+    ASSERT_TRUE(channel.start());
+    fixture.send("TLSET 1 5 1450 .95\nTLSTOP 1 5\n");
+    ASSERT_TRUE(channel.poll([](Point p) { return p; }));
+    EXPECT_EQ(fixture.reply(), "TLACK 1 5 1450.000000 0.950000\n");
+    EXPECT_FALSE(channel.poll([](Point p) { ADD_FAILURE() << "Stale stop must not apply"; return p; }));
+    EXPECT_FALSE(channel.stop_requested());
+    EXPECT_TRUE(channel.shutdown_ack({true, false}));
+    EXPECT_EQ(fixture.reply(), "TLSTOPACK 1 0 1 0\n");
+    // Inspect consumption only: production callers treat false as terminal.
+    EXPECT_TRUE(channel.poll([](Point p) { ADD_FAILURE() << "No queued command"; return p; }));
+#endif
+}
+
+TEST(HardwareLiveControl, ShutdownAcknowledgementsPreserveEachHardwareFlag) {
+#ifndef _WIN32
+    HardwareControlPipes fixture;
+    timelord_control::Channel channel(fixture.input[0], fixture.output[1]);
+    ASSERT_TRUE(channel.start());
+    fixture.send("TLSTOP 1 9\n");
+    EXPECT_FALSE(channel.poll([](Point p) { return p; }));
+    EXPECT_TRUE(channel.shutdown_ack({false, true}));
+    EXPECT_EQ(fixture.reply(), "TLSTOPACK 1 9 0 1\n");
+    EXPECT_TRUE(channel.shutdown_ack({true, false}));
+    EXPECT_EQ(fixture.reply(), "TLSTOPACK 1 9 1 0\n");
 #endif
 }

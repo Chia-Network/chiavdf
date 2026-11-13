@@ -592,19 +592,14 @@ parser and print the protocol identifier and JSON frequency list respectively, b
 These control options are unavailable on Windows; `--live-control` fails there.
 
 `TLSTOP` uses the same strictly increasing request IDs. It requests checked
-shutdown and exits successfully. `TLSTOPACK` reports version, request ID,
+shutdown; the client exits 0 only if both hardware flags below are 1.
+`TLSTOPACK` reports version, request ID,
 engines-paused and safe-point-restored flags; both flags must be 1 to confirm
 hardware shutdown. The acknowledgement precedes CPU proof-worker cleanup, so the
 controller must also reap the process before transferring ownership. Normal
 SIGTERM and failure exits perform the same hardware shutdown and emit an
 unsolicited acknowledgement with ID 0 when stdout remains writable. A missing
 acknowledgement is unknown hardware state, not proof of failed shutdown.
-
-Supervisors that reserve multiple idle engines can opt into `--engine-identity`.
-Each newly connected engine socket first sends `TLENGINE 1 N` plus a newline,
-where N is the physical engine index (0–2), including after reconnect. The
-supervisor must consume this frame before speaking the usual VDF protocol.
-Without this option the existing socket protocol is unchanged.
 
 Before a change, the client requires a valid temperature below 55°C, pauses the
 running engines and reads the current clock/voltage. It raises voltage before
@@ -614,6 +609,13 @@ resuming the previously running engines. Both readback stages permit three reads
 is 1 MHz and voltage tolerance is 0.0063 V. Failed samples log the stage, attempt,
 clock-register values and individual register-read errors. These bounds are
 software guardrails, not a characterization of the silicon's operating limits.
+`TLACK` reports measured readback, which may lie up to one tolerance outside the
+command limits (for example `0.693750` after a 0.7 V request). Supervisors must
+send valid requested points, rather than echoing acknowledged measurements.
+
+The `timelord-live-control-v1` probe does not advertise individual extensions.
+Supervisors using `TLSTOP` must pin a native revision that implements it; older
+v1 clients reject that command and exit without a requested-stop acknowledgement.
 
 A rejected operation is fatal: a `TLERR` is a failure notification, not permission
 to send the next command. Replies and exit behavior are:
@@ -632,7 +634,7 @@ Failed temperature reads are reported as `temperature_unavailable`, separately f
 shutdown attempts to pause every selected engine, checks the result, restores a low
 operating point (200 MHz / requested 0.7 V) without resuming engines, stops proof
 workers, closes node connections and USB, and exits with status 70 for failures
-(0 for requested stop or normal termination). Failed pause
+or unconfirmed shutdown (0 for confirmed requested stop or normal termination). Failed pause
 writes fall back to board reset. The shutdown log reports whether quiescence and
 restoration were confirmed; a failed USB link cannot guarantee either. SIGPIPE is
 suppressed only for the writing thread during individual pipe/socket writes,

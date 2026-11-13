@@ -65,7 +65,6 @@ struct vdf_client_opts {
     bool auto_freq;
     bool live_control;
     bool raw_speed;
-    bool engine_identity;
     bool control_version;
     bool control_frequencies;
     double max_freq; // Used when auto_freq mode is turned on, to limit the max frequency
@@ -82,7 +81,7 @@ struct vdf_client {
 
 void write_data(struct vdf_conn *conn, const char *buf, size_t size);
 
-static volatile bool g_stopping = false;
+static volatile sig_atomic_t g_stopping = false;
 static int vdf_socket_set_nonblock(vdf_socket_t sock)
 {
 #ifdef _WIN32
@@ -129,13 +128,12 @@ static bool vdf_socket_would_block()
 #endif
 }
 
-void signal_handler(int sig)
+void signal_handler(int)
 {
-    LOG_INFO("Interrupted");
     g_stopping = true;
 }
 
-void init_conn(struct vdf_conn *conn, uint32_t ip, int port, bool engine_identity = false)
+void init_conn(struct vdf_conn *conn, uint32_t ip, int port)
 {
     int ret;
     struct sockaddr_in sa = {};
@@ -153,6 +151,8 @@ void init_conn(struct vdf_conn *conn, uint32_t ip, int port, bool engine_identit
     ret = connect(conn->sock, (struct sockaddr *)&sa, sizeof(sa));
     if (ret < 0) {
         perror("connect");
+        vdf_socket_close(conn->sock);
+        conn->sock = kInvalidSocket;
         vdf_sleep(1);
         return;
     }
@@ -166,11 +166,6 @@ void init_conn(struct vdf_conn *conn, uint32_t ip, int port, bool engine_identit
     }
     conn->state = WAITING;
     conn->buf_pos = 0;
-    if (engine_identity) {
-        char identity[32];
-        const int size = snprintf(identity, sizeof(identity), "TLENGINE 1 %u\n", unsigned(conn->vdf.idx));
-        write_data(conn, identity, static_cast<size_t>(size));
-    }
     LOG_INFO("VDF %d: Connected to timelord, waiting for challenge", conn->vdf.idx);
 }
 
@@ -382,7 +377,7 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
         }
         close_conn(conn);
     } else if (conn->state == CLOSED && !g_stopping) {
-        init_conn(conn, client->opts.ip, client->opts.port, client->opts.engine_identity);
+        init_conn(conn, client->opts.ip, client->opts.port);
     }
 }
 
@@ -460,7 +455,10 @@ void event_loop(struct vdf_client *client, HardwareLiveControl &control)
             if (speed) LOG_INFO("TLRAW 2 %u %.0f %s", unsigned(i), *speed,
                 *speed >= 0 ? "running" : running ? "sampling" : "idle");
         }
-        if (!control.poll(client->drv, running_mask)) throw std::runtime_error(control.stop_requested() ? "requested_stop" : "live_control_failed");
+        if (!control.poll(client->drv, running_mask)) {
+            if (control.stop_requested()) break;
+            throw std::runtime_error("live_control_failed");
+        }
         if (client->opts.auto_freq && !(loop_cnt % 256)) {
             uint64_t elapsed = vdf_get_elapsed_us(client->drv->last_freq_update);
             if (elapsed / 1000000 >= client->opts.auto_freq_period) {
@@ -505,7 +503,6 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     opts->auto_freq = false;
     opts->live_control = false;
     opts->raw_speed = false;
-    opts->engine_identity = false;
     opts->control_version = false;
     opts->control_frequencies = false;
     opts->max_freq = pll_entries[VALID_PLL_FREQS - 1].freq;
@@ -546,12 +543,6 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
             value = eq + 1;
         }
 
-        if (!strcmp(name, "engine-identity")) {
-            if (value) return -1;
-            opts->engine_identity = true;
-            argi++;
-            continue;
-        }
         if (!strcmp(name, "raw-speed")) {
             if (value) return -1;
             opts->raw_speed = true;
@@ -801,7 +792,6 @@ int hw_vdf_client_main(int argc, char **argv)
                 "  --segment-threads N - number of threads that share each proof segment [2, 1 - 8]\n"
                 "  --auto-freq-period N - auto-adjust frequency every N seconds [0, 10 - inf]\n"
                 "  --max-freq N - max frequency while auto-freq is on [%.0f]\n"
-                "  --engine-identity - identify physical engines on local client connections\n"
                 "  --raw-speed - report recent per-engine counter rates on stderr\n"
                 "  --live-control - accept inherited-pipe TLSET commands; enables --raw-speed\n"
                 "  --control-version - print live-control protocol version and exit\n"
@@ -855,31 +845,29 @@ int hw_vdf_client_main(int argc, char **argv)
     sigaction(SIGTERM, &sa, NULL);
 #endif
 
-    std::optional<timelord_control::ShutdownResult> shutdown;
     std::string failure_reason;
-    auto fail = [&]() {
-        if (!client.opts.live_control)
-            return 1;
-        shutdown = shutdown_hw_operating_point(client.drv, client.opts.vdfs_mask);
-        return timelord_control::Limits::failure_exit;
-    };
     int rc = 0;
     try {
         event_loop(&client, control);
     } catch (const std::exception &err) {
-        rc = fail();
+        rc = 1;
         failure_reason = err.what();
     } catch (...) {
-        rc = fail();
+        rc = 1;
         failure_reason = "unknown";
     }
 
+    std::optional<timelord_control::ShutdownResult> shutdown;
     if (client.opts.live_control) {
-        // Every exit path establishes hardware state, including normal SIGTERM.
-        // Report it before potentially expensive CPU proof-thread cleanup.
-        if (!shutdown) shutdown = shutdown_hw_operating_point(client.drv, client.opts.vdfs_mask);
+        // Report checked hardware state before CPU worker cleanup, but reap the
+        // process before transferring ownership. Unknown shutdown is a failure.
+        shutdown = shutdown_hw_operating_point(client.drv, client.opts.vdfs_mask);
         (void)control.shutdown_ack(*shutdown);
-        if (failure_reason == "requested_stop") rc = 0;
+        if (!rc && !(shutdown->paused && shutdown->restored)) {
+            rc = 1;
+            failure_reason = "shutdown_unconfirmed";
+        }
+        if (rc) rc = timelord_control::Limits::failure_exit;
     }
     for (auto &conn : client.conns) {
         if (!conn.vdf.init_done) continue;

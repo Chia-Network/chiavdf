@@ -36,9 +36,9 @@ inline bool valid(Point p) {
            p.frequency >= Limits::min_frequency && p.frequency <= Limits::max_frequency &&
            p.voltage >= Limits::min_voltage && p.voltage <= Limits::max_voltage;
 }
-// Readback includes PLL/regulator quantization. Keep command limits strict,
-// while accepting measurements within the same bounded tolerance used below
-// to compare an operating point with its requested target.
+// A reading may differ from its request by the readback tolerance (one 6.25 mV
+// VID step). State read before any write uses command limits widened by that
+// tolerance. Requested points always use the strict valid() bounds.
 inline bool valid_readback(Point p) {
     return std::isfinite(p.frequency) && std::isfinite(p.voltage) &&
            p.frequency >= Limits::min_frequency - Limits::frequency_tolerance &&
@@ -81,14 +81,11 @@ struct Request {
 inline std::optional<uint64_t> parse_tlstop(std::string_view line) {
     constexpr std::string_view prefix = "TLSTOP 1 ";
     if (line.size() > Limits::frame_bytes || line.substr(0, prefix.size()) != prefix) return std::nullopt;
-    line.remove_prefix(prefix.size());
-    if (line.empty()) return std::nullopt;
     uint64_t id = 0;
-    for (char digit : line) {
-        if (digit < '0' || digit > '9' || id > (UINT64_MAX - uint64_t(digit - '0')) / 10) return std::nullopt;
-        id = id * 10 + uint64_t(digit - '0');
-    }
-    return id ? std::optional<uint64_t>(id) : std::nullopt;
+    const char *end = line.data() + line.size();
+    const auto parsed = std::from_chars(line.data() + prefix.size(), end, id);
+    if (parsed.ec != std::errc{} || parsed.ptr != end || !id) return std::nullopt;
+    return id;
 }
 // Parsing is pure: sequence/replay checks belong to the channel.
 inline std::optional<Request> parse_tlset(std::string_view line) {

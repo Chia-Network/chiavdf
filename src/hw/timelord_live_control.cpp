@@ -96,14 +96,16 @@ bool Channel::poll(const std::function<Point(Point)> &apply) {
     const auto end = pending_.find('\n');
     if (end == std::string::npos)
         return count != 0;
-    if (auto stop = parse_tlstop(std::string_view(pending_).substr(0, end))) {
-        if (*stop <= last_id_) return false;
-        last_id_ = *stop;
-        stopping_ = true;
+    const std::string line = pending_.substr(0, end);
+    pending_.erase(0, end + 1);
+    if (const auto stop = parse_tlstop(line)) {
+        if (*stop > last_id_) {
+            last_id_ = *stop;
+            stopping_ = true;
+        }
         return false;
     }
-    auto request = parse_tlset(std::string_view(pending_).substr(0, end));
-    pending_.erase(0, end + 1);
+    auto request = parse_tlset(line);
     if (!request || request->id <= last_id_)
         return false;
     last_id_ = request->id;

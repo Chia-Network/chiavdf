@@ -65,6 +65,7 @@ struct vdf_client_opts {
     bool auto_freq;
     bool live_control;
     bool raw_speed;
+    bool engine_identity;
     bool control_version;
     bool control_frequencies;
     double max_freq; // Used when auto_freq mode is turned on, to limit the max frequency
@@ -133,9 +134,18 @@ void signal_handler(int)
     g_stopping = true;
 }
 
-void init_conn(struct vdf_conn *conn, uint32_t ip, int port)
+// One bounded identity record precedes the VDF protocol. A short write or
+// temporary/full/closed socket must abandon this connection, never kill peers.
+static bool write_engine_identity(struct vdf_conn *conn)
 {
-    int ret;
+    char identity[32];
+    const int size = snprintf(identity, sizeof(identity), "TLENGINE 1 %u\n", unsigned(conn->vdf.idx));
+    return size > 0 && size_t(size) < sizeof(identity) &&
+        vdf_socket_write(conn->sock, identity, size_t(size)) == size;
+}
+
+void init_conn(struct vdf_conn *conn, uint32_t ip, int port, bool engine_identity)
+{
     struct sockaddr_in sa = {};
     char ip_text[INET_ADDRSTRLEN] = {0};
     sa.sin_family = AF_INET;
@@ -148,22 +158,17 @@ void init_conn(struct vdf_conn *conn, uint32_t ip, int port)
     const char* addr_text = inet_ntop(AF_INET, &sa.sin_addr, ip_text, sizeof(ip_text));
 #endif
     LOG_INFO("Connecting to %s:%d", addr_text ? addr_text : "<invalid>", port);
-    ret = connect(conn->sock, (struct sockaddr *)&sa, sizeof(sa));
-    if (ret < 0) {
-        perror("connect");
+    // Every failed attempt releases its descriptor and backs off; it never
+    // affects other engines.
+    auto abandon = [conn](const char *what) {
+        perror(what);
         vdf_socket_close(conn->sock);
         conn->sock = kInvalidSocket;
         vdf_sleep(1);
-        return;
-    }
-
-    ret = vdf_socket_set_nonblock(conn->sock);
-    if (ret < 0) {
-        perror("set_nonblock");
-        vdf_socket_close(conn->sock);
-        conn->sock = kInvalidSocket;
-        return;
-    }
+    };
+    if (connect(conn->sock, (struct sockaddr *)&sa, sizeof(sa)) < 0) return abandon("connect");
+    if (vdf_socket_set_nonblock(conn->sock) < 0) return abandon("set_nonblock");
+    if (engine_identity && !write_engine_identity(conn)) return abandon("engine identity");
     conn->state = WAITING;
     conn->buf_pos = 0;
     LOG_INFO("VDF %d: Connected to timelord, waiting for challenge", conn->vdf.idx);
@@ -201,8 +206,9 @@ void clear_vdf_client(struct vdf_client *client)
 
 void stop_conn(struct vdf_client *client, struct vdf_conn *conn)
 {
-    if (conn->sock != kInvalidSocket) {
-        write_data(conn, "STOP", 4);
+    // Best effort: a peer that reset the connection must not stop other engines.
+    if (conn->sock != kInvalidSocket && vdf_socket_write(conn->sock, "STOP", 4) != 4) {
+        perror("write STOP");
     }
     if (conn->vdf.init_done) {
         hw_stop_proof(&conn->vdf);
@@ -377,7 +383,7 @@ void handle_conn(struct vdf_client *client, struct vdf_conn *conn)
         }
         close_conn(conn);
     } else if (conn->state == CLOSED && !g_stopping) {
-        init_conn(conn, client->opts.ip, client->opts.port);
+        init_conn(conn, client->opts.ip, client->opts.port, client->opts.engine_identity);
     }
 }
 
@@ -506,6 +512,7 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
     opts->auto_freq = false;
     opts->live_control = false;
     opts->raw_speed = false;
+    opts->engine_identity = false;
     opts->control_version = false;
     opts->control_frequencies = false;
     opts->max_freq = pll_entries[VALID_PLL_FREQS - 1].freq;
@@ -546,6 +553,12 @@ int parse_opts(int argc, char **argv, struct vdf_client_opts *opts)
             value = eq + 1;
         }
 
+        if (!strcmp(name, "engine-identity")) {
+            if (value) return -1;
+            opts->engine_identity = true;
+            argi++;
+            continue;
+        }
         if (!strcmp(name, "raw-speed")) {
             if (value) return -1;
             opts->raw_speed = true;
@@ -795,6 +808,7 @@ int hw_vdf_client_main(int argc, char **argv)
                 "  --segment-threads N - number of threads that share each proof segment [2, 1 - 8]\n"
                 "  --auto-freq-period N - auto-adjust frequency every N seconds [0, 10 - inf]\n"
                 "  --max-freq N - max frequency while auto-freq is on [%.0f]\n"
+                "  --engine-identity - send TLENGINE 1 N on each engine connection\n"
                 "  --raw-speed - report recent per-engine counter rates on stderr\n"
                 "  --live-control - accept inherited-pipe TLSET commands; enables --raw-speed\n"
                 "  --control-version - print live-control protocol version and exit\n"

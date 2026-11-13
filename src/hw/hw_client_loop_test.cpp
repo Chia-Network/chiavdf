@@ -12,10 +12,12 @@ struct EndClientLoop {};
 uint8_t observed_running_mask = 0;
 double observed_frequency = 0.;
 bool standard_failure = false;
+bool normal_shutdown = false;
 } // namespace
 
 bool HardwareLiveControl::start(bool, bool) { return true; }
 bool HardwareLiveControl::poll(ChiaDriver *driver, uint8_t running_mask) {
+    if (normal_shutdown) return true;
     observed_running_mask = running_mask;
     observed_frequency = driver->GetPLLFrequency();
     if (standard_failure)
@@ -201,5 +203,41 @@ static void check_client_exception_shutdown_policy() {
                 throw std::runtime_error("exception_fixture_did_not_start_above_safe_clock");
         }
     }
+#endif
+}
+
+static void check_physical_engine_identity_on_reconnect() {
+#ifndef _WIN32
+    int listener = socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in address{}; address.sin_family = AF_INET; address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    socklen_t size = sizeof(address);
+    if (listener < 0 || bind(listener, reinterpret_cast<sockaddr *>(&address), size) || listen(listener, 3) ||
+        getsockname(listener, reinterpret_cast<sockaddr *>(&address), &size)) throw std::runtime_error("identity_listener");
+    for (unsigned engine : {2u, 0u, 1u}) {
+        vdf_conn conn{}; conn.vdf.idx = engine;
+        init_conn(&conn, INADDR_LOOPBACK, ntohs(address.sin_port), true);
+        int peer = accept(listener, nullptr, nullptr);
+        char identity[13]{};
+        const auto count = recv(peer, identity, sizeof(identity), MSG_WAITALL);
+        const std::string expected = "TLENGINE 1 " + std::to_string(engine) + "\n";
+        if (count != 13 || std::string(identity,13) != expected) throw std::runtime_error("physical_engine_identity");
+        close(peer);close_conn(&conn);
+    }
+    close(listener);
+#endif
+}
+
+static void check_normal_supervised_shutdown_policy() {
+#ifndef _WIN32
+    char name[] = "emu_hw_vdf_client", live[] = "--live-control", port[] = "18110", count[] = "1";
+    char *args[] = {name, live, port, count};
+    // No connection is attempted: the loop starts with all connections CLOSED
+    // and a pending normal termination request. USB is fully emulated.
+    g_stopping = true; normal_shutdown = true;
+    const int rc = hw_vdf_client_main(4,args);
+    g_stopping = false; normal_shutdown = false;
+    ChiaDriver probe;
+    if (rc || probe.ftdi.Open() || std::abs(probe.GetPLLFrequency()-timelord_control::Limits::min_frequency)>1.)
+        throw std::runtime_error("normal_shutdown_did_not_restore_safe_clock");
 #endif
 }

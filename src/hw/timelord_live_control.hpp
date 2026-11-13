@@ -78,6 +78,18 @@ struct Request {
     uint64_t id;
     Point target;
 };
+inline std::optional<uint64_t> parse_tlstop(std::string_view line) {
+    constexpr std::string_view prefix = "TLSTOP 1 ";
+    if (line.size() > Limits::frame_bytes || line.substr(0, prefix.size()) != prefix) return std::nullopt;
+    line.remove_prefix(prefix.size());
+    if (line.empty()) return std::nullopt;
+    uint64_t id = 0;
+    for (char digit : line) {
+        if (digit < '0' || digit > '9' || id > (UINT64_MAX - uint64_t(digit - '0')) / 10) return std::nullopt;
+        id = id * 10 + uint64_t(digit - '0');
+    }
+    return id ? std::optional<uint64_t>(id) : std::nullopt;
+}
 // Parsing is pure: sequence/replay checks belong to the channel.
 inline std::optional<Request> parse_tlset(std::string_view line) {
     constexpr std::string_view prefix = "TLSET 1 ";
@@ -229,6 +241,7 @@ class Channel {
     int input_flags_ = -1, output_flags_ = -1;
     std::string pending_;
     uint64_t last_id_ = 0;
+    bool stopping_ = false;
     bool reply(uint64_t id, const char *error, Point actual = {});
 
   public:
@@ -240,5 +253,7 @@ class Channel {
     bool start();
     void stop() noexcept;
     bool poll(const std::function<Point(Point)> &apply);
+    bool stop_requested() const { return stopping_; }
+    bool shutdown_ack(ShutdownResult result);
 };
 } // namespace timelord_control

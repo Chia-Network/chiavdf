@@ -534,3 +534,36 @@ TEST(HardwareLiveControl, ChannelStopRestoresFlagsAndRejectedStartupLeavesInputA
     EXPECT_EQ(fcntl(pipes.output[1], F_GETFL), output_flags);
 }
 #endif
+
+TEST(HardwareLiveControl, StopRequestsAreVersionedBoundedAndCannotReplayControlIds) {
+    EXPECT_EQ(timelord_control::parse_tlstop("TLSTOP 1 42"), 42u);
+    for (const char *frame : {"TLSTOP 2 1", "TLSTOP 1 0", "TLSTOP 1 -1", "TLSTOP 1 1 extra", "TLSTOP 1 18446744073709551616", "TLSTOP 1 1\n"})
+        EXPECT_FALSE(timelord_control::parse_tlstop(frame));
+#ifndef _WIN32
+    HardwareControlPipes fixture;
+    timelord_control::Channel channel(fixture.input[0], fixture.output[1]);
+    ASSERT_TRUE(channel.start());
+    const char request[] = "TLSTOP 1 7\n";
+    ASSERT_EQ(write(fixture.input[1], request, sizeof(request)-1), ssize_t(sizeof(request)-1));
+    EXPECT_FALSE(channel.poll([](Point p) { ADD_FAILURE() << "Stop must not apply a new point"; return p; }));
+    EXPECT_TRUE(channel.stop_requested());
+    EXPECT_TRUE(channel.shutdown_ack({true,true}));
+    EXPECT_EQ(fixture.reply(), "TLSTOPACK 1 7 1 1\n");
+#endif
+}
+
+TEST(HardwareLiveControl, StopQueuedBehindControlIsProcessedBeforeEof) {
+#ifndef _WIN32
+    HardwareControlPipes fixture;
+    timelord_control::Channel channel(fixture.input[0],fixture.output[1]);
+    ASSERT_TRUE(channel.start());
+    fixture.send("TLSET 1 1 1450 .95\nTLSTOP 1 2\n");
+    ASSERT_TRUE(channel.poll([](Point p){return p;}));
+    EXPECT_EQ(fixture.reply(),"TLACK 1 1 1450.000000 0.950000\n");
+    close(fixture.input[1]);fixture.input[1]=-1;
+    EXPECT_FALSE(channel.poll([](Point p){ADD_FAILURE()<<"Stop must not change point";return p;}));
+    EXPECT_TRUE(channel.stop_requested());
+    EXPECT_TRUE(channel.shutdown_ack({true,true}));
+    EXPECT_EQ(fixture.reply(),"TLSTOPACK 1 2 1 1\n");
+#endif
+}

@@ -368,6 +368,7 @@ int main() {
         check_normal_supervised_shutdown_policy();
         check_pipe_shutdown_through_main();
         check_physical_engine_identity_on_reconnect();
+        check_engine_reset_after_identity();
         check_engine_identity_option();
         check_engine_identity_write_failures();
         check_failed_connect_releases_socket();

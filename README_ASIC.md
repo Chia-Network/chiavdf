@@ -479,6 +479,23 @@ the ASIC clock.
 
 This tree does not read `CHIAVDF_HW_DIRECT_STATUS` or `CHIAVDF_HW_TELEMETRY`. The flags above are the supported interface.
 
+### Engine socket identity
+
+Supervisors that reserve multiple idle engines can opt into `--engine-identity`.
+Each newly connected engine socket first sends `TLENGINE 1 N` plus a newline,
+where N is the physical engine index (0–2), including after reconnect. The
+supervisor must consume this frame before speaking the usual VDF protocol.
+Without this option the existing socket protocol is unchanged.
+
+Identity is sent completely before the connection enters its waiting state.
+A short or failed identity write, or a peer reset after identity, closes only
+that engine connection and retries;
+it does not terminate other engines or the USB owner. Supervisors must pin a
+revision supporting this option; it is not advertised by `--control-version`.
+
+This socket option is independent of `--live-control`, works with local or remote
+`--ip` endpoints, and is supported on Windows as well as macOS and Linux.
+
 ## Multiple boards and proof construction
 
 `--device-loc` selects a board. `--list` prints each interface-A serial and location; `0`, the default, selects the first available board. Run one client per board with distinct locations. If simultaneous FTDI enumeration proves unreliable on your macOS host, initialize the clients sequentially: wait for one client to connect before starting the next. Location values can change when USB cables or hubs change.
@@ -600,17 +617,6 @@ controller must also reap the process before transferring ownership. Normal
 SIGTERM and failure exits perform the same hardware shutdown and emit an
 unsolicited acknowledgement with ID 0 when stdout remains writable. A missing
 acknowledgement is unknown hardware state, not proof of failed shutdown.
-
-Supervisors that reserve multiple idle engines can opt into `--engine-identity`.
-Each newly connected engine socket first sends `TLENGINE 1 N` plus a newline,
-where N is the physical engine index (0–2), including after reconnect. The
-supervisor must consume this frame before speaking the usual VDF protocol.
-Without this option the existing socket protocol is unchanged.
-
-Identity is sent completely before the connection enters its waiting state.
-A short or failed identity write closes only that engine connection and retries;
-it does not terminate other engines or the USB owner. Supervisors must pin a
-revision supporting this option; it is not advertised by `--control-version`.
 
 Before a change, the client requires a valid temperature below 55°C, pauses the
 running engines and reads the current clock/voltage. It raises voltage before

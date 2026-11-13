@@ -6,6 +6,7 @@ void Channel::stop() noexcept {}
 bool Channel::supported() { return false; }
 bool Channel::start() { return false; }
 bool Channel::poll(const std::function<Point(Point)> &) { return false; }
+bool Channel::shutdown_ack(ShutdownResult) { return false; }
 std::ptrdiff_t write_no_sigpipe(int, const void *, size_t) { return -1; }
 } // namespace timelord_control
 #else
@@ -76,10 +77,17 @@ bool Channel::reply(uint64_t id, const char *error, Point actual) {
     return size > 0 && size_t(size) < sizeof(response) &&
            write_no_sigpipe(output_, response, size_t(size)) == size;
 }
+bool Channel::shutdown_ack(ShutdownResult result) {
+    char response[128];
+    const int size = snprintf(response, sizeof(response), "TLSTOPACK 1 %llu %d %d\n",
+        (unsigned long long)(stopping_ ? last_id_ : 0), result.paused, result.restored);
+    return size > 0 && size_t(size) < sizeof(response) &&
+        write_no_sigpipe(output_, response, size_t(size)) == size;
+}
 bool Channel::poll(const std::function<Point(Point)> &apply) {
     char data[Limits::frame_bytes];
     const auto count = read(input_, data, sizeof(data));
-    if (!count || (count < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR))
+    if ((!count && pending_.empty()) || (count < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR))
         return false;
     if (count > 0)
         pending_.append(data, size_t(count));
@@ -87,9 +95,17 @@ bool Channel::poll(const std::function<Point(Point)> &apply) {
         return false;
     const auto end = pending_.find('\n');
     if (end == std::string::npos)
-        return true;
-    auto request = parse_tlset(std::string_view(pending_).substr(0, end));
+        return count != 0;
+    const std::string line = pending_.substr(0, end);
     pending_.erase(0, end + 1);
+    if (const auto stop = parse_tlstop(line)) {
+        if (*stop > last_id_) {
+            last_id_ = *stop;
+            stopping_ = true;
+        }
+        return false;
+    }
+    auto request = parse_tlset(line);
     if (!request || request->id <= last_id_)
         return false;
     last_id_ = request->id;

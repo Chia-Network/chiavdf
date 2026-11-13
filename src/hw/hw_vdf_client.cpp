@@ -81,7 +81,7 @@ struct vdf_client {
 
 void write_data(struct vdf_conn *conn, const char *buf, size_t size);
 
-static volatile bool g_stopping = false;
+static volatile sig_atomic_t g_stopping = false;
 static int vdf_socket_set_nonblock(vdf_socket_t sock)
 {
 #ifdef _WIN32
@@ -128,9 +128,8 @@ static bool vdf_socket_would_block()
 #endif
 }
 
-void signal_handler(int sig)
+void signal_handler(int)
 {
-    LOG_INFO("Interrupted");
     g_stopping = true;
 }
 
@@ -152,6 +151,8 @@ void init_conn(struct vdf_conn *conn, uint32_t ip, int port)
     ret = connect(conn->sock, (struct sockaddr *)&sa, sizeof(sa));
     if (ret < 0) {
         perror("connect");
+        vdf_socket_close(conn->sock);
+        conn->sock = kInvalidSocket;
         vdf_sleep(1);
         return;
     }
@@ -454,7 +455,13 @@ void event_loop(struct vdf_client *client, HardwareLiveControl &control)
             if (speed) LOG_INFO("TLRAW 2 %u %.0f %s", unsigned(i), *speed,
                 *speed >= 0 ? "running" : running ? "sampling" : "idle");
         }
-        if (!control.poll(client->drv, running_mask)) throw std::runtime_error("live_control_failed");
+        if (!control.poll(client->drv, running_mask)) {
+            if (control.stop_requested()) {
+                LOG_INFO("Live control stop requested");
+                break;
+            }
+            throw std::runtime_error("live_control_failed");
+        }
         if (client->opts.auto_freq && !(loop_cnt % 256)) {
             uint64_t elapsed = vdf_get_elapsed_us(client->drv->last_freq_update);
             if (elapsed / 1000000 >= client->opts.auto_freq_period) {
@@ -841,25 +848,30 @@ int hw_vdf_client_main(int argc, char **argv)
     sigaction(SIGTERM, &sa, NULL);
 #endif
 
-    std::optional<timelord_control::ShutdownResult> shutdown;
     std::string failure_reason;
-    auto fail = [&]() {
-        if (!client.opts.live_control)
-            return 1;
-        shutdown = shutdown_hw_operating_point(client.drv, client.opts.vdfs_mask);
-        return timelord_control::Limits::failure_exit;
-    };
     int rc = 0;
     try {
         event_loop(&client, control);
     } catch (const std::exception &err) {
-        rc = fail();
+        rc = 1;
         failure_reason = err.what();
     } catch (...) {
-        rc = fail();
+        rc = 1;
         failure_reason = "unknown";
     }
 
+    std::optional<timelord_control::ShutdownResult> shutdown;
+    if (client.opts.live_control) {
+        // Report checked hardware state before CPU worker cleanup, but reap the
+        // process before transferring ownership. Unknown shutdown is a failure.
+        shutdown = shutdown_hw_operating_point(client.drv, client.opts.vdfs_mask);
+        (void)control.shutdown_ack(*shutdown);
+        if (!rc && !(shutdown->paused && shutdown->restored)) {
+            rc = 1;
+            failure_reason = "shutdown_unconfirmed";
+        }
+        if (rc) rc = timelord_control::Limits::failure_exit;
+    }
     for (auto &conn : client.conns) {
         if (!conn.vdf.init_done) continue;
         hw_stop_proof(&conn.vdf);

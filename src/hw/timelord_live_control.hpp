@@ -36,6 +36,16 @@ inline bool valid(Point p) {
            p.frequency >= Limits::min_frequency && p.frequency <= Limits::max_frequency &&
            p.voltage >= Limits::min_voltage && p.voltage <= Limits::max_voltage;
 }
+// A reading may differ from its request by the readback tolerance (one 6.25 mV
+// VID step). State read before any write uses command limits widened by that
+// tolerance. Requested points always use the strict valid() bounds.
+inline bool valid_readback(Point p) {
+    return std::isfinite(p.frequency) && std::isfinite(p.voltage) &&
+           p.frequency >= Limits::min_frequency - Limits::frequency_tolerance &&
+           p.frequency <= Limits::max_frequency + Limits::frequency_tolerance &&
+           p.voltage >= Limits::min_voltage - Limits::voltage_tolerance &&
+           p.voltage <= Limits::max_voltage + Limits::voltage_tolerance;
+}
 inline void check_temperature(std::optional<double> temperature) {
     if (!temperature || !std::isfinite(*temperature))
         throw std::runtime_error("temperature_unavailable");
@@ -68,6 +78,15 @@ struct Request {
     uint64_t id;
     Point target;
 };
+inline std::optional<uint64_t> parse_tlstop(std::string_view line) {
+    constexpr std::string_view prefix = "TLSTOP 1 ";
+    if (line.size() > Limits::frame_bytes || line.substr(0, prefix.size()) != prefix) return std::nullopt;
+    uint64_t id = 0;
+    const char *end = line.data() + line.size();
+    const auto parsed = std::from_chars(line.data() + prefix.size(), end, id);
+    if (parsed.ec != std::errc{} || parsed.ptr != end || !id) return std::nullopt;
+    return id;
+}
 // Parsing is pure: sequence/replay checks belong to the channel.
 inline std::optional<Request> parse_tlset(std::string_view line) {
     constexpr std::string_view prefix = "TLSET 1 ";
@@ -145,15 +164,14 @@ template <class Hardware> Point apply(Point target, Hardware &hardware, uint8_t 
     if (!valid(target))
         throw std::runtime_error("limits");
     hardware.control(mask, false);
-    const Point old = checked_readback("initial_readback", hardware, valid);
+    const Point old = checked_readback("initial_readback", hardware, valid_readback);
     if (target.voltage > old.voltage)
         hardware.voltage(target.voltage);
     hardware.frequency(target.frequency);
     if (target.voltage < old.voltage)
         hardware.voltage(target.voltage);
     const Point actual = checked_readback("readback", hardware, [&](Point p) {
-        return valid(p) &&
-               std::abs(p.frequency - target.frequency) <= Limits::frequency_tolerance &&
+        return std::abs(p.frequency - target.frequency) <= Limits::frequency_tolerance &&
                std::abs(p.voltage - target.voltage) <= Limits::voltage_tolerance;
     });
     hardware.control(mask, true);
@@ -183,8 +201,7 @@ template <class Hardware> ShutdownResult shutdown(Hardware &hardware, uint8_t ma
         hardware.frequency(Limits::min_frequency);
         hardware.voltage(Limits::min_voltage);
         checked_readback("safe_readback", hardware, [](Point p) {
-            return valid(p) &&
-                   std::abs(p.frequency - Limits::min_frequency) <= Limits::frequency_tolerance &&
+            return std::abs(p.frequency - Limits::min_frequency) <= Limits::frequency_tolerance &&
                    std::abs(p.voltage - Limits::min_voltage) <= Limits::voltage_tolerance;
         });
         result.restored = true;
@@ -219,6 +236,7 @@ class Channel {
     int input_flags_ = -1, output_flags_ = -1;
     std::string pending_;
     uint64_t last_id_ = 0;
+    bool stopping_ = false;
     bool reply(uint64_t id, const char *error, Point actual = {});
 
   public:
@@ -230,5 +248,7 @@ class Channel {
     bool start();
     void stop() noexcept;
     bool poll(const std::function<Point(Point)> &apply);
+    bool stop_requested() const { return stopping_; }
+    bool shutdown_ack(ShutdownResult result);
 };
 } // namespace timelord_control

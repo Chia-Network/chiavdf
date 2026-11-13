@@ -65,7 +65,7 @@ static void check_pll_bounds() {
             "Frequency moved past the PLL table");
 }
 
-// The emulator deliberately does not model the regulator and returns 0.24375 V.
+// Before any regulator write, the emulator's unset VID reads 0.24375 V.
 // Legacy clock steps must neither validate that sample nor derive a voltage write
 // from it; the supervised transaction would reject it.
 static void check_legacy_frequency_adjustment() {
@@ -365,6 +365,8 @@ int main() {
         check_legacy_frequency_adjustment();
         check_completed_engine_control_mask();
         check_client_exception_shutdown_policy();
+        check_normal_supervised_shutdown_policy();
+        check_pipe_shutdown_through_main();
         check_segment_threads_option();
         check_segment_threads_accounting();
         check_segment_threads_validation();

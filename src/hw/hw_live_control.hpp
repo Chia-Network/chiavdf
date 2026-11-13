@@ -12,4 +12,6 @@ class HardwareLiveControl {
   public:
     bool start(bool enabled, bool automatic_frequency);
     bool poll(ChiaDriver *driver, uint8_t running_mask);
+    bool stop_requested() const { return enabled_ && channel_.stop_requested(); }
+    bool shutdown_ack(timelord_control::ShutdownResult result) { return enabled_ && channel_.shutdown_ack(result); }
 };

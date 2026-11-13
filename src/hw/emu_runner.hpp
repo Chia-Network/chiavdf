@@ -25,4 +25,6 @@ private:
     EmuTrace *previous_;
 };
 void emu_reset_board();
+// Test fault: regulator reads return zero, preventing voltage confirmation.
+extern bool emu_i2c_reads_zero;
 #endif

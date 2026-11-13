@@ -577,6 +577,8 @@ Commands and replies are newline-delimited ASCII:
 ```text
 TLSET 1 1 1880 1.0
 TLACK 1 1 1880.000000 1.000000
+TLSTOP 1 2
+TLSTOPACK 1 2 1 1
 ```
 
 The fields are protocol version, a strictly increasing positive request ID,
@@ -589,6 +591,16 @@ The probes `--control-version` and `--control-frequencies` use the regular optio
 parser and print the protocol identifier and JSON frequency list respectively, before opening USB.
 These control options are unavailable on Windows; `--live-control` fails there.
 
+`TLSTOP` uses the same strictly increasing request IDs. It requests checked
+shutdown; the client exits 0 only if both hardware flags below are 1.
+`TLSTOPACK` reports version, request ID,
+engines-paused and safe-point-restored flags; both flags must be 1 to confirm
+hardware shutdown. The acknowledgement precedes CPU proof-worker cleanup, so the
+controller must also reap the process before transferring ownership. Normal
+SIGTERM and failure exits perform the same hardware shutdown and emit an
+unsolicited acknowledgement with ID 0 when stdout remains writable. A missing
+acknowledgement is unknown hardware state, not proof of failed shutdown.
+
 Before a change, the client requires a valid temperature below 55°C, pauses the
 running engines and reads the current clock/voltage. It raises voltage before
 changing clock and lowers voltage afterward, then checks actual readback before
@@ -597,6 +609,13 @@ resuming the previously running engines. Both readback stages permit three reads
 is 1 MHz and voltage tolerance is 0.0063 V. Failed samples log the stage, attempt,
 clock-register values and individual register-read errors. These bounds are
 software guardrails, not a characterization of the silicon's operating limits.
+`TLACK` reports measured readback, which may lie up to one tolerance outside the
+command limits (for example `0.693750` after a 0.7 V request). Supervisors must
+send valid requested points, rather than echoing acknowledged measurements.
+
+The `timelord-live-control-v1` probe does not advertise individual extensions.
+Supervisors using `TLSTOP` must pin a native revision that implements it; older
+v1 clients reject that command and exit without a requested-stop acknowledgement.
 
 A rejected operation is fatal: a `TLERR` is a failure notification, not permission
 to send the next command. Replies and exit behavior are:
@@ -614,7 +633,8 @@ Failed temperature reads are reported as `temperature_unavailable`, separately f
 `temperature_limit`; valid zero or subzero readings are not read errors. Checked
 shutdown attempts to pause every selected engine, checks the result, restores a low
 operating point (200 MHz / requested 0.7 V) without resuming engines, stops proof
-workers, closes node connections and USB, and exits with status 70. Failed pause
+workers, closes node connections and USB, and exits with status 70 for failures
+or unconfirmed shutdown (0 for confirmed requested stop or normal termination). Failed pause
 writes fall back to board reset. The shutdown log reports whether quiescence and
 restoration were confirmed; a failed USB link cannot guarantee either. SIGPIPE is
 suppressed only for the writing thread during individual pipe/socket writes,

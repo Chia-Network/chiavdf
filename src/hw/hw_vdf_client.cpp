@@ -475,7 +475,10 @@ void event_loop(struct vdf_client *client, HardwareLiveControl &control)
                 *speed >= 0 ? "running" : running ? "sampling" : "idle");
         }
         if (!control.poll(client->drv, running_mask)) {
-            if (control.stop_requested()) break;
+            if (control.stop_requested()) {
+                LOG_INFO("Live control stop requested");
+                break;
+            }
             throw std::runtime_error("live_control_failed");
         }
         if (client->opts.auto_freq && !(loop_cnt % 256)) {

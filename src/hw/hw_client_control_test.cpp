@@ -603,3 +603,16 @@ TEST(HardwareLiveControl, ShutdownAcknowledgementsPreserveEachHardwareFlag) {
     EXPECT_EQ(fixture.reply(), "TLSTOPACK 1 9 1 0\n");
 #endif
 }
+
+TEST(HardwareLiveControl, UnterminatedStopAtEofFailsClosed) {
+#ifndef _WIN32
+    HardwareControlPipes fixture;
+    timelord_control::Channel channel(fixture.input[0], fixture.output[1]);
+    ASSERT_TRUE(channel.start());
+    fixture.send("TLSTOP 1 2");
+    close(fixture.input[1]); fixture.input[1] = -1;
+    EXPECT_TRUE(channel.poll([](Point p) { return p; }));
+    EXPECT_FALSE(channel.poll([](Point p) { return p; }));
+    EXPECT_FALSE(channel.stop_requested());
+#endif
+}

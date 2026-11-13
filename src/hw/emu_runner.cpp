@@ -374,13 +374,20 @@ int emu_do_io(uint8_t *buf_in, uint16_t size_in, uint8_t *buf_out, uint16_t size
     return 0;
 }
 
+// Byte-wide I2C register file: a written regulator VID reads back.
+bool emu_i2c_reads_zero = false;
+static uint8_t g_i2c_regs[128][256], g_i2c_select[128];
 int emu_do_io_i2c(uint8_t *buf, uint16_t size, uint32_t addr, int is_out)
 {
+    addr &= 0x7f;
     if (!is_out && size >= 2)
         record({EmuOperation::i2c_write, addr, static_cast<uint32_t>((buf[0] << 8) | buf[1])});
-    if (is_out) {
-        memset(buf, 0, size);
-    }
+    if (!is_out && size)
+        g_i2c_select[addr] = buf[0];
+    if (!is_out && size == 2)
+        g_i2c_regs[addr][buf[0]] = buf[1];
+    for (uint16_t i = 0; is_out && i < size; ++i)
+        buf[i] = emu_i2c_reads_zero ? 0 : g_i2c_regs[addr][uint8_t(g_i2c_select[addr] + i)];
     return 0;
 }
 

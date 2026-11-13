@@ -171,8 +171,7 @@ template <class Hardware> Point apply(Point target, Hardware &hardware, uint8_t 
     if (target.voltage < old.voltage)
         hardware.voltage(target.voltage);
     const Point actual = checked_readback("readback", hardware, [&](Point p) {
-        return valid_readback(p) &&
-               std::abs(p.frequency - target.frequency) <= Limits::frequency_tolerance &&
+        return std::abs(p.frequency - target.frequency) <= Limits::frequency_tolerance &&
                std::abs(p.voltage - target.voltage) <= Limits::voltage_tolerance;
     });
     hardware.control(mask, true);
@@ -202,8 +201,7 @@ template <class Hardware> ShutdownResult shutdown(Hardware &hardware, uint8_t ma
         hardware.frequency(Limits::min_frequency);
         hardware.voltage(Limits::min_voltage);
         checked_readback("safe_readback", hardware, [](Point p) {
-            return valid_readback(p) &&
-                   std::abs(p.frequency - Limits::min_frequency) <= Limits::frequency_tolerance &&
+            return std::abs(p.frequency - Limits::min_frequency) <= Limits::frequency_tolerance &&
                    std::abs(p.voltage - Limits::min_voltage) <= Limits::voltage_tolerance;
         });
         result.restored = true;

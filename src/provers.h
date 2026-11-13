@@ -3,8 +3,6 @@
 
 #include "prover_base.hpp"
 #include "callback.h"
-#include <algorithm>
-#include <cassert>
 
 class OneWesolowskiProver : public Prover {
   public:
@@ -52,13 +50,7 @@ class TwoWesolowskiProver : public Prover{
         this->weso = weso;
         this->done_iterations = segm.start;
         k = 10;
-        // Preferred l from the segment length; never step finer than the stored
-        // checkpoint stride over the segment.
-        const uint64_t preferred_l = (segm.length < weso->ProverTuning().small_segment_iters) ? 1 : 10;
-        const uint64_t stride = weso->StrideCovering(segm.start + segm.length);
-        l = static_cast<uint32_t>(std::max<uint64_t>(preferred_l, stride / k));
-        // Segment starts are aligned by ProveTwoWeso; reads must land on checkpoints.
-        assert(segm.start % (static_cast<uint64_t>(k) * static_cast<uint64_t>(l)) == 0);
+        l = (segm.length < 10000000) ? 1 : 10;
     }
 
     ~TwoWesolowskiProver() {

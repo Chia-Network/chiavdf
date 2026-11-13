@@ -268,7 +268,7 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
             // 2-weso specific logic.
             if (two_weso) {
                 TwoWesolowskiCallback* nweso = (TwoWesolowskiCallback*) weso;
-                if (num_iterations >= nweso->Limits().switch_threshold_iters && !nweso->LargeConstants()) {
+                if (num_iterations >= kSwitchIters && !nweso->LargeConstants()) {
                     uint64 round_up = (100 - num_iterations % 100) % 100;
                     if (round_up > 0) {
                         repeated_square_original(*weso->vdfo, f, D, L, num_iterations, round_up, weso);
@@ -277,7 +277,7 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
                     nweso->IncreaseConstants(num_iterations);
                     weso->iterations = num_iterations;
                 }
-                if (num_iterations >= nweso->Limits().max_iters - kTwoWesoStopMargin) {
+                if (num_iterations >= kMaxItersAllowed - kTwoWesoStopMargin) {
                     std::cout << "Maximum possible number of iterations reached!\n";
                     return ;
                 }
@@ -352,22 +352,17 @@ Proof ProveTwoWeso(integer& D, form x, uint64_t iters, uint64_t done_iterations,
     TwoWesolowskiCallback* weso, int depth, std::atomic<bool>& stop_signal)
 {
     integer L=root(-D, 4);
-    const uint64_t end_iterations = done_iterations + iters;
-    // Segment boundaries and the final checkpoint must sit on stored checkpoints:
-    // at least every 100 iterations (as before), or wider where the layout stores
-    // checkpoints more sparsely.
-    const uint64_t alignment = std::max<uint64_t>(100, weso->StrideCovering(end_iterations));
     if (depth == 2) {
-        while (!stop_signal && weso->iterations < end_iterations) {
+        while (!stop_signal && weso->iterations < done_iterations + iters) {
             std::this_thread::sleep_for (std::chrono::milliseconds(200));
         }
         if (stop_signal)
             return Proof();
 
         vdf_original vdfo_proof;
-        uint64 checkpoint = end_iterations - end_iterations % alignment;
+        uint64 checkpoint = (done_iterations + iters) - (done_iterations + iters) % 100;
         form y = weso->GetFormCopy(checkpoint);
-        repeated_square_original(vdfo_proof, y, D, L, 0, end_iterations % alignment, NULL);
+        repeated_square_original(vdfo_proof, y, D, L, 0, (done_iterations + iters) % 100, NULL);
 
         Segment sg(
             /*start=*/done_iterations,
@@ -391,7 +386,7 @@ Proof ProveTwoWeso(integer& D, form x, uint64_t iters, uint64_t done_iterations,
 
     uint64_t iterations1, iterations2;
     iterations1 = iters * 2 / 3;
-    iterations1 = iterations1 - iterations1 % alignment;
+    iterations1 = iterations1 - iterations1 % 100;
     iterations2 = iters - iterations1;
     while (!stop_signal && weso->iterations < done_iterations + iterations1) {
         std::this_thread::sleep_for (std::chrono::milliseconds(100));

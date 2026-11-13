@@ -601,6 +601,17 @@ SIGTERM and failure exits perform the same hardware shutdown and emit an
 unsolicited acknowledgement with ID 0 when stdout remains writable. A missing
 acknowledgement is unknown hardware state, not proof of failed shutdown.
 
+Supervisors that reserve multiple idle engines can opt into `--engine-identity`.
+Each newly connected engine socket first sends `TLENGINE 1 N` plus a newline,
+where N is the physical engine index (0–2), including after reconnect. The
+supervisor must consume this frame before speaking the usual VDF protocol.
+Without this option the existing socket protocol is unchanged.
+
+Identity is sent completely before the connection enters its waiting state.
+A short or failed identity write closes only that engine connection and retries;
+it does not terminate other engines or the USB owner. Supervisors must pin a
+revision supporting this option; it is not advertised by `--control-version`.
+
 Before a change, the client requires a valid temperature below 55°C, pauses the
 running engines and reads the current clock/voltage. It raises voltage before
 changing clock and lowers voltage afterward, then checks actual readback before

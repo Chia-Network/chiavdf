@@ -309,3 +309,78 @@ static void check_pipe_shutdown_through_main() {
     }
 #endif
 }
+
+static void check_physical_engine_identity_on_reconnect() {
+#ifndef _WIN32
+    int listener = socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in address{}; address.sin_family = AF_INET; address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    socklen_t size = sizeof(address);
+    if (listener < 0 || bind(listener, reinterpret_cast<sockaddr *>(&address), size) || listen(listener, 3) ||
+        getsockname(listener, reinterpret_cast<sockaddr *>(&address), &size)) throw std::runtime_error("identity_listener");
+    for (unsigned engine : {2u, 0u, 1u}) {
+        vdf_client client{};
+        client.opts.ip = INADDR_LOOPBACK; client.opts.port = ntohs(address.sin_port);
+        client.opts.engine_identity = true;
+        auto &conn = client.conns[engine]; conn.vdf.idx = engine; conn.state = CLOSED;
+        handle_conn(&client, &conn);
+        pollfd ready{listener, POLLIN, 0};
+        if (::poll(&ready, 1, 5000) <= 0) throw std::runtime_error("identity_accept_timeout");
+        int peer = accept(listener, nullptr, nullptr);
+        if (peer < 0) throw std::runtime_error("identity_accept");
+        timeval timeout{5, 0};
+        if (setsockopt(peer, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout))) throw std::runtime_error("identity_timeout");
+        char identity[13]{};
+        const auto count = recv(peer, identity, sizeof(identity), MSG_WAITALL);
+        const std::string expected = "TLENGINE 1 " + std::to_string(engine) + "\n";
+        if (count != 13 || std::string(identity,13) != expected) throw std::runtime_error("physical_engine_identity");
+        close(peer);close_conn(&conn);
+    }
+    close(listener);
+#endif
+}
+
+
+static void check_engine_identity_option() {
+    vdf_client_opts opts{};
+    if (parse_segment_args({"prog", "5000"}, opts) || opts.engine_identity ||
+        parse_segment_args({"prog", "--engine-identity", "5000"}, opts) || !opts.engine_identity ||
+        parse_segment_args({"prog", "--engine-identity=1", "5000"}, opts) != -1)
+        throw std::runtime_error("engine_identity_option");
+}
+
+static void check_engine_identity_write_failures() {
+#ifndef _WIN32
+    int sockets[2];
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets)) throw std::runtime_error("identity_socketpair");
+    vdf_conn conn{}; conn.sock = sockets[0]; conn.vdf.idx = 2;
+    close(sockets[1]);
+    if (write_engine_identity(&conn)) throw std::runtime_error("closed_identity_socket_accepted");
+    close(sockets[0]);
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets)) throw std::runtime_error("identity_socketpair");
+    conn.sock = sockets[0];
+    if (vdf_socket_set_nonblock(conn.sock)) throw std::runtime_error("identity_nonblock");
+    char fill[4096]{};
+    while (vdf_socket_write(conn.sock, fill, sizeof(fill)) > 0) {}
+    if (!vdf_socket_would_block() || write_engine_identity(&conn)) throw std::runtime_error("full_identity_socket_accepted");
+    close(sockets[0]); close(sockets[1]);
+#endif
+}
+
+static void check_failed_connect_releases_socket() {
+#ifndef _WIN32
+    const int reserved = socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in address{};
+    address.sin_family = AF_INET; address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    socklen_t size = sizeof(address);
+    // A bound, non-listening socket reserves this private port and refuses
+    // connects without relying on an unused production/development port.
+    if (reserved < 0 || bind(reserved, reinterpret_cast<sockaddr *>(&address), size) ||
+        getsockname(reserved, reinterpret_cast<sockaddr *>(&address), &size))
+        throw std::runtime_error("failed_connect_fixture");
+    vdf_conn conn{}; conn.state = CLOSED;
+    init_conn(&conn, INADDR_LOOPBACK, ntohs(address.sin_port), false);
+    close(reserved);
+    if (conn.sock != kInvalidSocket || conn.state != CLOSED)
+        throw std::runtime_error("failed_connect_retained_descriptor");
+#endif
+}

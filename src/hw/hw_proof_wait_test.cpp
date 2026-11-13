@@ -367,6 +367,10 @@ int main() {
         check_client_exception_shutdown_policy();
         check_normal_supervised_shutdown_policy();
         check_pipe_shutdown_through_main();
+        check_physical_engine_identity_on_reconnect();
+        check_engine_identity_option();
+        check_engine_identity_write_failures();
+        check_failed_connect_releases_socket();
         check_segment_threads_option();
         check_segment_threads_accounting();
         check_segment_threads_validation();

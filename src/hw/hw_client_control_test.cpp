@@ -178,6 +178,47 @@ TEST(HardwareLiveControl, OrdersVoltageAndClockWritesWhilePaused) {
     EXPECT_TRUE(fixture.actions.empty());
 }
 
+TEST(HardwareLiveControl, QuantizedMinimumVoltageAllowsShutdownAndSubsequentStartup) {
+    HardwareControlFixture fixture;
+    fixture.reader = [&] {
+        Point actual = fixture.current;
+        // The regulator uses 6.25 mV VID steps; a 0.7 V request can read back
+        // one step below the nominal minimum.
+        if (actual.voltage == timelord_control::Limits::min_voltage)
+            actual.voltage = .69375;
+        return actual;
+    };
+    const auto stopped = timelord_control::shutdown(fixture, 7);
+    EXPECT_TRUE(stopped.paused);
+    EXPECT_TRUE(stopped.restored);
+    EXPECT_EQ(fixture.actions, (std::vector<std::string>{"pause", "frequency", "voltage"}));
+    EXPECT_NO_THROW(fixture.apply({1450., .95}));
+    const auto minimum = fixture.apply({200., .7});
+    EXPECT_DOUBLE_EQ(minimum.voltage, .69375);
+    EXPECT_THROW(fixture.apply({200., .69375}), std::runtime_error);
+}
+
+TEST(HardwareLiveControl, ReadbackToleranceDoesNotRelaxCommandLimitsOrAcceptInvalidMeasurements) {
+    using namespace timelord_control;
+    EXPECT_FALSE(valid({Limits::min_frequency - .5, .7}));
+    EXPECT_FALSE(valid({200., Limits::min_voltage - .001}));
+    EXPECT_TRUE(valid_readback({Limits::min_frequency - .5, .69375}));
+    EXPECT_TRUE(valid_readback({Limits::max_frequency + .5, Limits::max_voltage + .001}));
+    for (Point point : {Point{Limits::min_frequency - Limits::frequency_tolerance - .01, .7},
+                       Point{Limits::max_frequency + Limits::frequency_tolerance + .01, .7},
+                       Point{200., Limits::min_voltage - Limits::voltage_tolerance - .0001},
+                       Point{200., Limits::max_voltage + Limits::voltage_tolerance + .0001},
+                       Point{200., std::numeric_limits<double>::quiet_NaN()},
+                       Point{std::numeric_limits<double>::infinity(), .7}}) {
+        EXPECT_FALSE(valid_readback(point));
+        HardwareControlFixture fixture;
+        fixture.reader = [point] { return point; };
+        const auto stopped = shutdown(fixture, 7);
+        EXPECT_TRUE(stopped.paused);
+        EXPECT_FALSE(stopped.restored);
+    }
+}
+
 TEST(HardwareLiveControl, InitialReadbackRetriesBeforeAnyWrite) {
     HardwareControlFixture fixture;
     fixture.current = {1900., 1.};

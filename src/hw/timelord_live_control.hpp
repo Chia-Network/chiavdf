@@ -36,6 +36,16 @@ inline bool valid(Point p) {
            p.frequency >= Limits::min_frequency && p.frequency <= Limits::max_frequency &&
            p.voltage >= Limits::min_voltage && p.voltage <= Limits::max_voltage;
 }
+// Readback includes PLL/regulator quantization. Keep command limits strict,
+// while accepting measurements within the same bounded tolerance used below
+// to compare an operating point with its requested target.
+inline bool valid_readback(Point p) {
+    return std::isfinite(p.frequency) && std::isfinite(p.voltage) &&
+           p.frequency >= Limits::min_frequency - Limits::frequency_tolerance &&
+           p.frequency <= Limits::max_frequency + Limits::frequency_tolerance &&
+           p.voltage >= Limits::min_voltage - Limits::voltage_tolerance &&
+           p.voltage <= Limits::max_voltage + Limits::voltage_tolerance;
+}
 inline void check_temperature(std::optional<double> temperature) {
     if (!temperature || !std::isfinite(*temperature))
         throw std::runtime_error("temperature_unavailable");
@@ -145,14 +155,14 @@ template <class Hardware> Point apply(Point target, Hardware &hardware, uint8_t 
     if (!valid(target))
         throw std::runtime_error("limits");
     hardware.control(mask, false);
-    const Point old = checked_readback("initial_readback", hardware, valid);
+    const Point old = checked_readback("initial_readback", hardware, valid_readback);
     if (target.voltage > old.voltage)
         hardware.voltage(target.voltage);
     hardware.frequency(target.frequency);
     if (target.voltage < old.voltage)
         hardware.voltage(target.voltage);
     const Point actual = checked_readback("readback", hardware, [&](Point p) {
-        return valid(p) &&
+        return valid_readback(p) &&
                std::abs(p.frequency - target.frequency) <= Limits::frequency_tolerance &&
                std::abs(p.voltage - target.voltage) <= Limits::voltage_tolerance;
     });
@@ -183,7 +193,7 @@ template <class Hardware> ShutdownResult shutdown(Hardware &hardware, uint8_t ma
         hardware.frequency(Limits::min_frequency);
         hardware.voltage(Limits::min_voltage);
         checked_readback("safe_readback", hardware, [](Point p) {
-            return valid(p) &&
+            return valid_readback(p) &&
                    std::abs(p.frequency - Limits::min_frequency) <= Limits::frequency_tolerance &&
                    std::abs(p.voltage - Limits::min_voltage) <= Limits::voltage_tolerance;
         });

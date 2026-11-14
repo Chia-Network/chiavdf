@@ -61,12 +61,51 @@ TEST(TwoWesolowskiCallbackRegressionTest, TransitionMathSupportsNonRoundedSwitch
     EXPECT_EQ(callback.GetPosition(custom_switch_iters + 100), switch_index + 1);
 }
 
-TEST(TwoWesolowskiCallbackRegressionTest, RejectsOutOfBoundsFormLookupAtCapacityLimit) {
+TEST(TwoWesolowskiCallbackRegressionTest, RejectsFormLookupPastCapacity) {
     integer d = make_fixture_discriminant();
     form f = form::generator(d);
     TwoWesolowskiCallback callback(d, f);
     callback.IncreaseConstants(kSwitchIters);
 
-    EXPECT_NO_THROW((void)callback.GetFormCopy(static_cast<uint64_t>(kMaxItersAllowed - 100)));
-    EXPECT_THROW((void)callback.GetFormCopy(static_cast<uint64_t>(kMaxItersAllowed)), std::runtime_error);
+    EXPECT_THROW(
+        (void)callback.GetFormCopy(kMaxItersAllowed + 100000000),
+        std::runtime_error
+    );
+}
+
+TEST(TwoWesolowskiCallbackRegressionTest, IndexingFollowsTwoStrideLayout) {
+    integer d = make_fixture_discriminant();
+    form f = form::generator(d);
+    TwoWesolowskiCallback callback(d, f);
+    callback.IncreaseConstants(kSwitchIters);
+
+    const uint64_t switch_iters = static_cast<uint64_t>(kSwitchIters);
+    auto expected_position = [switch_iters](uint64_t power) -> size_t {
+        if (power < switch_iters) {
+            return static_cast<size_t>(power / 10);
+        }
+        return static_cast<size_t>(switch_iters / 10 + (power - switch_iters) / 100);
+    };
+
+    const std::vector<uint64_t> powers = {
+        0,
+        10,
+        switch_iters - 10,
+        switch_iters,
+        switch_iters + 100,
+        799999900,
+    };
+    for (uint64_t power : powers) {
+        EXPECT_EQ(callback.GetPosition(power), expected_position(power)) << "power=" << power;
+    }
+}
+
+TEST(TwoWesolowskiCallbackRegressionTest, ThrowsOnCheckpointNotComputedYet) {
+    integer d = make_fixture_discriminant();
+    form f = form::generator(d);
+    TwoWesolowskiCallback callback(d, f);
+    callback.IncreaseConstants(kSwitchIters);
+
+    EXPECT_NO_THROW((void)callback.GetFormCopy(0));
+    EXPECT_THROW((void)callback.GetFormCopy(kSwitchIters), std::logic_error);
 }

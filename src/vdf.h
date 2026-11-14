@@ -277,7 +277,7 @@ void repeated_square(uint64_t iterations, form f, const integer& D, const intege
                     nweso->IncreaseConstants(num_iterations);
                     weso->iterations = num_iterations;
                 }
-                if (num_iterations >= kMaxItersAllowed - 500000) {
+                if (num_iterations >= kMaxItersAllowed - kTwoWesoStopMargin) {
                     std::cout << "Maximum possible number of iterations reached!\n";
                     return ;
                 }

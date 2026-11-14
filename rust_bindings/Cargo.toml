@@ -7,12 +7,13 @@ description = "Bindings to the chiavdf C++ library."
 authors = ["Brandon Haggstrom <b.haggstrom@chia.net>"]
 homepage = "https://github.com/Chia-Network/chiavdf"
 repository = "https://github.com/Chia-Network/chiavdf"
+include = ["build.rs", "wrapper.h", "src/**", "cpp/**", "gmp-win64/**", "Cargo.toml"]
 
 [dependencies]
 link-cplusplus = "1.0.12"
 
 [build-dependencies]
-bindgen = "0.73.2"
+bindgen = { version = "0.73.2", default-features = false, features = ["runtime"] }
 cmake = "0.1.58"
 
 [dev-dependencies]

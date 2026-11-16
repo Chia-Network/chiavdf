@@ -3,18 +3,19 @@
 
 #include "util.h"
 #include "nudupl_listener.h"
+#include "two_weso_limits.h"
 #include <algorithm>
 #include <atomic>
+#include <cstdint>
 #include <limits>
+#include <memory>
 #include <mutex>
 #include <stdexcept>
+#include <utility>
+#include <vector>
 
 // Applies to n-weso.
 const int kWindowSize = 20;
-
-// Applies only to 2-weso.
-const int kMaxItersAllowed = 8e8;
-const int kSwitchIters = 91000000;
 
 class WesolowskiCallback :public INUDUPLListener {
 public:
@@ -74,8 +75,6 @@ public:
 
     virtual void OnIteration(int type, void *data, uint64_t iteration) = 0;
 
-    std::unique_ptr<form[]> forms;
-    size_t forms_capacity = 0;
     std::atomic<int64_t> iterations{0};
     integer D;
     integer L;
@@ -133,18 +132,23 @@ class OneWesolowskiCallback: public WesolowskiCallback {
     uint64_t wanted_iter;
     uint32_t kl;
     form result;
+    std::unique_ptr<form[]> forms;
+    size_t forms_capacity = 0;
 };
 
 class TwoWesolowskiCallback: public WesolowskiCallback {
   public:
     TwoWesolowskiCallback(integer& D, const form& f) : WesolowskiCallback(D) {
-        const uint64_t early_points = static_cast<uint64_t>(kSwitchIters) / 10;
-        const uint64_t late_points =
-            (static_cast<uint64_t>(kMaxItersAllowed) - static_cast<uint64_t>(kSwitchIters)) / 100;
-        const size_t space_needed = static_cast<size_t>(early_points + late_points);
-        forms_capacity = space_needed;
-        forms.reset(new form[space_needed]);
-        forms[0] = f;
+        const uint64_t capacity = (kSwitchIters + kSwitchSlackIters) / 10 +
+            (kMaxItersAllowed - kSwitchIters) / 100 + 1;
+        capacity_ = static_cast<size_t>(capacity);
+        blocks_.resize((capacity_ + kBlockSize - 1) / kBlockSize);
+
+        form* slot = SlotUnlocked(0, true);
+        *slot = f;
+        if (blocks_.size() > 1 && !blocks_[1]) {
+            blocks_[1].reset(new form[kBlockSize]);
+        }
         kl.store(10, std::memory_order_relaxed);
         transition_state.store(EncodeTransitionState(/*switch_index=*/0, /*switch_iters=*/-1), std::memory_order_relaxed);
     }
@@ -172,10 +176,11 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
     form GetFormCopy(uint64_t power) {
         std::lock_guard<std::mutex> lk(forms_mutex);
         const size_t pos = GetPositionUnlocked(power);
-        if (pos >= forms_capacity) {
-            throw std::runtime_error("TwoWesolowskiCallback::GetFormCopy out of bounds");
+        form* slot = SlotUnlocked(pos, false);
+        if (slot == nullptr) {
+            throw std::logic_error("TwoWesolowskiCallback::GetFormCopy checkpoint not computed yet");
         }
-        return forms[pos];
+        return *slot;
     }
 
     bool LargeConstants() {
@@ -191,21 +196,51 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
             return;
         }
 
-        std::lock_guard<std::mutex> lk(forms_mutex);
-        const uint64_t snapshot = transition_state.load(std::memory_order_acquire);
-        const uint32_t effective_kl = GetEffectiveKl(iteration, snapshot);
-        if (iteration % effective_kl != 0) {
-            return;
+        bool allocate_next = false;
+        size_t next_block = 0;
+        {
+            std::lock_guard<std::mutex> lk(forms_mutex);
+            const uint64_t snapshot = transition_state.load(std::memory_order_acquire);
+            const uint32_t effective_kl = GetEffectiveKl(iteration, snapshot);
+            if (iteration % effective_kl != 0) {
+                return;
+            }
+            const size_t pos = GetPositionFromSnapshot(iteration, snapshot);
+            form* mulf = SlotUnlocked(pos, true);
+            SetForm(type, data, mulf);
+            const size_t candidate = (pos >> kBlockShift) + 1;
+            if (candidate < blocks_.size() && !blocks_[candidate]) {
+                allocate_next = true;
+                next_block = candidate;
+            }
         }
-        const size_t pos = GetPositionFromSnapshot(iteration, snapshot);
-        if (pos >= forms_capacity) {
-            throw std::runtime_error("TwoWesolowskiCallback::OnIteration out of bounds");
+        if (allocate_next) {
+            std::unique_ptr<form[]> pending(new form[kBlockSize]);
+            std::lock_guard<std::mutex> lk(forms_mutex);
+            if (!blocks_[next_block]) {
+                blocks_[next_block] = std::move(pending);
+            }
         }
-        form* mulf = &forms[pos];
-        SetForm(type, data, mulf);
     }
 
   private:
+    static constexpr size_t kBlockShift = 16;
+    static constexpr size_t kBlockSize = size_t(1) << kBlockShift;
+
+    form* SlotUnlocked(size_t pos, bool allocate) {
+        if (pos >= capacity_) {
+            throw std::runtime_error("TwoWesolowskiCallback position out of bounds");
+        }
+        const size_t block = pos >> kBlockShift;
+        if (!blocks_[block]) {
+            if (!allocate) {
+                return nullptr;
+            }
+            blocks_[block].reset(new form[kBlockSize]);
+        }
+        return &blocks_[block][pos & (kBlockSize - 1)];
+    }
+
     static uint64_t EncodeTransitionState(uint64_t switch_index_value, int64_t switch_iters_value) {
         if (switch_index_value > static_cast<uint64_t>(std::numeric_limits<uint32_t>::max())) {
             throw std::overflow_error("TwoWesolowskiCallback switch_index overflow");
@@ -245,6 +280,8 @@ class TwoWesolowskiCallback: public WesolowskiCallback {
         );
     }
 
+    size_t capacity_ = 0;
+    std::vector<std::unique_ptr<form[]>> blocks_;
     std::atomic<uint64_t> transition_state{0};
     std::atomic<uint32_t> kl{10};
     std::mutex forms_mutex;
@@ -330,6 +367,8 @@ class FastAlgorithmCallback : public WesolowskiCallback {
     std::unique_ptr<form[]> checkpoints;
     form y_ret;
     int segments;
+    std::unique_ptr<form[]> forms;
+    size_t forms_capacity = 0;
     // The intermediate values size of a 2^16 segment.
     const int bucket_size1 = 6554;
     // The intermediate values size of a >= 2^18 segment.

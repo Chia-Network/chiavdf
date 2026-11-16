@@ -501,6 +501,18 @@ jobs:
           echo "Benchmarking vdf_bench with 2,000,000 iterations of square_asm"
           ./vdf_bench square_asm 2000000
 
+      - name: Benchmark C++ and Rust bindings (Linux x86_64)
+        if: matrix.config == 'optimized=1' && matrix.os == 'ubuntu-latest'
+        run: |
+          echo "Benchmarking C++ vdf_bench discr 50 (system GMP)"
+          ./src/vdf_bench discr 50
+          echo "Benchmarking Rust bindings discr 50 (system GMP)"
+          cargo run --release -p chiavdf-tools --bin vdf_bench -- discr 50
+          echo "Benchmarking C++ vdf_bench prove 100000 (system GMP)"
+          ./src/vdf_bench prove 100000
+          echo "Benchmarking Rust bindings prove 100000 (system GMP)"
+          cargo run --release -p chiavdf-tools --bin vdf_bench -- prove 100000
+
       - name: Benchmark vdf_bench square (Windows)
         if: matrix.config == 'optimized=1' && matrix.os == 'windows-latest'
         shell: pwsh

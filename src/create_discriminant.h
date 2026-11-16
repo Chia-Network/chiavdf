@@ -2,8 +2,9 @@
 #define CREATE_DISCRIMINANT_H
 
 #include "proof_common.h"
+#include <span>
 
-integer CreateDiscriminant(std::vector<uint8_t>& seed, int length = 1024) {
+inline integer CreateDiscriminant(std::span<const uint8_t> seed, int length = 1024) {
     // INPUT VALIDATION - Fix for issue #282
     
     // Check 1: Validate discriminant_size_bits is positive

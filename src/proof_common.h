@@ -4,6 +4,7 @@
 #include "bqfc.c"
 
 #include <cassert>
+#include <span>
 #include <stdexcept>
 
 const int B_bits = 264;
@@ -14,11 +15,11 @@ const int B_bytes = (B_bits + 7) / 8;
 // Randomly chooses x with bit-length `length`, then applies a mask
 //   (for b in bitmask) { x |= (1 << b) }.
 // Then return x if it is a pseudoprime, otherwise repeat.
-integer HashPrime(std::vector<uint8_t> seed, int length, vector<int> bitmask) {
+integer HashPrime(std::span<const uint8_t> seed, int length, const vector<int>& bitmask) {
     assert (length % 8 == 0);
     std::vector<uint8_t> hash(picosha2::k_digest_size);  // output of sha256
     std::vector<uint8_t> blob;  // output of 1024 bit hash expansions
-    std::vector<uint8_t> sprout = seed;  // seed plus nonce
+    std::vector<uint8_t> sprout(seed.begin(), seed.end());  // seed plus nonce
 
     while (true) {  // While prime is not found
         blob.resize(0);

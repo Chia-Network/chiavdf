@@ -5,7 +5,6 @@ edition = "2021"
 license = "Apache-2.0"
 description = "Bindings to the chiavdf C++ library."
 authors = ["Brandon Haggstrom <b.haggstrom@chia.net>"]
-homepage = "https://github.com/Chia-Network/chiavdf"
 repository = "https://github.com/Chia-Network/chiavdf"
 include = ["build.rs", "wrapper.h", "src/**", "cpp/**", "gmp-win64/**", "Cargo.toml"]
 

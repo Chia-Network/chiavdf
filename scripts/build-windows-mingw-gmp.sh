@@ -22,7 +22,15 @@ echo "$sha256  gmp-${version}.tar.xz" | sha256sum --check --status
 tar -xf "gmp-${version}.tar.xz"
 cd "gmp-${version}"
 
-CFLAGS="-O3 -std=gnu17" ./configure \
+m4_path=$(command -v m4 || true)
+if [ -z "$m4_path" ]; then
+  echo "GNU m4 was not found in PATH" >&2
+  exit 1
+fi
+echo "Using m4 at $m4_path"
+"$m4_path" --version
+
+M4="$m4_path" CFLAGS="-O3 -std=gnu17" ./configure \
   --build=x86_64-pc-msys \
   --host=x86_64-w64-mingw32 \
   --prefix="$prefix" \

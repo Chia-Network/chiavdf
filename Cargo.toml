@@ -1,3 +1,6 @@
 [workspace]
 resolver = "2"
 members = ["./rust_bindings", './rust_bindings/fuzz', "./rust_tools"]
+
+[profile.release]
+lto = true

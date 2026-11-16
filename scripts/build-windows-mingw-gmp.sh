@@ -22,7 +22,7 @@ echo "$sha256  gmp-${version}.tar.xz" | sha256sum --check --status
 tar -xf "gmp-${version}.tar.xz"
 cd "gmp-${version}"
 
-CFLAGS="-O2 -std=gnu17" ./configure \
+CFLAGS="-O3 -std=gnu17" ./configure \
   --build=x86_64-pc-msys \
   --host=x86_64-w64-mingw32 \
   --prefix="$prefix" \

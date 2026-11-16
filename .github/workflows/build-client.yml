@@ -361,7 +361,7 @@ jobs:
           $env:CHERE_INVOKING = '1'
           & $bash -lc 'pacman -Syu --noconfirm'
           if ($LASTEXITCODE -ne 0) { throw "MSYS2 update failed with exit code $LASTEXITCODE" }
-          & $bash -lc 'pacman -S --needed --noconfirm base-devel mingw-w64-x86_64-toolchain'
+          & $bash -lc 'pacman -S --needed --noconfirm m4 base-devel mingw-w64-x86_64-toolchain'
           if ($LASTEXITCODE -ne 0) { throw "MinGW-w64 installation failed with exit code $LASTEXITCODE" }
           $env:POWERSHELL_GMP_SCRIPT = Join-Path (Get-Location).Path 'scripts/build-windows-mingw-gmp.sh'
           $env:POWERSHELL_GMP_PREFIX = Join-Path $env:RUNNER_TEMP 'chiavdf-gmp'

@@ -22,9 +22,9 @@ echo "$sha256  gmp-${version}.tar.xz" | sha256sum --check --status
 tar -xf "gmp-${version}.tar.xz"
 cd "gmp-${version}"
 
-m4_path=$(command -v m4 || true)
-if [ -z "$m4_path" ]; then
-  echo "GNU m4 was not found in PATH" >&2
+m4_path=/usr/bin/m4.exe
+if [ ! -x "$m4_path" ]; then
+  echo "GNU m4 was not found at $m4_path" >&2
   exit 1
 fi
 echo "Using m4 at $m4_path"

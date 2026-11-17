@@ -28,9 +28,20 @@ fn main() {
             .to_path_buf();
     }
 
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
     let mut config = Config::new(src_dir.as_path());
     if env::var_os("CHIAVDF_VERBOSE_CMAKE").is_some() {
-        config.build_arg("--verbose");
+        if target_os == "windows" && target_env == "msvc" {
+            // CMake passes build args after `--`, so use MSBuild's verbosity
+            // switch for Visual Studio generators. Rebuild to ensure compiler
+            // command lines are emitted even when Cargo restored a CMake cache.
+            config
+                .build_arg("/v:detailed")
+                .build_arg("/t:Rebuild");
+        } else {
+            config.define("CMAKE_VERBOSE_MAKEFILE", "ON");
+        }
     }
     config
         .build_target("chiavdfc_static")
@@ -46,8 +57,6 @@ fn main() {
             },
         );
 
-    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
-    let target_env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
     let gmp_prefix = env::var_os("CHIAVDF_GMP_PREFIX")
         .map(PathBuf::from)
         .or_else(|| {

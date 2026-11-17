@@ -1,0 +1,21 @@
+name: Windows benchmark investigation
+
+on:
+  pull_request:
+    branches: ['**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  benchmarks:
+    name: Windows GMP/MPIR benchmarks
+    uses: ./.github/workflows/build-client.yml
+    with:
+      configs: '["optimized=1"]'
+      is_final: 'false'
+      notarize_macos: 'false'
+      benchmark_only: true
+    secrets: inherit

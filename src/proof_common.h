@@ -84,6 +84,8 @@ integer HashPrime(std::span<const uint8_t> seed, int length, std::span<const int
 
     while (true) {  // While prime is not found
         size_t blob_size = 0;
+        const auto hash_start = profiling ? std::chrono::steady_clock::now()
+                                          : std::chrono::steady_clock::time_point{};
         while (blob_size * 8 < static_cast<size_t>(length)) {
             // Increment sprout by 1
             for (size_t i = sprout_size; i > 0; --i) {
@@ -91,17 +93,18 @@ integer HashPrime(std::span<const uint8_t> seed, int length, std::span<const int
                 if (sprout[i - 1])
                     break;
             }
+            picosha2::hash256(sprout, sprout + sprout_size, hash.begin(), hash.end());
             if (profiling) {
-                const auto hash_start = std::chrono::steady_clock::now();
-                picosha2::hash256(sprout, sprout + sprout_size, hash.begin(), hash.end());
-                local_hash_nanoseconds += ElapsedNanoseconds(hash_start);
                 ++local_hashes;
-            } else {
-                picosha2::hash256(sprout, sprout + sprout_size, hash.begin(), hash.end());
             }
             const size_t bytes_to_append = std::min(hash.size(), static_cast<size_t>(length / 8) - blob_size);
             std::copy_n(hash.begin(), bytes_to_append, blob.begin() + blob_size);
             blob_size += bytes_to_append;
+        }
+        if (profiling) {
+            // Time all SHA-256 expansions for one candidate together to keep
+            // timer overhead small compared to timing every hash separately.
+            local_hash_nanoseconds += ElapsedNanoseconds(hash_start);
         }
 
         assert (blob_size * 8 == static_cast<size_t>(length));

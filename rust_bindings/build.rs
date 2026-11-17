@@ -8,6 +8,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=CHIAVDF_GMP_PREFIX");
     println!("cargo:rerun-if-env-changed=MINGW_LIBMINGWEX");
     println!("cargo:rerun-if-env-changed=MINGW_LIBGCC");
+    println!("cargo:rerun-if-env-changed=CHIAVDF_CMAKE_GENERATOR_TOOLSET");
     println!("cargo:rerun-if-changed=wrapper.h");
     println!("cargo:rerun-if-changed=../src/c_bindings/c_wrapper.h");
     println!("cargo:rerun-if-changed=../src/c_bindings/c_wrapper.cpp");
@@ -65,6 +66,10 @@ fn main() {
         config
             .define("CMAKE_POLICY_DEFAULT_CMP0091", "NEW")
             .define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreadedDLL");
+
+        if let Ok(toolset) = env::var("CHIAVDF_CMAKE_GENERATOR_TOOLSET") {
+            config.generator_toolset(toolset);
+        }
     }
 
     let dst = config.build();

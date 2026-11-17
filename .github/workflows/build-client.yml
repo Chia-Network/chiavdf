@@ -516,6 +516,8 @@ jobs:
       - name: Benchmark vdf_bench square (Windows)
         if: matrix.config == 'optimized=1' && matrix.os == 'windows-latest'
         shell: pwsh
+        env:
+          CHIAVDF_HASHPRIME_PROFILE: '1'
         run: |
           cd build
           $env:PATH = "$PWD;$PWD\..\src\hw\libft4222;$PWD\..\mpir_gc_x64;$env:PATH"
@@ -532,6 +534,8 @@ jobs:
       - name: Benchmark Rust bindings (Windows)
         if: matrix.config == 'optimized=1' && matrix.os == 'windows-latest'
         shell: pwsh
+        env:
+          CHIAVDF_HASHPRIME_PROFILE: '1'
         run: |
           Write-Host "Benchmarking Rust bindings with 50 discriminants (static GMP)"
           cargo run --release -p chiavdf-tools --bin vdf_bench -- discr 50

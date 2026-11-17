@@ -1003,7 +1003,7 @@ jobs:
           )
           & cmake @cmakeArgs
           if ($LASTEXITCODE -ne 0) { throw "CMake configure failed" }
-          cmake --build build --target vdf_bench --config Release
+          cmake --build build --target vdf_bench --config Release --verbose
           if ($LASTEXITCODE -ne 0) { throw "C++ benchmark build failed" }
 
       - name: Install MinGW GMP
@@ -1030,17 +1030,18 @@ jobs:
         shell: pwsh
         run: |
           $env:PATH = "$PWD\build;$PWD\mpir_gc_x64;$env:PATH"
+          $env:CHIAVDF_VERBOSE_CMAKE = '1'
           Write-Host "Benchmarking C++ vdf_bench discr 50 (MPIR)"
           .\build\vdf_bench.exe discr 50
           if ($LASTEXITCODE -ne 0) { throw "C++ discr benchmark failed" }
           Write-Host "Benchmarking Rust bindings discr 50 (static GMP)"
-          cargo run --release -p chiavdf-tools --bin vdf_bench -- discr 50
+          cargo run -vv --release -p chiavdf-tools --bin vdf_bench -- discr 50
           if ($LASTEXITCODE -ne 0) { throw "Rust discr benchmark failed" }
           Write-Host "Benchmarking C++ vdf_bench prove 100000 (MPIR)"
           .\build\vdf_bench.exe prove 100000
           if ($LASTEXITCODE -ne 0) { throw "C++ prove benchmark failed" }
           Write-Host "Benchmarking Rust bindings prove 100000 (static GMP)"
-          cargo run --release -p chiavdf-tools --bin vdf_bench -- prove 100000
+          cargo run -vv --release -p chiavdf-tools --bin vdf_bench -- prove 100000
           if ($LASTEXITCODE -ne 0) { throw "Rust prove benchmark failed" }
 
           $env:CHIAVDF_HASHPRIME_PROFILE = '1'
@@ -1048,19 +1049,19 @@ jobs:
           .\build\vdf_bench.exe discr 50
           if ($LASTEXITCODE -ne 0) { throw "C++ profiled discr benchmark failed" }
           Write-Host "Profiling HashPrime counters: Rust static GMP discr 50"
-          cargo run --release -p chiavdf-tools --bin vdf_bench -- discr 50
+          cargo run -vv --release -p chiavdf-tools --bin vdf_bench -- discr 50
           if ($LASTEXITCODE -ne 0) { throw "Rust profiled discr benchmark failed" }
 
           Remove-Item Env:CHIAVDF_HASHPRIME_PROFILE -ErrorAction SilentlyContinue
           $env:CHIAVDF_CMAKE_GENERATOR_TOOLSET = 'ClangCL'
           $env:CARGO_TARGET_DIR = Join-Path $env:RUNNER_TEMP 'chiavdf-clangcl-target'
           Write-Host "Benchmarking Rust bindings with ClangCL C++ (static GMP)"
-          cargo run --release -p chiavdf-tools --bin vdf_bench -- discr 50
+          cargo run -vv --release -p chiavdf-tools --bin vdf_bench -- discr 50
           if ($LASTEXITCODE -ne 0) { throw "ClangCL Rust discr benchmark failed" }
-          cargo run --release -p chiavdf-tools --bin vdf_bench -- prove 100000
+          cargo run -vv --release -p chiavdf-tools --bin vdf_bench -- prove 100000
           if ($LASTEXITCODE -ne 0) { throw "ClangCL Rust prove benchmark failed" }
 
           $env:CHIAVDF_HASHPRIME_PROFILE = '1'
           Write-Host "Profiling HashPrime counters: Rust ClangCL static GMP discr 50"
-          cargo run --release -p chiavdf-tools --bin vdf_bench -- discr 50
+          cargo run -vv --release -p chiavdf-tools --bin vdf_bench -- discr 50
           if ($LASTEXITCODE -ne 0) { throw "ClangCL Rust profiled discr benchmark failed" }

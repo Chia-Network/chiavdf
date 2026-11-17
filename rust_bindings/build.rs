@@ -9,6 +9,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=MINGW_LIBMINGWEX");
     println!("cargo:rerun-if-env-changed=MINGW_LIBGCC");
     println!("cargo:rerun-if-env-changed=CHIAVDF_CMAKE_GENERATOR_TOOLSET");
+    println!("cargo:rerun-if-env-changed=CHIAVDF_VERBOSE_CMAKE");
     println!("cargo:rerun-if-changed=wrapper.h");
     println!("cargo:rerun-if-changed=../src/c_bindings/c_wrapper.h");
     println!("cargo:rerun-if-changed=../src/c_bindings/c_wrapper.cpp");
@@ -28,6 +29,9 @@ fn main() {
     }
 
     let mut config = Config::new(src_dir.as_path());
+    if env::var_os("CHIAVDF_VERBOSE_CMAKE").is_some() {
+        config.build_arg("--verbose");
+    }
     config
         .build_target("chiavdfc_static")
         .define("BUILD_CHIAVDFC", "ON")

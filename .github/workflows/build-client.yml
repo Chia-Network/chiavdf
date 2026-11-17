@@ -1,8 +1,8 @@
 name: VDF client matrix
 
-# Called by build-packages.yml twice: once for the optimized packaging matrix
-# and once for ASAN/TSAN. This file is only a callee, so it has no concurrency
-# group. Policy outputs arrive as inputs with the same names.
+# Called by build-packages.yml for packaging and by
+# windows-benchmark-investigation.yml for the focused benchmark run. This file
+# is only a callee, so it has no concurrency group.
 
 on:
   workflow_call:
@@ -19,6 +19,11 @@ on:
         description: release-policy output notarize_macos
         required: true
         type: string
+      benchmark_only:
+        description: 'Run only the Windows GMP/MPIR benchmark comparison'
+        required: false
+        default: false
+        type: boolean
     secrets:
       AZURE_SIGNING_CLIENT_ID:
         description: Azure Artifact Signing Entra application client ID
@@ -35,6 +40,7 @@ permissions:
 
 jobs:
   build:
+    if: ${{ !inputs.benchmark_only }}
     name: CI (${{ matrix.os }}, ${{ matrix.config }})
     runs-on: ${{ matrix.os }}
     env:
@@ -900,3 +906,147 @@ jobs:
             dist/windows/*.zip
             dist/windows/*setup.exe
             dist/windows/*.sha256
+
+  windows-benchmark:
+    if: ${{ inputs.benchmark_only }}
+    name: Windows GMP/MPIR benchmark comparison
+    runs-on: windows-latest
+    env:
+      CHIA_ENABLE_AVX512_IFMA: "1"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: Chia-Network/actions/setup-python@main
+        with:
+          python-version: "3.12"
+
+      - name: Read MPIR pin
+        id: mpir-pin
+        shell: bash
+        run: echo "sha=$(tr -d '[:space:]' < scripts/mpir_gc_x64.commit)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache MPIR checkout
+        id: cache-mpir
+        uses: actions/cache@v6.1.0
+        with:
+          path: mpir_gc_x64
+          key: windows-mpir-gc-x64-${{ steps.mpir-pin.outputs.sha }}
+
+      - name: Checkout MPIR
+        if: steps.cache-mpir.outputs.cache-hit != 'true'
+        shell: bash
+        run: bash scripts/get-mpir-gc-x64.sh
+
+      - name: Cache Boost
+        id: cache-boost
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: C:\local\boost_*
+          key: windows-boost-msvc-14.3-v1
+
+      - name: Install LLVM, Ninja, and Boost
+        shell: pwsh
+        env:
+          BOOST_CACHE_HIT: ${{ steps.cache-boost.outputs.cache-hit }}
+        run: |
+          $llvmBin = "C:\Program Files\LLVM\bin\clang-cl.exe"
+          $ninjaBin = "C:\ProgramData\chocolatey\bin\ninja.exe"
+          if (-not (Test-Path $llvmBin) -or -not (Test-Path $ninjaBin)) {
+            choco install llvm ninja -y
+            if ($LASTEXITCODE -ne 0) { throw "LLVM/Ninja installation failed" }
+          }
+          $boostDir = Get-ChildItem "C:\local" -Directory -Filter "boost_*" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $boostDir) {
+            choco install boost-msvc-14.3 -y
+            if ($LASTEXITCODE -ne 0) { throw "Boost installation failed" }
+            $boostDir = Get-ChildItem "C:\local" -Directory -Filter "boost_*" -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+          if (-not $boostDir) { throw "Boost install not found under C:\local" }
+          "C:\Program Files\LLVM\bin" | Out-File -Append -FilePath $env:GITHUB_PATH
+          "BOOST_INCLUDE_DIR=$($boostDir.FullName)" | Out-File -Append -FilePath $env:GITHUB_ENV
+
+      - name: Save Boost cache
+        if: steps.cache-boost.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: C:\local\boost_*
+          key: windows-boost-msvc-14.3-v1
+
+      - name: Set up MSVC environment
+        uses: step-security/msvc-dev-cmd@v1.13.1
+        with:
+          arch: x64
+
+      - name: Build C++ benchmark against MPIR
+        shell: pwsh
+        run: |
+          $cmakeArgs = @(
+            "-S", "src",
+            "-B", "build",
+            "-G", "Ninja",
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DCMAKE_TRY_COMPILE_CONFIGURATION=Release",
+            "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL",
+            "-DCMAKE_C_COMPILER=clang-cl",
+            "-DCMAKE_CXX_COMPILER=clang-cl",
+            "-DCMAKE_ASM_COMPILER=clang-cl",
+            "-DBOOST_INCLUDE_DIR=$env:BOOST_INCLUDE_DIR",
+            "-DBUILD_PYTHON=OFF",
+            "-DBUILD_CHIAVDFC=OFF",
+            "-DBUILD_VDF_CLIENT=ON",
+            "-DBUILD_VDF_BENCH=ON",
+            "-DBUILD_VDF_TESTS=OFF",
+            "-DBUILD_HW_TOOLS=OFF",
+            "-DENABLE_GNU_ASM=ON"
+          )
+          & cmake @cmakeArgs
+          if ($LASTEXITCODE -ne 0) { throw "CMake configure failed" }
+          cmake --build build --target vdf_bench --config Release
+          if ($LASTEXITCODE -ne 0) { throw "C++ benchmark build failed" }
+
+      - name: Install MinGW GMP
+        shell: pwsh
+        run: |
+          choco install msys2 --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "MSYS2 installation failed" }
+          $bash = 'C:\tools\msys64\usr\bin\bash.exe'
+          $env:MSYSTEM = 'MINGW64'
+          $env:CHERE_INVOKING = '1'
+          & $bash -lc 'pacman -Syu --noconfirm'
+          if ($LASTEXITCODE -ne 0) { throw "MSYS2 update failed" }
+          & $bash -lc 'pacman -S --needed --noconfirm msys/m4 base-devel mingw-w64-x86_64-toolchain'
+          if ($LASTEXITCODE -ne 0) { throw "MinGW-w64 installation failed" }
+          $env:POWERSHELL_GMP_SCRIPT = Join-Path (Get-Location).Path 'scripts/build-windows-mingw-gmp.sh'
+          $env:POWERSHELL_GMP_PREFIX = Join-Path $env:RUNNER_TEMP 'chiavdf-gmp'
+          & $bash -lc 'test -x /usr/bin/m4.exe && /usr/bin/m4.exe --version && bash "$(cygpath -u "$POWERSHELL_GMP_SCRIPT")" "$(cygpath -u "$POWERSHELL_GMP_PREFIX")"'
+          if ($LASTEXITCODE -ne 0) { throw "MSYS2 m4 check or MinGW GMP build failed" }
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run the benchmarks
+        shell: pwsh
+        run: |
+          $env:PATH = "$PWD\build;$PWD\mpir_gc_x64;$env:PATH"
+          Write-Host "Benchmarking C++ vdf_bench discr 50 (MPIR)"
+          .\build\vdf_bench.exe discr 50
+          if ($LASTEXITCODE -ne 0) { throw "C++ discr benchmark failed" }
+          Write-Host "Benchmarking Rust bindings discr 50 (static GMP)"
+          cargo run --release -p chiavdf-tools --bin vdf_bench -- discr 50
+          if ($LASTEXITCODE -ne 0) { throw "Rust discr benchmark failed" }
+          Write-Host "Benchmarking C++ vdf_bench prove 100000 (MPIR)"
+          .\build\vdf_bench.exe prove 100000
+          if ($LASTEXITCODE -ne 0) { throw "C++ prove benchmark failed" }
+          Write-Host "Benchmarking Rust bindings prove 100000 (static GMP)"
+          cargo run --release -p chiavdf-tools --bin vdf_bench -- prove 100000
+          if ($LASTEXITCODE -ne 0) { throw "Rust prove benchmark failed" }
+
+          $env:CHIAVDF_HASHPRIME_PROFILE = '1'
+          Write-Host "Profiling HashPrime counters: C++ MPIR discr 50"
+          .\build\vdf_bench.exe discr 50
+          if ($LASTEXITCODE -ne 0) { throw "C++ profiled discr benchmark failed" }
+          Write-Host "Profiling HashPrime counters: Rust static GMP discr 50"
+          cargo run --release -p chiavdf-tools --bin vdf_bench -- discr 50
+          if ($LASTEXITCODE -ne 0) { throw "Rust profiled discr benchmark failed" }

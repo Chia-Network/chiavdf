@@ -1,12 +1,6 @@
 name: 🚨 Check action Node runtime
 
-on:
-  push:
-    branches:
-      - long_lived/**
-      - main
-      - release/**
-  pull_request:
+on: workflow_dispatch
 
 permissions:
   contents: read

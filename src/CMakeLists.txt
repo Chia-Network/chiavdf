@@ -201,6 +201,14 @@ if(ENABLE_GNU_ASM AND (CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|i[3-6]86)$
     target_compile_definitions(compile_asm PRIVATE CHIAOSX)
   endif()
   target_link_libraries(compile_asm PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
+  if(WIN32 AND CHIAVDF_MINGW_LIBMINGWEX AND CHIAVDF_MINGW_LIBGCC)
+    # Rust's Windows GMP archive is built by MinGW and needs its runtime when
+    # this MSVC/ClangCL build-time generator links against it.
+    target_link_libraries(compile_asm PRIVATE
+      "${CHIAVDF_MINGW_LIBMINGWEX}"
+      "${CHIAVDF_MINGW_LIBGCC}"
+    )
+  endif()
   if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     execute_process(
       COMMAND ${CMAKE_CXX_COMPILER} --print-resource-dir
@@ -658,14 +666,18 @@ endif()
 if(BUILD_CHIAVDFC)
   add_library(chiavdfc_shared SHARED
           ${CMAKE_CURRENT_SOURCE_DIR}/c_bindings/c_wrapper.cpp
-          ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
   )
   add_library(chiavdfc_static STATIC
           ${CMAKE_CURRENT_SOURCE_DIR}/c_bindings/c_wrapper.cpp
-          ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
   )
+  target_sources(chiavdfc_shared PRIVATE ${VDF_COMMON_SOURCES} ${VDF_ASM_SOURCES})
+  target_sources(chiavdfc_static PRIVATE ${VDF_COMMON_SOURCES} ${VDF_ASM_SOURCES})
+  target_compile_definitions(chiavdfc_shared PRIVATE ${VDF_COMMON_DEFINITIONS})
+  target_compile_definitions(chiavdfc_static PRIVATE ${VDF_COMMON_DEFINITIONS})
   target_link_libraries(chiavdfc_shared ${GMP_LIBRARIES} ${GMPXX_LIBRARIES})
   target_link_libraries(chiavdfc_static ${GMP_LIBRARIES} ${GMPXX_LIBRARIES})
+  vdf_add_windows_clang_opts(chiavdfc_shared)
+  vdf_add_windows_clang_opts(chiavdfc_static)
 
     if (HARDENING)
         target_compile_definitions(chiavdfc_shared PRIVATE "_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG")
@@ -676,6 +688,7 @@ if(BUILD_CHIAVDFC)
           OUTPUT_NAME chiavdfc
           LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib/shared$<0:>"
           RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib/shared$<0:>"
+          ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib/shared$<0:>"
   )
 
   set_target_properties(chiavdfc_static PROPERTIES

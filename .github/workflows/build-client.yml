@@ -1053,9 +1053,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Rust profiled discr benchmark failed" }
 
           Remove-Item Env:CHIAVDF_HASHPRIME_PROFILE -ErrorAction SilentlyContinue
-          $env:CHIAVDF_CMAKE_GENERATOR_TOOLSET = 'ClangCL'
+          $env:CHIAVDF_CMAKE_CLANG_CL = 'C:\Program Files\LLVM\bin\clang-cl.exe'
           $env:CARGO_TARGET_DIR = Join-Path $env:RUNNER_TEMP 'chiavdf-clangcl-target'
-          Write-Host "Benchmarking Rust bindings with ClangCL C++ (static GMP)"
+          Write-Host "Benchmarking Rust bindings with standalone ClangCL C++ (static GMP)"
           cargo run -vv --release -p chiavdf-tools --bin vdf_bench -- discr 50
           if ($LASTEXITCODE -ne 0) { throw "ClangCL Rust discr benchmark failed" }
           cargo run --release -p chiavdf-tools --bin vdf_bench -- prove 100000

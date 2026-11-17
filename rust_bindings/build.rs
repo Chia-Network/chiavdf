@@ -9,6 +9,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=MINGW_LIBMINGWEX");
     println!("cargo:rerun-if-env-changed=MINGW_LIBGCC");
     println!("cargo:rerun-if-env-changed=CHIAVDF_CMAKE_GENERATOR_TOOLSET");
+    println!("cargo:rerun-if-env-changed=CHIAVDF_CMAKE_CLANG_CL");
     println!("cargo:rerun-if-env-changed=CHIAVDF_VERBOSE_CMAKE");
     println!("cargo:rerun-if-changed=wrapper.h");
     println!("cargo:rerun-if-changed=../src/c_bindings/c_wrapper.h");
@@ -30,15 +31,36 @@ fn main() {
 
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+    let standalone_clang = env::var_os("CHIAVDF_CMAKE_CLANG_CL").map(PathBuf::from);
     let mut config = Config::new(src_dir.as_path());
+    if let Some(clang_cl) = &standalone_clang {
+        assert!(
+            target_os == "windows" && target_env == "msvc",
+            "CHIAVDF_CMAKE_CLANG_CL is only supported for Windows MSVC targets"
+        );
+        let clang_cl = clang_cl
+            .to_str()
+            .expect("standalone clang-cl path is not UTF-8");
+        config
+            .generator("Ninja")
+            .define("CMAKE_C_COMPILER", clang_cl)
+            .define("CMAKE_CXX_COMPILER", clang_cl)
+            .define("CMAKE_ASM_COMPILER", clang_cl);
+    }
     if env::var_os("CHIAVDF_VERBOSE_CMAKE").is_some() {
         if target_os == "windows" && target_env == "msvc" {
-            // CMake passes build args after `--`, so use MSBuild's verbosity
-            // switch for Visual Studio generators. Rebuild to ensure compiler
-            // command lines are emitted even when Cargo restored a CMake cache.
-            config
-                .build_arg("/v:detailed")
-                .build_arg("/t:Rebuild");
+            if standalone_clang.is_some() {
+                // Ninja prints compile commands with -v. The Clang investigation
+                // uses a fresh CARGO_TARGET_DIR, so it always compiles the target.
+                config.build_arg("-v");
+            } else {
+                // CMake passes build args after `--`, so use MSBuild's verbosity
+                // switch for Visual Studio generators. Rebuild to ensure compiler
+                // command lines are emitted even when Cargo restored a CMake cache.
+                config
+                    .build_arg("/v:detailed")
+                    .build_arg("/t:Rebuild");
+            }
         } else {
             config.define("CMAKE_VERBOSE_MAKEFILE", "ON");
         }
@@ -70,6 +92,26 @@ fn main() {
                 "CHIAVDF_GMP_PREFIX",
                 prefix.to_str().expect("GMP prefix is not UTF-8"),
             );
+
+            let mingw_libmingwex = env::var_os("MINGW_LIBMINGWEX")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| prefix.join("lib/libmingwex.a"));
+            let mingw_libgcc = env::var_os("MINGW_LIBGCC")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| prefix.join("lib/libgcc.a"));
+            config
+                .define(
+                    "CHIAVDF_MINGW_LIBMINGWEX",
+                    mingw_libmingwex
+                        .to_str()
+                        .expect("MinGW libmingwex path is not UTF-8"),
+                )
+                .define(
+                    "CHIAVDF_MINGW_LIBGCC",
+                    mingw_libgcc
+                        .to_str()
+                        .expect("MinGW libgcc path is not UTF-8"),
+                );
         }
     }
 
@@ -80,8 +122,18 @@ fn main() {
             .define("CMAKE_POLICY_DEFAULT_CMP0091", "NEW")
             .define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreadedDLL");
 
-        if let Ok(toolset) = env::var("CHIAVDF_CMAKE_GENERATOR_TOOLSET") {
-            config.generator_toolset(toolset);
+        if !is_debug_build {
+            // cmake-rs populates CMAKE_*_FLAGS_RELEASE from cc-rs's compiler
+            // flags, replacing CMake's normal optimization and NDEBUG flags.
+            config
+                .define("CMAKE_C_FLAGS_RELEASE", "/O2 /Ob2 /DNDEBUG")
+                .define("CMAKE_CXX_FLAGS_RELEASE", "/O2 /Ob2 /DNDEBUG");
+        }
+
+        if standalone_clang.is_none() {
+            if let Ok(toolset) = env::var("CHIAVDF_CMAKE_GENERATOR_TOOLSET") {
+                config.generator_toolset(toolset);
+            }
         }
     }
 

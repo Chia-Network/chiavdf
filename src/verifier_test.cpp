@@ -25,20 +25,30 @@ std::vector<uint8_t> HexToBytes(const char *hex_proof) {
     return result;
 }
 
-ByteArray prove_wrapper(const uint8_t* challenge_hash, size_t challenge_size, const uint8_t* x_s, size_t x_s_size, size_t discriminant_size_bits, uint64_t num_iterations) {
+bool prove_wrapper(const uint8_t* challenge_hash, size_t challenge_size,
+                   const uint8_t* x_s, size_t x_s_size,
+                   size_t discriminant_size_bits, uint64_t num_iterations,
+                   uint8_t* result, size_t result_capacity, size_t* result_size) {
+    if (result_size == nullptr) {
+        return false;
+    }
+    *result_size = 0;
+    if (result == nullptr || result_capacity < CHIAVDF_PROOF_RESULT_CAPACITY) {
+        return false;
+    }
     try {
-        std::vector<uint8_t> challenge_hash_bytes(challenge_hash, challenge_hash + challenge_size);
-        integer discriminant = CreateDiscriminant(challenge_hash_bytes, checked_cast<int>(discriminant_size_bits));
+        integer discriminant = CreateDiscriminant(
+            std::span<const uint8_t>(challenge_hash, challenge_size),
+            checked_cast<int>(discriminant_size_bits));
         form x = DeserializeForm(discriminant, x_s, x_s_size);
-        std::vector<uint8_t> result = ProveSlow(discriminant, x, num_iterations, "");
-
-        // Allocate memory for the result and copy data
-        uint8_t* resultData = new uint8_t[result.size()];
-        std::copy(result.begin(), result.end(), resultData);
-
-        return ByteArray  { resultData, result.size() };
+        if (!ProveSlow(discriminant, x, num_iterations, "",
+                       std::span<uint8_t>(result, CHIAVDF_PROOF_RESULT_CAPACITY))) {
+            return false;
+        }
+        *result_size = CHIAVDF_PROOF_RESULT_CAPACITY;
+        return true;
     } catch (...) {
-        return ByteArray { nullptr, 0 };
+        return false;
     }
 }
 
@@ -53,13 +63,16 @@ int main()
     std::vector<uint8_t> challenge_hash=HexToBytes("a6c42558174fb1eedc64");
     std::vector<uint8_t> x_s=HexToBytes("0300aca4849458af5c557710c80f21519f196907764d2d55c9b70581a90d49ca7b3201ad6a9da836429e6592c200e965434f0100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000");
 
-    ByteArray ba=prove_wrapper(challenge_hash.data(), challenge_hash.size(), x_s.data(), x_s.size(), 512, 90909);
+    std::array<uint8_t, CHIAVDF_PROOF_RESULT_CAPACITY> proof{};
+    size_t proof_size = 0;
+    bool proof_succeeded = prove_wrapper(challenge_hash.data(), challenge_hash.size(),
+                                         x_s.data(), x_s.size(), 512, 90909,
+                                         proof.data(), proof.size(), &proof_size);
+    assertm(proof_succeeded, "Proof generation should succeed");
 
-    for (size_t i = 0; i < ba.length; i++)
-        printf( "%02x", ba.data[i]);
+    for (size_t i = 0; i < proof_size; i++)
+        printf("%02x", proof[i]);
     printf("\n");
-
-    delete[] ba.data;
 
     // Keep a fixed known-proof check using a current-format fixture from src/vdf.txt.
     auto known_challenge = HexToBytes("9104c5b5e45d48f374efa0488fe6a617790e9aecb3c9cddec06809b09f45ce9b");

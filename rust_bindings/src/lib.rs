@@ -50,24 +50,29 @@ pub fn prove(
     discriminant_size_bits: usize,
     num_iterations: u64,
 ) -> Option<Vec<u8>> {
-    // SAFETY: The length of each individual array is passed in as to prevent buffer overflows.
-    // Exceptions are handled on the C++ side and a null pointer is returned for `data` if so.
+    let mut result = Vec::with_capacity(bindings::CHIAVDF_PROOF_RESULT_CAPACITY as usize);
+    let mut result_size = 0;
+    // SAFETY: The input lengths are passed across the ABI, and the C++ wrapper writes at most
+    // `result.capacity()` bytes to the uninitialized Vec allocation. We set its length only after
+    // the wrapper reports success and a size that fits the capacity.
     unsafe {
-        let array = bindings::prove_wrapper(
+        if !bindings::prove_wrapper(
             challenge.as_ptr(),
             challenge.len(),
             x_s.as_ptr(),
             x_s.len(),
             discriminant_size_bits,
             num_iterations,
-        );
-        if array.data.is_null() {
+            result.as_mut_ptr(),
+            result.capacity(),
+            &mut result_size,
+        ) || result_size > result.capacity()
+        {
             return None;
         }
-        let result = std::slice::from_raw_parts(array.data, array.length).to_vec();
-        bindings::delete_byte_array(array);
-        Some(result)
+        result.set_len(result_size);
     }
+    Some(result)
 }
 
 #[cfg(test)]

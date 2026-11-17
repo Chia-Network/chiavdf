@@ -1,10 +1,12 @@
 #include "c_wrapper.h"
 #include "../checked_cast.h"
 #include <span>
-#include <vector>
 #include <gmpxx.h>
 #include "../verifier.h"
 #include "../prover_slow.h"
+
+static_assert(CHIAVDF_PROOF_RESULT_CAPACITY >= 2 * BQFC_FORM_SIZE,
+              "Rust proof output buffer is too small for serialized VDF proofs");
 
 extern "C" {
     // C wrapper function
@@ -18,19 +20,25 @@ extern "C" {
         }
     }
 
-    ByteArray prove_wrapper(const uint8_t* challenge_hash, size_t challenge_size, const uint8_t* x_s, size_t x_s_size, size_t discriminant_size_bits, uint64_t num_iterations) {
+    bool prove_wrapper(const uint8_t* challenge_hash, size_t challenge_size, const uint8_t* x_s, size_t x_s_size, size_t discriminant_size_bits, uint64_t num_iterations, uint8_t* result_data, size_t result_capacity, size_t* result_size) {
+        if (result_size == nullptr) {
+            return false;
+        }
+        *result_size = 0;
+        if (result_data == nullptr || result_capacity < CHIAVDF_PROOF_RESULT_CAPACITY) {
+            return false;
+        }
         try {
             integer discriminant = CreateDiscriminant(std::span<const uint8_t>(challenge_hash, challenge_size), checked_cast<int>(discriminant_size_bits));
             form x = DeserializeForm(discriminant, x_s, x_s_size);
-            std::vector<uint8_t> result = ProveSlow(discriminant, x, num_iterations, "");
-
-            // Allocate memory for the result and copy data
-            uint8_t* resultData = new uint8_t[result.size()];
-            std::copy(result.begin(), result.end(), resultData);
-
-            return ByteArray  { resultData, result.size() };
+            if (!ProveSlow(discriminant, x, num_iterations, "",
+                           std::span<uint8_t>(result_data, CHIAVDF_PROOF_RESULT_CAPACITY))) {
+                return false;
+            }
+            *result_size = CHIAVDF_PROOF_RESULT_CAPACITY;
+            return true;
         } catch (...) {
-            return ByteArray { nullptr, 0 };
+            return false;
         }
     }
 
@@ -51,9 +59,5 @@ extern "C" {
         } catch (...) {
             return false;
         }
-    }
-
-    void delete_byte_array(ByteArray array) {
-        delete[] array.data;
     }
 }

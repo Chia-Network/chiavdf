@@ -134,8 +134,8 @@ fn main() {
         .allowlist_function("verify_n_wesolowski_wrapper")
         .allowlist_function("create_discriminant_wrapper")
         .allowlist_function("prove_wrapper")
+        .allowlist_var("CHIAVDF_PROOF_RESULT_CAPACITY")
         .allowlist_function("free")
-        .allowlist_function("delete_byte_array")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .generate()
         .expect("Unable to generate bindings");

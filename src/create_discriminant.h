@@ -36,7 +36,8 @@ inline integer CreateDiscriminant(std::span<const uint8_t> seed, int length = 10
         throw std::invalid_argument("seed cannot be empty");
     }
     
-    return HashPrime(seed, length, {0, 1, 2, length - 1}) * integer(-1);
+    const std::array<int, 4> bitmask{0, 1, 2, length - 1};
+    return HashPrime(seed, length, bitmask) * integer(-1);
 }
 
 #endif // CREATE_DISCRIMINANT_H

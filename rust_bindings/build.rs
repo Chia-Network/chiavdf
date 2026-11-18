@@ -10,6 +10,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=MINGW_LIBGCC");
     println!("cargo:rerun-if-env-changed=CHIAVDF_CMAKE_DEFINES");
     println!("cargo:rerun-if-env-changed=CHIAVDF_EXTRA_LINK_LIB");
+    println!("cargo:rerun-if-env-changed=CHIAVDF_USE_MPIR");
     println!("cargo:rerun-if-changed=wrapper.h");
     println!("cargo:rerun-if-changed=../src/c_bindings/c_wrapper.h");
     println!("cargo:rerun-if-changed=../src/c_bindings/c_wrapper.cpp");
@@ -55,12 +56,19 @@ fn main() {
 
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let target_env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
-    let gmp_prefix = env::var_os("CHIAVDF_GMP_PREFIX")
-        .map(PathBuf::from)
-        .or_else(|| {
-            let bundled_prefix = manifest_dir.join("gmp-win64");
-            bundled_prefix.is_dir().then_some(bundled_prefix)
-        });
+    // Experiment hook: CHIAVDF_USE_MPIR=1 builds against ../mpir_gc_x64 the way
+    // main does, for comparing MPIR with MinGW GMP on Windows.
+    let use_mpir = env::var("CHIAVDF_USE_MPIR").as_deref() == Ok("1");
+    let gmp_prefix = if use_mpir {
+        None
+    } else {
+        env::var_os("CHIAVDF_GMP_PREFIX")
+            .map(PathBuf::from)
+            .or_else(|| {
+                let bundled_prefix = manifest_dir.join("gmp-win64");
+                bundled_prefix.is_dir().then_some(bundled_prefix)
+            })
+    };
 
     if target_os == "windows" && target_env == "msvc" {
         if let Some(prefix) = &gmp_prefix {
@@ -92,7 +100,13 @@ fn main() {
             .unwrap()
     );
 
-    if target_os == "windows" {
+    if target_os == "windows" && use_mpir {
+        println!("cargo:rustc-link-lib=static=mpir");
+        println!(
+            "cargo:rustc-link-search=native={}",
+            src_dir.parent().unwrap().join("mpir_gc_x64").display()
+        );
+    } else if target_os == "windows" {
         let prefix = gmp_prefix.unwrap_or_else(|| {
             panic!("CHIAVDF_GMP_PREFIX must point to a MinGW-built GMP installation on Windows")
         });

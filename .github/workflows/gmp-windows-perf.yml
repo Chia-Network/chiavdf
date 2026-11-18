@@ -9,7 +9,9 @@ name: GMP Windows perf investigation
 #   - scripts/gmp-perf/gmp_microbench.cpp: mpz ops at chiavdf operand sizes
 #   - Rust vdf_bench (discr + prove), 3 runs each, best kept
 # Windows additionally builds chiavdf with clang-cl (native __int128) against
-# the fat GMP, to measure the uint128_t fallback that MSVC builds use.
+# the fat GMP, to measure the uint128_t fallback that MSVC builds use, and
+# compares against MPIR (what main ships): Rust vdf_bench (MSVC) and the C++
+# vdf_bench built like build-client.yml (clang-cl + GNU asm), MPIR vs GMP.
 # Cross-OS numbers only compare cleanly when the "Machines" CPUs match.
 
 on:
@@ -109,9 +111,103 @@ jobs:
             }
           }
 
+      # MPIR: the bignum library main's Windows builds use (scripts/mpir_gc_x64.commit).
+      - name: Fetch MPIR
+        shell: bash
+        run: bash scripts/get-mpir-gc-x64.sh
+
+      - name: vdf_bench (MSVC-compiled chiavdf, MPIR)
+        shell: pwsh
+        env:
+          CHIAVDF_USE_MPIR: "1"
+          CARGO_TARGET_DIR: target-msvc-mpir
+        run: |
+          $env:PATH = "$PWD\mpir_gc_x64;$env:PATH"
+          Write-Host "::group::cargo build (MSVC, MPIR)"
+          cargo build --release -p chiavdf-tools --bin vdf_bench
+          if ($LASTEXITCODE -ne 0) { throw "cargo build (MPIR) failed" }
+          Write-Host "::endgroup::"
+          foreach ($alloc in 'system', 'mimalloc') {
+            $env:CHIAVDF_BENCH_GMP_ALLOC = $alloc
+            $env:BENCH_LABEL = "windows/mpir/$alloc/msvc"
+            "=== vdf_bench $env:BENCH_LABEL ===" | Tee-Object -Append -FilePath $env:RESULTS
+            for ($i = 0; $i -lt [int]$env:BENCH_RUNS; $i++) {
+              foreach ($run in @(@('discr', '50'), @('prove', '300000'))) {
+                & target-msvc-mpir\release\vdf_bench.exe @run 2>&1 | Tee-Object -Append -FilePath $env:RESULTS
+                if ($LASTEXITCODE -ne 0) { throw "vdf_bench $run failed ($env:BENCH_LABEL)" }
+              }
+            }
+          }
+
       # Same chiavdf code built with clang-cl, which has native unsigned __int128
       # (CMake then sets CHIAVDF_USE_UINT128_T_FALLBACK=0).
       - uses: ilammy/msvc-dev-cmd@v1
+
+      # The C++ vdf_bench built the way build-client.yml builds the shipped
+      # Windows client: clang-cl + Ninja + GNU asm pipeline. Once with MPIR
+      # (what ships today) and once with MinGW GMP (generic), same machine.
+      - name: C++ vdf_bench (clang-cl, as build-client.yml), MPIR vs MinGW GMP
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          # cmake and vdf_bench write to stderr; don't let that abort the step.
+          $ErrorActionPreference = 'Continue'
+          if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) { choco install ninja --yes --no-progress }
+          if (Test-Path 'C:\Program Files\LLVM\bin') { $env:PATH = "C:\Program Files\LLVM\bin;$env:PATH" }
+          $env:PATH = "$PWD\mpir_gc_x64;$env:PATH"
+          $gmp = Join-Path $env:RUNNER_TEMP 'gmp-generic'
+          $builds = @(
+            @{ name = 'mpir'; dir = 'build-cpp-mpir'; extra = @() },
+            @{ name = 'generic'; dir = 'build-cpp-gmp'; extra = @(
+                "-DCHIAVDF_GMP_PREFIX=$gmp",
+                # MinGW libgmp.a needs the MinGW runtime helpers at link time.
+                "-DCMAKE_EXE_LINKER_FLAGS=$gmp\lib\libmingwex.a $gmp\lib\libgcc.a") }
+          )
+          $failed = $false
+          foreach ($b in $builds) {
+            Write-Host "::group::cmake C++ vdf_bench ($($b.name))"
+            $cmakeArgs = @(
+              '-S', 'src', '-B', $b.dir, '-G', 'Ninja',
+              '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_TRY_COMPILE_CONFIGURATION=Release',
+              '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL',
+              '-DCMAKE_C_COMPILER=clang-cl', '-DCMAKE_CXX_COMPILER=clang-cl', '-DCMAKE_ASM_COMPILER=clang-cl',
+              '-DBUILD_PYTHON=OFF', '-DBUILD_CHIAVDFC=OFF', '-DBUILD_VDF_CLIENT=OFF',
+              '-DBUILD_VDF_BENCH=ON', '-DBUILD_VDF_TESTS=OFF', '-DBUILD_HW_TOOLS=OFF',
+              '-DENABLE_GNU_ASM=ON'
+            ) + $b.extra
+            $log = Join-Path $env:RUNNER_TEMP "cpp-$($b.name)-build.log"
+            & cmake @cmakeArgs *> $log
+            if ($LASTEXITCODE -eq 0) { & cmake --build $b.dir --target vdf_bench *>> $log }
+            $code = $LASTEXITCODE
+            Get-Content $log -Tail 15
+            Write-Host "::endgroup::"
+            Select-String -Path $log -Pattern 'Windows 128-bit integers|GMP library found|MPIR library found' |
+              ForEach-Object { "[$($b.name)] $($_.Line.Trim())" } | Tee-Object -Append -FilePath $env:RESULTS
+            if ($code -ne 0) {
+              "=== C++ vdf_bench ($($b.name)) build FAILED; last 60 lines ===" | Tee-Object -Append -FilePath $env:RESULTS
+              Get-Content $log -Tail 60 | Tee-Object -Append -FilePath $env:RESULTS
+              $failed = $true
+              continue
+            }
+            $exe = Get-ChildItem $b.dir -Recurse -Filter vdf_bench.exe | Select-Object -First 1
+            $label = "windows/$($b.name)/system/clang-cl-cpp"
+            "=== C++ vdf_bench $label ===" | Tee-Object -Append -FilePath $env:RESULTS
+            for ($i = 0; $i -lt [int]$env:BENCH_RUNS; $i++) {
+              foreach ($run in @(@('discr', 50, 'vdf discr (ms)'), @('prove', 300000, 'vdf prove (K ips)'),
+                                 @('square_asm', 2000000, 'vdf square_asm (K ips)'))) {
+                $out = & $exe.FullName $run[0] $run[1] 2>&1 | Out-String
+                if ($LASTEXITCODE -ne 0) { "vdf_bench $($run[0]) failed: $out" | Tee-Object -Append -FilePath $env:RESULTS; $failed = $true; continue }
+                $first = ($out -split "`n")[0].Trim()
+                $first | Tee-Object -Append -FilePath $env:RESULTS
+                if ($first -match 'Time: (\d+) ms') {
+                  $ms = [double]$Matches[1]
+                  $value = if ($run[0] -eq 'discr') { $ms / $run[1] } else { $run[1] / $ms }
+                  "RESULT|$label|$($run[2])|$('{0:F2}' -f $value)" | Tee-Object -Append -FilePath $env:RESULTS
+                }
+              }
+            }
+          }
+          if ($failed) { exit 1 }
 
       - name: vdf_bench (clang-cl-compiled chiavdf, native __int128)
         continue-on-error: true

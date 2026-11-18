@@ -10,7 +10,7 @@ option(GENERATE_ASM_TRACKING_DATA "Emit asm tracking instrumentation data from c
 option(HARDENING "Enable hardening" OFF)
 option(REQUIRE_MPIRXX "Require mpirxx/gmpxx C++ wrapper library on Windows" OFF)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
@@ -97,6 +97,17 @@ if(WIN32)
     message(STATUS "Windows 128-bit integers: native unsigned __int128")
   endif()
 
+  if(CHIAVDF_GMP_PREFIX)
+    find_path(GMP_INCLUDES NAMES gmp.h PATHS "${CHIAVDF_GMP_PREFIX}/include" NO_DEFAULT_PATH)
+    find_library(GMP_LIBRARIES NAMES gmp PATHS "${CHIAVDF_GMP_PREFIX}/lib" NO_DEFAULT_PATH)
+    if(NOT GMP_INCLUDES OR NOT GMP_LIBRARIES)
+      message(FATAL_ERROR "GMP not found under CHIAVDF_GMP_PREFIX=${CHIAVDF_GMP_PREFIX}")
+    endif()
+    include_directories(${INCLUDE_DIRECTORIES} ${CMAKE_CURRENT_SOURCE_DIR} ${GMP_INCLUDES})
+    link_libraries(${GMP_LIBRARIES})
+    set(GMPXX_LIBRARIES "")
+    message(STATUS "GMP library found at ${GMP_LIBRARIES}")
+  else()
   set(MPIR_LIBRARY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../mpir_gc_x64")
   set(MPIR_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../mpir_gc_x64")
   include_directories(
@@ -131,6 +142,7 @@ if(WIN32)
   endif()
 
   list(APPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../mpir_gc_x64")
+  endif()
 else()
   find_package(GMP REQUIRED)
   find_package(GMPXX REQUIRED)
@@ -189,6 +201,14 @@ if(ENABLE_GNU_ASM AND (CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|i[3-6]86)$
     target_compile_definitions(compile_asm PRIVATE CHIAOSX)
   endif()
   target_link_libraries(compile_asm PRIVATE ${GMP_LIBRARIES} ${GMPXX_LIBRARIES} Threads::Threads)
+  if(WIN32 AND CHIAVDF_MINGW_LIBMINGWEX AND CHIAVDF_MINGW_LIBGCC)
+    # Rust's Windows GMP archive is built by MinGW and needs its runtime when
+    # this MSVC/ClangCL build-time generator links against it.
+    target_link_libraries(compile_asm PRIVATE
+      "${CHIAVDF_MINGW_LIBMINGWEX}"
+      "${CHIAVDF_MINGW_LIBGCC}"
+    )
+  endif()
   if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     execute_process(
       COMMAND ${CMAKE_CXX_COMPILER} --print-resource-dir
@@ -646,14 +666,18 @@ endif()
 if(BUILD_CHIAVDFC)
   add_library(chiavdfc_shared SHARED
           ${CMAKE_CURRENT_SOURCE_DIR}/c_bindings/c_wrapper.cpp
-          ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
   )
   add_library(chiavdfc_static STATIC
           ${CMAKE_CURRENT_SOURCE_DIR}/c_bindings/c_wrapper.cpp
-          ${CMAKE_CURRENT_SOURCE_DIR}/refcode/lzcnt.c
   )
+  target_sources(chiavdfc_shared PRIVATE ${VDF_COMMON_SOURCES} ${VDF_ASM_SOURCES})
+  target_sources(chiavdfc_static PRIVATE ${VDF_COMMON_SOURCES} ${VDF_ASM_SOURCES})
+  target_compile_definitions(chiavdfc_shared PRIVATE ${VDF_COMMON_DEFINITIONS})
+  target_compile_definitions(chiavdfc_static PRIVATE ${VDF_COMMON_DEFINITIONS})
   target_link_libraries(chiavdfc_shared ${GMP_LIBRARIES} ${GMPXX_LIBRARIES})
   target_link_libraries(chiavdfc_static ${GMP_LIBRARIES} ${GMPXX_LIBRARIES})
+  vdf_add_windows_clang_opts(chiavdfc_shared)
+  vdf_add_windows_clang_opts(chiavdfc_static)
 
     if (HARDENING)
         target_compile_definitions(chiavdfc_shared PRIVATE "_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG")
@@ -664,6 +688,7 @@ if(BUILD_CHIAVDFC)
           OUTPUT_NAME chiavdfc
           LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib/shared$<0:>"
           RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib/shared$<0:>"
+          ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib/shared$<0:>"
   )
 
   set_target_properties(chiavdfc_static PROPERTIES

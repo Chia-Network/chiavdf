@@ -3,40 +3,53 @@
 #include "Reducer.h"
 #include "bqfc.c"
 
+#include <algorithm>
+#include <array>
 #include <cassert>
+#include <cstdint>
+#include <span>
 #include <stdexcept>
 
 const int B_bits = 264;
 const int B_bytes = (B_bits + 7) / 8;
 
-
 // Generates a random pseudoprime using the hash and check method:
 // Randomly chooses x with bit-length `length`, then applies a mask
 //   (for b in bitmask) { x |= (1 << b) }.
 // Then return x if it is a pseudoprime, otherwise repeat.
-integer HashPrime(std::vector<uint8_t> seed, int length, vector<int> bitmask) {
+integer HashPrime(std::span<const uint8_t> seed, int length, std::span<const int> bitmask) {
     assert (length % 8 == 0);
-    std::vector<uint8_t> hash(picosha2::k_digest_size);  // output of sha256
-    std::vector<uint8_t> blob;  // output of 1024 bit hash expansions
-    std::vector<uint8_t> sprout = seed;  // seed plus nonce
+    std::array<uint8_t, picosha2::k_digest_size> hash{};
+    std::array<uint8_t, BQFC_MAX_D_BITS / 8> blob{};
+    std::array<uint8_t, 32> stack_sprout{};
+    std::vector<uint8_t> heap_sprout;
+    uint8_t* sprout;
+    if (seed.size() <= stack_sprout.size()) {
+        std::copy(seed.begin(), seed.end(), stack_sprout.begin());
+        sprout = stack_sprout.data();
+    } else {
+        heap_sprout.assign(seed.begin(), seed.end());
+        sprout = heap_sprout.data();
+    }
+    const size_t sprout_size = seed.size();
 
     while (true) {  // While prime is not found
-        blob.resize(0);
-        while ((int) blob.size() * 8 < length) {
+        size_t blob_size = 0;
+        while (blob_size * 8 < static_cast<size_t>(length)) {
             // Increment sprout by 1
-            for (int i = (int) sprout.size() - 1; i >= 0; --i) {
-                sprout[i]++;
-                if (sprout[i])
+            for (size_t i = sprout_size; i > 0; --i) {
+                sprout[i - 1]++;
+                if (sprout[i - 1])
                     break;
             }
-            picosha2::hash256(sprout.begin(), sprout.end(), hash.begin(), hash.end());
-            // Visual Studio doesn't like pointer arithmetic past the bounds
-            blob.insert(blob.end(), hash.begin(),
-                hash.begin() + std::min(hash.size(), length / 8 - blob.size()));
+            picosha2::hash256(sprout, sprout + sprout_size, hash.begin(), hash.end());
+            const size_t bytes_to_append = std::min(hash.size(), static_cast<size_t>(length / 8) - blob_size);
+            std::copy_n(hash.begin(), bytes_to_append, blob.begin() + blob_size);
+            blob_size += bytes_to_append;
         }
 
-        assert ((int) blob.size() * 8 == length);
-        integer p(blob);  // p = 7 (mod 8), 2^1023 <= p < 2^1024
+        assert (blob_size * 8 == static_cast<size_t>(length));
+        integer p(blob.data(), blob_size);  // p = 7 (mod 8), 2^1023 <= p < 2^1024
         for (int b: bitmask)
             p.set_bit(b, true);
         // Force the number to be odd
@@ -46,11 +59,17 @@ integer HashPrime(std::vector<uint8_t> seed, int length, vector<int> bitmask) {
     }
 }
 
-std::vector<unsigned char> SerializeForm(form &y, int d_bits)
-{
+inline void SerializeForm(form& y, int d_bits, std::span<uint8_t> output) {
+    if (output.size() != BQFC_FORM_SIZE) {
+        throw std::invalid_argument("serialized form output must have BQFC_FORM_SIZE bytes");
+    }
     y.reduce();
+    bqfc_serialize(output.data(), y.a.impl, y.b.impl, d_bits);
+}
+
+inline std::vector<unsigned char> SerializeForm(form& y, int d_bits) {
     std::vector<unsigned char> res(BQFC_FORM_SIZE);
-    bqfc_serialize(res.data(), y.a.impl, y.b.impl, d_bits);
+    SerializeForm(y, d_bits, std::span<uint8_t>(res.data(), res.size()));
     return res;
 }
 
@@ -79,10 +98,11 @@ integer FastPow(uint64_t a, uint64_t b, integer& c) {
 
 integer GetB(const integer& D, form &x, form& y) {
     int d_bits = D.num_bits();
-    std::vector<unsigned char> serialization = SerializeForm(x, d_bits);
-    std::vector<unsigned char> serialization_y = SerializeForm(y, d_bits);
-    serialization.insert(serialization.end(), serialization_y.begin(), serialization_y.end());
-    return HashPrime(serialization, B_bits, {B_bits - 1});
+    std::array<uint8_t, 2 * BQFC_FORM_SIZE> serialization{};
+    SerializeForm(x, d_bits, std::span<uint8_t>(serialization.data(), BQFC_FORM_SIZE));
+    SerializeForm(y, d_bits, std::span<uint8_t>(serialization.data() + BQFC_FORM_SIZE, BQFC_FORM_SIZE));
+    const std::array<int, 1> bitmask{B_bits - 1};
+    return HashPrime(serialization, B_bits, bitmask);
 }
 
 class PulmarkReducer {

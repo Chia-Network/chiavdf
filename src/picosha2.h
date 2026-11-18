@@ -184,7 +184,7 @@ class hash256_one_by_one {
     hash256_one_by_one() { init(); }
 
     void init() {
-        buffer_.clear();
+        buffer_size_ = 0;
         std::fill(data_length_digits_, data_length_digits_ + 4, 0);
         std::copy(detail::initial_message_digest,
                   detail::initial_message_digest + 8, h_);
@@ -192,21 +192,40 @@ class hash256_one_by_one {
 
     template <typename RaIter>
     void process(RaIter first, RaIter last) {
-        add_to_data_length(static_cast<word_t>(std::distance(first, last)));
-        std::copy(first, last, std::back_inserter(buffer_));
-        std::size_t i = 0;
-        for (; i + 64 <= buffer_.size(); i += 64) {
-            detail::hash256_block(h_, buffer_.begin() + i,
-                                  buffer_.begin() + i + 64);
+        const std::size_t input_size =
+            static_cast<std::size_t>(std::distance(first, last));
+        add_to_data_length(static_cast<word_t>(input_size));
+        std::size_t bytes_remaining = input_size;
+
+        if (buffer_size_ != 0) {
+            const std::size_t bytes_to_fill = 64 - buffer_size_;
+            if (input_size < bytes_to_fill) {
+                std::copy(first, last, buffer_ + buffer_size_);
+                buffer_size_ += input_size;
+                return;
+            }
+
+            std::copy_n(first, bytes_to_fill, buffer_ + buffer_size_);
+            detail::hash256_block(h_, buffer_, buffer_ + 64);
+            first += bytes_to_fill;
+            bytes_remaining -= bytes_to_fill;
         }
-        buffer_.erase(buffer_.begin(), buffer_.begin() + i);
+
+        while (bytes_remaining >= 64) {
+            detail::hash256_block(h_, first, first + 64);
+            first += 64;
+            bytes_remaining -= 64;
+        }
+
+        std::copy_n(first, bytes_remaining, buffer_);
+        buffer_size_ = bytes_remaining;
     }
 
     void finish() {
         byte_t temp[64];
         std::fill(temp, temp + 64, 0);
-        std::size_t remains = buffer_.size();
-        std::copy(buffer_.begin(), buffer_.end(), temp);
+        std::size_t remains = buffer_size_;
+        std::copy_n(buffer_, remains, temp);
         temp[remains] = 0x80;
 
         if (remains > 55) {
@@ -266,7 +285,8 @@ class hash256_one_by_one {
             (*begin++) = static_cast<byte_t>(data_bit_length_digits[i]);
         }
     }
-    std::vector<byte_t> buffer_;
+    byte_t buffer_[64];
+    std::size_t buffer_size_ = 0;
     word_t data_length_digits_[4];  // as 64bit integer (16bit x 4 integer)
     word_t h_[8];
 };

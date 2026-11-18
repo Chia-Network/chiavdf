@@ -132,19 +132,30 @@ static void ProverParameters(uint64_t num_iterations, uint64_t& k, uint64_t& l) 
 }
 
 // y followed by the proof, as prove() returns them.
+static void SerializeProofResult(form& y, form& proof, int d_bits,
+                                 std::span<uint8_t> result) {
+    if (result.size() != 2 * BQFC_FORM_SIZE) {
+        throw std::invalid_argument("serialized proof output must have two BQFC_FORM_SIZE forms");
+    }
+    SerializeForm(y, d_bits, result.first(BQFC_FORM_SIZE));
+    SerializeForm(proof, d_bits, result.subspan(BQFC_FORM_SIZE));
+}
+
 static std::vector<uint8_t> SerializeProofResult(form& y, form& proof, int d_bits) {
-    std::vector<uint8_t> result = SerializeForm(y, d_bits);
-    std::vector<uint8_t> proof_bytes = SerializeForm(proof, d_bits);
-    result.insert(result.end(), proof_bytes.begin(), proof_bytes.end());
+    std::vector<uint8_t> result(2 * BQFC_FORM_SIZE);
+    SerializeProofResult(y, proof, d_bits, result);
     return result;
 }
 
 // ProveSlow with k and l given instead of chosen by ApproximateParameters.
 // The proof verifies for any k, l > 0; tests use this to reach l > 1 with
 // few iterations.
-std::vector<uint8_t> ProveSlowWithParameters(integer& D, form& x, uint64_t num_iterations,
-                                             std::string const& shutdown_file_path,
-                                             uint64_t k, uint64_t l) {
+bool ProveSlowWithParameters(integer& D, form& x, uint64_t num_iterations,
+                             std::string const& shutdown_file_path,
+                             uint64_t k, uint64_t l, std::span<uint8_t> output) {
+    if (output.size() != 2 * BQFC_FORM_SIZE) {
+        throw std::invalid_argument("proof output must have two BQFC_FORM_SIZE forms");
+    }
     integer L = root(-D, 4);
     PulmarkReducer reducer;
     form y = form::from_abd(x.a, x.b, D);
@@ -163,11 +174,29 @@ std::vector<uint8_t> ProveSlowWithParameters(integer& D, form& x, uint64_t num_i
         reducer.reduce(y);
 
         // Check for cancellation every 65535 interations
-        if ((i & 0xffff) == 0 && ShutdownRequested(shutdown_file_path)) return {};
+        if ((i & 0xffff) == 0 && ShutdownRequested(shutdown_file_path)) return false;
     }
 
     form proof = GenerateWesolowski(y, x, D, reducer, intermediates, num_iterations, k, l);
-    return SerializeProofResult(y, proof, d_bits);
+    SerializeProofResult(y, proof, d_bits, output);
+    return true;
+}
+
+std::vector<uint8_t> ProveSlowWithParameters(integer& D, form& x, uint64_t num_iterations,
+                                             std::string const& shutdown_file_path,
+                                             uint64_t k, uint64_t l) {
+    std::vector<uint8_t> result(2 * BQFC_FORM_SIZE);
+    if (!ProveSlowWithParameters(D, x, num_iterations, shutdown_file_path, k, l, result)) {
+        return {};
+    }
+    return result;
+}
+
+bool ProveSlow(integer& D, form& x, uint64_t num_iterations,
+               std::string const& shutdown_file_path, std::span<uint8_t> output) {
+    uint64_t k, l;
+    ProverParameters(num_iterations, k, l);
+    return ProveSlowWithParameters(D, x, num_iterations, shutdown_file_path, k, l, output);
 }
 
 std::vector<uint8_t> ProveSlow(integer& D, form& x, uint64_t num_iterations, std::string shutdown_file_path) {

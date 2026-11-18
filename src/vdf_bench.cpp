@@ -18,6 +18,7 @@
 #include "vdf_fast.h"
 #endif
 #include "create_discriminant.h"
+#include "prover_slow.h"
 
 #include <cstdlib>
 
@@ -25,7 +26,7 @@
 
 static void usage(const char *progname)
 {
-    fprintf(stderr, "Usage: %s {square_asm|square|discr} N\n", progname);
+    fprintf(stderr, "Usage: %s {square_asm|square|discr|prove} N\n", progname);
 }
 
 int main(int argc, char **argv)
@@ -44,6 +45,36 @@ int main(int argc, char **argv)
         return 1;
     }
     int iters = atoi(argv[2]);
+
+    if (!strcmp(argv[1], "prove")) {
+        if (iters <= 0) {
+            fprintf(stderr, "Iteration count must be greater than zero\n");
+            return 1;
+        }
+
+        const uint8_t challenge[] = {0, 0, 1, 2, 3, 3, 4, 4};
+        uint8_t x_s[100] = {8};
+
+        auto t1 = std::chrono::high_resolution_clock::now();
+        std::vector<uint8_t> challenge_vector(challenge, challenge + sizeof(challenge));
+        integer discriminant = CreateDiscriminant(challenge_vector, 1024);
+        form x = DeserializeForm(discriminant, x_s, sizeof(x_s));
+        std::vector<uint8_t> proof = ProveSlow(discriminant, x, static_cast<uint64_t>(iters), "");
+        auto t2 = std::chrono::high_resolution_clock::now();
+
+        int duration = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
+        if (!duration) {
+            printf("WARNING: too few iterations, results will be inaccurate!\n");
+            duration = 1;
+        }
+        if (proof.empty()) {
+            fprintf(stderr, "ProveSlow returned an empty proof\n");
+            return 1;
+        }
+        printf("Time: %d ms; speed: %d.%dK ips\n", duration, iters / duration, iters * 10 / duration % 10);
+        return 0;
+    }
+
     auto D = integer("-141140317794792668862943332656856519378482291428727287413318722089216448567155737094768903643716404517549715385664163360316296284155310058980984373770517398492951860161717960368874227473669336541818575166839209228684755811071416376384551902149780184532086881683576071479646499601330824259260645952517205526679");
 
     form y = form::generator(D);

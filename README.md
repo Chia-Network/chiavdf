@@ -248,10 +248,11 @@ ctest --test-dir build --output-on-failure -R '^regression\.'
 
 ### Blockchain proof corpus
 
-`verify_vdf_corpus` is a standalone Unix tool that validates binary VDF proof corpora
-independently of a blockchain database. Supply one or more files on the command
-line; there is no default sample or environment-variable configuration. The
-existing `ReferenceGoldenRegressionTest` retains the arithmetic regression coverage.
+`verify_vdf_corpus` (C++) and `validate_vdf_corpus` (Rust) are standalone tools
+that validate binary VDF proof corpora independently of a blockchain database.
+Supply one or more files on the command line; there is no default sample or
+environment-variable configuration. The existing `ReferenceGoldenRegressionTest`
+retains the arithmetic regression coverage.
 
 Export more proofs with `export-vdf-proofs` in the `chia_rs` repository:
 
@@ -300,6 +301,14 @@ cmake -S src -B build -DCMAKE_BUILD_TYPE=Release \
 cmake --build build --config Release --target verify_vdf_corpus -j 4
 ./build/verify_vdf_corpus mainnet-proofs.bin testnet11-proofs.bin testneta-proofs.bin
 ./build/verify_vdf_corpus --start-height 1000000 mainnet-proofs.bin
+```
+
+The Rust port is in the separate tools crate, so chia_rs Streamable dependencies
+do not become dependencies of the `chiavdf` library:
+
+```bash
+cargo run --release -p chiavdf-tools --bin validate_vdf_corpus -- \
+  --start-height 1000000 mainnet-proofs.bin
 ```
 
 For multi-configuration generators such as Xcode, run the executable from

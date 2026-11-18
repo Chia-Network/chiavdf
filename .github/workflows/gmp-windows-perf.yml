@@ -51,7 +51,7 @@ jobs:
           msystem: MINGW64
           update: true
           # m4 is required by GMP's configure and is not part of base-devel.
-          install: base-devel m4 make mingw-w64-x86_64-toolchain mingw-w64-x86_64-mimalloc
+          install: base-devel m4 make mingw-w64-x86_64-toolchain
 
       - name: Build GMP variants
         shell: msys2 {0}
@@ -193,7 +193,7 @@ jobs:
       - name: Install build deps
         run: |
           sudo apt-get update -y -o Acquire::Retries=3
-          sudo apt-get install -y m4 libclang-dev libmimalloc-dev
+          sudo apt-get install -y m4 libclang-dev
           mkdir -p results
           echo "CPU: $(lscpu | sed -n 's/^Model name: *//p') ($(nproc) vCPU)" | tee "$RESULTS"
 

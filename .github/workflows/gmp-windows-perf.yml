@@ -1,18 +1,16 @@
 name: GMP Windows perf investigation
 
-# Experiment: why is MinGW GMP on Windows slower than GMP on Linux?
-# Builds GMP 6.3.0 in several configurations on both OSes and runs the same
-# benchmarks against each:
-#   - scripts/gmp-perf/gmp_microbench.cpp (mpz ops at chiavdf operand sizes)
-#   - GMP's tune/speed on the mpn kernels (isolates asm / calling convention)
-#   - the Rust vdf_bench (end-to-end chiavdf)
-# Variants:
-#   generic         --host=x86_64, no fat, CFLAGS="-O2 -std=gnu17" (pre-874eb29)
-#   fat             --enable-fat, CFLAGS="-O2 -std=gnu17" (current production)
-#   fat-gmpflags    --enable-fat, GMP chooses its own CFLAGS
-#   native-gmpflags exact CPU from config.guess, GMP chooses its own CFLAGS
-# Windows and Linux runners are different machines; compare the CPU lines in
-# each report, and prefer ratios between variants over absolute numbers.
+# Experiment: why is chiavdf on Windows (MinGW GMP) slower than on Linux?
+#
+# Each OS runs in ONE job so every variant is measured on the same machine
+# (GitHub hands out different EPYC models per job). Per job:
+#   GMP 6.3.0 builds: generic (no fat), fat (production), native (exact CPU)
+#   x allocator: system malloc vs mimalloc (via mp_set_memory_functions)
+#   - scripts/gmp-perf/gmp_microbench.cpp: mpz ops at chiavdf operand sizes
+#   - Rust vdf_bench (discr + prove), 3 runs each, best kept
+# Windows additionally builds chiavdf with clang-cl (native __int128) against
+# the fat GMP, to measure the uint128_t fallback that MSVC builds use.
+# Cross-OS numbers only compare cleanly when the "Machines" CPUs match.
 
 on:
   push:
@@ -27,20 +25,17 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  GMP_VARIANTS: generic fat native
+  BENCH_RUNS: 3
+
 jobs:
   windows:
-    name: Windows ${{ matrix.variant.name }}
+    name: Windows
     runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        variant:
-          - { name: generic, host_cpu: x86_64, fat: "0", cflags: "-O2 -std=gnu17" }
-          - { name: fat, host_cpu: x86_64, fat: "1", cflags: "-O2 -std=gnu17" }
-          - { name: fat-gmpflags, host_cpu: x86_64, fat: "1", cflags: gmp-default }
-          - { name: native-gmpflags, host_cpu: native, fat: "0", cflags: gmp-default }
+    timeout-minutes: 120
     env:
-      RESULTS: ${{ github.workspace }}\results\windows-${{ matrix.variant.name }}.txt
+      RESULTS: ${{ github.workspace }}\results\windows.txt
     steps:
       - uses: actions/checkout@v7
 
@@ -48,58 +43,77 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force results | Out-Null
-          "=== Windows ${{ matrix.variant.name }} ===" | Out-File -FilePath $env:RESULTS
-          (Get-CimInstance Win32_Processor | Select-Object Name, NumberOfCores, MaxClockSpeed | Format-List | Out-String) |
-            Tee-Object -Append -FilePath $env:RESULTS
+          $cpu = (Get-CimInstance Win32_Processor | Select-Object -First 1)
+          "CPU: $($cpu.Name.Trim()) ($($env:NUMBER_OF_PROCESSORS) vCPU)" | Tee-Object -FilePath $env:RESULTS
 
       - uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
           update: true
           # m4 is required by GMP's configure and is not part of base-devel.
-          install: base-devel m4 make mingw-w64-x86_64-toolchain
+          install: base-devel m4 make mingw-w64-x86_64-toolchain mingw-w64-x86_64-mimalloc
 
-      - name: Build GMP (${{ matrix.variant.name }})
-        shell: msys2 {0}
-        env:
-          GMP_HOST_CPU: ${{ matrix.variant.host_cpu }}
-          GMP_FAT: ${{ matrix.variant.fat }}
-          GMP_CFLAGS: ${{ matrix.variant.cflags }}
-        run: |
-          bash scripts/build-windows-mingw-gmp.sh "$(cygpath -u "$RUNNER_TEMP")/chiavdf-gmp" 2>&1 | tee gmp-build.log
-          test "${PIPESTATUS[0]}" = 0
-          grep -E '^(GMP config.guess|Configuring GMP|GMP CC|GMP CFLAGS)' gmp-build.log >> "$(cygpath -u "$RESULTS")"
-
-      - name: GMP microbench + tune/speed
+      - name: Build GMP variants
         shell: msys2 {0}
         run: |
-          bash scripts/gmp-perf/run-gmp-bench.sh \
-            "$(cygpath -u "$RUNNER_TEMP")/chiavdf-gmp" \
-            "$(cygpath -u "$RUNNER_TEMP")/chiavdf-gmp-build/gmp-6.3.0" \
-            "$(cygpath -u "$RESULTS").bench"
-          cat "$(cygpath -u "$RESULTS").bench" >> "$(cygpath -u "$RESULTS")"
+          results=$(cygpath -u "$RESULTS")
+          tmp=$(cygpath -u "$RUNNER_TEMP")
+          for v in $GMP_VARIANTS; do
+            case $v in
+              generic) export GMP_HOST_CPU=x86_64 GMP_FAT=0 ;;
+              fat)     export GMP_HOST_CPU=x86_64 GMP_FAT=1 ;;
+              native)  export GMP_HOST_CPU=native GMP_FAT=0 ;;
+            esac
+            echo "::group::GMP $v"
+            GMP_SKIP_CHECK=1 GMP_BUILD_ROOT="$tmp/gmp-build-$v" \
+              bash scripts/build-windows-mingw-gmp.sh "$tmp/gmp-$v" 2>&1 | tee "gmp-build-$v.log"
+            echo "::endgroup::"
+            { echo "--- GMP $v"; grep -E '^(GMP config.guess|Configuring GMP|GMP CFLAGS)' "gmp-build-$v.log"; } >> "$results"
+          done
+
+      - name: GMP microbench
+        shell: msys2 {0}
+        run: |
+          tmp=$(cygpath -u "$RUNNER_TEMP")
+          for v in $GMP_VARIANTS; do
+            bash scripts/gmp-perf/run-gmp-bench.sh "$tmp/gmp-$v" "windows/$v" "$(cygpath -u "$RESULTS")"
+          done
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Rust vdf_bench (MSVC-compiled chiavdf, uint128_t fallback)
+      - name: vdf_bench (MSVC-compiled chiavdf, uint128_t fallback)
         shell: pwsh
         run: |
-          "`n=== Rust vdf_bench (MSVC, uint128_t fallback) ===" | Tee-Object -Append -FilePath $env:RESULTS
-          cargo build --release -p chiavdf-tools --bin vdf_bench
-          if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
-          foreach ($run in @(@('discr', '50'), @('prove', '300000'))) {
-            & .\target\release\vdf_bench.exe @run 2>&1 | Tee-Object -Append -FilePath $env:RESULTS
-            if ($LASTEXITCODE -ne 0) { throw "vdf_bench $run failed" }
+          $ErrorActionPreference = 'Stop'
+          foreach ($v in $env:GMP_VARIANTS -split ' ') {
+            $prefix = Join-Path $env:RUNNER_TEMP "gmp-$v"
+            $env:CHIAVDF_GMP_PREFIX = $prefix
+            $env:MINGW_LIBMINGWEX = Join-Path $prefix 'lib\libmingwex.a'
+            $env:MINGW_LIBGCC = Join-Path $prefix 'lib\libgcc.a'
+            # Separate target dirs: CMake caches the GMP location per build dir.
+            $env:CARGO_TARGET_DIR = "target-msvc-$v"
+            Write-Host "::group::cargo build (MSVC, GMP $v)"
+            cargo build --release -p chiavdf-tools --bin vdf_bench
+            if ($LASTEXITCODE -ne 0) { throw "cargo build (GMP $v) failed" }
+            Write-Host "::endgroup::"
+            foreach ($alloc in 'system', 'mimalloc') {
+              $env:CHIAVDF_BENCH_GMP_ALLOC = $alloc
+              $env:BENCH_LABEL = "windows/$v/$alloc/msvc"
+              "=== vdf_bench $env:BENCH_LABEL ===" | Tee-Object -Append -FilePath $env:RESULTS
+              for ($i = 0; $i -lt [int]$env:BENCH_RUNS; $i++) {
+                foreach ($run in @(@('discr', '50'), @('prove', '300000'))) {
+                  & "target-msvc-$v\release\vdf_bench.exe" @run 2>&1 | Tee-Object -Append -FilePath $env:RESULTS
+                  if ($LASTEXITCODE -ne 0) { throw "vdf_bench $run failed ($env:BENCH_LABEL)" }
+                }
+              }
+            }
           }
 
       # Same chiavdf code built with clang-cl, which has native unsigned __int128
-      # (CMake then sets CHIAVDF_USE_UINT128_T_FALLBACK=0). Isolates the cost
-      # of the software uint128_t fallback from GMP itself.
+      # (CMake then sets CHIAVDF_USE_UINT128_T_FALLBACK=0).
       - uses: ilammy/msvc-dev-cmd@v1
-        if: matrix.variant.name == 'native-gmpflags'
 
-      - name: Rust vdf_bench (clang-cl, native __int128)
-        if: matrix.variant.name == 'native-gmpflags'
+      - name: vdf_bench (clang-cl-compiled chiavdf, native __int128)
         continue-on-error: true
         shell: pwsh
         env:
@@ -107,101 +121,134 @@ jobs:
           CC: clang-cl
           CXX: clang-cl
           CARGO_TARGET_DIR: target-clangcl
+          # chiavdfc never uses the GNU asm pipeline; skip its configure checks.
+          CHIAVDF_CMAKE_DEFINES: ENABLE_GNU_ASM=OFF
         run: |
-          "`n=== Rust vdf_bench (clang-cl, native __int128) ===" | Tee-Object -Append -FilePath $env:RESULTS
-          cargo build --release -vv -p chiavdf-tools --bin vdf_bench 2>&1 |
-            Select-String -Pattern 'Windows 128-bit integers' | Tee-Object -Append -FilePath $env:RESULTS
-          if ($LASTEXITCODE -ne 0) { throw "cargo build (clang-cl) failed" }
-          foreach ($run in @(@('discr', '50'), @('prove', '300000'))) {
-            & .\target-clangcl\release\vdf_bench.exe @run 2>&1 | Tee-Object -Append -FilePath $env:RESULTS
-            if ($LASTEXITCODE -ne 0) { throw "vdf_bench $run failed" }
+          $ErrorActionPreference = 'Stop'
+          if (Test-Path 'C:\Program Files\LLVM\bin') { $env:PATH = "C:\Program Files\LLVM\bin;$env:PATH" }
+          if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) { choco install ninja --yes --no-progress }
+          "clang-cl: $((Get-Command clang-cl).Source)" | Tee-Object -Append -FilePath $env:RESULTS
+          & clang-cl --version | Tee-Object -Append -FilePath $env:RESULTS
+          $builtins = Join-Path (& clang-cl --print-resource-dir).Trim() 'lib\windows\clang_rt.builtins-x86_64.lib'
+          if (Test-Path $builtins) { $env:CHIAVDF_EXTRA_LINK_LIB = $builtins }
+          "clang_rt builtins: $builtins (exists: $(Test-Path $builtins))" | Tee-Object -Append -FilePath $env:RESULTS
+
+          $prefix = Join-Path $env:RUNNER_TEMP 'gmp-fat'
+          $env:CHIAVDF_GMP_PREFIX = $prefix
+          $env:MINGW_LIBMINGWEX = Join-Path $prefix 'lib\libmingwex.a'
+          $env:MINGW_LIBGCC = Join-Path $prefix 'lib\libgcc.a'
+          $log = Join-Path $env:RUNNER_TEMP 'clangcl-build.log'
+          # Native-command stderr must not become a terminating error here.
+          $ErrorActionPreference = 'Continue'
+          cargo build --release -vv -p chiavdf-tools --bin vdf_bench *> $log
+          $code = $LASTEXITCODE
+          Select-String -Path $log -Pattern 'Windows 128-bit integers' | Select-Object -First 1 |
+            ForEach-Object { $_.Line } | Tee-Object -Append -FilePath $env:RESULTS
+          if ($code -ne 0) {
+            "=== clang-cl build FAILED (exit $code); last 80 lines of cargo -vv output ===" |
+              Tee-Object -Append -FilePath $env:RESULTS
+            Get-Content $log -Tail 80 | Tee-Object -Append -FilePath $env:RESULTS
+            "=== error lines ===" | Tee-Object -Append -FilePath $env:RESULTS
+            Select-String -Path $log -Pattern 'error|unresolved|FATAL' | Select-Object -First 40 |
+              ForEach-Object { $_.Line } | Tee-Object -Append -FilePath $env:RESULTS
+            exit 1
+          }
+          $ErrorActionPreference = 'Stop'
+          foreach ($alloc in 'system', 'mimalloc') {
+            $env:CHIAVDF_BENCH_GMP_ALLOC = $alloc
+            $env:BENCH_LABEL = "windows/fat/$alloc/clang-cl"
+            "=== vdf_bench $env:BENCH_LABEL ===" | Tee-Object -Append -FilePath $env:RESULTS
+            for ($i = 0; $i -lt [int]$env:BENCH_RUNS; $i++) {
+              foreach ($run in @(@('discr', '50'), @('prove', '300000'))) {
+                & target-clangcl\release\vdf_bench.exe @run 2>&1 | Tee-Object -Append -FilePath $env:RESULTS
+                if ($LASTEXITCODE -ne 0) { throw "vdf_bench $run failed ($env:BENCH_LABEL)" }
+              }
+            }
           }
 
-      - name: Report
+      - name: Upload clang-cl build log
         if: always()
-        shell: pwsh
-        run: |
-          if (Test-Path $env:RESULTS) {
-            "## Windows ${{ matrix.variant.name }}`n``````text" | Out-File -Append $env:GITHUB_STEP_SUMMARY
-            Get-Content $env:RESULTS | Out-File -Append $env:GITHUB_STEP_SUMMARY
-            "``````" | Out-File -Append $env:GITHUB_STEP_SUMMARY
-          }
+        uses: actions/upload-artifact@v7
+        with:
+          name: gmp-perf-clangcl-build-log
+          path: ${{ runner.temp }}/clangcl-build.log
+          if-no-files-found: ignore
 
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: gmp-perf-windows-${{ matrix.variant.name }}
-          path: results/windows-${{ matrix.variant.name }}.txt
+          name: gmp-perf-windows
+          path: results/windows.txt
           if-no-files-found: warn
 
   linux:
-    name: Linux ${{ matrix.variant.name }}
+    name: Linux
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        variant:
-          - { name: generic, host_cpu: x86_64, fat: "0", cflags: "-O2 -std=gnu17" }
-          - { name: fat, host_cpu: x86_64, fat: "1", cflags: "-O2 -std=gnu17" }
-          - { name: fat-gmpflags, host_cpu: x86_64, fat: "1", cflags: gmp-default }
-          - { name: native-gmpflags, host_cpu: native, fat: "0", cflags: gmp-default }
+    timeout-minutes: 90
     env:
-      RESULTS: ${{ github.workspace }}/results/linux-${{ matrix.variant.name }}.txt
-      GMP_PREFIX: ${{ github.workspace }}/../chiavdf-gmp
+      RESULTS: ${{ github.workspace }}/results/linux.txt
     steps:
       - uses: actions/checkout@v7
 
       - name: Install build deps
         run: |
           sudo apt-get update -y -o Acquire::Retries=3
-          sudo apt-get install -y m4 libclang-dev
+          sudo apt-get install -y m4 libclang-dev libmimalloc-dev
           mkdir -p results
-          { echo "=== Linux ${{ matrix.variant.name }} ==="; lscpu | grep -E 'Model name|^CPU\(s\)|MHz'; echo; } | tee "$RESULTS"
+          echo "CPU: $(lscpu | sed -n 's/^Model name: *//p') ($(nproc) vCPU)" | tee "$RESULTS"
 
-      - name: Build GMP (${{ matrix.variant.name }})
-        env:
-          GMP_HOST_CPU: ${{ matrix.variant.host_cpu }}
-          GMP_FAT: ${{ matrix.variant.fat }}
-          GMP_CFLAGS: ${{ matrix.variant.cflags }}
+      - name: Build GMP variants
         run: |
-          bash scripts/build-windows-mingw-gmp.sh "$GMP_PREFIX" 2>&1 | tee gmp-build.log
-          test "${PIPESTATUS[0]}" = 0
-          grep -E '^(GMP config.guess|Configuring GMP|GMP CC|GMP CFLAGS)' gmp-build.log >> "$RESULTS"
+          for v in $GMP_VARIANTS; do
+            case $v in
+              generic) export GMP_HOST_CPU=x86_64 GMP_FAT=0 ;;
+              fat)     export GMP_HOST_CPU=x86_64 GMP_FAT=1 ;;
+              native)  export GMP_HOST_CPU=native GMP_FAT=0 ;;
+            esac
+            echo "::group::GMP $v"
+            GMP_SKIP_CHECK=1 GMP_BUILD_ROOT="$RUNNER_TEMP/gmp-build-$v" \
+              bash scripts/build-windows-mingw-gmp.sh "$RUNNER_TEMP/gmp-$v" 2>&1 | tee "gmp-build-$v.log"
+            echo "::endgroup::"
+            { echo "--- GMP $v"; grep -E '^(GMP config.guess|Configuring GMP|GMP CFLAGS)' "gmp-build-$v.log"; } >> "$RESULTS"
+          done
 
-      - name: GMP microbench + tune/speed
+      - name: GMP microbench
         run: |
-          bash scripts/gmp-perf/run-gmp-bench.sh "$GMP_PREFIX" \
-            "$RUNNER_TEMP/chiavdf-gmp-build/gmp-6.3.0" "$RESULTS.bench"
-          cat "$RESULTS.bench" >> "$RESULTS"
+          for v in $GMP_VARIANTS; do
+            bash scripts/gmp-perf/run-gmp-bench.sh "$RUNNER_TEMP/gmp-$v" "linux/$v" "$RESULTS"
+          done
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Rust vdf_bench (linked against this GMP build)
-        env:
-          # FindGMP/FindGMPXX search CMAKE_PREFIX_PATH first; only static
-          # archives are installed, so -lgmp resolves to this build.
-          CMAKE_PREFIX_PATH: ${{ env.GMP_PREFIX }}
-          RUSTFLAGS: -L native=${{ env.GMP_PREFIX }}/lib
+      - name: vdf_bench (GCC-compiled chiavdf, native __int128)
         run: |
-          printf '\n=== Rust vdf_bench (native __int128) ===\n' | tee -a "$RESULTS"
-          cargo build --release -p chiavdf-tools --bin vdf_bench
-          for run in "discr 50" "prove 300000"; do
-            ./target/release/vdf_bench $run 2>&1 | tee -a "$RESULTS"
-            test "${PIPESTATUS[0]}" = 0
+          for v in $GMP_VARIANTS; do
+            prefix="$RUNNER_TEMP/gmp-$v"
+            export CARGO_TARGET_DIR="target-$v"
+            echo "::group::cargo build (GMP $v)"
+            # FindGMP/FindGMPXX search CMAKE_PREFIX_PATH first; only static
+            # archives are installed, so -lgmp resolves to this build.
+            CMAKE_PREFIX_PATH="$prefix" RUSTFLAGS="-L native=$prefix/lib" \
+              cargo build --release -p chiavdf-tools --bin vdf_bench
+            echo "::endgroup::"
+            for alloc in system mimalloc; do
+              export CHIAVDF_BENCH_GMP_ALLOC=$alloc BENCH_LABEL="linux/$v/$alloc/gcc"
+              echo "=== vdf_bench $BENCH_LABEL ===" | tee -a "$RESULTS"
+              for _ in $(seq "$BENCH_RUNS"); do
+                for run in "discr 50" "prove 300000"; do
+                  # shellcheck disable=SC2086
+                  "target-$v/release/vdf_bench" $run 2>&1 | tee -a "$RESULTS"
+                  test "${PIPESTATUS[0]}" = 0
+                done
+              done
+            done
           done
-
-      - name: Report
-        if: always()
-        run: |
-          if [ -f "$RESULTS" ]; then
-            { echo "## Linux ${{ matrix.variant.name }}"; echo '```text'; cat "$RESULTS"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-          fi
 
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: gmp-perf-linux-${{ matrix.variant.name }}
-          path: results/linux-${{ matrix.variant.name }}.txt
+          name: gmp-perf-linux
+          path: results/linux.txt
           if-no-files-found: warn
 
   summary:
@@ -210,41 +257,21 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
+
       - uses: actions/download-artifact@v8
         with:
           pattern: gmp-perf-*
           merge-multiple: true
           path: results
 
-      - name: Side-by-side microbench
+      - name: Summarize
         run: |
           shopt -s nullglob
           files=(results/*.txt)
           [ "${#files[@]}" -gt 0 ] || { echo "no results"; exit 0; }
-          sed -i 's/\r$//' "${files[@]}"
-          {
-            echo "## mpz microbench (ns/op)"
-            echo
-            printf '| op |'; for f in "${files[@]}"; do printf ' %s |' "$(basename "$f" .txt)"; done; echo
-            printf '|---|'; for f in "${files[@]}"; do printf -- '---:|'; done; echo
-            grep -h 'ns/op' "${files[0]}" | sed 's/ \{2,\}[0-9.]* ns\/op$//' | while read -r op; do
-              printf '| %s |' "$op"
-              for f in "${files[@]}"; do
-                v=$(awk -v op="$op" 'index($0, op " ") == 1 && /ns\/op$/ { print $(NF-1); exit }' "$f")
-                printf ' %s |' "${v:--}"
-              done
-              echo
-            done
-            echo
-            echo "## vdf_bench"
-            echo
-            for f in "${files[@]}"; do
-              echo "**$(basename "$f" .txt)**"
-              echo '```text'
-              grep -E '^=== Rust|^Time:|Windows 128-bit' "$f" || true
-              echo '```'
-            done
-          } >> "$GITHUB_STEP_SUMMARY"
+          python3 scripts/gmp-perf/summarize.py "${files[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+          python3 scripts/gmp-perf/summarize.py "${files[@]}" > results/summary.md
 
       - uses: actions/upload-artifact@v7
         with:

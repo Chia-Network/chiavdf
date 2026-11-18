@@ -8,6 +8,8 @@ fn main() {
     println!("cargo:rerun-if-env-changed=CHIAVDF_GMP_PREFIX");
     println!("cargo:rerun-if-env-changed=MINGW_LIBMINGWEX");
     println!("cargo:rerun-if-env-changed=MINGW_LIBGCC");
+    println!("cargo:rerun-if-env-changed=CHIAVDF_CMAKE_DEFINES");
+    println!("cargo:rerun-if-env-changed=CHIAVDF_EXTRA_LINK_LIB");
     println!("cargo:rerun-if-changed=wrapper.h");
     println!("cargo:rerun-if-changed=../src/c_bindings/c_wrapper.h");
     println!("cargo:rerun-if-changed=../src/c_bindings/c_wrapper.cpp");
@@ -40,6 +42,16 @@ fn main() {
                 "OFF"
             },
         );
+
+    // Experiment hook: extra CMake cache entries, as "NAME=VALUE;NAME2=VALUE2".
+    if let Ok(defines) = env::var("CHIAVDF_CMAKE_DEFINES") {
+        for define in defines.split(';').filter(|d| !d.is_empty()) {
+            let (name, value) = define
+                .split_once('=')
+                .expect("CHIAVDF_CMAKE_DEFINES entries must be NAME=VALUE");
+            config.define(name, value);
+        }
+    }
 
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let target_env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
@@ -120,6 +132,20 @@ fn main() {
         println!("cargo:rustc-link-search=native={homebrew_path}");
     } else {
         println!("cargo:rustc-link-lib=gmp");
+    }
+
+    // Experiment hook: one extra static library to link, given as a full path
+    // (e.g. clang_rt.builtins-x86_64.lib for clang-cl's __int128 helpers).
+    if let Some(lib) = env::var_os("CHIAVDF_EXTRA_LINK_LIB").map(PathBuf::from) {
+        assert!(lib.is_file(), "CHIAVDF_EXTRA_LINK_LIB not found: {}", lib.display());
+        println!(
+            "cargo:rustc-link-search=native={}",
+            lib.parent().unwrap().display()
+        );
+        println!(
+            "cargo:rustc-link-lib=static:+verbatim={}",
+            lib.file_name().unwrap().to_str().unwrap()
+        );
     }
 
     let bindings = bindgen::Builder::default()

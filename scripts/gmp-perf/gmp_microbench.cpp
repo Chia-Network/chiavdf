@@ -1,10 +1,15 @@
 // Microbenchmark of the GMP mpz operations chiavdf leans on, at the operand
 // sizes it uses (1024-bit discriminant, ~512-bit form coefficients).
 // Built against each GMP variant on Windows (MinGW) and Linux so results can
-// be compared directly. Prints ns/op per operation.
+// be compared directly. Prints ns/op per operation (best of 3 runs).
 //
 //   g++ -O2 gmp_microbench.cpp -I$PREFIX/include $PREFIX/lib/libgmp.a
+// Add -DUSE_MIMALLOC -lmimalloc to route GMP's allocations through mimalloc.
+// Set BENCH_LABEL to also emit machine-readable "RESULT|label|op|value" lines.
 #include <gmp.h>
+#ifdef USE_MIMALLOC
+#include <mimalloc.h>
+#endif
 
 #include <chrono>
 #include <cstdint>
@@ -15,16 +20,34 @@
 
 using clk = std::chrono::steady_clock;
 
+static const char* label = std::getenv("BENCH_LABEL");
+
 static void bench(const char* name, long iters, const std::function<void()>& fn) {
     for (long i = 0; i < iters / 10; ++i) fn();  // warm-up
-    auto t0 = clk::now();
-    for (long i = 0; i < iters; ++i) fn();
-    double ns = std::chrono::duration<double, std::nano>(clk::now() - t0).count();
-    std::printf("%-34s %10.1f ns/op\n", name, ns / iters);
+    double best = 1e300;
+    for (int rep = 0; rep < 3; ++rep) {
+        auto t0 = clk::now();
+        for (long i = 0; i < iters; ++i) fn();
+        double ns = std::chrono::duration<double, std::nano>(clk::now() - t0).count() / iters;
+        if (ns < best) best = ns;
+    }
+    std::printf("%-34s %10.1f ns/op\n", name, best);
+    if (label) std::printf("RESULT|%s|%s (ns)|%.1f\n", label, name, best);
 }
+
+#ifdef USE_MIMALLOC
+static void* mi_realloc_gmp(void* p, size_t, size_t n) { return mi_realloc(p, n); }
+static void mi_free_gmp(void* p, size_t) { mi_free(p); }
+#endif
 
 int main(int argc, char** argv) {
     long scale = argc > 1 ? std::atol(argv[1]) : 1;
+#ifdef USE_MIMALLOC
+    mp_set_memory_functions(mi_malloc, mi_realloc_gmp, mi_free_gmp);
+    std::printf("allocator: mimalloc %d\n", mi_version());
+#else
+    std::printf("allocator: system malloc\n");
+#endif
     std::printf("GMP %s, CC=%s\nCFLAGS=%s\n", gmp_version, __GMP_CC, __GMP_CFLAGS);
     std::printf("sizeof(long)=%u sizeof(mp_limb_t)=%u\n\n", (unsigned)sizeof(long),
                 (unsigned)sizeof(mp_limb_t));

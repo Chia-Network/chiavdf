@@ -56,7 +56,8 @@ jobs:
         with:
           msystem: MINGW64
           update: true
-          install: base-devel mingw-w64-x86_64-toolchain
+          # m4 is required by GMP's configure and is not part of base-devel.
+          install: base-devel m4 make mingw-w64-x86_64-toolchain
 
       - name: Build GMP (${{ matrix.variant.name }})
         shell: msys2 {0}

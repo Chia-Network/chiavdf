@@ -524,6 +524,7 @@ jobs:
         shell: pwsh
         env:
           CHIAVDF_HASHPRIME_PROFILE: '1'
+          CHIAVDF_BPSW_PROFILE: '1'
         run: |
           cd build
           $env:PATH = "$PWD;$PWD\..\src\hw\libft4222;$PWD\..\mpir_gc_x64;$env:PATH"
@@ -542,6 +543,7 @@ jobs:
         shell: pwsh
         env:
           CHIAVDF_HASHPRIME_PROFILE: '1'
+          CHIAVDF_BPSW_PROFILE: '1'
         run: |
           Write-Host "Benchmarking Rust bindings with 50 discriminants (static GMP)"
           cargo run --release -p chiavdf-tools --bin vdf_bench -- discr 50
@@ -1045,6 +1047,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Rust prove benchmark failed" }
 
           $env:CHIAVDF_HASHPRIME_PROFILE = '1'
+          $env:CHIAVDF_BPSW_PROFILE = '1'
           Write-Host "Profiling HashPrime counters: C++ MPIR discr 50"
           .\build\vdf_bench.exe discr 50
           if ($LASTEXITCODE -ne 0) { throw "C++ profiled discr benchmark failed" }
@@ -1053,6 +1056,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Rust profiled discr benchmark failed" }
 
           Remove-Item Env:CHIAVDF_HASHPRIME_PROFILE -ErrorAction SilentlyContinue
+          Remove-Item Env:CHIAVDF_BPSW_PROFILE -ErrorAction SilentlyContinue
           $env:CHIAVDF_CMAKE_CLANG_CL = 'C:\Program Files\LLVM\bin\clang-cl.exe'
           $env:CARGO_TARGET_DIR = Join-Path $env:RUNNER_TEMP 'chiavdf-clangcl-target'
           Write-Host "Benchmarking Rust bindings with standalone ClangCL C++ (static GMP)"
@@ -1062,6 +1066,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "ClangCL Rust prove benchmark failed" }
 
           $env:CHIAVDF_HASHPRIME_PROFILE = '1'
+          $env:CHIAVDF_BPSW_PROFILE = '1'
           Write-Host "Profiling HashPrime counters: Rust ClangCL static GMP discr 50"
           cargo run --release -p chiavdf-tools --bin vdf_bench -- discr 50
           if ($LASTEXITCODE -ne 0) { throw "ClangCL Rust profiled discr benchmark failed" }

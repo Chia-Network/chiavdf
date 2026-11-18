@@ -2,6 +2,8 @@
 # repo-content-updater:dependency-artifact-review
 name: Dependency Artifact Review
 on:
+  pull_request:
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
     inputs:
       pr_number:

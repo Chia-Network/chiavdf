@@ -1,6 +1,14 @@
 name: VDF client & HW CI
 
 on:
+  push:
+    branches:
+      - main
+  release:
+    types: [published]
+  pull_request:
+    branches:
+      - '**'
   workflow_dispatch:
     inputs:
       macos_notarize:

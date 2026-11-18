@@ -4,59 +4,6 @@
 #include "checked_cast.h"
 #include "pprods.h"
 
-#include <atomic>
-#include <chrono>
-#include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-
-struct BpswProfile {
-    bool enabled = std::getenv("CHIAVDF_BPSW_PROFILE") != nullptr;
-    std::atomic<uint64_t> calls{0};
-    std::atomic<uint64_t> small_prime_gcds{0};
-    std::atomic<uint64_t> small_prime_rejections{0};
-    std::atomic<uint64_t> small_prime_nanoseconds{0};
-    std::atomic<uint64_t> miller_rabin_calls{0};
-    std::atomic<uint64_t> miller_rabin_passes{0};
-    std::atomic<uint64_t> miller_rabin_nanoseconds{0};
-    std::atomic<uint64_t> lucas_v_calls{0};
-    std::atomic<uint64_t> lucas_v_passes{0};
-    std::atomic<uint64_t> lucas_v_nanoseconds{0};
-
-    ~BpswProfile() {
-        if (enabled) {
-            std::fprintf(stderr,
-                         "CHIAVDF_BPSW_PROFILE "
-                         "{\"calls\":%llu,\"small_prime_gcds\":%llu,"
-                         "\"small_prime_rejections\":%llu,\"small_prime_ns\":%llu,"
-                         "\"miller_rabin_calls\":%llu,\"miller_rabin_passes\":%llu,"
-                         "\"miller_rabin_ns\":%llu,\"lucas_v_calls\":%llu,"
-                         "\"lucas_v_passes\":%llu,\"lucas_v_ns\":%llu}\n",
-                         static_cast<unsigned long long>(calls.load(std::memory_order_relaxed)),
-                         static_cast<unsigned long long>(small_prime_gcds.load(std::memory_order_relaxed)),
-                         static_cast<unsigned long long>(small_prime_rejections.load(std::memory_order_relaxed)),
-                         static_cast<unsigned long long>(small_prime_nanoseconds.load(std::memory_order_relaxed)),
-                         static_cast<unsigned long long>(miller_rabin_calls.load(std::memory_order_relaxed)),
-                         static_cast<unsigned long long>(miller_rabin_passes.load(std::memory_order_relaxed)),
-                         static_cast<unsigned long long>(miller_rabin_nanoseconds.load(std::memory_order_relaxed)),
-                         static_cast<unsigned long long>(lucas_v_calls.load(std::memory_order_relaxed)),
-                         static_cast<unsigned long long>(lucas_v_passes.load(std::memory_order_relaxed)),
-                         static_cast<unsigned long long>(lucas_v_nanoseconds.load(std::memory_order_relaxed)));
-        }
-    }
-};
-
-inline BpswProfile& GetBpswProfile() {
-    static BpswProfile profile;
-    return profile;
-}
-
-inline uint64_t BpswElapsedNanoseconds(std::chrono::steady_clock::time_point start) {
-    return static_cast<uint64_t>(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::steady_clock::now() - start).count());
-}
-
 static int miller_rabin(const mpz_t n, mpz_t b, mpz_t d)
 {
     int r = 0;
@@ -199,11 +146,6 @@ static int is_prime_bpsw(const mpz_t n)
     int i, ret = 0;
     int min_pprods = 5, n_pprods = sizeof(pprods) / sizeof(*pprods);
     mpz_t b, d;
-    BpswProfile& profile = GetBpswProfile();
-    const bool profiling = profile.enabled;
-
-    if (profiling)
-        profile.calls.fetch_add(1, std::memory_order_relaxed);
 
     /* Zero, one and negative numbers are not prime. */
     if (mpz_cmp_ui(n, 2) < 0)
@@ -228,56 +170,17 @@ static int is_prime_bpsw(const mpz_t n)
 
     /* Numbers up to the largest prime in the products may be one of those
      * primes, so leave them to the exact Miller-Rabin and Lucas tests. */
-    const auto small_prime_start = profiling ? std::chrono::steady_clock::now()
-                                             : std::chrono::steady_clock::time_point{};
-    uint64_t gcd_count = 0;
     if (mpz_cmp_ui(n, pprods_max_prime) > 0) {
         for (i = 0; i < n_pprods; i++) {
-            if (profiling)
-                ++gcd_count;
-            if (mpn_gcd_1(n->_mp_d, n->_mp_size, pprods[i]) != 1) {
-                if (profiling) {
-                    profile.small_prime_gcds.fetch_add(gcd_count, std::memory_order_relaxed);
-                    profile.small_prime_rejections.fetch_add(1, std::memory_order_relaxed);
-                    profile.small_prime_nanoseconds.fetch_add(
-                        BpswElapsedNanoseconds(small_prime_start), std::memory_order_relaxed);
-                }
+            if (mpn_gcd_1(n->_mp_d, n->_mp_size, pprods[i]) != 1)
                 return 0;
-            }
         }
-    }
-    if (profiling) {
-        profile.small_prime_gcds.fetch_add(gcd_count, std::memory_order_relaxed);
-        profile.small_prime_nanoseconds.fetch_add(
-            BpswElapsedNanoseconds(small_prime_start), std::memory_order_relaxed);
     }
 
     mpz_init2(b, n->_mp_size * sizeof(n->_mp_d[0]) * 8);
     mpz_init2(d, n->_mp_size * sizeof(n->_mp_d[0]) * 8);
     mpz_set_ui(b, 2);
-    const auto miller_rabin_start = profiling ? std::chrono::steady_clock::now()
-                                              : std::chrono::steady_clock::time_point{};
-    const int passes_miller_rabin = miller_rabin(n, b, d);
-    if (profiling) {
-        profile.miller_rabin_calls.fetch_add(1, std::memory_order_relaxed);
-        profile.miller_rabin_passes.fetch_add(passes_miller_rabin != 0, std::memory_order_relaxed);
-        profile.miller_rabin_nanoseconds.fetch_add(
-            BpswElapsedNanoseconds(miller_rabin_start), std::memory_order_relaxed);
-    }
-
-    int passes_lucas_v = 0;
-    if (passes_miller_rabin) {
-        const auto lucas_v_start = profiling ? std::chrono::steady_clock::now()
-                                             : std::chrono::steady_clock::time_point{};
-        passes_lucas_v = is_vprp(n, b, d);
-        if (profiling) {
-            profile.lucas_v_calls.fetch_add(1, std::memory_order_relaxed);
-            profile.lucas_v_passes.fetch_add(passes_lucas_v != 0, std::memory_order_relaxed);
-            profile.lucas_v_nanoseconds.fetch_add(
-                BpswElapsedNanoseconds(lucas_v_start), std::memory_order_relaxed);
-        }
-    }
-    ret = passes_miller_rabin && passes_lucas_v;
+    ret = miller_rabin(n, b, d) && is_vprp(n, b, d);
 
     mpz_clears(b, d, NULL);
     return ret ? 2 : 0;

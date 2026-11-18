@@ -9,8 +9,6 @@ fn main() {
     println!("cargo:rerun-if-env-changed=MINGW_LIBMINGWEX");
     println!("cargo:rerun-if-env-changed=MINGW_LIBGCC");
     println!("cargo:rerun-if-env-changed=CHIAVDF_CMAKE_GENERATOR_TOOLSET");
-    println!("cargo:rerun-if-env-changed=CHIAVDF_CMAKE_CLANG_CL");
-    println!("cargo:rerun-if-env-changed=CHIAVDF_VERBOSE_CMAKE");
     println!("cargo:rerun-if-changed=wrapper.h");
     println!("cargo:rerun-if-changed=../src/c_bindings/c_wrapper.h");
     println!("cargo:rerun-if-changed=../src/c_bindings/c_wrapper.cpp");
@@ -31,40 +29,7 @@ fn main() {
 
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
-    let standalone_clang = env::var_os("CHIAVDF_CMAKE_CLANG_CL").map(PathBuf::from);
     let mut config = Config::new(src_dir.as_path());
-    if let Some(clang_cl) = &standalone_clang {
-        assert!(
-            target_os == "windows" && target_env == "msvc",
-            "CHIAVDF_CMAKE_CLANG_CL is only supported for Windows MSVC targets"
-        );
-        let clang_cl = clang_cl
-            .to_str()
-            .expect("standalone clang-cl path is not UTF-8");
-        config
-            .generator("Ninja")
-            .define("CMAKE_C_COMPILER", clang_cl)
-            .define("CMAKE_CXX_COMPILER", clang_cl)
-            .define("CMAKE_ASM_COMPILER", clang_cl);
-    }
-    if env::var_os("CHIAVDF_VERBOSE_CMAKE").is_some() {
-        if target_os == "windows" && target_env == "msvc" {
-            if standalone_clang.is_some() {
-                // Ninja prints compile commands with -v. The Clang investigation
-                // uses a fresh CARGO_TARGET_DIR, so it always compiles the target.
-                config.build_arg("-v");
-            } else {
-                // CMake passes build args after `--`, so use MSBuild's verbosity
-                // switch for Visual Studio generators. Rebuild to ensure compiler
-                // command lines are emitted even when Cargo restored a CMake cache.
-                config
-                    .build_arg("/v:detailed")
-                    .build_arg("/t:Rebuild");
-            }
-        } else {
-            config.define("CMAKE_VERBOSE_MAKEFILE", "ON");
-        }
-    }
     config
         .build_target("chiavdfc_static")
         .define("BUILD_CHIAVDFC", "ON")
@@ -130,10 +95,8 @@ fn main() {
                 .define("CMAKE_CXX_FLAGS_RELEASE", "/O2 /Ob2 /DNDEBUG");
         }
 
-        if standalone_clang.is_none() {
-            if let Ok(toolset) = env::var("CHIAVDF_CMAKE_GENERATOR_TOOLSET") {
-                config.generator_toolset(toolset);
-            }
+        if let Ok(toolset) = env::var("CHIAVDF_CMAKE_GENERATOR_TOOLSET") {
+            config.generator_toolset(toolset);
         }
     }
 

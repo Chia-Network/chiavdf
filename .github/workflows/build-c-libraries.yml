@@ -1,6 +1,12 @@
 name: Build C Libraries
 
 on:
+  push:
+    branches:
+    - main
+  pull_request:
+    branches:
+    - '**'
   # Release publishing lives in build-packages.yml, which calls this workflow
   # and attaches the archives only after every matrix has succeeded.
   workflow_call:

@@ -5,11 +5,7 @@
 
 #include <algorithm>
 #include <array>
-#include <atomic>
 #include <cassert>
-#include <chrono>
-#include <cstdio>
-#include <cstdlib>
 #include <cstdint>
 #include <span>
 #include <stdexcept>
@@ -17,56 +13,11 @@
 const int B_bits = 264;
 const int B_bytes = (B_bits + 7) / 8;
 
-struct HashPrimeProfile {
-    bool enabled = std::getenv("CHIAVDF_HASHPRIME_PROFILE") != nullptr;
-    std::atomic<uint64_t> calls{0};
-    std::atomic<uint64_t> candidates{0};
-    std::atomic<uint64_t> hashes{0};
-    std::atomic<uint64_t> total_nanoseconds{0};
-    std::atomic<uint64_t> prime_nanoseconds{0};
-    std::atomic<uint64_t> hash_nanoseconds{0};
-
-    ~HashPrimeProfile() {
-        if (enabled) {
-            std::fprintf(stderr,
-                         "CHIAVDF_HASHPRIME_PROFILE "
-                         "{\"calls\":%llu,\"candidates\":%llu,\"hashes\":%llu,"
-                         "\"total_ns\":%llu,\"prime_ns\":%llu,\"hash_ns\":%llu}\n",
-                         static_cast<unsigned long long>(calls.load(std::memory_order_relaxed)),
-                         static_cast<unsigned long long>(candidates.load(std::memory_order_relaxed)),
-                         static_cast<unsigned long long>(hashes.load(std::memory_order_relaxed)),
-                         static_cast<unsigned long long>(total_nanoseconds.load(std::memory_order_relaxed)),
-                         static_cast<unsigned long long>(prime_nanoseconds.load(std::memory_order_relaxed)),
-                         static_cast<unsigned long long>(hash_nanoseconds.load(std::memory_order_relaxed)));
-        }
-    }
-};
-
-inline HashPrimeProfile& GetHashPrimeProfile() {
-    static HashPrimeProfile profile;
-    return profile;
-}
-
-inline uint64_t ElapsedNanoseconds(std::chrono::steady_clock::time_point start) {
-    return static_cast<uint64_t>(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::steady_clock::now() - start).count());
-}
-
-
 // Generates a random pseudoprime using the hash and check method:
 // Randomly chooses x with bit-length `length`, then applies a mask
 //   (for b in bitmask) { x |= (1 << b) }.
 // Then return x if it is a pseudoprime, otherwise repeat.
 integer HashPrime(std::span<const uint8_t> seed, int length, std::span<const int> bitmask) {
-    HashPrimeProfile& profile = GetHashPrimeProfile();
-    const bool profiling = profile.enabled;
-    const auto start = profiling ? std::chrono::steady_clock::now()
-                                 : std::chrono::steady_clock::time_point{};
-    uint64_t local_candidates = 0;
-    uint64_t local_hashes = 0;
-    uint64_t local_prime_nanoseconds = 0;
-    uint64_t local_hash_nanoseconds = 0;
     assert (length % 8 == 0);
     std::array<uint8_t, picosha2::k_digest_size> hash{};
     std::array<uint8_t, BQFC_MAX_D_BITS / 8> blob{};
@@ -84,8 +35,6 @@ integer HashPrime(std::span<const uint8_t> seed, int length, std::span<const int
 
     while (true) {  // While prime is not found
         size_t blob_size = 0;
-        const auto hash_start = profiling ? std::chrono::steady_clock::now()
-                                          : std::chrono::steady_clock::time_point{};
         while (blob_size * 8 < static_cast<size_t>(length)) {
             // Increment sprout by 1
             for (size_t i = sprout_size; i > 0; --i) {
@@ -94,17 +43,9 @@ integer HashPrime(std::span<const uint8_t> seed, int length, std::span<const int
                     break;
             }
             picosha2::hash256(sprout, sprout + sprout_size, hash.begin(), hash.end());
-            if (profiling) {
-                ++local_hashes;
-            }
             const size_t bytes_to_append = std::min(hash.size(), static_cast<size_t>(length / 8) - blob_size);
             std::copy_n(hash.begin(), bytes_to_append, blob.begin() + blob_size);
             blob_size += bytes_to_append;
-        }
-        if (profiling) {
-            // Time all SHA-256 expansions for one candidate together to keep
-            // timer overhead small compared to timing every hash separately.
-            local_hash_nanoseconds += ElapsedNanoseconds(hash_start);
         }
 
         assert (blob_size * 8 == static_cast<size_t>(length));
@@ -113,26 +54,8 @@ integer HashPrime(std::span<const uint8_t> seed, int length, std::span<const int
             p.set_bit(b, true);
         // Force the number to be odd
         p.set_bit(0, true);
-        bool is_prime;
-        if (profiling) {
-            const auto prime_start = std::chrono::steady_clock::now();
-            is_prime = p.prime();
-            local_prime_nanoseconds += ElapsedNanoseconds(prime_start);
-            ++local_candidates;
-        } else {
-            is_prime = p.prime();
-        }
-        if (is_prime) {
-            if (profiling) {
-                profile.calls.fetch_add(1, std::memory_order_relaxed);
-                profile.candidates.fetch_add(local_candidates, std::memory_order_relaxed);
-                profile.hashes.fetch_add(local_hashes, std::memory_order_relaxed);
-                profile.total_nanoseconds.fetch_add(ElapsedNanoseconds(start), std::memory_order_relaxed);
-                profile.prime_nanoseconds.fetch_add(local_prime_nanoseconds, std::memory_order_relaxed);
-                profile.hash_nanoseconds.fetch_add(local_hash_nanoseconds, std::memory_order_relaxed);
-            }
+        if (p.prime())
             return p;
-        }
     }
 }
 

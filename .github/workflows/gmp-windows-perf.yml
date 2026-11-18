@@ -1,0 +1,251 @@
+name: GMP Windows perf investigation
+
+# Experiment: why is MinGW GMP on Windows slower than GMP on Linux?
+# Builds GMP 6.3.0 in several configurations on both OSes and runs the same
+# benchmarks against each:
+#   - scripts/gmp-perf/gmp_microbench.cpp (mpz ops at chiavdf operand sizes)
+#   - GMP's tune/speed on the mpn kernels (isolates asm / calling convention)
+#   - the Rust vdf_bench (end-to-end chiavdf)
+# Variants:
+#   generic         --host=x86_64, no fat, CFLAGS="-O2 -std=gnu17" (pre-874eb29)
+#   fat             --enable-fat, CFLAGS="-O2 -std=gnu17" (current production)
+#   fat-gmpflags    --enable-fat, GMP chooses its own CFLAGS
+#   native-gmpflags exact CPU from config.guess, GMP chooses its own CFLAGS
+# Windows and Linux runners are different machines; compare the CPU lines in
+# each report, and prefer ratios between variants over absolute numbers.
+
+on:
+  push:
+    branches:
+      - gmp-windows-perf
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows ${{ matrix.variant.name }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant:
+          - { name: generic, host_cpu: x86_64, fat: "0", cflags: "-O2 -std=gnu17" }
+          - { name: fat, host_cpu: x86_64, fat: "1", cflags: "-O2 -std=gnu17" }
+          - { name: fat-gmpflags, host_cpu: x86_64, fat: "1", cflags: gmp-default }
+          - { name: native-gmpflags, host_cpu: native, fat: "0", cflags: gmp-default }
+    env:
+      RESULTS: ${{ github.workspace }}\results\windows-${{ matrix.variant.name }}.txt
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: CPU info
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force results | Out-Null
+          "=== Windows ${{ matrix.variant.name }} ===" | Out-File -FilePath $env:RESULTS
+          (Get-CimInstance Win32_Processor | Select-Object Name, NumberOfCores, MaxClockSpeed | Format-List | Out-String) |
+            Tee-Object -Append -FilePath $env:RESULTS
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: base-devel mingw-w64-x86_64-toolchain
+
+      - name: Build GMP (${{ matrix.variant.name }})
+        shell: msys2 {0}
+        env:
+          GMP_HOST_CPU: ${{ matrix.variant.host_cpu }}
+          GMP_FAT: ${{ matrix.variant.fat }}
+          GMP_CFLAGS: ${{ matrix.variant.cflags }}
+        run: |
+          bash scripts/build-windows-mingw-gmp.sh "$(cygpath -u "$RUNNER_TEMP")/chiavdf-gmp" 2>&1 | tee gmp-build.log
+          test "${PIPESTATUS[0]}" = 0
+          grep -E '^(GMP config.guess|Configuring GMP|GMP CC|GMP CFLAGS)' gmp-build.log >> "$(cygpath -u "$RESULTS")"
+
+      - name: GMP microbench + tune/speed
+        shell: msys2 {0}
+        run: |
+          bash scripts/gmp-perf/run-gmp-bench.sh \
+            "$(cygpath -u "$RUNNER_TEMP")/chiavdf-gmp" \
+            "$(cygpath -u "$RUNNER_TEMP")/chiavdf-gmp-build/gmp-6.3.0" \
+            "$(cygpath -u "$RESULTS").bench"
+          cat "$(cygpath -u "$RESULTS").bench" >> "$(cygpath -u "$RESULTS")"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust vdf_bench (MSVC-compiled chiavdf, uint128_t fallback)
+        shell: pwsh
+        run: |
+          "`n=== Rust vdf_bench (MSVC, uint128_t fallback) ===" | Tee-Object -Append -FilePath $env:RESULTS
+          cargo build --release -p chiavdf-tools --bin vdf_bench
+          if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
+          foreach ($run in @(@('discr', '50'), @('prove', '300000'))) {
+            & .\target\release\vdf_bench.exe @run 2>&1 | Tee-Object -Append -FilePath $env:RESULTS
+            if ($LASTEXITCODE -ne 0) { throw "vdf_bench $run failed" }
+          }
+
+      # Same chiavdf code built with clang-cl, which has native unsigned __int128
+      # (CMake then sets CHIAVDF_USE_UINT128_T_FALLBACK=0). Isolates the cost
+      # of the software uint128_t fallback from GMP itself.
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: matrix.variant.name == 'native-gmpflags'
+
+      - name: Rust vdf_bench (clang-cl, native __int128)
+        if: matrix.variant.name == 'native-gmpflags'
+        continue-on-error: true
+        shell: pwsh
+        env:
+          CMAKE_GENERATOR: Ninja
+          CC: clang-cl
+          CXX: clang-cl
+          CARGO_TARGET_DIR: target-clangcl
+        run: |
+          "`n=== Rust vdf_bench (clang-cl, native __int128) ===" | Tee-Object -Append -FilePath $env:RESULTS
+          cargo build --release -vv -p chiavdf-tools --bin vdf_bench 2>&1 |
+            Select-String -Pattern 'Windows 128-bit integers' | Tee-Object -Append -FilePath $env:RESULTS
+          if ($LASTEXITCODE -ne 0) { throw "cargo build (clang-cl) failed" }
+          foreach ($run in @(@('discr', '50'), @('prove', '300000'))) {
+            & .\target-clangcl\release\vdf_bench.exe @run 2>&1 | Tee-Object -Append -FilePath $env:RESULTS
+            if ($LASTEXITCODE -ne 0) { throw "vdf_bench $run failed" }
+          }
+
+      - name: Report
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path $env:RESULTS) {
+            "## Windows ${{ matrix.variant.name }}`n``````text" | Out-File -Append $env:GITHUB_STEP_SUMMARY
+            Get-Content $env:RESULTS | Out-File -Append $env:GITHUB_STEP_SUMMARY
+            "``````" | Out-File -Append $env:GITHUB_STEP_SUMMARY
+          }
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: gmp-perf-windows-${{ matrix.variant.name }}
+          path: results/windows-${{ matrix.variant.name }}.txt
+          if-no-files-found: warn
+
+  linux:
+    name: Linux ${{ matrix.variant.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant:
+          - { name: generic, host_cpu: x86_64, fat: "0", cflags: "-O2 -std=gnu17" }
+          - { name: fat, host_cpu: x86_64, fat: "1", cflags: "-O2 -std=gnu17" }
+          - { name: fat-gmpflags, host_cpu: x86_64, fat: "1", cflags: gmp-default }
+          - { name: native-gmpflags, host_cpu: native, fat: "0", cflags: gmp-default }
+    env:
+      RESULTS: ${{ github.workspace }}/results/linux-${{ matrix.variant.name }}.txt
+      GMP_PREFIX: ${{ github.workspace }}/../chiavdf-gmp
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update -y -o Acquire::Retries=3
+          sudo apt-get install -y m4 libclang-dev
+          mkdir -p results
+          { echo "=== Linux ${{ matrix.variant.name }} ==="; lscpu | grep -E 'Model name|^CPU\(s\)|MHz'; echo; } | tee "$RESULTS"
+
+      - name: Build GMP (${{ matrix.variant.name }})
+        env:
+          GMP_HOST_CPU: ${{ matrix.variant.host_cpu }}
+          GMP_FAT: ${{ matrix.variant.fat }}
+          GMP_CFLAGS: ${{ matrix.variant.cflags }}
+        run: |
+          bash scripts/build-windows-mingw-gmp.sh "$GMP_PREFIX" 2>&1 | tee gmp-build.log
+          test "${PIPESTATUS[0]}" = 0
+          grep -E '^(GMP config.guess|Configuring GMP|GMP CC|GMP CFLAGS)' gmp-build.log >> "$RESULTS"
+
+      - name: GMP microbench + tune/speed
+        run: |
+          bash scripts/gmp-perf/run-gmp-bench.sh "$GMP_PREFIX" \
+            "$RUNNER_TEMP/chiavdf-gmp-build/gmp-6.3.0" "$RESULTS.bench"
+          cat "$RESULTS.bench" >> "$RESULTS"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust vdf_bench (linked against this GMP build)
+        env:
+          # FindGMP/FindGMPXX search CMAKE_PREFIX_PATH first; only static
+          # archives are installed, so -lgmp resolves to this build.
+          CMAKE_PREFIX_PATH: ${{ env.GMP_PREFIX }}
+          RUSTFLAGS: -L native=${{ env.GMP_PREFIX }}/lib
+        run: |
+          printf '\n=== Rust vdf_bench (native __int128) ===\n' | tee -a "$RESULTS"
+          cargo build --release -p chiavdf-tools --bin vdf_bench
+          for run in "discr 50" "prove 300000"; do
+            ./target/release/vdf_bench $run 2>&1 | tee -a "$RESULTS"
+            test "${PIPESTATUS[0]}" = 0
+          done
+
+      - name: Report
+        if: always()
+        run: |
+          if [ -f "$RESULTS" ]; then
+            { echo "## Linux ${{ matrix.variant.name }}"; echo '```text'; cat "$RESULTS"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: gmp-perf-linux-${{ matrix.variant.name }}
+          path: results/linux-${{ matrix.variant.name }}.txt
+          if-no-files-found: warn
+
+  summary:
+    name: Combined report
+    needs: [windows, linux]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: gmp-perf-*
+          merge-multiple: true
+          path: results
+
+      - name: Side-by-side microbench
+        run: |
+          shopt -s nullglob
+          files=(results/*.txt)
+          [ "${#files[@]}" -gt 0 ] || { echo "no results"; exit 0; }
+          sed -i 's/\r$//' "${files[@]}"
+          {
+            echo "## mpz microbench (ns/op)"
+            echo
+            printf '| op |'; for f in "${files[@]}"; do printf ' %s |' "$(basename "$f" .txt)"; done; echo
+            printf '|---|'; for f in "${files[@]}"; do printf -- '---:|'; done; echo
+            grep -h 'ns/op' "${files[0]}" | sed 's/ \{2,\}[0-9.]* ns\/op$//' | while read -r op; do
+              printf '| %s |' "$op"
+              for f in "${files[@]}"; do
+                v=$(awk -v op="$op" 'index($0, op " ") == 1 && /ns\/op$/ { print $(NF-1); exit }' "$f")
+                printf ' %s |' "${v:--}"
+              done
+              echo
+            done
+            echo
+            echo "## vdf_bench"
+            echo
+            for f in "${files[@]}"; do
+              echo "**$(basename "$f" .txt)**"
+              echo '```text'
+              grep -E '^=== Rust|^Time:|Windows 128-bit' "$f" || true
+              echo '```'
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gmp-perf-all
+          path: results

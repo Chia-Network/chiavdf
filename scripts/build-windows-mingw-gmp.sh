@@ -8,6 +8,9 @@
 #   GMP_CFLAGS     CFLAGS passed to configure (default "-O2 -std=gnu17").
 #                  The special value "gmp-default" leaves CFLAGS unset so GMP
 #                  picks its own per-CPU flags; -std=gnu17 then goes into CC.
+#   GMP_FAT_ISA    1 to apply scripts/gmp-6.3.0-fat-isa.patch (needs GMP_FAT=1):
+#                  fat builds pick routines by instruction set for CPUs newer
+#                  than GMP 6.3.0's CPU tables (Ice Lake+, Zen 5+, Hygon).
 #   GMP_SKIP_CHECK 1 to skip "make check".
 #   GMP_BUILD_ROOT where the source tree is unpacked (kept after the build).
 #
@@ -24,6 +27,7 @@ case "$(uname -s)" in
   *) on_windows=0 ;;
 esac
 
+script_dir=$(cd "$(dirname "$0")" && pwd)
 to_unix() { if [ "$on_windows" = 1 ]; then cygpath -u "$1"; else printf '%s\n' "$1"; fi; }
 
 version=6.3.0
@@ -47,6 +51,10 @@ echo "$sha256  gmp-${version}.tar.xz" | sha256sum --check --status
 rm -rf "gmp-${version}"
 tar -xf "gmp-${version}.tar.xz"
 cd "gmp-${version}"
+if [ "${GMP_FAT_ISA:-0}" = 1 ]; then
+  echo "Applying gmp-6.3.0-fat-isa.patch"
+  patch -p1 < "$script_dir/gmp-6.3.0-fat-isa.patch"
+fi
 
 if [ "$host_cpu" = native ]; then
   host_cpu=$(./config.guess | cut -d- -f1)
@@ -67,7 +75,7 @@ if [ "$fat" = 1 ]; then
   configure_args+=(--enable-fat)
 fi
 
-echo "Configuring GMP: host_cpu=$host_cpu fat=$fat cflags=$cflags"
+echo "Configuring GMP: host_cpu=$host_cpu fat=$fat fat_isa=${GMP_FAT_ISA:-0} cflags=$cflags"
 if [ "$cflags" = gmp-default ]; then
   CC="$cc -std=gnu17" CXX="$cxx" ./configure "${configure_args[@]}"
 else

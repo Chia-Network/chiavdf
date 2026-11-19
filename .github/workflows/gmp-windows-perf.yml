@@ -28,7 +28,9 @@ permissions:
   contents: read
 
 env:
-  GMP_VARIANTS: generic fat native
+  GMP_VARIANTS: generic fat fat-isa native
+  # Prints which routines GMP's fat dispatcher picked (fat-isa builds only).
+  CHIAVDF_GMP_FAT_DEBUG: "1"
   BENCH_RUNS: 3
 
 jobs:
@@ -53,7 +55,7 @@ jobs:
           msystem: MINGW64
           update: true
           # m4 is required by GMP's configure and is not part of base-devel.
-          install: base-devel m4 make mingw-w64-x86_64-toolchain
+          install: base-devel m4 make patch mingw-w64-x86_64-toolchain
 
       - name: Build GMP variants
         shell: msys2 {0}
@@ -62,15 +64,17 @@ jobs:
           tmp=$(cygpath -u "$RUNNER_TEMP")
           for v in $GMP_VARIANTS; do
             case $v in
-              generic) export GMP_HOST_CPU=x86_64 GMP_FAT=0 ;;
-              fat)     export GMP_HOST_CPU=x86_64 GMP_FAT=1 ;;
-              native)  export GMP_HOST_CPU=native GMP_FAT=0 ;;
+              generic) export GMP_HOST_CPU=x86_64 GMP_FAT=0 GMP_FAT_ISA=0 ;;
+              fat)     export GMP_HOST_CPU=x86_64 GMP_FAT=1 GMP_FAT_ISA=0 ;;
+              fat-isa) export GMP_HOST_CPU=x86_64 GMP_FAT=1 GMP_FAT_ISA=1 ;;
+              native)  export GMP_HOST_CPU=native GMP_FAT=0 GMP_FAT_ISA=0 ;;
             esac
             echo "::group::GMP $v"
-            GMP_SKIP_CHECK=1 GMP_BUILD_ROOT="$tmp/gmp-build-$v" \
+            skip_check=1; [ "$v" = fat-isa ] && skip_check=0
+            GMP_SKIP_CHECK=$skip_check GMP_BUILD_ROOT="$tmp/gmp-build-$v" \
               bash scripts/build-windows-mingw-gmp.sh "$tmp/gmp-$v" 2>&1 | tee "gmp-build-$v.log"
             echo "::endgroup::"
-            { echo "--- GMP $v"; grep -E '^(GMP config.guess|Configuring GMP|GMP CFLAGS)' "gmp-build-$v.log"; } >> "$results"
+            { echo "--- GMP $v"; grep -E '^(GMP config.guess|Configuring GMP|GMP CFLAGS|Applying)' "gmp-build-$v.log"; } >> "$results"
           done
 
       - name: GMP microbench
@@ -301,15 +305,17 @@ jobs:
         run: |
           for v in $GMP_VARIANTS; do
             case $v in
-              generic) export GMP_HOST_CPU=x86_64 GMP_FAT=0 ;;
-              fat)     export GMP_HOST_CPU=x86_64 GMP_FAT=1 ;;
-              native)  export GMP_HOST_CPU=native GMP_FAT=0 ;;
+              generic) export GMP_HOST_CPU=x86_64 GMP_FAT=0 GMP_FAT_ISA=0 ;;
+              fat)     export GMP_HOST_CPU=x86_64 GMP_FAT=1 GMP_FAT_ISA=0 ;;
+              fat-isa) export GMP_HOST_CPU=x86_64 GMP_FAT=1 GMP_FAT_ISA=1 ;;
+              native)  export GMP_HOST_CPU=native GMP_FAT=0 GMP_FAT_ISA=0 ;;
             esac
             echo "::group::GMP $v"
-            GMP_SKIP_CHECK=1 GMP_BUILD_ROOT="$RUNNER_TEMP/gmp-build-$v" \
+            skip_check=1; [ "$v" = fat-isa ] && skip_check=0
+            GMP_SKIP_CHECK=$skip_check GMP_BUILD_ROOT="$RUNNER_TEMP/gmp-build-$v" \
               bash scripts/build-windows-mingw-gmp.sh "$RUNNER_TEMP/gmp-$v" 2>&1 | tee "gmp-build-$v.log"
             echo "::endgroup::"
-            { echo "--- GMP $v"; grep -E '^(GMP config.guess|Configuring GMP|GMP CFLAGS)' "gmp-build-$v.log"; } >> "$RESULTS"
+            { echo "--- GMP $v"; grep -E '^(GMP config.guess|Configuring GMP|GMP CFLAGS|Applying)' "gmp-build-$v.log"; } >> "$RESULTS"
           done
 
       - name: GMP microbench

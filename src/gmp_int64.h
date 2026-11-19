@@ -10,6 +10,11 @@
  * Otherwise values that fit in a `long` still take the fast *_si / *_ui path,
  * and larger ones are wrapped in a read-only mpz backed by a single stack
  * limb (mpz_roinit_n, no allocation) and use the mpz_t variant.
+ *
+ * Do not cast the value to long / unsigned long in the direct calls: with
+ * MPIR on Windows long is 32 bits but the functions take 64-bit integers,
+ * so a cast would reintroduce the truncation. Let it convert implicitly to
+ * whatever parameter type the library declares.
  */
 #ifndef CHIAVDF_GMP_INT64_H
 #define CHIAVDF_GMP_INT64_H
@@ -54,14 +59,14 @@ static inline void chiavdf_mpz_set_si64(mpz_ptr rop, int64_t v) {
 #if defined(CHIAVDF_GMP_NARROW_LONG)
     if (!CHIAVDF_FITS_LONG(v)) { CHIAVDF_VIEW_S64(t, v); mpz_set(rop, t); return; }
 #endif
-    mpz_set_si(rop, (long)v);
+    mpz_set_si(rop, v);
 }
 
 static inline void chiavdf_mpz_set_ui64(mpz_ptr rop, uint64_t v) {
 #if defined(CHIAVDF_GMP_NARROW_LONG)
     if (!CHIAVDF_FITS_ULONG(v)) { CHIAVDF_VIEW_U64(t, v); mpz_set(rop, t); return; }
 #endif
-    mpz_set_ui(rop, (unsigned long)v);
+    mpz_set_ui(rop, v);
 }
 
 static inline void chiavdf_mpz_init_set_si64(mpz_ptr rop, int64_t v) {
@@ -78,70 +83,70 @@ static inline void chiavdf_mpz_add_ui64(mpz_ptr rop, mpz_srcptr a, uint64_t v) {
 #if defined(CHIAVDF_GMP_NARROW_LONG)
     if (!CHIAVDF_FITS_ULONG(v)) { CHIAVDF_VIEW_U64(t, v); mpz_add(rop, a, t); return; }
 #endif
-    mpz_add_ui(rop, a, (unsigned long)v);
+    mpz_add_ui(rop, a, v);
 }
 
 static inline void chiavdf_mpz_sub_ui64(mpz_ptr rop, mpz_srcptr a, uint64_t v) {
 #if defined(CHIAVDF_GMP_NARROW_LONG)
     if (!CHIAVDF_FITS_ULONG(v)) { CHIAVDF_VIEW_U64(t, v); mpz_sub(rop, a, t); return; }
 #endif
-    mpz_sub_ui(rop, a, (unsigned long)v);
+    mpz_sub_ui(rop, a, v);
 }
 
 static inline void chiavdf_mpz_mul_si64(mpz_ptr rop, mpz_srcptr a, int64_t v) {
 #if defined(CHIAVDF_GMP_NARROW_LONG)
     if (!CHIAVDF_FITS_LONG(v)) { CHIAVDF_VIEW_S64(t, v); mpz_mul(rop, a, t); return; }
 #endif
-    mpz_mul_si(rop, a, (long)v);
+    mpz_mul_si(rop, a, v);
 }
 
 static inline void chiavdf_mpz_mul_ui64(mpz_ptr rop, mpz_srcptr a, uint64_t v) {
 #if defined(CHIAVDF_GMP_NARROW_LONG)
     if (!CHIAVDF_FITS_ULONG(v)) { CHIAVDF_VIEW_U64(t, v); mpz_mul(rop, a, t); return; }
 #endif
-    mpz_mul_ui(rop, a, (unsigned long)v);
+    mpz_mul_ui(rop, a, v);
 }
 
 static inline void chiavdf_mpz_addmul_ui64(mpz_ptr rop, mpz_srcptr a, uint64_t v) {
 #if defined(CHIAVDF_GMP_NARROW_LONG)
     if (!CHIAVDF_FITS_ULONG(v)) { CHIAVDF_VIEW_U64(t, v); mpz_addmul(rop, a, t); return; }
 #endif
-    mpz_addmul_ui(rop, a, (unsigned long)v);
+    mpz_addmul_ui(rop, a, v);
 }
 
 static inline void chiavdf_mpz_submul_ui64(mpz_ptr rop, mpz_srcptr a, uint64_t v) {
 #if defined(CHIAVDF_GMP_NARROW_LONG)
     if (!CHIAVDF_FITS_ULONG(v)) { CHIAVDF_VIEW_U64(t, v); mpz_submul(rop, a, t); return; }
 #endif
-    mpz_submul_ui(rop, a, (unsigned long)v);
+    mpz_submul_ui(rop, a, v);
 }
 
 static inline int chiavdf_mpz_cmp_si64(mpz_srcptr a, int64_t v) {
 #if defined(CHIAVDF_GMP_NARROW_LONG)
     if (!CHIAVDF_FITS_LONG(v)) { CHIAVDF_VIEW_S64(t, v); return mpz_cmp(a, t); }
 #endif
-    return mpz_cmp_si(a, (long)v);
+    return mpz_cmp_si(a, v);
 }
 
 static inline int chiavdf_mpz_cmp_ui64(mpz_srcptr a, uint64_t v) {
 #if defined(CHIAVDF_GMP_NARROW_LONG)
     if (!CHIAVDF_FITS_ULONG(v)) { CHIAVDF_VIEW_U64(t, v); return mpz_cmp(a, t); }
 #endif
-    return mpz_cmp_ui(a, (unsigned long)v);
+    return mpz_cmp_ui(a, v);
 }
 
 static inline int chiavdf_mpz_cmpabs_ui64(mpz_srcptr a, uint64_t v) {
 #if defined(CHIAVDF_GMP_NARROW_LONG)
     if (!CHIAVDF_FITS_ULONG(v)) { CHIAVDF_VIEW_U64(t, v); return mpz_cmpabs(a, t); }
 #endif
-    return mpz_cmpabs_ui(a, (unsigned long)v);
+    return mpz_cmpabs_ui(a, v);
 }
 
 static inline void chiavdf_mpz_powm_ui64(mpz_ptr rop, mpz_srcptr base, uint64_t exp, mpz_srcptr mod) {
 #if defined(CHIAVDF_GMP_NARROW_LONG)
     if (!CHIAVDF_FITS_ULONG(exp)) { CHIAVDF_VIEW_U64(t, exp); mpz_powm(rop, base, t, mod); return; }
 #endif
-    mpz_powm_ui(rop, base, (unsigned long)exp, mod);
+    mpz_powm_ui(rop, base, exp, mod);
 }
 
 #endif /* CHIAVDF_GMP_INT64_H */

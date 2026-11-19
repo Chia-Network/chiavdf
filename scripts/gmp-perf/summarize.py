@@ -9,6 +9,8 @@ from pathlib import Path
 
 
 def better(metric, a, b):
+    if "FAILED" in metric:
+        return a + b  # count every failed run
     return max(a, b) if "ips" in metric else min(a, b)
 
 

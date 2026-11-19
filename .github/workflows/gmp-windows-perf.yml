@@ -199,6 +199,10 @@ jobs:
                 if ($LASTEXITCODE -ne 0) { "vdf_bench $($run[0]) failed: $out" | Tee-Object -Append -FilePath $env:RESULTS; $failed = $true; continue }
                 $first = ($out -split "`n")[0].Trim()
                 $first | Tee-Object -Append -FilePath $env:RESULTS
+                if ($first -eq 'Fail') {
+                  # repeated_square_fast rejected its own result: a correctness failure.
+                  "RESULT|$label|vdf $($run[0]) FAILED runs|1" | Tee-Object -Append -FilePath $env:RESULTS
+                }
                 if ($first -match 'Time: (\d+) ms') {
                   $ms = [double]$Matches[1]
                   $value = if ($run[0] -eq 'discr') { $ms / $run[1] } else { $run[1] / $ms }

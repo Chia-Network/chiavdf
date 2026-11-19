@@ -9,7 +9,7 @@ name: GMP Windows perf investigation
 #   - scripts/gmp-perf/gmp_microbench.cpp: mpz ops at chiavdf operand sizes
 #   - Rust vdf_bench (discr + prove), 3 runs each, best kept
 # Windows additionally builds chiavdf with clang-cl (native __int128) against
-# the fat GMP, to measure the uint128_t fallback that MSVC builds use, and
+# the fat-isa GMP, to measure the uint128_t fallback that MSVC builds use, and
 # compares against MPIR (what main ships): Rust vdf_bench (MSVC) and the C++
 # vdf_bench built like build-client.yml (clang-cl + GNU asm), MPIR vs GMP.
 # Cross-OS numbers only compare cleanly when the "Machines" CPUs match.
@@ -288,7 +288,7 @@ jobs:
           if (Test-Path $builtins) { $env:CHIAVDF_EXTRA_LINK_LIB = $builtins }
           "clang_rt builtins: $builtins (exists: $(Test-Path $builtins))" | Tee-Object -Append -FilePath $env:RESULTS
 
-          $prefix = Join-Path $env:RUNNER_TEMP 'gmp-fat'
+          $prefix = Join-Path $env:RUNNER_TEMP 'gmp-fat-isa'
           $env:CHIAVDF_GMP_PREFIX = $prefix
           $env:MINGW_LIBMINGWEX = Join-Path $prefix 'lib\libmingwex.a'
           $env:MINGW_LIBGCC = Join-Path $prefix 'lib\libgcc.a'
@@ -317,7 +317,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           foreach ($alloc in 'system', 'mimalloc') {
             $env:CHIAVDF_BENCH_GMP_ALLOC = $alloc
-            $env:BENCH_LABEL = "windows/fat/$alloc/clang-cl"
+            $env:BENCH_LABEL = "windows/fat-isa/$alloc/clang-cl"
             "=== vdf_bench $env:BENCH_LABEL ===" | Tee-Object -Append -FilePath $env:RESULTS
             for ($i = 0; $i -lt [int]$env:BENCH_RUNS; $i++) {
               foreach ($run in @(@('discr', '50'), @('prove', '300000'))) {

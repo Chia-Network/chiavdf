@@ -672,10 +672,16 @@ if(BUILD_CHIAVDFC)
         target_compile_definitions(chiavdfc_static PRIVATE "_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG")
     endif()
 
+  # On Windows a shared library also produces an import library (.lib), which
+  # CMake treats as an ARCHIVE artifact. Without an ARCHIVE directory it is
+  # named chiavdfc.lib like the static library, which Ninja rejects ("multiple
+  # rules generate chiavdfc.lib"). Keep it beside the DLL instead, the usual
+  # Windows layout, so lib/shared/ also carries what is needed to link it.
   set_target_properties(chiavdfc_shared PROPERTIES
           OUTPUT_NAME chiavdfc
           LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib/shared$<0:>"
           RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib/shared$<0:>"
+          ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib/shared$<0:>"
   )
 
   set_target_properties(chiavdfc_static PROPERTIES

@@ -289,6 +289,12 @@ jobs:
             "=== error lines ===" | Tee-Object -Append -FilePath $env:RESULTS
             Select-String -Path $log -Pattern 'error|unresolved|FATAL' | Select-Object -First 40 |
               ForEach-Object { $_.Line } | Tee-Object -Append -FilePath $env:RESULTS
+            # If Ninja rejected duplicate outputs, show which rules produce chiavdf libraries.
+            Get-ChildItem target-clangcl -Recurse -Filter build.ninja -ErrorAction SilentlyContinue | ForEach-Object {
+              "=== $($_.FullName): build statements producing chiavdfc ===" | Tee-Object -Append -FilePath $env:RESULTS
+              Select-String -Path $_.FullName -Pattern '^build .*chiavdfc' |
+                ForEach-Object { "$($_.LineNumber): $($_.Line)" } | Tee-Object -Append -FilePath $env:RESULTS
+            }
             exit 1
           }
           $ErrorActionPreference = 'Stop'

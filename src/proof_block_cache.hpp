@@ -2,6 +2,7 @@
 #define PROOF_BLOCK_CACHE_H
 
 #include "integer_common.h"
+#include "gmp_int64.h"
 
 #include <cstdint>
 #include <vector>
@@ -27,7 +28,7 @@ public:
         integer& remainder = remainders[i];
         if (!initialized[i]) {
             integer two(2);
-            mpz_powm_ui(remainder.impl, two.impl, iterations - k * (i * l + j + 1), modulus.impl);
+            chiavdf_mpz_powm_ui64(remainder.impl, two.impl, iterations - k * (i * l + j + 1), modulus.impl);
             initialized[i] = true;
         }
         mpz_mul_2exp(remainder.impl, remainder.impl, k);

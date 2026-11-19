@@ -1,10 +1,9 @@
 --- a/mpn/x86_64/fat/fat.c	2026-11-18 22:11:48
-+++ b/mpn/x86_64/fat/fat.c	2026-11-18 23:39:44
-@@ -248,7 +248,123 @@
- }
++++ b/mpn/x86_64/fat/fat.c	2026-11-19 06:43:59
+@@ -249,6 +249,124 @@
  
  enum {BMI2_BIT = 8};
-+
+ 
 +/* chiavdf: instruction-set fallback for CPUs newer than the tables below.
 +   GMP 6.3.0 only recognises CPUs by vendor/family/model, so newer parts
 +   (Intel Ice Lake and later, AMD Zen 5 and later, Hygon) fall back to the
@@ -16,6 +15,8 @@
 +     level 1: POPCNT + BMI1 + BMI2 (mulx, shlx, tzcnt)  -> coreihwl
 +     level 2: level 1 + ADX (adcx, adox)                -> coreibwl/skylake,
 +                                                           zen on AMD/Hygon
++   AMD family 0x19 (Zen 3/4) is in GMP's table, but is also sent to the
++   skylake routines when ADX is present: measured faster than GMP's choice.
 +   Set CHIAVDF_GMP_FAT_DEBUG to print the decision on stderr.
 +
 +   CHIAVDF_GMP_FAT_ARCH forces a routine set for benchmarking, like the MPIR
@@ -90,7 +91,7 @@
 +    chiavdf_isa_choice = chiavdf_arch_;					\
 +    chiavdf_overridden_ = 1;						\
 +  } while (0)
- 
++
 +#define CHIAVDF_ISA_SETUP_INTEL						\
 +  do {									\
 +    int chiavdf_level_ = chiavdf_isa_level ();				\
@@ -124,7 +125,7 @@
  void
  __gmpn_cpuvec_init (void)
  {
-@@ -396,12 +512,20 @@
+@@ -396,12 +514,20 @@
  	      CPUVEC_SETUP_coreibwl;
  	      CPUVEC_SETUP_skylake;
  	      break;
@@ -145,10 +146,23 @@
  	}
      }
    else if (strcmp (vendor_string, "AuthenticAMD") == 0)
-@@ -443,8 +567,17 @@
- 	case 0x19:		/* zen3 */
+@@ -440,11 +566,29 @@
+ 	  break;
+ 
+ 	case 0x17:		/* zen */
+-	case 0x19:		/* zen3 */
  	  CPUVEC_SETUP_zen;
  	  break;
++
++	case 0x19:		/* zen3, zen4 */
++	  /* chiavdf: on Zen 3 the skylake (mulx/adx) routines measured ~20%
++	     faster on 1024-bit multiplies than GMP's Zen 1-tuned ones, and
++	     matched a native zen3 build.  Use them whenever ADX is present.  */
++	  if (chiavdf_isa_level () >= 2)
++	    CHIAVDF_ISA_SETUP_INTEL;
++	  else
++	    CPUVEC_SETUP_zen;
++	  break;
 +
 +	default:		/* chiavdf: family newer than this table */
 +	  if (family > 0x19)
@@ -163,7 +177,7 @@
    else if (strcmp (vendor_string, "CentaurHauls") == 0)
      {
        switch (family)
-@@ -456,6 +589,13 @@
+@@ -456,6 +600,13 @@
  	}
      }
  
@@ -177,7 +191,7 @@
    /* There's no x86 generic mpn_preinv_divrem_1 or mpn_preinv_mod_1.
       Instead default to the plain versions from whichever CPU we detected.
       The function arguments are compatible, no need for any glue code.  */
-@@ -464,6 +604,10 @@
+@@ -464,6 +615,10 @@
    if (decided_cpuvec.preinv_mod_1 == NULL)
      decided_cpuvec.preinv_mod_1    =(preinv_mod_1_t)   decided_cpuvec.mod_1;
  

@@ -47,6 +47,23 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The Visual Studio 18 STL (MSVC 14.52) refuses Clang older than 22
+      # (yvals_core.h, error STL1000). That hits bindgen's libclang and the
+      # clang-cl builds, and the image's LLVM is older, so upgrade it first.
+      - name: Upgrade LLVM (MSVC STL needs Clang 22+)
+        shell: pwsh
+        run: |
+          choco upgrade llvm --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "choco upgrade llvm failed with exit code $LASTEXITCODE" }
+          $llvmBin = 'C:\Program Files\LLVM\bin'
+          $versionLine = (& "$llvmBin\clang-cl.exe" --version | Select-Object -First 1)
+          Write-Host "clang-cl: $versionLine"
+          if ($versionLine -notmatch 'version (\d+)\.') { throw "could not parse clang-cl version: $versionLine" }
+          if ([int]$Matches[1] -lt 22) { throw "LLVM $($Matches[1]) is too old for this MSVC STL (needs 22+)" }
+          $llvmBin | Out-File -Append -FilePath $env:GITHUB_PATH
+          # bindgen (clang-sys) loads libclang.dll from here.
+          "LIBCLANG_PATH=$llvmBin" | Out-File -Append -FilePath $env:GITHUB_ENV
+
       - name: CPU info
         shell: pwsh
         run: |

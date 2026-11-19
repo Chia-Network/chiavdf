@@ -3,6 +3,7 @@
 # mimalloc (built from a pinned source release), appending human-readable output plus
 # "RESULT|label|metric|value" lines to OUTPUT_FILE.
 #   run-gmp-bench.sh PREFIX LABEL OUTPUT_FILE
+# Set GMP_BENCH_MIMALLOC=0 to run only the system-malloc pass.
 set -euo pipefail
 
 if [ "$#" -ne 3 ]; then
@@ -46,6 +47,10 @@ build_mimalloc() {  # called from an if, where set -e is off: chain every step
     gcc -O2 -DNDEBUG -I"$src/include" -c "$src/src/static.c" -o "$work/mimalloc.o" &&
     mimalloc_include="$src/include"
 }
+
+if [ "${GMP_BENCH_MIMALLOC:-1}" = 0 ]; then
+  exit 0
+fi
 
 echo "=== gmp_microbench $label/mimalloc ===" | tee -a "$out"
 if build_mimalloc &&

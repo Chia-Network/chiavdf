@@ -31,6 +31,10 @@ env:
   GMP_VARIANTS: generic fat fat-isa native
   # Prints which routines GMP's fat dispatcher picked (fat-isa builds only).
   CHIAVDF_GMP_FAT_DEBUG: "1"
+  # Routine sets forced on the fat-isa build via CHIAVDF_GMP_FAT_ARCH, all on
+  # the same machine ("auto" = the dispatcher's own choice). Sets the CPU
+  # cannot run are ignored by the patch and reported as such.
+  FAT_ARCH_SWEEP: auto baseline coreihwl skylake zen
   BENCH_RUNS: 3
 
 jobs:
@@ -114,6 +118,36 @@ jobs:
               }
             }
           }
+
+      - name: fat-isa routine sweep (microbench)
+        shell: msys2 {0}
+        run: |
+          tmp=$(cygpath -u "$RUNNER_TEMP")
+          for arch in $FAT_ARCH_SWEEP; do
+            if [ "$arch" = auto ]; then unset CHIAVDF_GMP_FAT_ARCH; else export CHIAVDF_GMP_FAT_ARCH=$arch; fi
+            GMP_BENCH_MIMALLOC=0 bash scripts/gmp-perf/run-gmp-bench.sh \
+              "$tmp/gmp-fat-isa" "windows/fat-isa@$arch" "$(cygpath -u "$RESULTS")"
+          done
+
+      - name: fat-isa routine sweep (vdf_bench, MSVC)
+        shell: pwsh
+        run: |
+          $prefix = Join-Path $env:RUNNER_TEMP 'gmp-fat-isa'
+          $exe = 'target-msvc-fat-isa\release\vdf_bench.exe'
+          foreach ($arch in $env:FAT_ARCH_SWEEP -split ' ') {
+            if ($arch -eq 'auto') { Remove-Item Env:CHIAVDF_GMP_FAT_ARCH -ErrorAction SilentlyContinue }
+            else { $env:CHIAVDF_GMP_FAT_ARCH = $arch }
+            $env:CHIAVDF_BENCH_GMP_ALLOC = 'system'
+            $env:BENCH_LABEL = "windows/fat-isa@$arch/system/msvc"
+            "=== vdf_bench $env:BENCH_LABEL ===" | Tee-Object -Append -FilePath $env:RESULTS
+            for ($i = 0; $i -lt [int]$env:BENCH_RUNS; $i++) {
+              foreach ($run in @(@('discr', '50'), @('prove', '300000'))) {
+                & $exe @run 2>&1 | Tee-Object -Append -FilePath $env:RESULTS
+                if ($LASTEXITCODE -ne 0) { throw "vdf_bench $run failed ($env:BENCH_LABEL)" }
+              }
+            }
+          }
+          Remove-Item Env:CHIAVDF_GMP_FAT_ARCH -ErrorAction SilentlyContinue
 
       # MPIR: the bignum library main's Windows builds use (scripts/mpir_gc_x64.commit).
       - name: Fetch MPIR
@@ -346,6 +380,23 @@ jobs:
                   "target-$v/release/vdf_bench" $run 2>&1 | tee -a "$RESULTS"
                   test "${PIPESTATUS[0]}" = 0
                 done
+              done
+            done
+          done
+
+      - name: fat-isa routine sweep
+        run: |
+          for arch in $FAT_ARCH_SWEEP; do
+            if [ "$arch" = auto ]; then unset CHIAVDF_GMP_FAT_ARCH; else export CHIAVDF_GMP_FAT_ARCH=$arch; fi
+            GMP_BENCH_MIMALLOC=0 bash scripts/gmp-perf/run-gmp-bench.sh \
+              "$RUNNER_TEMP/gmp-fat-isa" "linux/fat-isa@$arch" "$RESULTS"
+            export CHIAVDF_BENCH_GMP_ALLOC=system BENCH_LABEL="linux/fat-isa@$arch/system/gcc"
+            echo "=== vdf_bench $BENCH_LABEL ===" | tee -a "$RESULTS"
+            for _ in $(seq "$BENCH_RUNS"); do
+              for run in "discr 50" "prove 300000"; do
+                # shellcheck disable=SC2086
+                target-fat-isa/release/vdf_bench $run 2>&1 | tee -a "$RESULTS"
+                test "${PIPESTATUS[0]}" = 0
               done
             done
           done

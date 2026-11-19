@@ -163,6 +163,17 @@ jobs:
       - name: Tests
         run: cargo test && cargo test --release
 
+      - name: Benchmark vdf_bench discr/prove
+        if: (matrix.os.matrix == 'ubuntu' && matrix.arch.matrix == 'intel') || matrix.os.matrix == 'windows'
+        shell: bash
+        env:
+          CHIA_ENABLE_AVX512_IFMA: "1"
+        run: |
+          echo "Benchmarking Rust bindings discr 50"
+          cargo run --quiet --release -p chiavdf-tools --bin vdf_bench -- discr 50
+          echo "Benchmarking Rust bindings prove 100000"
+          cargo run --quiet --release -p chiavdf-tools --bin vdf_bench -- prove 100000
+
   build_crate:
     name: Build crate
     needs: [lint, test]
@@ -176,8 +187,11 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build
-        run: cargo build --release
+      - name: Build Rust crate
+        run: cargo build --release -p chiavdf
+
+      - name: Build Rust tools
+        run: cargo build --release -p chiavdf-tools --bins
 
       - name: Prepare for publish
         run: |

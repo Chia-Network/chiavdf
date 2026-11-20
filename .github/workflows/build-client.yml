@@ -262,10 +262,11 @@ jobs:
         env:
           BOOST_CACHE_HIT: ${{ steps.cache-boost.outputs.cache-hit }}
         run: |
-          $llvmBin = "C:\Program Files\LLVM\bin\clang-cl.exe"
+          # clang-cl and bindgen need LLVM 22+ for the Visual Studio 18 STL (STL1000).
+          ./scripts/ensure-windows-llvm.ps1
           $ninjaBin = "C:\ProgramData\chocolatey\bin\ninja.exe"
-          if (-not (Test-Path $llvmBin) -or -not (Test-Path $ninjaBin)) {
-            choco install llvm ninja -y
+          if (-not (Test-Path $ninjaBin)) {
+            choco install ninja -y
           }
           $boostDir = Get-ChildItem "C:\local" -Directory -Filter "boost_*" -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $boostDir) {
@@ -280,7 +281,6 @@ jobs:
           } else {
             Write-Host "Boost already present at $($boostDir.FullName), skipping choco install"
           }
-          "C:\Program Files\LLVM\bin" | Out-File -Append -FilePath $env:GITHUB_PATH
           if (-not $boostDir) {
             throw "Boost install not found under C:\local"
           }
@@ -361,7 +361,7 @@ jobs:
           $env:CHERE_INVOKING = '1'
           & $bash -lc 'pacman -Syu --noconfirm'
           if ($LASTEXITCODE -ne 0) { throw "MSYS2 update failed with exit code $LASTEXITCODE" }
-          & $bash -lc 'pacman -S --needed --noconfirm msys/m4 base-devel mingw-w64-x86_64-toolchain'
+          & $bash -lc 'pacman -S --needed --noconfirm msys/m4 msys/patch base-devel mingw-w64-x86_64-toolchain'
           if ($LASTEXITCODE -ne 0) { throw "MinGW-w64 installation failed with exit code $LASTEXITCODE" }
           $env:POWERSHELL_GMP_SCRIPT = Join-Path (Get-Location).Path 'scripts/build-windows-mingw-gmp.sh'
           $env:POWERSHELL_GMP_PREFIX = Join-Path $env:RUNNER_TEMP 'chiavdf-gmp'

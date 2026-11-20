@@ -154,7 +154,7 @@ jobs:
           $env:CHERE_INVOKING = '1'
           & $bash -lc 'pacman -Syu --noconfirm'
           if ($LASTEXITCODE -ne 0) { throw "MSYS2 update failed with exit code $LASTEXITCODE" }
-          & $bash -lc 'pacman -S --needed --noconfirm msys/m4 base-devel mingw-w64-x86_64-toolchain'
+          & $bash -lc 'pacman -S --needed --noconfirm msys/m4 msys/patch base-devel mingw-w64-x86_64-toolchain'
           if ($LASTEXITCODE -ne 0) { throw "MinGW-w64 installation failed with exit code $LASTEXITCODE" }
           $env:POWERSHELL_GMP_SCRIPT = Join-Path (Get-Location).Path 'scripts/build-windows-mingw-gmp.sh'
           $env:POWERSHELL_GMP_PREFIX = Join-Path $env:RUNNER_TEMP 'chiavdf-gmp'
@@ -167,6 +167,12 @@ jobs:
           # Avoid transient 404s from stale apt indices / mirror lag.
           sudo apt-get update -y -o Acquire::Retries=3
           sudo apt-get install libclang-dev -y
+
+      # bindgen's libclang must be 22+ for the Visual Studio 18 STL (STL1000).
+      - name: Ensure LLVM 22+ on Windows
+        if: matrix.os.name == 'Windows'
+        shell: pwsh
+        run: ./scripts/ensure-windows-llvm.ps1
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable

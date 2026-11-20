@@ -414,6 +414,21 @@ if(BUILD_VDF_TESTS)
     GIT_TAG        v1.14.0
   )
   FetchContent_MakeAvailable(googletest)
+  if(MSVC AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    # GoogleTest builds its own targets with MSVC-style /WX under clang-cl.
+    # Clang 21+ warns in gtest-printers.h under C++20 (-Wcharacter-conversion,
+    # char8_t -> char32_t), which /WX turns into an error. Silence just that
+    # warning on GoogleTest's targets, only where the compiler knows the flag.
+    include(CheckCXXCompilerFlag)
+    check_cxx_compiler_flag("/clang:-Wno-character-conversion" CHIAVDF_HAS_WNO_CHARACTER_CONVERSION)
+    if(CHIAVDF_HAS_WNO_CHARACTER_CONVERSION)
+      foreach(gtest_target gtest gtest_main gmock gmock_main)
+        if(TARGET ${gtest_target})
+          target_compile_options(${gtest_target} PRIVATE "/clang:-Wno-character-conversion")
+        endif()
+      endforeach()
+    endif()
+  endif()
 
   add_executable(1weso_test
     ${CMAKE_CURRENT_SOURCE_DIR}/1weso_test.cpp

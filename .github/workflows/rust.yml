@@ -166,8 +166,6 @@ jobs:
       - name: Benchmark vdf_bench discr/prove
         if: (matrix.os.matrix == 'ubuntu' && matrix.arch.matrix == 'intel') || matrix.os.matrix == 'windows'
         shell: bash
-        env:
-          CHIA_ENABLE_AVX512_IFMA: "1"
         run: |
           echo "Benchmarking Rust bindings discr 50"
           cargo run --quiet --release -p chiavdf-tools --bin vdf_bench -- discr 50

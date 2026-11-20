@@ -10,7 +10,7 @@ option(GENERATE_ASM_TRACKING_DATA "Emit asm tracking instrumentation data from c
 option(HARDENING "Enable hardening" OFF)
 option(REQUIRE_MPIRXX "Require mpirxx/gmpxx C++ wrapper library on Windows" OFF)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 

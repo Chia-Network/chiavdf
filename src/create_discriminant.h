@@ -2,8 +2,9 @@
 #define CREATE_DISCRIMINANT_H
 
 #include "proof_common.h"
+#include <span>
 
-integer CreateDiscriminant(std::vector<uint8_t>& seed, int length = 1024) {
+inline integer CreateDiscriminant(std::span<const uint8_t> seed, int length = 1024) {
     // INPUT VALIDATION - Fix for issue #282
     
     // Check 1: Validate discriminant_size_bits is positive
@@ -35,7 +36,8 @@ integer CreateDiscriminant(std::vector<uint8_t>& seed, int length = 1024) {
         throw std::invalid_argument("seed cannot be empty");
     }
     
-    return HashPrime(seed, length, {0, 1, 2, length - 1}) * integer(-1);
+    const std::array<int, 4> bitmask{0, 1, 2, length - 1};
+    return HashPrime(seed, length, bitmask) * integer(-1);
 }
 
 #endif // CREATE_DISCRIMINANT_H

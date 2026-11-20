@@ -1,10 +1,9 @@
 #pragma once
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 
 #ifdef __cplusplus
-#include <cstddef> // for size_t
-#include <cstdint> // for uint8_t
 extern "C" {
 #endif
 

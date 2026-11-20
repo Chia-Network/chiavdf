@@ -66,6 +66,12 @@ build-verbosity = 0
 before-all = "bash scripts/get-mpir-gc-x64.sh"
 environment = {BUILD_VDF_CLIENT="N"}
 before-build = "pip install delvewheel"
+test-command = """
+mv {project}/chiavdf {project}/DO_NOT_IMPORT && \
+pytest -v {project}/tests && \
+python {project}/tools/vdf_bench.py discr 50 && \
+python {project}/tools/vdf_bench.py prove 100000
+"""
 repair-wheel-command = """
 delvewheel repair -v -w {dest_dir} {wheel} \
 --no-mangle-all \

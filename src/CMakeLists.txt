@@ -670,7 +670,12 @@ if(BUILD_CHIAVDFC)
   add_library(chiavdfc_static STATIC
           ${CMAKE_CURRENT_SOURCE_DIR}/c_bindings/c_wrapper.cpp
   )
-  target_sources(chiavdfc_shared PRIVATE ${VDF_COMMON_SOURCES} ${VDF_ASM_SOURCES})
+  # The generated GNU asm (asm_compiled.s) is not position-independent, so it
+  # cannot go into a shared library (ld: "relocation R_X86_64_32S ... recompile
+  # with -fPIC"). c_wrapper.cpp does not reference any asm symbol, so the
+  # shared library does not need it; the static library keeps it, where unused
+  # objects are simply not linked.
+  target_sources(chiavdfc_shared PRIVATE ${VDF_COMMON_SOURCES})
   target_sources(chiavdfc_static PRIVATE ${VDF_COMMON_SOURCES} ${VDF_ASM_SOURCES})
   target_compile_definitions(chiavdfc_shared PRIVATE ${VDF_COMMON_DEFINITIONS})
   target_compile_definitions(chiavdfc_static PRIVATE ${VDF_COMMON_DEFINITIONS})

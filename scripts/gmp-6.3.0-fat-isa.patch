@@ -1,0 +1,204 @@
+--- a/mpn/x86_64/fat/fat.c	2026-11-18 22:11:48
++++ b/mpn/x86_64/fat/fat.c	2026-11-19 06:43:59
+@@ -249,6 +249,124 @@
+ 
+ enum {BMI2_BIT = 8};
+ 
++/* chiavdf: instruction-set fallback for CPUs newer than the tables below.
++   GMP 6.3.0 only recognises CPUs by vendor/family/model, so newer parts
++   (Intel Ice Lake and later, AMD Zen 5 and later, Hygon) fall back to the
++   baseline x86_64 routines even though they support everything the faster
++   routines need.  When the tables do not recognise a CPU, pick routines by
++   the instructions it actually reports instead, in the spirit of Chia's
++   MPIR proxy.  None of the routines selected here use AVX/YMM, so no
++   XGETBV check is needed.
++     level 1: POPCNT + BMI1 + BMI2 (mulx, shlx, tzcnt)  -> coreihwl
++     level 2: level 1 + ADX (adcx, adox)                -> coreibwl/skylake,
++                                                           zen on AMD/Hygon
++   AMD family 0x19 (Zen 3/4) is in GMP's table, but is also sent to the
++   skylake routines when ADX is present: measured faster than GMP's choice.
++   Set CHIAVDF_GMP_FAT_DEBUG to print the decision on stderr.
++
++   CHIAVDF_GMP_FAT_ARCH forces a routine set for benchmarking, like the MPIR
++   proxy's MPIR_PROXY_ARCH: baseline, coreihwl, skylake or zen.  It applies
++   to every CPU (known or not), but is only honoured when the CPU reports
++   the instructions that set needs; otherwise it is ignored with a warning,
++   so it cannot cause an illegal-instruction crash.  */
++static int chiavdf_isa_level (void)
++{
++  char regs[12];
++  unsigned int leaf1_ecx, leaf7_ebx;
++
++  if (__gmpn_cpuid (regs, 0) < 7)
++    return 0;
++  __gmpn_cpuid (regs, 1);
++  memcpy (&leaf1_ecx, regs + 8, 4);
++  __gmpn_cpuid (regs, 7);
++  memcpy (&leaf7_ebx, regs + 0, 4);
++
++  if (!(leaf1_ecx & (1u << 23))		/* POPCNT */
++      || !(leaf7_ebx & (1u << 3))	/* BMI1 */
++      || !(leaf7_ebx & (1u << 8)))	/* BMI2 */
++    return 0;
++  if (gmp_workaround_skylake_cpuid_bug ())
++    return 0;
++  return (leaf7_ebx & (1u << 19)) ? 2 : 1;	/* ADX */
++}
++
++static const char *chiavdf_isa_choice = "table";
++
++/* Returns 1 if CHIAVDF_GMP_FAT_ARCH named a usable routine set.  */
++#define CHIAVDF_ARCH_OVERRIDE						\
++  do {									\
++    const char *chiavdf_arch_ = getenv ("CHIAVDF_GMP_FAT_ARCH");	\
++    int chiavdf_need_, chiavdf_have_;					\
++    if (chiavdf_arch_ == NULL || *chiavdf_arch_ == '\0')		\
++      break;								\
++    if (strcmp (chiavdf_arch_, "baseline") == 0) chiavdf_need_ = 0;	\
++    else if (strcmp (chiavdf_arch_, "coreihwl") == 0) chiavdf_need_ = 1; \
++    else if (strcmp (chiavdf_arch_, "skylake") == 0) chiavdf_need_ = 2; \
++    else if (strcmp (chiavdf_arch_, "zen") == 0) chiavdf_need_ = 2;	\
++    else								\
++      {									\
++	fprintf (stderr, "gmp fat: ignoring unknown "			\
++		 "CHIAVDF_GMP_FAT_ARCH=%s\n", chiavdf_arch_);		\
++	break;								\
++      }									\
++    chiavdf_have_ = chiavdf_isa_level ();				\
++    if (chiavdf_have_ < chiavdf_need_)					\
++      {									\
++	fprintf (stderr, "gmp fat: ignoring CHIAVDF_GMP_FAT_ARCH=%s: "	\
++		 "CPU lacks the instructions it needs\n", chiavdf_arch_); \
++	break;								\
++      }									\
++    memset (&decided_cpuvec, '\0', sizeof (decided_cpuvec));		\
++    CPUVEC_SETUP_x86_64;						\
++    CPUVEC_SETUP_fat;							\
++    if (strcmp (chiavdf_arch_, "zen") == 0)				\
++      CPUVEC_SETUP_zen;							\
++    else if (chiavdf_need_ >= 1)					\
++      {									\
++	CPUVEC_SETUP_core2;						\
++	CPUVEC_SETUP_coreinhm;						\
++	CPUVEC_SETUP_coreisbr;						\
++	CPUVEC_SETUP_coreihwl;						\
++	if (chiavdf_need_ >= 2)						\
++	  {								\
++	    CPUVEC_SETUP_coreibwl;					\
++	    CPUVEC_SETUP_skylake;					\
++	  }								\
++      }									\
++    chiavdf_isa_choice = chiavdf_arch_;					\
++    chiavdf_overridden_ = 1;						\
++  } while (0)
++
++#define CHIAVDF_ISA_SETUP_INTEL						\
++  do {									\
++    int chiavdf_level_ = chiavdf_isa_level ();				\
++    chiavdf_isa_choice = "isa: baseline x86_64";			\
++    if (chiavdf_level_ >= 1)						\
++      {									\
++	CPUVEC_SETUP_core2;						\
++	CPUVEC_SETUP_coreinhm;						\
++	CPUVEC_SETUP_coreisbr;						\
++	CPUVEC_SETUP_coreihwl;						\
++	chiavdf_isa_choice = "isa: coreihwl";				\
++      }									\
++    if (chiavdf_level_ >= 2)						\
++      {									\
++	CPUVEC_SETUP_coreibwl;						\
++	CPUVEC_SETUP_skylake;						\
++	chiavdf_isa_choice = "isa: skylake";				\
++      }									\
++  } while (0)
++
++#define CHIAVDF_ISA_SETUP_AMD						\
++  do {									\
++    chiavdf_isa_choice = "isa: baseline x86_64";			\
++    if (chiavdf_isa_level () >= 2)					\
++      {									\
++	CPUVEC_SETUP_zen;						\
++	chiavdf_isa_choice = "isa: zen";				\
++      }									\
++  } while (0)
++
+ void
+ __gmpn_cpuvec_init (void)
+ {
+@@ -396,12 +514,20 @@
+ 	      CPUVEC_SETUP_coreibwl;
+ 	      CPUVEC_SETUP_skylake;
+ 	      break;
++
++	    default:		/* chiavdf: model newer than this table */
++	      CHIAVDF_ISA_SETUP_INTEL;
++	      break;
+ 	    }
+ 	  break;
+ 
+ 	case 15:
+ 	  CPUVEC_SETUP_pentium4;
+ 	  break;
++
++	default:		/* chiavdf: family newer than this table */
++	  CHIAVDF_ISA_SETUP_INTEL;
++	  break;
+ 	}
+     }
+   else if (strcmp (vendor_string, "AuthenticAMD") == 0)
+@@ -440,11 +566,29 @@
+ 	  break;
+ 
+ 	case 0x17:		/* zen */
+-	case 0x19:		/* zen3 */
+ 	  CPUVEC_SETUP_zen;
+ 	  break;
++
++	case 0x19:		/* zen3, zen4 */
++	  /* chiavdf: on Zen 3 the skylake (mulx/adx) routines measured ~20%
++	     faster on 1024-bit multiplies than GMP's Zen 1-tuned ones, and
++	     matched a native zen3 build.  Use them whenever ADX is present.  */
++	  if (chiavdf_isa_level () >= 2)
++	    CHIAVDF_ISA_SETUP_INTEL;
++	  else
++	    CPUVEC_SETUP_zen;
++	  break;
++
++	default:		/* chiavdf: family newer than this table */
++	  if (family > 0x19)
++	    CHIAVDF_ISA_SETUP_AMD;
++	  break;
+ 	}
+     }
++  else if (strcmp (vendor_string, "HygonGenuine") == 0)	/* chiavdf */
++    {
++      CHIAVDF_ISA_SETUP_AMD;
++    }
+   else if (strcmp (vendor_string, "CentaurHauls") == 0)
+     {
+       switch (family)
+@@ -456,6 +600,13 @@
+ 	}
+     }
+ 
++  {							/* chiavdf */
++    int chiavdf_overridden_ = 0;
++    CHIAVDF_ARCH_OVERRIDE;
++    if (chiavdf_overridden_ && getenv ("CHIAVDF_GMP_FAT_DEBUG") != NULL)
++      fprintf (stderr, "gmp fat: forced by CHIAVDF_GMP_FAT_ARCH\n");
++  }
++
+   /* There's no x86 generic mpn_preinv_divrem_1 or mpn_preinv_mod_1.
+      Instead default to the plain versions from whichever CPU we detected.
+      The function arguments are compatible, no need for any glue code.  */
+@@ -464,6 +615,10 @@
+   if (decided_cpuvec.preinv_mod_1 == NULL)
+     decided_cpuvec.preinv_mod_1    =(preinv_mod_1_t)   decided_cpuvec.mod_1;
+ 
++  if (getenv ("CHIAVDF_GMP_FAT_DEBUG") != NULL)	/* chiavdf */
++    fprintf (stderr, "gmp fat: vendor %s family 0x%x model 0x%x -> %s\n",
++	     vendor_string, family, model, chiavdf_isa_choice);
++
+   ASSERT_CPUVEC (decided_cpuvec);
+   CPUVEC_INSTALL (decided_cpuvec);
+ 

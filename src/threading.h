@@ -2,6 +2,7 @@
 #define THREADING_H
 
 #include "alloc.hpp"
+#include "gmp_int64.h"
 #include <atomic>
 
 //mp_limb_t is an unsigned integer
@@ -243,12 +244,12 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz {
     }
 
     mpz& operator=(uint64 i) {
-        mpz_set_ui(*this, i);
+        chiavdf_mpz_set_ui64(*this, i);
         return *this;
     }
 
     mpz& operator=(int64 i) {
-        mpz_set_si(*this, i);
+        chiavdf_mpz_set_si64(*this, i);
         return *this;
     }
 
@@ -289,7 +290,7 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz {
     }
 
     void set_add(const mpz_struct* a, uint64 b) {
-        mpz_add_ui(*this, a, b);
+        chiavdf_mpz_add_ui64(*this, a, b);
     }
 
     mpz& operator+=(const mpz_struct* t) {
@@ -307,7 +308,7 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz {
     }
 
     void set_sub(const mpz_struct* a, uint64 b) {
-        mpz_sub_ui(*this, a, b);
+        chiavdf_mpz_sub_ui64(*this, a, b);
     }
 
     template<class mpz_b> void set_sub(uint64 a, const mpz_b& b) {
@@ -330,11 +331,11 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz {
     }
 
     void set_mul(const mpz_struct* a, int64 b) {
-        mpz_mul_si(*this, a, b);
+        chiavdf_mpz_mul_si64(*this, a, b);
     }
 
     void set_mul(const mpz_struct* a, uint64 b) {
-        mpz_mul_ui(*this, a, b);
+        chiavdf_mpz_mul_ui64(*this, a, b);
     }
 
     mpz& operator*=(const mpz_struct* t) {
@@ -369,7 +370,7 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz {
     }
 
     void set_add_mul(const mpz_struct* a, uint64 b) {
-        mpz_addmul_ui(*this, a, b);
+        chiavdf_mpz_addmul_ui64(*this, a, b);
     }
 
     //*this-=a*b
@@ -379,7 +380,7 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz {
     }
 
     void set_sub_mul(const mpz_struct* a, uint64 b) {
-        mpz_submul_ui(*this, a, b);
+        chiavdf_mpz_submul_ui64(*this, a, b);
     }
 
     void negate() {
@@ -458,26 +459,26 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz {
     bool operator>(const mpz_struct* t) const { return mpz_cmp(*this, t)>0; }
     bool operator!=(const mpz_struct* t) const { return mpz_cmp(*this, t)!=0; }
 
-    bool operator<(int64 i) const { return mpz_cmp_si(_(), i)<0; }
-    bool operator<=(int64 i) const { return mpz_cmp_si(_(), i)<=0; }
-    bool operator==(int64 i) const { return mpz_cmp_si(_(), i)==0; }
-    bool operator>=(int64 i) const { return mpz_cmp_si(_(), i)>=0; }
-    bool operator>(int64 i) const { return mpz_cmp_si(_(), i)>0; }
-    bool operator!=(int64 i) const { return mpz_cmp_si(_(), i)!=0; }
+    bool operator<(int64 i) const { return chiavdf_mpz_cmp_si64(_(), i)<0; }
+    bool operator<=(int64 i) const { return chiavdf_mpz_cmp_si64(_(), i)<=0; }
+    bool operator==(int64 i) const { return chiavdf_mpz_cmp_si64(_(), i)==0; }
+    bool operator>=(int64 i) const { return chiavdf_mpz_cmp_si64(_(), i)>=0; }
+    bool operator>(int64 i) const { return chiavdf_mpz_cmp_si64(_(), i)>0; }
+    bool operator!=(int64 i) const { return chiavdf_mpz_cmp_si64(_(), i)!=0; }
 
-    bool operator<(uint64 i) const { return mpz_cmp_ui(_(), i)<0; }
-    bool operator<=(uint64 i) const { return mpz_cmp_ui(_(), i)<=0; }
-    bool operator==(uint64 i) const { return mpz_cmp_ui(_(), i)==0; }
-    bool operator>=(uint64 i) const { return mpz_cmp_ui(_(), i)>=0; }
-    bool operator>(uint64 i) const { return mpz_cmp_ui(_(), i)>0; }
-    bool operator!=(uint64 i) const { return mpz_cmp_ui(_(), i)!=0; }
+    bool operator<(uint64 i) const { return chiavdf_mpz_cmp_ui64(_(), i)<0; }
+    bool operator<=(uint64 i) const { return chiavdf_mpz_cmp_ui64(_(), i)<=0; }
+    bool operator==(uint64 i) const { return chiavdf_mpz_cmp_ui64(_(), i)==0; }
+    bool operator>=(uint64 i) const { return chiavdf_mpz_cmp_ui64(_(), i)>=0; }
+    bool operator>(uint64 i) const { return chiavdf_mpz_cmp_ui64(_(), i)>0; }
+    bool operator!=(uint64 i) const { return chiavdf_mpz_cmp_ui64(_(), i)!=0; }
 
     int compare_abs(const mpz_struct* t) const {
         return mpz_cmpabs(*this, t);
     }
 
     int compare_abs(uint64 t) const {
-        return mpz_cmpabs_ui(*this, t);
+        return chiavdf_mpz_cmpabs_ui64(*this, t);
     }
 
     //returns 0 if *this==0

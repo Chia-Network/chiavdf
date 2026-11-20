@@ -3,6 +3,7 @@
 
 #include "primetest.h"
 #include "checked_cast.h"
+#include "gmp_int64.h"
 #include <limits>
 
 //note: gmp already has c++ bindings so could have just used those. oh well
@@ -162,11 +163,11 @@ struct integer {
     }
 
     explicit inline integer(int64 i) {
-        mpz_init_set_si(impl, i);
+        chiavdf_mpz_init_set_si64(impl, i);
     }
 
     explicit inline integer(uint64_t i) {
-        mpz_init_set_ui(impl, i);
+        chiavdf_mpz_init_set_ui64(impl, i);
     }
 
     explicit integer(const string& s) {
@@ -222,7 +223,7 @@ struct integer {
     }
 
     integer& operator=(int64 i) {
-        mpz_set_si(impl, i);
+        chiavdf_mpz_set_si64(impl, i);
         return *this;
     }
 

@@ -1,8 +1,6 @@
-#include "verifier.h"
-#include "checked_cast.h"
-#include "create_discriminant.h"
-#include "c_bindings/c_wrapper.h"
-#include "prover_slow.h"
+// Keep the header-defined implementation in one translation unit, as in the regression tests.
+#include "c_bindings/c_wrapper.cpp"
+#include <array>
 
 void assertm(bool expr, std::string msg, bool verbose=false) {
     if (expr && verbose) {
@@ -25,23 +23,6 @@ std::vector<uint8_t> HexToBytes(const char *hex_proof) {
     return result;
 }
 
-ByteArray prove_wrapper(const uint8_t* challenge_hash, size_t challenge_size, const uint8_t* x_s, size_t x_s_size, size_t discriminant_size_bits, uint64_t num_iterations) {
-    try {
-        std::vector<uint8_t> challenge_hash_bytes(challenge_hash, challenge_hash + challenge_size);
-        integer discriminant = CreateDiscriminant(challenge_hash_bytes, checked_cast<int>(discriminant_size_bits));
-        form x = DeserializeForm(discriminant, x_s, x_s_size);
-        std::vector<uint8_t> result = ProveSlow(discriminant, x, num_iterations, "");
-
-        // Allocate memory for the result and copy data
-        uint8_t* resultData = new uint8_t[result.size()];
-        std::copy(result.begin(), result.end(), resultData);
-
-        return ByteArray  { resultData, result.size() };
-    } catch (...) {
-        return ByteArray { nullptr, 0 };
-    }
-}
-
 int main()
 {
     // Test overflow for slow prover (part of challenge b'\xa6\xc4%X\x17O\xb1\xee\xdcd')
@@ -53,13 +34,16 @@ int main()
     std::vector<uint8_t> challenge_hash=HexToBytes("a6c42558174fb1eedc64");
     std::vector<uint8_t> x_s=HexToBytes("0300aca4849458af5c557710c80f21519f196907764d2d55c9b70581a90d49ca7b3201ad6a9da836429e6592c200e965434f0100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000");
 
-    ByteArray ba=prove_wrapper(challenge_hash.data(), challenge_hash.size(), x_s.data(), x_s.size(), 512, 90909);
+    std::array<uint8_t, CHIAVDF_PROOF_RESULT_CAPACITY> proof{};
+    int proof_size = prove_wrapper(challenge_hash.data(), challenge_hash.size(),
+                                   x_s.data(), x_s.size(), 512, 90909,
+                                   proof.data(), proof.size());
+    assertm(proof_size >= 0, "Proof generation should succeed");
+    if (proof_size < 0) return 1;
 
-    for (size_t i = 0; i < ba.length; i++)
-        printf( "%02x", ba.data[i]);
+    for (int i = 0; i < proof_size; i++)
+        printf("%02x", proof[i]);
     printf("\n");
-
-    delete[] ba.data;
 
     // Keep a fixed known-proof check using a current-format fixture from src/vdf.txt.
     auto known_challenge = HexToBytes("9104c5b5e45d48f374efa0488fe6a617790e9aecb3c9cddec06809b09f45ce9b");

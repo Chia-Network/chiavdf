@@ -298,6 +298,8 @@ jobs:
         uses: step-security/msvc-dev-cmd@v1.13.1
         with:
           arch: x64
+          # The preinstalled LLVM 20 cannot use MSVC 14.52's STL (requires Clang 22).
+          toolset: '14.44'
 
       - name: Download USB drivers (FT4222H) on Windows
         if: matrix.os == 'windows-latest'
@@ -696,6 +698,7 @@ jobs:
         uses: step-security/msvc-dev-cmd@v1.13.1
         with:
           arch: x64
+          toolset: '14.44'
 
       - name: Test installer version parser
         shell: pwsh
@@ -785,6 +788,7 @@ jobs:
         uses: step-security/msvc-dev-cmd@v1.13.1
         with:
           arch: x64
+          toolset: '14.44'
 
       - name: Assemble Windows zip bundle
         shell: pwsh

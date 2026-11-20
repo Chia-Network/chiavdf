@@ -14,6 +14,7 @@
 //#include "include.h"
 
 #include <atomic>
+#include <span>
 #include <string>
 #include <vector>
 #include <cstdint>
@@ -175,7 +176,7 @@ public:
 };
 
 integer root(const integer& t, int n);
-integer CreateDiscriminant(std::vector<uint8_t>& seed, int length = 1024);
+integer CreateDiscriminant(std::span<const uint8_t> seed, int length = 1024);
 
 struct form {
     integer a;

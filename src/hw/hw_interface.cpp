@@ -280,7 +280,8 @@ int read_hw_status(ChiaDriver *drv, uint8_t idx_mask, struct vdf_value *values)
 
         if (idx_mask & (1 << i)) {
             drv->DeserializeJob(job, job_id, val->iters, val->a, val->b);
-            LOG_DEBUG("VDF %d: Got iters=%lu", i, val->iters);
+            LOG_DEBUG("VDF %d: Got iters=%llu", i,
+                    (unsigned long long)val->iters);
         }
     }
 

@@ -133,7 +133,7 @@ class InterruptableProver: public Prover {
     }
 
     void start() {
-        th = new std::thread([=] { GenerateProof(); });
+        th = new std::thread([this] { GenerateProof(); });
     }
 
     void stop() {

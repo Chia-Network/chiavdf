@@ -28,7 +28,7 @@ int parse(std::vector<std::string> args, vdf_client_opts &opts) {
 }
 
 void check_cli() {
-  for (const std::string serial : {std::string("EMULATED"), std::string(15, 'x')}) {
+  for (const std::string &serial : {std::string("EMULATED"), std::string(15, 'x')}) {
     vdf_client_opts opts{};
     require(parse({"prog", "--expected-serial", serial, "5000"}, opts) == 0,
             "valid CLI serial rejected");

@@ -25,7 +25,7 @@ class FastStorage {
             intermediates_stored[i] = 0;
 
         for (int i = 0; i < intermediates_threads; i++) {
-            storage_threads.push_back(std::thread([=] {CalculateIntermediatesThread(); }));
+            storage_threads.push_back(std::thread([this] {CalculateIntermediatesThread(); }));
         }
     }
 

@@ -26,8 +26,10 @@ class FillLane {
         end_iters = next_iters + vdf->interval * work->n_steps;
         iters = init_iters = val->iters;
         clear_vdf_value(val);
-        LOG_DEBUG(" VDF %d: computing %lu iters (%lu -> %lu, %u steps) in aux thread %d",
-                vdf->idx, end_iters - iters, iters, end_iters, work->n_steps, thr_idx);
+        LOG_DEBUG(" VDF %d: computing %llu iters (%llu -> %llu, %u steps) in aux thread %d",
+                vdf->idx, (unsigned long long)(end_iters - iters),
+                (unsigned long long)iters, (unsigned long long)end_iters,
+                work->n_steps, thr_idx);
         try {
             f = form::from_abd(a, b, vdf->D);
             active = true;
@@ -53,7 +55,8 @@ class FillLane {
             size_t pos = iters / vdf->interval;
 
             if (!f.check_valid(vdf->D)) {
-                LOG_ERROR(" VDF %d: bad form at iters=%lu", vdf->idx, iters);
+                LOG_ERROR(" VDF %d: bad form at iters=%llu", vdf->idx,
+                        (unsigned long long)iters);
                 active = false;
                 return;
             }

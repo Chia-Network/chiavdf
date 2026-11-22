@@ -29,7 +29,11 @@ pub fn verify_n_wesolowski(
     num_iterations: u64,
     recursion: u64,
 ) -> bool {
-    // SAFETY: The length of each individual array is passed in as to prevent buffer overflows.
+    // The C verifier reads one fixed-size serialized form without receiving its length.
+    if x_s.len() != 100 {
+        return false;
+    }
+    // SAFETY: x_s has the required fixed length; the other input lengths are passed to C++.
     // Exceptions are handled on the C++ side and false is returned if so.
     unsafe {
         bindings::verify_n_wesolowski_wrapper(

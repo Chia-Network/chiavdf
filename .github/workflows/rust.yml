@@ -160,8 +160,8 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Tests
-        run: cargo test && cargo test --release
+      - name: Tests and proof regressions
+        run: cargo test --workspace && cargo test --workspace --release
 
       - name: Benchmark vdf_bench discr/prove
         if: (matrix.os.matrix == 'ubuntu' && matrix.arch.matrix == 'intel') || matrix.os.matrix == 'windows'

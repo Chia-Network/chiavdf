@@ -225,6 +225,17 @@ class hash256_one_by_one {
         byte_t temp[64];
         std::fill(temp, temp + 64, 0);
         std::size_t remains = buffer_size_;
+        assert(remains < 64);
+
+        // This branch is not executed actually (`remains` is always lower than
+        // 64), but needed to avoid a g++ false-positive warning. This matches
+        // upstream PicoSHA2 commit c6eed3489d9d (fix for
+        // https://github.com/okdshin/PicoSHA2/issues/25); keep it when
+        // refreshing the vendored header.
+        if (remains >= 64) {
+            remains = 63;
+        }
+
         std::copy_n(buffer_, remains, temp);
         temp[remains] = 0x80;
 

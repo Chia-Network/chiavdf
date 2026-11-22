@@ -102,7 +102,10 @@ FTD2XX_API FT_STATUS WINAPI FT_GetDeviceInfo(FT_HANDLE handle, FT_DEVICE *type,
     const std::string &value = spi ? state.spi_serial : state.gpio_serial;
     const char *text = !spi && value.empty() ? (state.gpio_is_b ? "EMULATEDB" : "EMULATEDD") : value.c_str();
     // A 16-byte value deliberately exercises the non-terminated D2XX buffer case.
-    strncpy(serial, text, 16);
+    constexpr size_t kSerialLen = 16;
+    const size_t copy_len = strnlen(text, kSerialLen);
+    memcpy(serial, text, copy_len);
+    memset(serial + copy_len, 0, kSerialLen - copy_len);
     snprintf(description, 64, "%s", "Chia VDF emulator");
     return FT_OK;
 }

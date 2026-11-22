@@ -135,8 +135,8 @@ struct hw_job_exit {
 void report_bad_vdf_value(struct vdf_state *vdf, struct vdf_value *val)
 {
     vdf->n_bad++;
-    LOG_INFO("VDF %d: Warning: Bad VDF value at iters=%lu n_bad=%u",
-            vdf->idx, val->iters, vdf->n_bad);
+    LOG_INFO("VDF %d: Warning: Bad VDF value at iters=%llu n_bad=%u",
+            vdf->idx, (unsigned long long)val->iters, vdf->n_bad);
 }
 
 int verify_vdf_value(struct vdf_state *vdf, struct vdf_value *val)
@@ -156,8 +156,8 @@ int hw_proof_add_value(struct vdf_state *vdf, struct vdf_value *val)
     val->iters += vdf->iters_offset;
     if (val->iters == vdf->iters_offset || val->iters == vdf->last_val.iters) {
         vdf->n_skipped++;
-        LOG_INFO("VDF %d: Skipping iters=%lu n_skipped=%u",
-                vdf->idx, val->iters, vdf->n_skipped);
+        LOG_INFO("VDF %d: Skipping iters=%llu n_skipped=%u",
+                vdf->idx, (unsigned long long)val->iters, vdf->n_skipped);
         if (vdf->n_skipped > g_skip_thres) {
             vdf->n_skipped = 0;
             return -1;
@@ -255,14 +255,17 @@ void hw_proof_print_stats(struct vdf_state *vdf, uint64_t elapsed_us, bool detai
     sw_ips = sw_iters * 1000000 / sw_elapsed_us;
 
     LOG_INFO("");
-    LOG_INFO("VDF %d: %lu HW iters done in %lus, HW speed: %lu ips",
-            vdf->idx, vdf->cur_iters, elapsed_us / 1000000, ips);
-    LOG_INFO("VDF %d: %lu SW iters done in %lus, SW speed: %lu ips",
-            vdf->idx, sw_iters, sw_elapsed_us / 1000000, sw_ips);
+    LOG_INFO("VDF %d: %llu HW iters done in %llus, HW speed: %llu ips",
+            vdf->idx, (unsigned long long)vdf->cur_iters,
+            (unsigned long long)(elapsed_us / 1000000), (unsigned long long)ips);
+    LOG_INFO("VDF %d: %llu SW iters done in %llus, SW speed: %llu ips",
+            vdf->idx, (unsigned long long)sw_iters,
+            (unsigned long long)(sw_elapsed_us / 1000000),
+            (unsigned long long)sw_ips);
     if (detail && vdf->done_values) {
         uint64_t done_values = vdf->done_values;
-        LOG_INFO("VDF %d: Avg iters per intermediate: %lu",
-                vdf->idx, sw_iters / done_values);
+        LOG_INFO("VDF %d: Avg iters per intermediate: %llu",
+                vdf->idx, (unsigned long long)(sw_iters / done_values));
         if (vdf->n_bad > 0) {
             LOG_INFO("VDF %d: Bad VDF values observed: %u", vdf->idx, vdf->n_bad);
         }
@@ -369,8 +372,10 @@ void hw_proof_process_work(struct vdf_state *vdf)
         if (!(busy & (1UL << i))) {
             bool is_chkp = !(proof->flags & HW_VDF_PROOF_FLAG_IS_REQ);
 
-            LOG_INFO("VDF %d: Starting proof thread %d for iters=%lu, length=%lu%s",
-                    vdf->idx, i, iters, proof->seg_iters, is_chkp ? " [checkpoint]" : "");
+            LOG_INFO("VDF %d: Starting proof thread %d for iters=%llu, length=%llu%s",
+                    vdf->idx, i, (unsigned long long)iters,
+                    (unsigned long long)proof->seg_iters,
+                    is_chkp ? " [checkpoint]" : "");
             vdf->queued_proofs.erase(vdf->queued_proofs.begin());
             vdf->aux_threads_busy |= 1UL << i;
             vdf->n_proof_threads += vdf->segment_threads;
@@ -495,8 +500,9 @@ void hw_proof_handle_value(struct vdf_state *vdf, struct vdf_value *val)
         //fprintf(stderr, "VDF %d: computing target iters=%lu delta=%lu\n",
                 //vdf->idx, end_iters, end_iters - iters);
         if (start_iters > vdf->target_iters) {
-            LOG_ERROR("VDF %d: Fail at iters=%lu end_iters=%lu",
-                    vdf->idx, last_iters, end_iters);
+            LOG_ERROR("VDF %d: Fail at iters=%llu end_iters=%llu",
+                    vdf->idx, (unsigned long long)last_iters,
+                    (unsigned long long)end_iters);
             // The sample is not applied. Proofs already covered by last_val still start.
             hw_proof_process_work(vdf);
             return;
@@ -673,7 +679,7 @@ void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof 
         }
     }
     if (!y.check_valid(vdf->D)) {
-        LOG_ERROR("VDF %d: invalid form at pos=%lu", vdf->idx, pos);
+        LOG_ERROR("VDF %d: invalid form at pos=%zu", vdf->idx, pos);
         goto out;
     }
     hw_square_form(&y, vdf, proof_iters - iters);
@@ -695,8 +701,9 @@ void hw_compute_proof(struct vdf_state *vdf, size_t proof_idx, struct vdf_proof 
             bool is_valid = false;
             proof_val = prover->GetProof();
 
-            LOG_INFO("VDF %d: Proof done for iters=%lu, length=%lu in %.3fs%s",
-                    vdf->idx, proof_iters, seg.length,
+            LOG_INFO("VDF %d: Proof done for iters=%llu, length=%llu in %.3fs%s",
+                    vdf->idx, (unsigned long long)proof_iters,
+                    (unsigned long long)seg.length,
                     (double)elapsed_us / 1000000, is_chkp ? " [checkpoint]" : "");
 
             VerifyWesolowskiProof(vdf->D, x, y, proof_val, seg.length, is_valid);

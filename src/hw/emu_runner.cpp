@@ -105,13 +105,14 @@ void clear_state(struct job_state *st)
     }
 }
 
-void run_job(int i)
+void run_job(unsigned i)
 {
     struct job_state *st = states[i];
     PulmarkReducer reducer;
     form qf2;
 
-    LOG_INFO("Emu %d: Starting run for %lu iters", i, st->target_iter);
+    LOG_INFO("Emu %u: Starting run for %llu iters", i,
+             static_cast<unsigned long long>(st->target_iter));
 
     st->error.store(false, std::memory_order_release);
     st->running.store(true, std::memory_order_release);
@@ -129,35 +130,35 @@ void run_job(int i)
         st->mtx.unlock();
     }
     st->running.store(false, std::memory_order_release);
-    LOG_INFO("Emu %d: job ended", i);
+    LOG_INFO("Emu %u: job ended", i);
 }
 
-void job_thread(int i)
+void job_thread(unsigned i)
 {
     run_job(i);
 }
 
-static void start_job(int i)
+static void start_job(unsigned i)
 {
     while (states[i]->running.load(std::memory_order_acquire)) {
         states[i]->stopping.store(true, std::memory_order_release);
-        LOG_INFO("Emu %d: Waiting for the old thread to finish", i);
+        LOG_INFO("Emu %u: Waiting for the old thread to finish", i);
         vdf_usleep(1000);
     }
     clear_state(states[i]);
 
-    LOG_INFO("Emu %d: Starting job", i);
+    LOG_INFO("Emu %u: Starting job", i);
     init_state(states[i], &g_job_regs[i]);
     std::thread(job_thread, i).detach();
     //usleep(100000);
 }
 
-static void disable_engine(int i)
+static void disable_engine(unsigned i)
 {
     if (states[i] &&
         states[i]->init_done.load(std::memory_order_acquire) &&
         !states[i]->stopping.load(std::memory_order_acquire)) {
-        LOG_INFO("Emu %d: Disabling engine", i);
+        LOG_INFO("Emu %u: Disabling engine", i);
         states[i]->stopping.store(true, std::memory_order_release);
     }
 }
@@ -172,7 +173,7 @@ void emu_reset_board() {
     memset(g_pll_regs, 0, sizeof(g_pll_regs));
 }
 
-static void enable_engine(int i)
+static void enable_engine(unsigned i)
 {
     if (!states[i]) {
         states[i] = new job_state;
@@ -184,7 +185,7 @@ static void enable_engine(int i)
     }
     if (states[i]->stopping.load(std::memory_order_acquire)) {
         states[i]->stopping.store(false, std::memory_order_release);
-        LOG_INFO("Emu %d: Enabling engine", i);
+        LOG_INFO("Emu %u: Enabling engine", i);
     }
 }
 
@@ -264,7 +265,7 @@ void read_regs(uint32_t addr, uint8_t *buf, uint32_t size)
     uint32_t burst_start = CHIA_VDF_BURST_START;
     uint32_t burst_end = CHIA_VDF_BURST_START + sizeof(g_status_regs);
 
-    for (int i = 0; i < N_VDFS; i++) {
+    for (unsigned i = 0; i < N_VDFS; i++) {
         uint32_t job_id_addr = CHIA_VDF_BURST_START +
             sizeof(g_status_regs[0]) * i;
         uint32_t job_id_addr2 = job_status_base +
@@ -278,7 +279,7 @@ void read_regs(uint32_t addr, uint8_t *buf, uint32_t size)
         if ((job_id_addr >= addr && job_id_addr < addr + size) ||
                 (job_id_addr2 >= addr && job_id_addr2 < addr + size))
         {
-            LOG_DEBUG("Emu: Updating vdf %d", i);
+            LOG_DEBUG("Emu: Updating vdf %u", i);
             update_status(&g_status_regs[i], states[i]);
         }
     }
@@ -314,7 +315,6 @@ int emu_do_io(uint8_t *buf_in, uint16_t size_in, uint8_t *buf_out, uint16_t size
     uint32_t job_control = CHIA_VDF_CONTROL_REG_OFFSET;
     uint32_t job_csr = CHIA_VDF_CMD_JOB_ID_REG_OFFSET;
     uint32_t addr = (buf_in[1] << 16) | (buf_in[2] << 8) | buf_in[3];
-    int i;
 
     addr <<= 2;
     // skip address bytes
@@ -326,7 +326,7 @@ int emu_do_io(uint8_t *buf_in, uint16_t size_in, uint8_t *buf_out, uint16_t size
         memcpy(&value, buf_in, sizeof(value));
         record({EmuOperation::write, addr, ntohl_local(value)});
     }
-    for (i = 0; i < N_VDFS; i++) {
+    for (unsigned i = 0; i < N_VDFS; i++) {
         if (addr >= job_csr && addr < job_csr + sizeof(g_job_regs[0])) {
             uint32_t offset = addr - job_csr;
             memcpy((uint8_t *)&g_job_regs[i] + offset, buf_in, size_in);
@@ -393,7 +393,7 @@ int emu_do_io_i2c(uint8_t *buf, uint16_t size, uint32_t addr, int is_out)
 
 __attribute__((destructor)) void emu_shutdown(void)
 {
-    for (int i = 0; i < N_VDFS; i++) {
+    for (unsigned i = 0; i < N_VDFS; i++) {
         if (states[i]) {
             clear_state(states[i]);
             delete states[i];

@@ -124,7 +124,9 @@ TEST_P(SerializedFormTest, RejectsInvalidForm) {
     const auto d = get_alternate_discriminant();
     for (uint8_t value : {uint8_t(4), uint8_t(8)}) {
         auto bytes = alternate;
-        bytes.back() ^= value;
+        // .at() rather than .back(): works around a GCC 12-14
+        // -Wstringop-overflow false positive.
+        bytes.at(bytes.size() - 1) ^= value;
         reject(d, bytes);
     }
     integer small_d(-23);

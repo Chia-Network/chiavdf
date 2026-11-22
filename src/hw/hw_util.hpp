@@ -5,6 +5,9 @@
 #include <cstdio>
 #include <thread>
 
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((format(printf, 1, 2)))
+#endif
 void vdf_do_log(const char *msg, ...);
 
 #ifndef VDF_ENABLE_LOG_DEBUG

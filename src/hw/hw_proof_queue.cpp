@@ -96,7 +96,7 @@ void hw_proof_dec_ref(struct vdf_state *vdf, std::vector<uint16_t> &idxs)
             }
         }
     }
-    LOG_INFO("VDF %d: Removed %d queued proofs; total proofs reduced by %zu",
+    LOG_INFO("VDF %d: Removed %zu queued proofs; total proofs reduced by %zu",
             vdf->idx, proofs_to_del.size(), vdf->proofs.size() - last_proof_idx - 1);
     vdf->proofs.resize(last_proof_idx + 1);
     LOG_DEBUG("VDF %d: Proofs %zu, queued %zu", vdf->idx, vdf->proofs.size(), vdf->queued_proofs.size());

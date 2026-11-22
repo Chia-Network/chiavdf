@@ -200,37 +200,37 @@ BUILD_PATH="$WORK/mocks-build:$PATH"
 
 # GMP_TARBALL is already the build dir's own copy: skip the cp, still hash.
 mkdir -p "$WORK/gmpdir"
-printf 'dummy tarball\n' > "$WORK/gmpdir/gmp-$GMP_VERSION.tar.xz"
+printf 'dummy tarball\n' > "$WORK/gmpdir/gmp-$GMP_VERSION.tar.lz"
 expect_fail "GMP_TARBALL is the build dir's own copy" "mock-shasum-called" \
   env PATH="$BUILD_PATH" GMP_BUILD_DIR="$WORK/gmpdir" \
-  GMP_TARBALL="$WORK/gmpdir/gmp-$GMP_VERSION.tar.xz" bash "$BUILD" "$WORK/prefix"
+  GMP_TARBALL="$WORK/gmpdir/gmp-$GMP_VERSION.tar.lz" bash "$BUILD" "$WORK/prefix"
 
 # GMP_TARBALL is a symlink to the build dir's own copy: skip the cp too.
 mkdir -p "$WORK/gmpdir3"
-printf 'dummy tarball\n' > "$WORK/gmpdir3/gmp-$GMP_VERSION.tar.xz"
+printf 'dummy tarball\n' > "$WORK/gmpdir3/gmp-$GMP_VERSION.tar.lz"
 printf 'dummy tarball\n' > "$WORK/symlink-reference"
-ln -s "$WORK/gmpdir3/gmp-$GMP_VERSION.tar.xz" "$WORK/link-to-tarball"
+ln -s "$WORK/gmpdir3/gmp-$GMP_VERSION.tar.lz" "$WORK/link-to-tarball"
 expect_fail "GMP_TARBALL is a symlink to the build dir's own copy" "mock-shasum-called" \
   env PATH="$BUILD_PATH" GMP_BUILD_DIR="$WORK/gmpdir3" \
   GMP_TARBALL="$WORK/link-to-tarball" bash "$BUILD" "$WORK/prefix"
-if [ ! -f "$WORK/gmpdir3/gmp-$GMP_VERSION.tar.xz" ] || [ -L "$WORK/gmpdir3/gmp-$GMP_VERSION.tar.xz" ]; then
+if [ ! -f "$WORK/gmpdir3/gmp-$GMP_VERSION.tar.lz" ] || [ -L "$WORK/gmpdir3/gmp-$GMP_VERSION.tar.lz" ]; then
   fail "symlinked GMP_TARBALL replaced the build dir's tarball"
 fi
-if ! cmp -s "$WORK/symlink-reference" "$WORK/gmpdir3/gmp-$GMP_VERSION.tar.xz"; then
+if ! cmp -s "$WORK/symlink-reference" "$WORK/gmpdir3/gmp-$GMP_VERSION.tar.lz"; then
   fail "symlinked GMP_TARBALL clobbered or truncated the build dir's tarball"
 fi
 
 # GMP_TARBALL spelled relatively (with ./ and ..) resolves to the same file.
 mkdir -p "$WORK/gmpdir4"
-printf 'dummy tarball\n' > "$WORK/gmpdir4/gmp-$GMP_VERSION.tar.xz"
+printf 'dummy tarball\n' > "$WORK/gmpdir4/gmp-$GMP_VERSION.tar.lz"
 printf 'dummy tarball\n' > "$WORK/relative-reference"
 (cd "$WORK" && expect_fail "GMP_TARBALL is a relative path to the build dir's own copy" "mock-shasum-called" \
   env PATH="$BUILD_PATH" GMP_BUILD_DIR="$WORK/gmpdir4" \
-  GMP_TARBALL=./gmpdir4/../gmpdir4/gmp-"$GMP_VERSION".tar.xz bash "$BUILD" "$WORK/prefix")
-if [ ! -f "$WORK/gmpdir4/gmp-$GMP_VERSION.tar.xz" ] || [ -L "$WORK/gmpdir4/gmp-$GMP_VERSION.tar.xz" ]; then
+  GMP_TARBALL=./gmpdir4/../gmpdir4/gmp-"$GMP_VERSION".tar.lz bash "$BUILD" "$WORK/prefix")
+if [ ! -f "$WORK/gmpdir4/gmp-$GMP_VERSION.tar.lz" ] || [ -L "$WORK/gmpdir4/gmp-$GMP_VERSION.tar.lz" ]; then
   fail "relative GMP_TARBALL replaced the build dir's tarball"
 fi
-if ! cmp -s "$WORK/relative-reference" "$WORK/gmpdir4/gmp-$GMP_VERSION.tar.xz"; then
+if ! cmp -s "$WORK/relative-reference" "$WORK/gmpdir4/gmp-$GMP_VERSION.tar.lz"; then
   fail "relative GMP_TARBALL clobbered or truncated the build dir's tarball"
 fi
 
@@ -240,7 +240,7 @@ mkdir -p "$WORK/gmpdir2"
 expect_fail "GMP_TARBALL copied into the build dir" "mock-shasum-called" \
   env PATH="$BUILD_PATH" GMP_BUILD_DIR="$WORK/gmpdir2" \
   GMP_TARBALL="$WORK/source-tarball" bash "$BUILD" "$WORK/prefix"
-if ! cmp -s "$WORK/source-tarball" "$WORK/gmpdir2/gmp-$GMP_VERSION.tar.xz"; then
+if ! cmp -s "$WORK/source-tarball" "$WORK/gmpdir2/gmp-$GMP_VERSION.tar.lz"; then
   fail "GMP_TARBALL was not copied into the build dir"
 fi
 

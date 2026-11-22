@@ -11,7 +11,7 @@
 # faster than plain -O3.
 
 GMP_VERSION=6.3.0
-GMP_SHA256=a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898
+GMP_SHA256=be5c908a7a836c3a9bd9d62aa58563c5e9e7fef94c43a7f42dbc35bb6d02733c
 GMP_CFLAGS="-O3 -DHGCD2_DIV2_METHOD=1"
 GMP_CXXFLAGS="-O3"
 # GMP 6.3.0's libtool links -flat_namespace when the deployment target is unset

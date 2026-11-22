@@ -34,7 +34,6 @@ class HookCommand(Command):
 
     def finalize_options(self):
         self.set_undefined_options("build", ("build_scripts", "build_dir"))
-        self.set_undefined_options("install", ("install_platlib", "install_dir"))
 
     def run(self):
         for _ in self.hooks:
@@ -47,6 +46,13 @@ class build_hook(HookCommand):
 
 class install_hook(HookCommand):
     hooks = INSTALL_HOOKS
+
+    def run(self):
+        # finalize_options also runs while generating egg-info/sdist metadata,
+        # where instantiating the deprecated install command warns (setuptools
+        # "setup.py install is deprecated"). Resolve it only when running.
+        self.set_undefined_options("install", ("install_platlib", "install_dir"))
+        super().run()
 
 
 ############################################

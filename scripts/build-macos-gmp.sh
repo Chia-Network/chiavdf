@@ -12,9 +12,12 @@ set -euo pipefail
 # shellcheck source=scripts/macos-gmp-release.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/macos-gmp-release.sh"
 
+# The Chia mirror serves the exact tarball whose hash is pinned in
+# scripts/macos-gmp-release.sh. The public GNU mirrors (ftp.gnu.org and
+# gmplib.org) have failed intermittently; a fallback in another compression
+# format would not match the pinned hash. GMP_TARBALL covers local builds.
 GMP_URLS=(
-  "https://ftp.gnu.org/gnu/gmp/gmp-${GMP_VERSION}.tar.xz"
-  "https://gmplib.org/download/gmp/gmp-${GMP_VERSION}.tar.xz"
+  "https://download.chia.net/vdf/gmp-${GMP_VERSION}.tar.lz"
 )
 
 usage() {
@@ -64,7 +67,7 @@ case "$build_dir" in
     exit 1
     ;;
 esac
-tarball="$build_dir/gmp-${GMP_VERSION}.tar.xz"
+tarball="$build_dir/gmp-${GMP_VERSION}.tar.lz"
 
 if [ -n "${GMP_TARBALL:-}" ]; then
   if [ "$GMP_TARBALL" -ef "$tarball" ]; then
@@ -82,7 +85,7 @@ else
     echo "Download failed: $url" >&2
   done
   if [ "$downloaded" != true ]; then
-    echo "Could not download gmp-${GMP_VERSION}.tar.xz" >&2
+    echo "Could not download gmp-${GMP_VERSION}.tar.lz" >&2
     exit 1
   fi
 fi

@@ -143,30 +143,40 @@ jobs:
           command -v cmake
           cmake --version
 
-      - name: Install MinGW GMP on Windows
+      - name: Cache MinGW GMP on Windows
+        if: matrix.os.name == 'Windows'
+        id: gmp-cache
+        uses: actions/cache@v6.1.0
+        with:
+          path: ${{ runner.temp }}/chiavdf-gmp
+          key: ${{ runner.os }}-${{ runner.arch }}-mingw-gmp-${{ hashFiles('scripts/build-windows-mingw-gmp.sh') }}
+
+      - name: Set up MSYS2 on Windows
+        if: matrix.os.name == 'Windows' && steps.gmp-cache.outputs.cache-hit != 'true'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          release: false
+          update: true
+          install: >-
+            msys/m4
+            msys/lzip
+            base-devel
+            mingw-w64-x86_64-toolchain
+
+      - name: Build MinGW GMP on Windows
+        if: matrix.os.name == 'Windows' && steps.gmp-cache.outputs.cache-hit != 'true'
+        shell: msys2 {0}
+        run: bash scripts/build-windows-mingw-gmp.sh "$RUNNER_TEMP/chiavdf-gmp"
+
+      - name: Configure MinGW GMP on Windows
         if: matrix.os.name == 'Windows'
         shell: pwsh
         run: |
-          choco install msys2 --yes --no-progress
-          if ($LASTEXITCODE -ne 0) { throw "MSYS2 installation failed with exit code $LASTEXITCODE" }
-          $bash = 'C:\tools\msys64\usr\bin\bash.exe'
-          $env:MSYSTEM = 'MINGW64'
-          $env:CHERE_INVOKING = '1'
-          # Core updates can terminate the first shell. Complete the full
-          # upgrade in a fresh shell before installing any toolchain packages.
-          # https://www.msys2.org/docs/updating/
-          & $bash -lc 'pacman -Syu --noconfirm'
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "First MSYS2 update exited with code $LASTEXITCODE; retrying in a fresh shell."
-          }
-          & $bash -lc 'pacman -Syu --noconfirm'
-          if ($LASTEXITCODE -ne 0) { throw "MSYS2 update failed with exit code $LASTEXITCODE" }
-          & $bash -lc 'pacman -S --needed --noconfirm msys/m4 msys/lzip base-devel mingw-w64-x86_64-toolchain'
-          if ($LASTEXITCODE -ne 0) { throw "MinGW-w64 installation failed with exit code $LASTEXITCODE" }
-          $env:POWERSHELL_GMP_SCRIPT = Join-Path (Get-Location).Path 'scripts/build-windows-mingw-gmp.sh'
-          $env:POWERSHELL_GMP_PREFIX = Join-Path $env:RUNNER_TEMP 'chiavdf-gmp'
-          & $bash -lc 'test -x /usr/bin/m4.exe && /usr/bin/m4.exe --version && bash "$(cygpath -u "$POWERSHELL_GMP_SCRIPT")" "$(cygpath -u "$POWERSHELL_GMP_PREFIX")"'
-          if ($LASTEXITCODE -ne 0) { throw "MSYS2 m4 check or MinGW GMP build failed with exit code $LASTEXITCODE" }
+          $prefix = Join-Path $env:RUNNER_TEMP 'chiavdf-gmp'
+          "CHIAVDF_GMP_PREFIX=$prefix" >> $env:GITHUB_ENV
+          "MINGW_LIBMINGWEX=$prefix/lib/libmingwex.a" >> $env:GITHUB_ENV
+          "MINGW_LIBGCC=$prefix/lib/libgcc.a" >> $env:GITHUB_ENV
 
       - name: Install libclang-dev on Linux
         if: matrix.os.name == 'Ubuntu'

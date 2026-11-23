@@ -80,7 +80,10 @@ if(WIN32)
     check_cxx_source_compiles("
       int main() {
         unsigned __int128 x = 0;
+        __int128 y = -1;
+        static_assert(sizeof(x) == 16 && sizeof(y) == 16);
         (void)x;
+        (void)y;
         return 0;
       }
     " CHIAVDF_WINDOWS_NATIVE_UINT128)

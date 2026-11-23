@@ -8,7 +8,6 @@ fn main() {
     println!("cargo:rerun-if-env-changed=CHIAVDF_GMP_PREFIX");
     println!("cargo:rerun-if-env-changed=MINGW_LIBMINGWEX");
     println!("cargo:rerun-if-env-changed=MINGW_LIBGCC");
-    println!("cargo:rerun-if-env-changed=CHIAVDF_CMAKE_GENERATOR_TOOLSET");
     println!("cargo:rerun-if-changed=wrapper.h");
     println!("cargo:rerun-if-changed=../src/c_bindings/c_wrapper.h");
     println!("cargo:rerun-if-changed=../src/c_bindings/c_wrapper.cpp");
@@ -84,19 +83,19 @@ fn main() {
         // Rust MSVC links against msvcrt in both debug/release test builds.
         // Keep CMake-produced static libs on the same CRT to avoid *_dbg unresolved symbols.
         config
+            .generator("Ninja")
+            .define("CMAKE_C_COMPILER", "clang-cl")
+            .define("CMAKE_CXX_COMPILER", "clang-cl")
+            .define("CMAKE_ASM_COMPILER", "clang-cl")
             .define("CMAKE_POLICY_DEFAULT_CMP0091", "NEW")
             .define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreadedDLL");
 
         if !is_debug_build {
-            // cmake-rs populates CMAKE_*_FLAGS_RELEASE from cc-rs's compiler
-            // flags, replacing CMake's normal optimization and NDEBUG flags.
+            // Keep release optimization and NDEBUG explicit alongside
+            // cmake-rs's compiler flags.
             config
                 .define("CMAKE_C_FLAGS_RELEASE", "/O2 /Ob2 /DNDEBUG")
                 .define("CMAKE_CXX_FLAGS_RELEASE", "/O2 /Ob2 /DNDEBUG");
-        }
-
-        if let Ok(toolset) = env::var("CHIAVDF_CMAKE_GENERATOR_TOOLSET") {
-            config.generator_toolset(toolset);
         }
     }
 

@@ -143,6 +143,20 @@ jobs:
           command -v cmake
           cmake --version
 
+      - name: Install LLVM 22 and Ninja on Windows
+        if: matrix.os.name == 'Windows'
+        shell: pwsh
+        run: |
+          ./scripts/setup-windows-clang.ps1
+
+      - name: Set up Windows SDK and CRT for clang-cl
+        if: matrix.os.name == 'Windows'
+        uses: step-security/msvc-dev-cmd@v1.13.1
+        with:
+          arch: x64
+          # Keep the SDK and CRT toolset consistent with the client build.
+          toolset: '14.44'
+
       - name: Cache MinGW GMP on Windows
         if: matrix.os.name == 'Windows'
         id: gmp-cache
@@ -187,6 +201,18 @@ jobs:
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Pin the MSVC linker on Windows
+        if: matrix.os.name == 'Windows'
+        shell: pwsh
+        run: |
+          # Git Bash prepends its Unix tools to PATH, including a different
+          # link.exe. Use the linker from the selected MSVC toolset explicitly.
+          $linker = Join-Path $env:VCToolsInstallDir 'bin\Hostx64\x64\link.exe'
+          if (-not (Test-Path -LiteralPath $linker)) {
+            throw "MSVC linker not found: $linker"
+          }
+          "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$linker" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
 
       - name: Tests and proof regressions
         run: cargo test --workspace && cargo test --workspace --release

@@ -132,8 +132,13 @@ chia-blockchain uses to validate proofs of time. This lets a node install a
 prebuilt wheel instead of compiling the C++ library itself.
 
 The Python bindings require Python 3.10 or newer. Building them requires
-CMake, a C++17 compiler, and GMP (MPIR on Windows). Building the timelord
+CMake, a C++20 compiler, and GMP (MPIR on Windows). Building the timelord
 client and tests also requires Boost headers.
+
+Windows Python and Rust bindings use clang-cl from LLVM 22 and Ninja. Install LLVM 22, Ninja,
+and the Visual Studio C++ build tools, then build from an x64 developer shell
+with LLVM's `bin` directory on `PATH`. These builds use native signed and
+unsigned 128-bit integers instead of the bundled `uint128_t` library.
 
 ```bash
 python3 -m venv venv

@@ -2,6 +2,7 @@
 #define THREADING_H
 
 #include "alloc.hpp"
+#include "gmp_scalar.h"
 #include <atomic>
 
 //mp_limb_t is an unsigned integer
@@ -242,13 +243,13 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz {
         return *this;
     }
 
-    mpz& operator=(uint64 i) {
-        mpz_set_ui(*this, i);
-        return *this;
-    }
-
-    mpz& operator=(int64 i) {
-        mpz_set_si(*this, i);
+    template<class T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
+    mpz& operator=(T i) {
+        if constexpr (std::is_signed_v<T>) {
+            mpz_set_si(*this, chiavdf::checked_gmp_scalar<chiavdf::gmp_signed_scalar>(i));
+        } else {
+            mpz_set_ui(*this, chiavdf::checked_gmp_scalar<chiavdf::gmp_unsigned_scalar>(i));
+        }
         return *this;
     }
 
@@ -288,8 +289,9 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz {
         mpz_add(*this, a, b);
     }
 
-    void set_add(const mpz_struct* a, uint64 b) {
-        mpz_add_ui(*this, a, b);
+    template<class T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
+    void set_add(const mpz_struct* a, T b) {
+        mpz_add_ui(*this, a, chiavdf::checked_gmp_scalar<chiavdf::gmp_unsigned_scalar>(b));
     }
 
     mpz& operator+=(const mpz_struct* t) {
@@ -297,7 +299,8 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz {
         return *this;
     }
 
-    mpz& operator+=(uint64 t) {
+    template<class T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
+    mpz& operator+=(T t) {
         set_add(*this, t);
         return *this;
     }
@@ -306,12 +309,14 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz {
         mpz_sub(*this, a, b);
     }
 
-    void set_sub(const mpz_struct* a, uint64 b) {
-        mpz_sub_ui(*this, a, b);
+    template<class T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
+    void set_sub(const mpz_struct* a, T b) {
+        mpz_sub_ui(*this, a, chiavdf::checked_gmp_scalar<chiavdf::gmp_unsigned_scalar>(b));
     }
 
-    template<class mpz_b> void set_sub(uint64 a, const mpz_b& b) {
-        mpz_ui_sub(*this, a, b);
+    template<class T, class mpz_b, std::enable_if_t<std::is_integral_v<T>, int> = 0>
+    void set_sub(T a, const mpz_b& b) {
+        mpz_ui_sub(*this, chiavdf::checked_gmp_scalar<chiavdf::gmp_unsigned_scalar>(a), b);
     }
 
     mpz& operator-=(const mpz_struct* t) {
@@ -329,12 +334,13 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz {
         mpz_impl_set_mul(*this, a, b);
     }
 
-    void set_mul(const mpz_struct* a, int64 b) {
-        mpz_mul_si(*this, a, b);
-    }
-
-    void set_mul(const mpz_struct* a, uint64 b) {
-        mpz_mul_ui(*this, a, b);
+    template<class T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
+    void set_mul(const mpz_struct* a, T b) {
+        if constexpr (std::is_signed_v<T>) {
+            mpz_mul_si(*this, a, chiavdf::checked_gmp_scalar<chiavdf::gmp_signed_scalar>(b));
+        } else {
+            mpz_mul_ui(*this, a, chiavdf::checked_gmp_scalar<chiavdf::gmp_unsigned_scalar>(b));
+        }
     }
 
     mpz& operator*=(const mpz_struct* t) {
@@ -342,12 +348,8 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz {
         return *this;
     }
 
-    mpz& operator*=(int64 t) {
-        set_mul(*this, t);
-        return *this;
-    }
-
-    mpz& operator*=(uint64 t) {
+    template<class T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
+    mpz& operator*=(T t) {
         set_mul(*this, t);
         return *this;
     }
@@ -368,8 +370,9 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz {
         mpz_addmul(*this, a, b);
     }
 
-    void set_add_mul(const mpz_struct* a, uint64 b) {
-        mpz_addmul_ui(*this, a, b);
+    template<class T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
+    void set_add_mul(const mpz_struct* a, T b) {
+        mpz_addmul_ui(*this, a, chiavdf::checked_gmp_scalar<chiavdf::gmp_unsigned_scalar>(b));
     }
 
     //*this-=a*b
@@ -378,8 +381,9 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz {
         mpz_submul(*this, a, b);
     }
 
-    void set_sub_mul(const mpz_struct* a, uint64 b) {
-        mpz_submul_ui(*this, a, b);
+    template<class T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
+    void set_sub_mul(const mpz_struct* a, T b) {
+        mpz_submul_ui(*this, a, chiavdf::checked_gmp_scalar<chiavdf::gmp_unsigned_scalar>(b));
     }
 
     void negate() {
@@ -458,26 +462,35 @@ template<int d_expected_size, int d_padded_size> struct alignas(64) mpz {
     bool operator>(const mpz_struct* t) const { return mpz_cmp(*this, t)>0; }
     bool operator!=(const mpz_struct* t) const { return mpz_cmp(*this, t)!=0; }
 
-    bool operator<(int64 i) const { return mpz_cmp_si(_(), i)<0; }
-    bool operator<=(int64 i) const { return mpz_cmp_si(_(), i)<=0; }
-    bool operator==(int64 i) const { return mpz_cmp_si(_(), i)==0; }
-    bool operator>=(int64 i) const { return mpz_cmp_si(_(), i)>=0; }
-    bool operator>(int64 i) const { return mpz_cmp_si(_(), i)>0; }
-    bool operator!=(int64 i) const { return mpz_cmp_si(_(), i)!=0; }
+    template<class T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
+    int compare_scalar(T i) const {
+        if constexpr (std::is_signed_v<T>) {
+            return mpz_cmp_si(_(), chiavdf::checked_gmp_scalar<chiavdf::gmp_signed_scalar>(i));
+        } else {
+            return mpz_cmp_ui(_(), chiavdf::checked_gmp_scalar<chiavdf::gmp_unsigned_scalar>(i));
+        }
+    }
 
-    bool operator<(uint64 i) const { return mpz_cmp_ui(_(), i)<0; }
-    bool operator<=(uint64 i) const { return mpz_cmp_ui(_(), i)<=0; }
-    bool operator==(uint64 i) const { return mpz_cmp_ui(_(), i)==0; }
-    bool operator>=(uint64 i) const { return mpz_cmp_ui(_(), i)>=0; }
-    bool operator>(uint64 i) const { return mpz_cmp_ui(_(), i)>0; }
-    bool operator!=(uint64 i) const { return mpz_cmp_ui(_(), i)!=0; }
+    template<class T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
+    bool operator<(T i) const { return compare_scalar(i)<0; }
+    template<class T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
+    bool operator<=(T i) const { return compare_scalar(i)<=0; }
+    template<class T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
+    bool operator==(T i) const { return compare_scalar(i)==0; }
+    template<class T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
+    bool operator>=(T i) const { return compare_scalar(i)>=0; }
+    template<class T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
+    bool operator>(T i) const { return compare_scalar(i)>0; }
+    template<class T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
+    bool operator!=(T i) const { return compare_scalar(i)!=0; }
 
     int compare_abs(const mpz_struct* t) const {
         return mpz_cmpabs(*this, t);
     }
 
-    int compare_abs(uint64 t) const {
-        return mpz_cmpabs_ui(*this, t);
+    template<class T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
+    int compare_abs(T t) const {
+        return mpz_cmpabs_ui(*this, chiavdf::checked_gmp_scalar<chiavdf::gmp_unsigned_scalar>(t));
     }
 
     //returns 0 if *this==0

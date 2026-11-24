@@ -415,6 +415,9 @@ if(BUILD_VDF_TESTS)
     googletest
     GIT_REPOSITORY https://github.com/google/googletest.git
     GIT_TAG        v1.14.0
+    PATCH_COMMAND ${CMAKE_COMMAND}
+      -DGOOGLETEST_SOURCE_DIR=<SOURCE_DIR>
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/PatchGoogleTest.cmake
   )
   FetchContent_MakeAvailable(googletest)
 

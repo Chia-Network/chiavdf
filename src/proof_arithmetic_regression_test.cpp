@@ -51,7 +51,7 @@ TEST(ProofArithmeticRegressionTest, SerialAndParallelMatchDirectWesolowskiExpone
     for (uint64_t length : {1, 23, 24, 25, 511, 512, 513}) {
         Segment segment(0, length, values.front(), values[length]);
         integer challenge = GetB(d, segment.x, segment.y), exponent(0);
-        mpz_setbit(exponent.impl, length);
+        chiavdf::checked_mpz_setbit(exponent.impl, length);
         exponent = exponent / challenge;
         form expected = FastPowFormNucomp(segment.x, d, exponent, limit, reducer);
         reducer.reduce(expected);

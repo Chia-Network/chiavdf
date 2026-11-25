@@ -26,6 +26,7 @@
 #include <gmp.h>
 #include <stdint.h>
 #include <climits>
+#include "gmp_scalar.h"
 
 #include "xgcd_lehmer_step.h"
 #include "xgcd_partial.h"
@@ -71,9 +72,11 @@ static inline mp_limb_signed_t chiavdf_mpz_bitlen_nonneg(const mpz_t x)
    // Match mpz_sizeinbase(x, 2) for x >= 0:
    // - returns 1 for x == 0
    // - otherwise returns exact bit length
-   const size_t n = mpz_size(x); // number of limbs (abs)
+   // x is nonnegative; GMP stores its limb count as int. Avoid widening
+   // through mpz_size's size_t return type before passing an index to GMP.
+   const int n = x->_mp_size;
    if (n == 0) return 1;
-   const mp_limb_t top = mpz_getlimbn(x, (mp_size_t)(n - 1));
+   const mp_limb_t top = chiavdf::checked_mpz_getlimbn(x, n - 1);
    // top is non-zero when n != 0, but be defensive.
    if (top == 0) return 1;
 #if GMP_LIMB_BITS == 64
@@ -97,7 +100,7 @@ static inline mp_limb_signed_t chiavdf_mpz_bitlen_nonneg(const mpz_t x)
    }
 #endif
    const mp_limb_signed_t top_bits = (mp_limb_signed_t)(GMP_LIMB_BITS - lead);
-   return (mp_limb_signed_t)((n - 1) * (size_t)GMP_LIMB_BITS) + top_bits;
+   return (mp_limb_signed_t)(n - 1) * GMP_LIMB_BITS + top_bits;
 }
 
 static inline mp_limb_signed_t chiavdf_mpz_extract_uword_from_shift_nonneg(const mpz_t x, mp_limb_signed_t shift_bits)
@@ -112,9 +115,9 @@ static inline mp_limb_signed_t chiavdf_mpz_extract_uword_from_shift_nonneg(const
    const mp_limb_signed_t limb_bits = (mp_limb_signed_t)GMP_LIMB_BITS;
    const mp_limb_signed_t limb_idx = shift_bits / limb_bits;
    const mp_limb_signed_t off = shift_bits - limb_idx * limb_bits;
-   mp_limb_t lo = mpz_getlimbn(x, (mp_size_t)limb_idx);
+   mp_limb_t lo = chiavdf::checked_mpz_getlimbn(x, limb_idx);
    if (off == 0) return (mp_limb_signed_t)lo;
-   mp_limb_t hi = mpz_getlimbn(x, (mp_size_t)(limb_idx + 1));
+   mp_limb_t hi = chiavdf::checked_mpz_getlimbn(x, limb_idx + 1);
    lo >>= (unsigned)off;
    hi <<= (unsigned)(limb_bits - off);
    return (mp_limb_signed_t)(lo | hi);

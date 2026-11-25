@@ -2,6 +2,7 @@
 #define PRIMETEST_H
 
 #include "checked_cast.h"
+#include "gmp_scalar.h"
 #include "pprods.h"
 
 static int miller_rabin(const mpz_t n, mpz_t b, mpz_t d)
@@ -177,8 +178,8 @@ static int is_prime_bpsw(const mpz_t n)
         }
     }
 
-    mpz_init2(b, n->_mp_size * sizeof(n->_mp_d[0]) * 8);
-    mpz_init2(d, n->_mp_size * sizeof(n->_mp_d[0]) * 8);
+    chiavdf::checked_mpz_init2(b, n->_mp_size * sizeof(n->_mp_d[0]) * 8);
+    chiavdf::checked_mpz_init2(d, n->_mp_size * sizeof(n->_mp_d[0]) * 8);
     mpz_set_ui(b, 2);
     ret = miller_rabin(n, b, d) && is_vprp(n, b, d);
 

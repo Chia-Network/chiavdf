@@ -27,10 +27,10 @@ public:
         integer& remainder = remainders[i];
         if (!initialized[i]) {
             integer two(2);
-            mpz_powm_ui(remainder.impl, two.impl, iterations - k * (i * l + j + 1), modulus.impl);
+            chiavdf::checked_mpz_powm_ui(remainder.impl, two.impl, iterations - k * (i * l + j + 1), modulus.impl);
             initialized[i] = true;
         }
-        mpz_mul_2exp(remainder.impl, remainder.impl, k);
+        chiavdf::checked_mpz_mul_2exp(remainder.impl, remainder.impl, k);
         // GMP permits an output to alias an input, but quotient and remainder
         // must be distinct. This also retains allocated limb storage.
         mpz_tdiv_qr(quotient.impl, remainder.impl, remainder.impl, modulus.impl);

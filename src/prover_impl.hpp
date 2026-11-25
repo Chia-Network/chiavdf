@@ -24,7 +24,7 @@ inline form Prover::GetProof() {
 
 inline uint64_t Prover::GetBlock(uint64_t i, uint64_t k, uint64_t T, integer& B) {
     integer res = FastPow(2, T - k * (i + 1), B);
-    mpz_mul_2exp(res.impl, res.impl, k);
+    chiavdf::checked_mpz_mul_2exp(res.impl, res.impl, k);
     res = res / B;
     auto res_vector = res.to_vector();
     return res_vector.empty() ? 0 : res_vector[0];

@@ -20,7 +20,7 @@ TEST(ProofBlockCacheTest, MatchesStatelessPowersAcrossPartialRowsAndWorkerSplits
                                     uint64_t offset = k * (i * l + j + 1);
                                     if (offset > iterations) continue;
                                     integer expected = FastPow(2, iterations - offset, modulus);
-                                    mpz_mul_2exp(expected.impl, expected.impl, k);
+                                    chiavdf::checked_mpz_mul_2exp(expected.impl, expected.impl, k);
                                     mpz_tdiv_q(expected.impl, expected.impl, modulus.impl);
                                     auto words = expected.to_vector();
                                     ASSERT_EQ(cache.Get(i, j), words.empty() ? 0 : words[0])

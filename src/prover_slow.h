@@ -42,7 +42,7 @@ void ApproximateParameters(uint64_t T, int& l, int& k) {
 
 uint64_t GetBlock(uint64_t i, uint64_t k, uint64_t T, integer& B) {
     integer res = FastPow(2, T - k * (i + 1), B);
-    mpz_mul_2exp(res.impl, res.impl, k);
+    chiavdf::checked_mpz_mul_2exp(res.impl, res.impl, k);
     res = res / B;
     auto res_vector = res.to_vector();
     // 0 value results in empty vector from mpz_export

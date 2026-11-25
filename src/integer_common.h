@@ -162,6 +162,19 @@ struct integer {
         mpz_init_set_ui(impl, i);
     }
 
+    static integer from_uint64(uint64_t value) {
+        using scalar = chiavdf::gmp_unsigned_scalar;
+        integer result;
+        if constexpr (std::numeric_limits<scalar>::max() < UINT64_MAX) {
+            if (value > std::numeric_limits<scalar>::max()) {
+                mpz_import(result.impl, 1, 1, sizeof(value), 0, 0, &value);
+                return result;
+            }
+        }
+        mpz_set_ui(result.impl, static_cast<scalar>(value));
+        return result;
+    }
+
     template<class T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
     explicit inline integer(T i) {
         if constexpr (std::is_signed_v<T>) {

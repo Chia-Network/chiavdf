@@ -12,22 +12,25 @@
 // Call Get once per eligible j in descending, consecutive order for each row.
 // Separate worker ranges must each own a cache.
 class ProofBlockCache {
-    uint64_t iterations, k, l;
+    uint64_t iterations;
+    uint32_t k, l;
     const integer& modulus;
     std::vector<integer> remainders;
     std::vector<bool> initialized;
     integer quotient;
 public:
-    ProofBlockCache(uint64_t iterations, uint64_t k, uint64_t l, const integer& modulus)
+    ProofBlockCache(uint64_t iterations, uint32_t k, uint32_t l, const integer& modulus)
         : iterations(iterations), k(k), l(l), modulus(modulus),
-          remainders(iterations / (k * l) + (iterations % (k * l) != 0)),
+          remainders(iterations / (uint64_t(this->k) * this->l)
+                     + (iterations % (uint64_t(this->k) * this->l) != 0)),
           initialized(remainders.size(), false) {}
 
     uint64_t Get(uint64_t i, uint64_t j) {
         integer& remainder = remainders[i];
         if (!initialized[i]) {
             integer two(2);
-            chiavdf::checked_mpz_powm_ui(remainder.impl, two.impl, iterations - k * (i * l + j + 1), modulus.impl);
+            integer exponent = integer::from_uint64(iterations - k * (i * l + j + 1));
+            mpz_powm(remainder.impl, two.impl, exponent.impl, modulus.impl);
             initialized[i] = true;
         }
         chiavdf::checked_mpz_mul_2exp(remainder.impl, remainder.impl, k);

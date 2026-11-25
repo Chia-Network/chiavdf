@@ -709,11 +709,24 @@ struct alignas(64) gcd_uv_entry {
     uint64 unused_1;
 
     template<class mpz_type> void matrix_multiply(const mpz_type& in_a, const mpz_type& in_b, mpz_type& out_a, mpz_type& out_b) const {
-        out_a.set_mul((parity==0)? in_a : in_b, (parity==0)? u_0 : v_0);
-        out_a.set_sub_mul((parity==0)? in_b : in_a, (parity==0)? v_0 : u_0);
+        if constexpr (std::numeric_limits<uint64>::digits > std::numeric_limits<chiavdf::gmp_unsigned_scalar>::digits) {
+            // These coefficients are full-width words, even with 32-bit GMP scalars.
+            mpz_type u0, u1, v0, v1;
+            mpz_import(u0, 1, 1, sizeof(u_0), 0, 0, &u_0);
+            mpz_import(u1, 1, 1, sizeof(u_1), 0, 0, &u_1);
+            mpz_import(v0, 1, 1, sizeof(v_0), 0, 0, &v_0);
+            mpz_import(v1, 1, 1, sizeof(v_1), 0, 0, &v_1);
+            out_a.set_mul((parity==0)? in_a : in_b, (parity==0)? u0 : v0);
+            out_a.set_sub_mul((parity==0)? in_b : in_a, (parity==0)? v0 : u0);
+            out_b.set_mul((parity==0)? in_b : in_a, (parity==0)? v1 : u1);
+            out_b.set_sub_mul((parity==0)? in_a : in_b, (parity==0)? u1 : v1);
+        } else {
+            out_a.set_mul((parity==0)? in_a : in_b, (parity==0)? u_0 : v_0);
+            out_a.set_sub_mul((parity==0)? in_b : in_a, (parity==0)? v_0 : u_0);
 
-        out_b.set_mul((parity==0)? in_b : in_a, (parity==0)? v_1 : u_1);
-        out_b.set_sub_mul((parity==0)? in_a : in_b, (parity==0)? u_1 : v_1);
+            out_b.set_mul((parity==0)? in_b : in_a, (parity==0)? v_1 : u_1);
+            out_b.set_sub_mul((parity==0)? in_a : in_b, (parity==0)? u_1 : v_1);
+        }
     }
 };
 static_assert(sizeof(gcd_uv_entry)==64, "");

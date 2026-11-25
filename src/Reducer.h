@@ -161,7 +161,8 @@ bool bLZCHasHW=false;
     // Return an approximation x of the large mpz_t op by an int64_t and the
     // exponent e adjustment. We must have (x * 2^e) / op = constant
     // approximately.
-    int_fast64_t size(static_cast<long>(mpz_size(op)));
+    int size = op->_mp_size;
+    if (size < 0) size = -size;
     mp_limb_t last = chiavdf::checked_mpz_getlimbn(op, (size - 1));
 
     if(!bLZCChecked)
@@ -179,7 +180,7 @@ bool bLZCHasHW=false;
 
     signed_shift(last, (63 - exp), r);
     if (size > 1) {
-      exp += (size - 1) * 64;
+      exp += static_cast<int_fast64_t>(size - 1) * 64;
       mp_limb_t prev = chiavdf::checked_mpz_getlimbn(op, (size - 2));
       int_fast64_t t;
       signed_shift(prev, -1 - lg2, t);

@@ -26,6 +26,7 @@
 #include <gmp.h>
 #include <stdint.h>
 #include <climits>
+#include "checked_cast.h"
 #include "gmp_scalar.h"
 
 #include "xgcd_lehmer_step.h"
@@ -113,8 +114,12 @@ static inline mp_limb_signed_t chiavdf_mpz_extract_uword_from_shift_nonneg(const
       return (mp_limb_signed_t)mpz_getlimbn(x, 0);
    }
    const mp_limb_signed_t limb_bits = (mp_limb_signed_t)GMP_LIMB_BITS;
-   const mp_limb_signed_t limb_idx = shift_bits / limb_bits;
-   const mp_limb_signed_t off = shift_bits - limb_idx * limb_bits;
+   const mp_limb_signed_t whole_limbs = shift_bits / limb_bits;
+   // GMP stores the limb count as int. An index below that count fits
+   // mp_size_t and leaves room for limb_idx + 1. Larger shifts yield zero.
+   if (whole_limbs >= x->_mp_size) return 0;
+   const mp_size_t limb_idx = checked_cast<mp_size_t>(whole_limbs);
+   const mp_limb_signed_t off = shift_bits - whole_limbs * limb_bits;
    mp_limb_t lo = chiavdf::checked_mpz_getlimbn(x, limb_idx);
    if (off == 0) return (mp_limb_signed_t)lo;
    mp_limb_t hi = chiavdf::checked_mpz_getlimbn(x, limb_idx + 1);

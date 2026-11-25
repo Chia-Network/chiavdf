@@ -1,4 +1,6 @@
 //! Corpus verification from src/stress_test.cpp, extended with corrupted inputs.
+//! Mainnet samples cover iteration-count bit widths 1 through 30 and depths up to 61.
+//! High-bit mutations exercise 64-bit counts beyond the recorded proofs' range.
 
 use super::common::{corpus, FORM_SIZE};
 use chiavdf::verify_n_wesolowski;
@@ -28,16 +30,24 @@ fn accepts_recorded_vdf_proofs() {
 #[test]
 fn rejects_recorded_proofs_with_wrong_iterations_or_recursion() {
     for (index, case) in corpus().iter().enumerate() {
-        assert!(
-            !verify_n_wesolowski(
-                &case.discriminant,
-                &case.x,
-                &case.proof,
-                case.iterations + 1,
-                case.recursion,
-            ),
-            "wrong iteration count accepted for corpus record {index}",
-        );
+        // Changing only a high bit must also invalidate a proof: dropping that
+        // bit at a GMP scalar boundary would otherwise preserve verification.
+        for iterations in [
+            case.iterations + 1,
+            case.iterations ^ (1_u64 << 32),
+            case.iterations ^ (1_u64 << 63),
+        ] {
+            assert!(
+                !verify_n_wesolowski(
+                    &case.discriminant,
+                    &case.x,
+                    &case.proof,
+                    iterations,
+                    case.recursion,
+                ),
+                "wrong iteration count {iterations} accepted for corpus record {index}",
+            );
+        }
         for recursion in [case.recursion + 1, u64::MAX] {
             assert!(
                 !verify_n_wesolowski(
@@ -112,5 +122,23 @@ fn rejects_corrupted_recursive_segments() {
                 "corrupted segment accepted for corpus record {index}",
             );
         }
+
+        // Keep the final segment's remaining count unchanged, so this checks
+        // high-bit handling in the recursive segment's exponent itself.
+        let segment_iterations =
+            u64::from_be_bytes(case.proof[offset..offset + 8].try_into().unwrap());
+        let mut wide_segment = case.proof.clone();
+        wide_segment[offset..offset + 8]
+            .copy_from_slice(&(segment_iterations + (1_u64 << 32)).to_be_bytes());
+        assert!(
+            !verify_n_wesolowski(
+                &case.discriminant,
+                &case.x,
+                &wide_segment,
+                case.iterations + (1_u64 << 32),
+                case.recursion,
+            ),
+            "wide corrupted segment accepted for corpus record {index}",
+        );
     }
 }

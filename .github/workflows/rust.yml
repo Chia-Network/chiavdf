@@ -143,12 +143,40 @@ jobs:
           command -v cmake
           cmake --version
 
-      - name: Install MPIR on Windows
+      - name: Cache MinGW GMP on Windows
         if: matrix.os.name == 'Windows'
+        id: gmp-cache
+        uses: actions/cache@v6.1.0
+        with:
+          path: ${{ runner.temp }}/chiavdf-gmp
+          key: ${{ runner.os }}-${{ runner.arch }}-mingw-gmp-${{ hashFiles('scripts/build-windows-mingw-gmp.sh') }}
+
+      - name: Set up MSYS2 on Windows
+        if: matrix.os.name == 'Windows' && steps.gmp-cache.outputs.cache-hit != 'true'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          release: false
+          update: true
+          install: >-
+            msys/m4
+            msys/lzip
+            base-devel
+            mingw-w64-x86_64-toolchain
+
+      - name: Build MinGW GMP on Windows
+        if: matrix.os.name == 'Windows' && steps.gmp-cache.outputs.cache-hit != 'true'
+        shell: msys2 {0}
+        run: bash scripts/build-windows-mingw-gmp.sh "$RUNNER_TEMP/chiavdf-gmp"
+
+      - name: Configure MinGW GMP on Windows
+        if: matrix.os.name == 'Windows'
+        shell: pwsh
         run: |
-          bash scripts/get-mpir-gc-x64.sh
-          if ($LASTEXITCODE -ne 0) { throw "get-mpir-gc-x64.sh failed with exit code $LASTEXITCODE" }
-          "$(Get-Location)/mpir_gc_x64" | Out-File -Append -FilePath $env:GITHUB_PATH
+          $prefix = Join-Path $env:RUNNER_TEMP 'chiavdf-gmp'
+          "CHIAVDF_GMP_PREFIX=$prefix" >> $env:GITHUB_ENV
+          "MINGW_LIBMINGWEX=$prefix/lib/libmingwex.a" >> $env:GITHUB_ENV
+          "MINGW_LIBGCC=$prefix/lib/libgcc.a" >> $env:GITHUB_ENV
 
       - name: Install libclang-dev on Linux
         if: matrix.os.name == 'Ubuntu'
@@ -172,6 +200,14 @@ jobs:
           echo "Benchmarking Rust bindings prove 100000"
           cargo run --quiet --release -p chiavdf-tools --bin vdf_bench -- prove 100000
 
+      - name: Upload bundled Windows GMP
+        if: matrix.os.name == 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: rust-crate-windows-gmp
+          path: ${{ runner.temp }}/chiavdf-gmp
+          if-no-files-found: error
+
   build_crate:
     name: Build crate
     needs: [lint, test]
@@ -194,8 +230,12 @@ jobs:
       - name: Prepare for publish
         run: |
           cp -r src rust_bindings/cpp
-          bash scripts/get-mpir-gc-x64.sh
-          mv mpir_gc_x64 rust_bindings/mpir_gc_x64
+
+      - name: Download bundled Windows GMP
+        uses: actions/download-artifact@v8
+        with:
+          name: rust-crate-windows-gmp
+          path: rust_bindings/gmp-win64
 
       - name: Publish to crates.io (dry run)
         # We use `--allow-dirty` because the `cpp` folder is copied into the working directory.

@@ -5,6 +5,10 @@ use std::path::PathBuf;
 use cmake::Config;
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=CHIAVDF_GMP_PREFIX");
+    println!("cargo:rerun-if-env-changed=MINGW_LIBMINGWEX");
+    println!("cargo:rerun-if-env-changed=MINGW_LIBGCC");
+    println!("cargo:rerun-if-env-changed=CHIAVDF_CMAKE_GENERATOR_TOOLSET");
     println!("cargo:rerun-if-changed=wrapper.h");
     println!("cargo:rerun-if-changed=../src/c_bindings/c_wrapper.h");
     println!("cargo:rerun-if-changed=../src/c_bindings/c_wrapper.cpp");
@@ -23,6 +27,8 @@ fn main() {
             .to_path_buf();
     }
 
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
     let mut config = Config::new(src_dir.as_path());
     config
         .build_target("chiavdfc_static")
@@ -38,8 +44,41 @@ fn main() {
             },
         );
 
-    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
-    let target_env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+    let gmp_prefix = env::var_os("CHIAVDF_GMP_PREFIX")
+        .map(PathBuf::from)
+        .or_else(|| {
+            let bundled_prefix = manifest_dir.join("gmp-win64");
+            bundled_prefix.is_dir().then_some(bundled_prefix)
+        });
+
+    if target_os == "windows" && target_env == "msvc" {
+        if let Some(prefix) = &gmp_prefix {
+            config.define(
+                "CHIAVDF_GMP_PREFIX",
+                prefix.to_str().expect("GMP prefix is not UTF-8"),
+            );
+
+            let mingw_libmingwex = env::var_os("MINGW_LIBMINGWEX")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| prefix.join("lib/libmingwex.a"));
+            let mingw_libgcc = env::var_os("MINGW_LIBGCC")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| prefix.join("lib/libgcc.a"));
+            config
+                .define(
+                    "CHIAVDF_MINGW_LIBMINGWEX",
+                    mingw_libmingwex
+                        .to_str()
+                        .expect("MinGW libmingwex path is not UTF-8"),
+                )
+                .define(
+                    "CHIAVDF_MINGW_LIBGCC",
+                    mingw_libgcc
+                        .to_str()
+                        .expect("MinGW libgcc path is not UTF-8"),
+                );
+        }
+    }
 
     if target_os == "windows" && target_env == "msvc" {
         // Rust MSVC links against msvcrt in both debug/release test builds.
@@ -47,6 +86,18 @@ fn main() {
         config
             .define("CMAKE_POLICY_DEFAULT_CMP0091", "NEW")
             .define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreadedDLL");
+
+        if !is_debug_build {
+            // cmake-rs populates CMAKE_*_FLAGS_RELEASE from cc-rs's compiler
+            // flags, replacing CMake's normal optimization and NDEBUG flags.
+            config
+                .define("CMAKE_C_FLAGS_RELEASE", "/O2 /Ob2 /DNDEBUG")
+                .define("CMAKE_CXX_FLAGS_RELEASE", "/O2 /Ob2 /DNDEBUG");
+        }
+
+        if let Ok(toolset) = env::var("CHIAVDF_CMAKE_GENERATOR_TOOLSET") {
+            config.generator_toolset(toolset);
+        }
     }
 
     let dst = config.build();
@@ -63,16 +114,35 @@ fn main() {
     );
 
     if target_os == "windows" {
-        println!("cargo:rustc-link-lib=static=mpir");
+        let prefix = gmp_prefix.unwrap_or_else(|| {
+            panic!("CHIAVDF_GMP_PREFIX must point to a MinGW-built GMP installation on Windows")
+        });
+        println!("cargo:rustc-link-lib=static=gmp");
         println!(
             "cargo:rustc-link-search=native={}",
-            src_dir
-                .parent()
-                .unwrap()
-                .join("mpir_gc_x64")
-                .to_str()
-                .unwrap()
+            prefix.join("lib").display()
         );
+        for runtime_archive in ["MINGW_LIBMINGWEX", "MINGW_LIBGCC"] {
+            let archive_name = if runtime_archive == "MINGW_LIBMINGWEX" {
+                "libmingwex.a"
+            } else {
+                "libgcc.a"
+            };
+            let archive = env::var_os(runtime_archive)
+                .map(PathBuf::from)
+                .unwrap_or_else(|| prefix.join("lib").join(archive_name));
+            assert!(
+                archive.is_file(),
+                "MinGW runtime archive not found: {}",
+                archive.display()
+            );
+            println!(
+                "cargo:rustc-link-search=native={}",
+                archive.parent().unwrap().display()
+            );
+        }
+        println!("cargo:rustc-link-lib=static:+verbatim=libmingwex.a");
+        println!("cargo:rustc-link-lib=static:+verbatim=libgcc.a");
     } else if target_os == "macos" {
         println!("cargo:rustc-link-lib=static=gmp");
         let homebrew_path = if fs::metadata("/opt/homebrew").is_ok() {

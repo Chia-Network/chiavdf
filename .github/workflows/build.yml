@@ -130,6 +130,20 @@ jobs:
       run:
         pipx run --spec=${{ matrix.python.cibuildwheel }} cibuildwheel --output-dir dist 2>&1
 
+    - name: Install LLVM 22 and Ninja on Windows
+      if: matrix.os.matrix == 'windows'
+      shell: pwsh
+      run: |
+        ./scripts/setup-windows-clang.ps1
+
+    - name: Set up Windows SDK and CRT for clang-cl
+      if: matrix.os.matrix == 'windows'
+      uses: step-security/msvc-dev-cmd@v1.13.1
+      with:
+        arch: x64
+        # Keep the SDK and CRT toolset consistent with the client build.
+        toolset: '14.44'
+
     - name: Build and test (Windows)
       if: matrix.os.matrix == 'windows'
       env:

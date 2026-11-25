@@ -256,17 +256,13 @@ jobs:
         shell: bash
         run: bash scripts/get-mpir-gc-x64.sh
 
-      - name: Install LLVM, Ninja and Boost on Windows
+      - name: Install LLVM 22, Ninja and Boost on Windows
         if: matrix.os == 'windows-latest'
         shell: pwsh
         env:
           BOOST_CACHE_HIT: ${{ steps.cache-boost.outputs.cache-hit }}
         run: |
-          $llvmBin = "C:\Program Files\LLVM\bin\clang-cl.exe"
-          $ninjaBin = "C:\ProgramData\chocolatey\bin\ninja.exe"
-          if (-not (Test-Path $llvmBin) -or -not (Test-Path $ninjaBin)) {
-            choco install llvm ninja -y
-          }
+          ./scripts/setup-windows-clang.ps1
           $boostDir = Get-ChildItem "C:\local" -Directory -Filter "boost_*" -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $boostDir) {
             if ("$env:BOOST_CACHE_HIT" -ne "true") {
@@ -280,7 +276,6 @@ jobs:
           } else {
             Write-Host "Boost already present at $($boostDir.FullName), skipping choco install"
           }
-          "C:\Program Files\LLVM\bin" | Out-File -Append -FilePath $env:GITHUB_PATH
           if (-not $boostDir) {
             throw "Boost install not found under C:\local"
           }
@@ -298,7 +293,7 @@ jobs:
         uses: step-security/msvc-dev-cmd@v1.13.1
         with:
           arch: x64
-          # The preinstalled LLVM 20 cannot use MSVC 14.52's STL (requires Clang 22).
+          # Keep the SDK and CRT toolset consistent across Windows builds.
           toolset: '14.44'
 
       - name: Download USB drivers (FT4222H) on Windows

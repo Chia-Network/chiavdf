@@ -2,11 +2,14 @@
 # Build the pinned MinGW-w64 static GMP libraries used by the Windows Rust crate.
 set -euo pipefail
 
-if [ "$#" -ne 1 ]; then
-  echo "Usage: $0 PREFIX" >&2
+if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
+  echo "Usage: $0 PREFIX [PATCH_FILE]" >&2
   exit 2
 fi
 
+# BASH_SOURCE, not $0: CI also sources this script.
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+patch_file=$(cygpath -au "${2:-$script_dir/gmp-6.3.0-fat-isa.patch}")
 version=6.3.0
 sha256=be5c908a7a836c3a9bd9d62aa58563c5e9e7fef94c43a7f42dbc35bb6d02733c
 prefix=$(cygpath -u "$1")
@@ -19,8 +22,10 @@ curl --fail --silent --show-error --location \
   "https://download.chia.net/vdf/gmp-${version}.tar.lz" \
   -o "gmp-${version}.tar.lz"
 echo "$sha256  gmp-${version}.tar.lz" | sha256sum --check --status
+rm -rf "gmp-${version}"  # fresh tree, so the patch below applies on reruns
 tar --lzip -xf "gmp-${version}.tar.lz"
 cd "gmp-${version}"
+patch -p1 < "$patch_file"
 
 m4_path=/usr/bin/m4.exe
 if [ ! -x "$m4_path" ]; then

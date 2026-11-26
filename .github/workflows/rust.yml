@@ -163,7 +163,7 @@ jobs:
         uses: actions/cache@v6.1.0
         with:
           path: ${{ runner.temp }}/chiavdf-gmp
-          key: ${{ runner.os }}-${{ runner.arch }}-mingw-gmp-${{ hashFiles('scripts/build-windows-mingw-gmp.sh') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-mingw-gmp-${{ hashFiles('scripts/build-windows-mingw-gmp.sh', 'scripts/gmp-6.3.0-fat-isa.patch') }}
 
       - name: Set up MSYS2 on Windows
         if: matrix.os.name == 'Windows' && steps.gmp-cache.outputs.cache-hit != 'true'
@@ -175,6 +175,7 @@ jobs:
           install: >-
             msys/m4
             msys/lzip
+            msys/patch
             base-devel
             mingw-w64-x86_64-toolchain
 

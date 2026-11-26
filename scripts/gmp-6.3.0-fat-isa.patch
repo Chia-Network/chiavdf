@@ -1,0 +1,203 @@
+diff --git a/config.guess b/config.guess
+index 6a7f141..1e2086a 100755
+--- a/config.guess
++++ b/config.guess
+@@ -938,6 +938,20 @@ main ()
+           else if (model == 0xa7) cpu_64bit = 1, cpu_avx=1, modelstr = "rocketlake"; /* Rocket Lake S */
+           else if (model == 0xba) cpu_64bit = 1, cpu_avx=1, modelstr = "raptorlake"; /* Raptor Lake */
+           else if (model == 0xb7) cpu_64bit = 1, cpu_avx=1, modelstr = "raptorlake"; /* Raptor Lake */
++          else if (model == 0xa5) cpu_64bit = 1, cpu_avx=1, modelstr = "skylake";    /* Comet Lake */
++          else if (model == 0xa6) cpu_64bit = 1, cpu_avx=1, modelstr = "skylake";    /* Comet Lake mobile */
++          else if (model == 0x66) cpu_64bit = 1, cpu_avx=1, modelstr = "skylake";    /* Cannon Lake */
++          else if (model == 0x9d) cpu_64bit = 1, cpu_avx=1, modelstr = "skylake";    /* Ice Lake NNPI */
++          else if (model == 0xcf) cpu_64bit = 1, cpu_avx=1, modelstr = "skylake";    /* Emerald Rapids */
++          else if (model == 0xad) cpu_64bit = 1, cpu_avx=1, modelstr = "skylake";    /* Granite Rapids */
++          else if (model == 0xae) cpu_64bit = 1, cpu_avx=1, modelstr = "skylake";    /* Granite Rapids microserver */
++          else if (model == 0xbf) cpu_64bit = 1, cpu_avx=1, modelstr = "skylake";    /* Raptor Lake desktop */
++          else if (model == 0xaa) cpu_64bit = 1, cpu_avx=1, modelstr = "skylake";    /* Meteor Lake mobile */
++          else if (model == 0xac) cpu_64bit = 1, cpu_avx=1, modelstr = "skylake";    /* Meteor Lake */
++          else if (model == 0xc5) cpu_64bit = 1, cpu_avx=1, modelstr = "skylake";    /* Arrow Lake H */
++          else if (model == 0xc6) cpu_64bit = 1, cpu_avx=1, modelstr = "skylake";    /* Arrow Lake */
++          else if (model == 0xb5) cpu_64bit = 1, cpu_avx=1, modelstr = "skylake";    /* Arrow Lake U */
++          else if (model == 0xbd) cpu_64bit = 1, cpu_avx=1, modelstr = "skylake";    /* Lunar Lake */
+           else                    cpu_64bit = 1,            modelstr = "nehalem";    /* default */
+ 
+ 	  if (strcmp (modelstr, "haswell") == 0 ||
+@@ -1035,6 +1049,12 @@ main ()
+ 	      modelstr = "zen4";
+ 	      break;
+ 	    }
++	  break;
++	case 26:                /* Zen 5: known model ranges only */
++	  if (model <= 0x4f || (model >= 0x60 && model <= 0x77)
++	      || (model >= 0xd0 && model <= 0xd7))
++	    cpu_64bit = 1, cpu_avx = 1, modelstr = "zen";
++	  break;
+ 	}
+     }
+   else if (strcmp (vendor_string, "HygonGenuine") == 0)
+diff --git a/mpn/x86_64/fat/fat.c b/mpn/x86_64/fat/fat.c
+index cc35afa..035dadc 100644
+--- a/mpn/x86_64/fat/fat.c
++++ b/mpn/x86_64/fat/fat.c
+@@ -249,6 +249,57 @@
+ 
+ enum {BMI2_BIT = 8};
+ 
++/* chiavdf: when the model tables do not recognise a CPU, select routines
++   by the instruction sets they require.  These routines do not use AVX/YMM,
++   so no OSXSAVE/XGETBV check is needed.
++     level 1: POPCNT + BMI1 + BMI2 -> coreihwl
++     level 2: level 1 + ADX       -> coreibwl/skylake, or zen on AMD/Hygon
++   Other known models keep their table-selected routines.  */
++static int
++chiavdf_isa_level (void)
++{
++  char regs[12];
++  unsigned int leaf1_ecx, leaf7_ebx;
++
++  if (__gmpn_cpuid (regs, 0) < 7)
++    return 0;
++  __gmpn_cpuid (regs, 1);
++  memcpy (&leaf1_ecx, regs + 8, 4);
++  __gmpn_cpuid (regs, 7);
++  memcpy (&leaf7_ebx, regs, 4);
++
++  if (!(leaf1_ecx & (1u << 23))             /* POPCNT */
++      || !(leaf7_ebx & (1u << 3))          /* BMI1 */
++      || !(leaf7_ebx & (1u << BMI2_BIT)))  /* BMI2 */
++    return 0;
++  if (gmp_workaround_skylake_cpuid_bug ())
++    return 0;
++  return (leaf7_ebx & (1u << 19)) ? 2 : 1; /* ADX */
++}
++
++#define CHIAVDF_ISA_SETUP_INTEL                  \
++  do {                                           \
++    int chiavdf_level_ = chiavdf_isa_level ();     \
++    if (chiavdf_level_ >= 1)                      \
++      {                                          \
++        CPUVEC_SETUP_core2;                      \
++        CPUVEC_SETUP_coreinhm;                   \
++        CPUVEC_SETUP_coreisbr;                   \
++        CPUVEC_SETUP_coreihwl;                   \
++      }                                          \
++    if (chiavdf_level_ >= 2)                      \
++      {                                          \
++        CPUVEC_SETUP_coreibwl;                   \
++        CPUVEC_SETUP_skylake;                    \
++      }                                          \
++  } while (0)
++
++#define CHIAVDF_ISA_SETUP_AMD                    \
++  do {                                           \
++    if (chiavdf_isa_level () >= 2)                \
++      CPUVEC_SETUP_zen;                          \
++  } while (0)
++
+ void
+ __gmpn_cpuvec_init (void)
+ {
+@@ -375,6 +426,7 @@
+ 	      CPUVEC_SETUP_core2;
+ 	      CPUVEC_SETUP_coreinhm;
+ 	      CPUVEC_SETUP_coreisbr;
++	      __gmpn_cpuid (dummy_string, 7);
+ 	      if ((dummy_string[0 + BMI2_BIT / 8] & (1 << (BMI2_BIT % 8))) == 0)
+ 		break;
+ 	      CPUVEC_SETUP_coreihwl;
+@@ -385,9 +437,36 @@
+ 	    case 0x5e:		/* Skylake */
+ 	    case 0x8e:		/* Kabylake */
+ 	    case 0x9e:		/* Kabylake */
++	    case 0xa5:		/* Comet Lake */
++	    case 0xa6:		/* Comet Lake mobile */
++	    case 0x66:		/* Cannon Lake */
++	    case 0x6a:		/* Ice Lake server */
++	    case 0x6c:		/* Ice Lake microserver */
++	    case 0x7d:		/* Ice Lake */
++	    case 0x7e:		/* Ice Lake mobile */
++	    case 0x9d:		/* Ice Lake NNPI */
++	    case 0xa7:		/* Rocket Lake */
++	    case 0x8c:		/* Tiger Lake mobile */
++	    case 0x8d:		/* Tiger Lake */
++	    case 0x8f:		/* Sapphire Rapids */
++	    case 0xcf:		/* Emerald Rapids */
++	    case 0xad:		/* Granite Rapids */
++	    case 0xae:		/* Granite Rapids microserver */
++	    case 0x97:		/* Alder Lake */
++	    case 0x9a:		/* Alder Lake mobile */
++	    case 0xb7:		/* Raptor Lake */
++	    case 0xba:		/* Raptor Lake mobile */
++	    case 0xbf:		/* Raptor Lake desktop */
++	    case 0xaa:		/* Meteor Lake mobile */
++	    case 0xac:		/* Meteor Lake */
++	    case 0xc5:		/* Arrow Lake H */
++	    case 0xc6:		/* Arrow Lake */
++	    case 0xb5:		/* Arrow Lake U */
++	    case 0xbd:		/* Lunar Lake */
+ 	      CPUVEC_SETUP_core2;
+ 	      CPUVEC_SETUP_coreinhm;
+ 	      CPUVEC_SETUP_coreisbr;
++	      __gmpn_cpuid (dummy_string, 7);
+ 	      if ((dummy_string[0 + BMI2_BIT / 8] & (1 << (BMI2_BIT % 8))) == 0)
+ 		break;
+ 	      if (gmp_workaround_skylake_cpuid_bug ())
+@@ -396,11 +475,19 @@
+ 	      CPUVEC_SETUP_coreibwl;
+ 	      CPUVEC_SETUP_skylake;
+ 	      break;
++
++	    default:            /* model not in the table */
++	      CHIAVDF_ISA_SETUP_INTEL;
++	      break;
+ 	    }
+ 	  break;
+ 
+ 	case 15:
+ 	  CPUVEC_SETUP_pentium4;
++	  break;
++
++	default:                /* family not in the table */
++	  CHIAVDF_ISA_SETUP_INTEL;
+ 	  break;
+ 	}
+     }
+@@ -440,10 +527,36 @@
+ 	  break;
+ 
+ 	case 0x17:		/* zen */
+-	case 0x19:		/* zen3 */
+ 	  CPUVEC_SETUP_zen;
+ 	  break;
++
++	case 0x19:		/* zen3, zen4 */
++	  /* Use the Broadwell/Skylake kernels on Zen 3/4.  Check the
++	     advertised features so masked VM features cannot select kernels
++	     requiring instructions which are unavailable to the guest.  */
++	  CHIAVDF_ISA_SETUP_INTEL;
++	  break;
++
++	case 0x1a:		/* zen5: known model ranges only */
++	  if (model <= 0x4f || (model >= 0x60 && model <= 0x77)
++	      || (model >= 0xd0 && model <= 0xd7))
++	    CPUVEC_SETUP_zen;
++	  else
++	    CHIAVDF_ISA_SETUP_AMD;
++	  break;
++
++	default:                /* newer AMD family not in the table */
++	  if (family > 0x19)
++	    CHIAVDF_ISA_SETUP_AMD;
++	  break;
+ 	}
++    }
++  else if (strcmp (vendor_string, "HygonGenuine") == 0)
++    {
++      if (family == 0x18)	/* Dhyana / Hygon Family 18h */
++	CPUVEC_SETUP_zen;
++      else
++	CHIAVDF_ISA_SETUP_AMD;
+     }
+   else if (strcmp (vendor_string, "CentaurHauls") == 0)
+     {

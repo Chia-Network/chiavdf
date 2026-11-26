@@ -30,7 +30,7 @@ fi
 echo "Using m4 at $m4_path"
 "$m4_path" --version
 
-M4="$m4_path" CFLAGS="-O3 -std=gnu17" ./configure \
+M4="$m4_path" CFLAGS="-O3 -std=gnu17" CXXFLAGS="-O3 -std=gnu++17" ./configure \
   --build=x86_64-pc-msys \
   --host=x86_64-w64-mingw32 \
   --prefix="$prefix" \

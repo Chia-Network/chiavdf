@@ -24,7 +24,7 @@ inline form Prover::GetProof() {
 
 inline uint64_t Prover::GetBlock(uint64_t i, uint64_t k, uint64_t T, integer& B) {
     integer res = FastPow(2, T - k * (i + 1), B);
-    mpz_mul_2exp(res.impl, res.impl, k);
+    chiavdf::checked_mpz_mul_2exp(res.impl, res.impl, checked_cast<mp_bitcnt_t>(k));
     res = res / B;
     auto res_vector = res.to_vector();
     return res_vector.empty() ? 0 : res_vector[0];
@@ -80,7 +80,7 @@ inline void Prover::GenerateProof() {
                 if (!PerformExtraStep()) return;
                 nucomp_form(z, z, ys[b1 * (1 << k0) + b0], D, L);
             }
-            z = FastPowFormNucomp(z, D, integer(b1 * (1 << k0)), L, reducer);
+            z = FastPowFormNucomp(z, D, integer::from_uint64(b1 * (1 << k0)), L, reducer);
             nucomp_form(x, x, z, D, L);
         }
 
@@ -90,7 +90,7 @@ inline void Prover::GenerateProof() {
                 if (!PerformExtraStep()) return;
                 nucomp_form(z, z, ys[b1 * (1 << k0) + b0], D, L);
             }
-            z = FastPowFormNucomp(z, D, integer(b0), L, reducer);
+            z = FastPowFormNucomp(z, D, integer::from_uint64(b0), L, reducer);
             nucomp_form(x, x, z, D, L);
         }
     }

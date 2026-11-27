@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cmath>
 #include "vdf_driver.hpp"
+#include "gmp_scalar.h"
 #include "pll_freqs.hpp"
 #include "hw_util.hpp"
 #include "timelord_live_control.hpp"
@@ -138,11 +139,11 @@ size_t VdfDriver::read_bytes(size_t size, size_t offset, uint8_t *buf,
       // Negative coeff, so two complement and subtract
       coeff = (1 << REDUNDANT_BITS) - coeff;
       mpz_set_ui(tmp2, coeff);
-      mpz_mul_2exp(tmp2, tmp2, WORD_BITS * i); // left shift
+      chiavdf::checked_mpz_mul_2exp(tmp2, tmp2, WORD_BITS * i); // left shift
       mpz_sub(val, val, tmp2);
     } else {
       mpz_set_ui(tmp2, coeff);
-      mpz_mul_2exp(tmp2, tmp2, WORD_BITS * i); // left shift
+      chiavdf::checked_mpz_mul_2exp(tmp2, tmp2, WORD_BITS * i); // left shift
       mpz_add(val, val, tmp2);
     }
 

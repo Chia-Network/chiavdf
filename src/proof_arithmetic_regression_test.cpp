@@ -36,6 +36,35 @@ void euclidean_partial(integer& co2, integer& co1, integer& r2, integer& r1, con
 }
 }
 
+TEST(ProofArithmeticRegressionTest, FastPowPreservesFullWidthBaseAndExponent) {
+    integer modulus("0x100000000000000000000000000000033");
+    for (uint64_t base : {uint64_t(0), uint64_t(1), uint64_t(UINT32_MAX - 1),
+                          uint64_t(UINT32_MAX), uint64_t(1) << 32,
+                          uint64_t(1) << 63, UINT64_MAX}) {
+        EXPECT_EQ(integer::from_uint64(base).to_string(), integer(std::to_string(base)).to_string());
+        for (uint64_t exponent : {uint64_t(0), uint64_t(1), uint64_t(1) << 32,
+                                  uint64_t(1) << 63, UINT64_MAX}) {
+            integer reference_base(std::to_string(base)), reference_exponent(std::to_string(exponent));
+            integer expected;
+            mpz_powm(expected.impl, reference_base.impl, reference_exponent.impl, modulus.impl);
+            EXPECT_EQ(FastPow(base, exponent, modulus).to_string(), expected.to_string());
+        }
+    }
+}
+
+TEST(ProofArithmeticRegressionTest, ShiftedWordExtractionMatchesGmp) {
+    integer value("0xfedcba98765432100123456789abcdef0123456789abcdef");
+    for (uint32_t shift : {0, 1, 63, 64, 65, 127, 128, 129, 191, 192, 193, 4096}) {
+        integer shifted;
+        mpz_tdiv_q_2exp(shifted.impl, value.impl, shift);
+        EXPECT_EQ(static_cast<mp_limb_t>(chiavdf_mpz_extract_uword_from_shift_nonneg(value.impl, shift)),
+                  mpz_getlimbn(shifted.impl, 0));
+    }
+    EXPECT_EQ(chiavdf_mpz_extract_uword_from_shift_nonneg(value.impl, INT64_MAX), 0);
+    integer zero(0);
+    EXPECT_EQ(chiavdf_mpz_extract_uword_from_shift_nonneg(zero.impl, 1), 0);
+}
+
 TEST(ProofArithmeticRegressionTest, SerialAndParallelMatchDirectWesolowskiExponent) {
     set_rounding_mode();
     std::vector<uint8_t> seed = {0, 0, 1, 2, 3, 3, 4, 4};
@@ -48,10 +77,10 @@ TEST(ProofArithmeticRegressionTest, SerialAndParallelMatchDirectWesolowskiExpone
         reducer.reduce(value);
         values.push_back(value);
     }
-    for (uint64_t length : {1, 23, 24, 25, 511, 512, 513}) {
+    for (uint32_t length : {1, 23, 24, 25, 511, 512, 513}) {
         Segment segment(0, length, values.front(), values[length]);
         integer challenge = GetB(d, segment.x, segment.y), exponent(0);
-        mpz_setbit(exponent.impl, length);
+        chiavdf::checked_mpz_setbit(exponent.impl, length);
         exponent = exponent / challenge;
         form expected = FastPowFormNucomp(segment.x, d, exponent, limit, reducer);
         reducer.reduce(expected);

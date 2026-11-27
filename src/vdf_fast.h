@@ -348,12 +348,12 @@ struct square_state_type {
                 //U0=-c ; U1=0
                 c_U0=c;
                 c_U0.negate();
-                c_U1=uint64(0ull);
+                c_U1=0u;
             } else {
                 TRACK_CYCLES
                 //U0=1 ; U1=0
-                c_U0=uint64(1ull);
-                c_U1=uint64(0ull);
+                c_U0=1u;
+                c_U1=0u;
             }
         }
 
@@ -466,8 +466,8 @@ struct square_state_type {
 
         int v_index_local=0;
 
-        v0s[0]=uint64(0ull);
-        v1s[0]=uint64(1ull);
+        v0s[0]=0u;
+        v1s[0]=1u;
 
         int gcd_index=0;
         while (true) {
@@ -793,7 +793,7 @@ struct square_state_type {
 
             auto& gcd_1_0=phase_0_master_d.gcd_1_0;
 
-            if (gcd_1_0.get_a_end()!=uint64(1ull)) {
+            if (gcd_1_0.get_a_end()!=1u) {
                 assert(!is_vdf_test);
                 phase_start.corruption_flag=true;
                 return false;
@@ -862,7 +862,7 @@ struct square_state_type {
 
     void init(const integer& t_D, const integer& t_L, const integer& t_a, const integer& t_b) {
         int2x zero;
-        zero=uint64(0ull);
+        zero=0u;
 
         phase_constant.D=t_D.impl;
         phase_constant.L=t_L.impl;

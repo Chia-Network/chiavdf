@@ -24,6 +24,7 @@ limitations under the License.
 #include <cstdint>
 
 #include "ClassGroup.h"
+#include "gmp_scalar.h"
 
 #ifdef __has_attribute
 # define HAS_ATTRIBUTE(x) __has_attribute(x)
@@ -160,8 +161,9 @@ bool bLZCHasHW=false;
     // Return an approximation x of the large mpz_t op by an int64_t and the
     // exponent e adjustment. We must have (x * 2^e) / op = constant
     // approximately.
-    int_fast64_t size(static_cast<long>(mpz_size(op)));
-    uint_fast64_t last(mpz_getlimbn(op, (size - 1)));
+    int size = op->_mp_size;
+    if (size < 0) size = -size;
+    mp_limb_t last = chiavdf::checked_mpz_getlimbn(op, (size - 1));
 
     if(!bLZCChecked)
     {
@@ -178,8 +180,8 @@ bool bLZCHasHW=false;
 
     signed_shift(last, (63 - exp), r);
     if (size > 1) {
-      exp += (size - 1) * 64;
-      uint_fast64_t prev(mpz_getlimbn(op, (size - 2)));
+      exp += static_cast<int_fast64_t>(size - 1) * 64;
+      mp_limb_t prev = chiavdf::checked_mpz_getlimbn(op, (size - 2));
       int_fast64_t t;
       signed_shift(prev, -1 - lg2, t);
       r += t;

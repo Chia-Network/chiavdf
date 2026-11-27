@@ -42,7 +42,7 @@ void ApproximateParameters(uint64_t T, int& l, int& k) {
 
 uint64_t GetBlock(uint64_t i, uint64_t k, uint64_t T, integer& B) {
     integer res = FastPow(2, T - k * (i + 1), B);
-    mpz_mul_2exp(res.impl, res.impl, k);
+    chiavdf::checked_mpz_mul_2exp(res.impl, res.impl, checked_cast<mp_bitcnt_t>(k));
     res = res / B;
     auto res_vector = res.to_vector();
     // 0 value results in empty vector from mpz_export
@@ -66,7 +66,7 @@ void FoldWesolowskiBuckets(form& x, std::vector<form> const& ys, uint64_t k,
             nucomp_form(z, z, ys[b1 * (1ULL << k0) + b0], D, L);
         }
         const uint64 shift_base = (uint64(1) << k0);
-        z = FastPowFormNucomp(z, D, integer(static_cast<uint64>(b1) * shift_base), L, reducer);
+        z = FastPowFormNucomp(z, D, integer::from_uint64(static_cast<uint64>(b1) * shift_base), L, reducer);
         nucomp_form(x, x, z, D, L);
     }
     for (uint64_t b0 = 0; b0 < (1ULL << k0); b0++) {
@@ -74,7 +74,7 @@ void FoldWesolowskiBuckets(form& x, std::vector<form> const& ys, uint64_t k,
         for (uint64_t b1 = 0; b1 < (1ULL << k1); b1++) {
             nucomp_form(z, z, ys[b1 * (1ULL << k0) + b0], D, L);
         }
-        z = FastPowFormNucomp(z, D, integer(b0), L, reducer);
+        z = FastPowFormNucomp(z, D, integer::from_uint64(b0), L, reducer);
         nucomp_form(x, x, z, D, L);
     }
 }
@@ -93,7 +93,7 @@ form GenerateWesolowski(form &y, form &x_init,
     form x = form::identity(D);
 
     for (int64_t j = l - 1; j >= 0; j--) {
-        x = FastPowFormNucomp(x, D, integer(uint64(1) << k), L, reducer);
+        x = FastPowFormNucomp(x, D, integer::from_uint64(uint64(1) << k), L, reducer);
 
         std::vector<form> ys((1ULL << k));
         for (uint64_t i = 0; i < (1ULL << k); i++)
@@ -263,7 +263,7 @@ std::vector<uint8_t> ProveSlowLowMemoryWithParameters(integer& D, form& x, uint6
     // The rounds, last first, as in GenerateWesolowski.
     form proof = form::identity(D);
     for (int64_t j = static_cast<int64_t>(l) - 1; j >= 0; j--) {
-        proof = FastPowFormNucomp(proof, D, integer(uint64(1) << k), L, reducer);
+        proof = FastPowFormNucomp(proof, D, integer::from_uint64(uint64(1) << k), L, reducer);
         FoldWesolowskiBuckets(proof, ys[j], k, D, L, reducer);
     }
     reducer.reduce(proof);

@@ -8,6 +8,7 @@
 #endif
 
 #include "Reducer.h"
+#include "gmp_scalar.h"
 #include <gmpxx.h>
 
 //#include <cstdint>
@@ -69,12 +70,13 @@ public:
         mpz_init_set_ui(impl, i);
     }
 
-    explicit inline integer(int64 i) {
-        mpz_init_set_si(impl, i);
-    }
-
-    explicit inline integer(uint64_t i) {
-        mpz_init_set_ui(impl, i);
+    template<class T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
+    explicit inline integer(T i) {
+        if constexpr (std::is_signed_v<T>) {
+            mpz_init_set_si(impl, chiavdf::checked_gmp_scalar<chiavdf::gmp_signed_scalar>(i));
+        } else {
+            mpz_init_set_ui(impl, chiavdf::checked_gmp_scalar<chiavdf::gmp_unsigned_scalar>(i));
+        }
     }
 
     explicit integer(const string& s);
@@ -101,7 +103,15 @@ public:
         return *this;
     }
 
-    integer& operator=(int64 i);
+    template<class T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
+    integer& operator=(T i) {
+        if constexpr (std::is_signed_v<T>) {
+            mpz_set_si(impl, chiavdf::checked_gmp_scalar<chiavdf::gmp_signed_scalar>(i));
+        } else {
+            mpz_set_ui(impl, chiavdf::checked_gmp_scalar<chiavdf::gmp_unsigned_scalar>(i));
+        }
+        return *this;
+    }
 
     integer& operator=(const string& s);
 

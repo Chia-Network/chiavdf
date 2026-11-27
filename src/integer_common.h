@@ -3,6 +3,7 @@
 
 #include "primetest.h"
 #include "checked_cast.h"
+#include "gmp_scalar.h"
 #include <limits>
 
 //note: gmp already has c++ bindings so could have just used those. oh well
@@ -161,12 +162,26 @@ struct integer {
         mpz_init_set_ui(impl, i);
     }
 
-    explicit inline integer(int64 i) {
-        mpz_init_set_si(impl, i);
+    static integer from_uint64(uint64_t value) {
+        using scalar = chiavdf::gmp_unsigned_scalar;
+        integer result;
+        if constexpr (std::numeric_limits<scalar>::max() < UINT64_MAX) {
+            if (value > std::numeric_limits<scalar>::max()) {
+                mpz_import(result.impl, 1, 1, sizeof(value), 0, 0, &value);
+                return result;
+            }
+        }
+        mpz_set_ui(result.impl, static_cast<scalar>(value));
+        return result;
     }
 
-    explicit inline integer(uint64_t i) {
-        mpz_init_set_ui(impl, i);
+    template<class T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
+    explicit inline integer(T i) {
+        if constexpr (std::is_signed_v<T>) {
+            mpz_init_set_si(impl, chiavdf::checked_gmp_scalar<chiavdf::gmp_signed_scalar>(i));
+        } else {
+            mpz_init_set_ui(impl, chiavdf::checked_gmp_scalar<chiavdf::gmp_unsigned_scalar>(i));
+        }
     }
 
     explicit integer(const string& s) {
@@ -221,8 +236,13 @@ struct integer {
         return *this;
     }
 
-    integer& operator=(int64 i) {
-        mpz_set_si(impl, i);
+    template<class T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
+    integer& operator=(T i) {
+        if constexpr (std::is_signed_v<T>) {
+            mpz_set_si(impl, chiavdf::checked_gmp_scalar<chiavdf::gmp_signed_scalar>(i));
+        } else {
+            mpz_set_ui(impl, chiavdf::checked_gmp_scalar<chiavdf::gmp_unsigned_scalar>(i));
+        }
         return *this;
     }
 

@@ -78,11 +78,11 @@ form DeserializeForm(const integer &D, const uint8_t *bytes, size_t size,
 }
 
 integer FastPow(uint64_t a, uint64_t b, integer& c) {
-    integer res, a1 = integer(a);
+    integer res, a1 = integer::from_uint64(a), exponent = integer::from_uint64(b);
     if (mpz_sgn(c.impl) == 0) {
         throw std::runtime_error("Division by 0");
     }
-    mpz_powm_ui(res.impl, a1.impl, b, c.impl);
+    mpz_powm(res.impl, a1.impl, exponent.impl, c.impl);
     return res;
 }
 

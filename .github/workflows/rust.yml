@@ -218,14 +218,121 @@ jobs:
       - name: Tests and proof regressions
         run: cargo test --workspace && cargo test --workspace --release
 
-      - name: Benchmark vdf_bench discr/prove
-        if: (matrix.os.matrix == 'ubuntu' && matrix.arch.matrix == 'intel') || matrix.os.matrix == 'windows'
+      - name: Benchmark Rust vdf_bench discr/prove (Linux)
+        if: matrix.os.matrix == 'ubuntu' && matrix.arch.matrix == 'intel'
         shell: bash
         run: |
           echo "Benchmarking Rust bindings discr 50"
           cargo run --quiet --release -p chiavdf-tools --bin vdf_bench -- discr 50
           echo "Benchmarking Rust bindings prove 100000"
           cargo run --quiet --release -p chiavdf-tools --bin vdf_bench -- prove 100000
+
+      - name: Set up Python for the Windows benchmark comparison
+        if: matrix.os.name == 'Windows'
+        uses: Chia-Network/actions/setup-python@main
+        with:
+          python-version: '3.12'
+
+      - name: Test benchmark scheduling and reporting
+        if: matrix.os.name == 'Windows'
+        run: python tests/test_compare_vdf_bench.py
+
+      - name: Cache MPIR for C++ and Python benchmarks
+        if: matrix.os.name == 'Windows'
+        id: benchmark-mpir-cache
+        uses: actions/cache@v6.1.0
+        with:
+          path: mpir_gc_x64
+          key: windows-mpir-gc-x64-${{ hashFiles('scripts/mpir_gc_x64.commit') }}
+
+      - name: Check out pinned MPIR for C++ and Python benchmarks
+        if: matrix.os.name == 'Windows' && steps.benchmark-mpir-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: bash scripts/get-mpir-gc-x64.sh
+
+      - name: Build Windows C++, Rust and Python benchmarks
+        if: matrix.os.name == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install 'pybind11==3.1.0'
+          if ($LASTEXITCODE -ne 0) { throw 'Installing pybind11 failed' }
+          "$PWD/mpir_gc_x64" >> $env:GITHUB_PATH
+          $env:PATH = "$PWD/mpir_gc_x64;$env:PATH"
+          $cmakeArgs = @(
+            '-S', 'src', '-B', 'build-benchmark', '-G', 'Ninja',
+            '-DCMAKE_BUILD_TYPE=Release',
+            '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL',
+            '-DCMAKE_C_COMPILER=clang-cl', '-DCMAKE_CXX_COMPILER=clang-cl',
+            '-DCMAKE_ASM_COMPILER=clang-cl',
+            "-DPython_EXECUTABLE=$((Get-Command python).Source)",
+            "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=$PWD/chiavdf",
+            '-DCHIAVDF_GMP_PREFIX=',
+            '-DBUILD_PYTHON=ON', '-DBUILD_VDF_BENCH=ON',
+            '-DBUILD_VDF_CLIENT=OFF', '-DBUILD_VDF_TESTS=OFF',
+            '-DBUILD_CHIAVDFC=OFF', '-DBUILD_HW_TOOLS=OFF'
+          )
+          cmake @cmakeArgs
+          if ($LASTEXITCODE -ne 0) { throw 'Configuring C++/Python benchmarks failed' }
+          cmake --build build-benchmark --config Release --target vdf_bench _chiavdf --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw 'Building C++/Python benchmarks failed' }
+          # Python's extension loader searches beside the .pyd for dependent DLLs.
+          Get-ChildItem mpir_gc_x64 -Filter '*.dll' | Copy-Item -Destination chiavdf
+          python -c "import chiavdf._chiavdf as m; print('Python extension:', m.__file__)"
+          if ($LASTEXITCODE -ne 0) { throw 'Loading Python benchmark extension failed' }
+          cargo build --locked --release -p chiavdf-tools --bin vdf_bench
+          if ($LASTEXITCODE -ne 0) { throw 'Building Rust benchmark failed' }
+
+      - name: Compare Windows benchmarks (six interleaved rounds)
+        if: matrix.os.name == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PYTHONPATH = "$PWD;$env:PYTHONPATH"
+          $results = Join-Path $env:RUNNER_TEMP 'windows-vdf-benchmarks'
+          New-Item -ItemType Directory -Force $results | Out-Null
+          $cpu = (Get-CimInstance Win32_Processor | Select-Object -ExpandProperty Name) -join ', '
+          $leaf1 = [System.Runtime.Intrinsics.X86.X86Base]::CpuId(1, 0)
+          $leaf7 = [System.Runtime.Intrinsics.X86.X86Base]::CpuId(7, 0)
+          $metadata = [ordered]@{
+            CPU = $cpu
+            'CPUID(1).ECX' = ('0x{0:X8}' -f $leaf1.Item3)
+            'CPUID(7,0).EBX' = ('0x{0:X8}' -f $leaf7.Item2)
+            Runner = "$env:RUNNER_NAME ($env:RUNNER_OS/$env:RUNNER_ARCH)"
+            Commit = (git rev-parse HEAD)
+            LLVM = ((clang-cl --version | Select-Object -First 1) -join '')
+            Rust = (rustc --version)
+            Python = (python --version)
+            'MPIR revision' = (Get-Content scripts/mpir_gc_x64.commit).Trim()
+            'GMP patch SHA256' = (Get-FileHash scripts/gmp-6.3.0-fat-isa.patch -Algorithm SHA256).Hash
+          }
+          $metadata | ConvertTo-Json | Set-Content "$results/metadata.json" -Encoding utf8
+          python tools/compare_vdf_bench.py `
+            --cpp build-benchmark/vdf_bench.exe `
+            --rust target/release/vdf_bench.exe `
+            --rounds 6 --discriminants 500 --iterations 100000 `
+            --metadata "$results/metadata.json" --output-dir "$results"
+          if ($LASTEXITCODE -ne 0) { throw 'Benchmark comparison failed' }
+
+      - name: Publish Windows benchmark summary
+        if: always() && matrix.os.name == 'Windows'
+        shell: pwsh
+        run: |
+          $summary = Join-Path $env:RUNNER_TEMP 'windows-vdf-benchmarks/summary.md'
+          if (Test-Path $summary) {
+            Get-Content $summary -Raw -Encoding utf8 >> $env:GITHUB_STEP_SUMMARY
+          } else {
+            '## Windows VDF benchmark comparison' >> $env:GITHUB_STEP_SUMMARY
+            'The comparison did not run. Check the failed build/test steps.' >> $env:GITHUB_STEP_SUMMARY
+          }
+
+      - name: Upload Windows benchmark results
+        if: always() && matrix.os.name == 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-vdf-benchmarks
+          path: ${{ runner.temp }}/windows-vdf-benchmarks
+          if-no-files-found: ignore
 
       - name: Upload bundled Windows GMP
         if: matrix.os.name == 'Windows'
